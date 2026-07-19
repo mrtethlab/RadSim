@@ -22,3 +22,6 @@ services/compute/.venv/
 Thumbs.db
 .idea/
 .vscode/
+
+# local-only notes (not for the repo)
+SUMMARY.md
