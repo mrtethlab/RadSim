@@ -98,17 +98,16 @@ function initScene(){
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
   function updateCamera(){
-    if(S.mode==='ct' && S.viewMode==='tube'){
-      // CT scout: the camera is BOLTED TO THE GANTRY, at the inner-top rim of the
-      // bore (y≈17.4, ring inner radius 11.6 above centre y=6) and aimed at the
-      // fixed scan plane (isocentre, z=0) — a slight aerial tilt from the entry
-      // side so the couch + hand read in 3D. It never tracks the patient: as the
-      // couch drives the model through, the anatomy is seen passing under the fixed
-      // laser, exactly like a real CT where only the table moves.
+    if(S.mode==='ct'){
+      // Two fixed CT PoVs — both perpendicular into the bore, inside the inner rim
+      // so the ring never overhangs the patient, same distance from the isocentre
+      // (10.5) and same (very wide) FOV. Lat is the AP view rotated 90° about the
+      // bore axis (z). They never track the patient: only the couch + table move.
       if(cam.fov!==132){ cam.fov=132; cam.updateProjectionMatrix(); }  // extreme wide (distortion ok) for the full bore + gaps
       cam.up.set(0,0,1);                        // +z (un-scanned anatomy) toward top of frame
-      cam.position.set(0, 16.5, 0);            // INSIDE the bore, just below its inner-top rim so the ring never overhangs the patient
-      cam.lookAt(0, 6, 0);                      // straight down — PERPENDICULAR to the table, no angle
+      if(S.ct.pov==='lat') cam.position.set(10.5, 6, 0);   // +x rim, looking toward -x (lateral)
+      else                 cam.position.set(0, 16.5, 0);   // top rim, looking straight down (AP)
+      cam.lookAt(0, 6, 0);
       return;
     }
     if(cam.fov!==42){ cam.fov=42; cam.updateProjectionMatrix(); }
@@ -239,6 +238,7 @@ const S = {
     patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
     tableY:0,                  // table height (mm); 0 = patient centred at the isocentre
     patientY:6,                // patient world-y for the current table height (set by ct.js)
+    pov:'ap',                  // CT camera perspective: 'ap' (top) | 'lat' (90° around the bore)
     liveView:false,            // true while a scout build mirrors tube-POV into #film
     scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
   },
@@ -414,6 +414,11 @@ function setCameraView(m){
   S.viewMode=m;
   const seg=$('camSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.cam===m));
 }
+/* CT camera perspective: 'ap' (top) | 'lat' (90° around the bore). */
+function setCTPov(p){
+  S.ct.pov=p;
+  const seg=$('camSegCt'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.cam===p));
+}
 /* Show the right thing in the small DR monitor for the current mode. X-ray shows
    its radiograph; CT has no radiograph (its scouts live in the bay, and the
    reconstruction viewer comes later), so the monitor is cleared — the two modes'
@@ -434,16 +439,8 @@ function refreshFilmViewer(){
    render loop, gated by S.ct.liveView. */
 function ctLiveView(on){
   const noexp=$('noexp');
-  if(on){
-    ctLiveView._prevCam = S.viewMode;
-    setCameraView('tube');
-    if(noexp) noexp.style.display='none';
-    S.ct.liveView=true;
-  } else {
-    S.ct.liveView=false;
-    if(ctLiveView._prevCam) setCameraView(ctLiveView._prevCam);
-    refreshFilmViewer();       // CT -> cleared; x-ray -> its radiograph
-  }
+  if(on){ if(noexp) noexp.style.display='none'; S.ct.liveView=true; }
+  else { S.ct.liveView=false; refreshFilmViewer(); }   // CT -> cleared; x-ray -> its radiograph
 }
 function setContent(c){
   S.bayContent=c;
@@ -540,8 +537,10 @@ function bind(){
   }
   // bay content: 3D positioning  <->  large saved image
   $('contentSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b || b.disabled)return; setContent(b.dataset.c);});
-  // camera: free orbit  <->  tube POV bird's-eye
+  // camera: free orbit  <->  tube POV bird's-eye (x-ray)
   $('camSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCameraView(b.dataset.cam);});
+  // CT camera: AP-PoV  <->  Lat-PoV
+  $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
   // render mode: soft-tissue anatomy  <->  skeleton (display only)
   $('renderSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setHandView(b.dataset.hv);});
   // collimator light on/off
@@ -849,6 +848,6 @@ window.addEventListener('load',()=>{
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
-           poseRot, buildPhantom, ctLiveView, setCameraView, setContent, setBay3DEnabled,
+           poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer });
 });

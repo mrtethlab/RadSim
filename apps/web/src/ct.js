@@ -232,6 +232,7 @@ function resetCTSession() {
   c.tablePos = 0;
   c.tableY = 0;                    // default table height is the centred position
   c.patient.x = 0; c.patient.z = 0;
+  ctx.setCTPov('ap');              // back to the AP perspective
   lastAP = lastLAT = null;
   ctx.$('ctScouts')?.classList.remove('show');
   setPhase('idle');               // resets the console label, flash + 3D-enable
@@ -251,7 +252,8 @@ function applyMode(mode) {
   // tube-POV camera, Image view). Acquisition params + technique are user setup and
   // deliberately persist.
   resetCTSession();
-  ctx.setCameraView('orbit');     // drop the CT tube-POV camera
+  if (mode === 'ct') ctx.setCTPov('ap');   // CT starts on the AP perspective
+  else ctx.setCameraView('orbit');         // x-ray returns to free orbit
   ctx.setContent('3d');           // always land in the positioning view, never a stale image
   ctx.setBay3DEnabled(true);
   ctx.refreshFilmViewer();        // isolate the two modes' images (clear x-ray in CT)
@@ -452,6 +454,7 @@ function resetToIsocentre() {
 // + row-by-row stitching all run for the calculated exposure time.
 async function runScoutExposure(view, data, alive = () => true) {
   const cv = ctx.$(view === 'AP' ? 'scoutAP' : 'scoutLAT');
+  ctx.setCTPov(view === 'AP' ? 'ap' : 'lat');   // watch each pass from its own perspective
   Sound.resume();
   resetToIsocentre();
   drawScout(cv, data, 0);                                   // start from a blank field
