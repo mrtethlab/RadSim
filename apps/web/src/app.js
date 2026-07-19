@@ -105,9 +105,9 @@ function initScene(){
       // side so the couch + hand read in 3D. It never tracks the patient: as the
       // couch drives the model through, the anatomy is seen passing under the fixed
       // laser, exactly like a real CT where only the table moves.
-      if(cam.fov!==92){ cam.fov=92; cam.updateProjectionMatrix(); }   // very wide (fisheye ok) for both bore sides
+      if(cam.fov!==132){ cam.fov=132; cam.updateProjectionMatrix(); }  // extreme wide (distortion ok) for the full bore + gaps
       cam.up.set(0,0,1);                        // +z (un-scanned anatomy) toward top of frame
-      cam.position.set(0, 21, 0);              // directly above the isocentre, just below the bore top
+      cam.position.set(0, 16.5, 0);            // INSIDE the bore, just below its inner-top rim so the ring never overhangs the patient
       cam.lookAt(0, 6, 0);                      // straight down — PERPENDICULAR to the table, no angle
       return;
     }
