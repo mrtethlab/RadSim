@@ -136,7 +136,7 @@ function drawTopLaserCookie(cv) {
   const S = cv.width, g = cv.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
   g.strokeStyle = '#fff'; g.lineCap = 'round';
-  g.lineWidth = Math.max(2, S * 0.02);
+  g.lineWidth = Math.max(1.2, S * 0.008);                                    // thin laser line
   g.beginPath(); g.moveTo(0, S / 2); g.lineTo(S, S / 2); g.stroke();          // axial line (across x)
   g.beginPath(); g.moveTo(S / 2, S * 0.34); g.lineTo(S / 2, S * 0.66); g.stroke(); // centre cross tick
 }
@@ -145,7 +145,7 @@ function drawSideLaserCookie(cv) {
   const S = cv.width, g = cv.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
   g.strokeStyle = '#fff'; g.lineCap = 'round';
-  g.lineWidth = Math.max(2, S * 0.02);
+  g.lineWidth = Math.max(1.2, S * 0.008);                                    // thin laser line
   g.beginPath(); g.moveTo(0, S / 2); g.lineTo(S, S / 2); g.stroke();
 }
 
