@@ -210,7 +210,6 @@ const S = {
     isocentred:false,
     phase:'idle',              // idle | scout | planning | moving | scanning | done
     patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
-    orientation:'head',        // 'head' | 'feet' — patient enters head- or feet-first
   },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so

@@ -20,7 +20,8 @@ const SFOV_R = 9;                             // scan field-of-view radius (worl
 const MM_PER_UNIT = 10;                       // 1 world unit = 10 mm (detector 240x300 mm)
 
 const scanLenU = () => ctx.S.ct.scanLen / MM_PER_UNIT;             // scan length in world units
-const intoSign = () => (ctx.S.ct.orientation === 'head' ? 1 : -1); // couch-in = +I (head) / -S (feet)
+// Head-first is the only orientation: the couch always feeds the patient INTO the
+// gantry (world -z), advancing the table position in the inferior (+I) direction.
 // table position -> "I###.#" (inferior), "S###.#" (superior), or "0.0" (all mm)
 function fmtTablePos(mm) { return mm > 0.05 ? 'I' + mm.toFixed(1) : mm < -0.05 ? 'S' + (-mm).toFixed(1) : '0.0'; }
 
@@ -119,8 +120,7 @@ export function ctSyncScene() {
   // patient/couch offset (from the direction pad) — only in CT
   three.handGroup.position.x = isCT ? S.ct.patient.x : 0;
   three.handGroup.position.z = isCT ? S.ct.patient.z : 0;
-  // feet-first turns the patient 180° so the other end enters the gantry bore
-  three.handGroup.rotation.y = (isCT && S.ct.orientation === 'feet') ? Math.PI : 0;
+  three.handGroup.rotation.y = 0;   // head-first only — no patient flip
   if (isCT) {
     // no collimator light field in CT — only the laser
     three.lamp.intensity = 0; three.lamp.castShadow = false;
@@ -172,15 +172,6 @@ function wireCTSettings() {
   $('ctPitch')?.addEventListener('input', (e) => { S.ct.pitch = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctRotSpeed')?.addEventListener('input', (e) => { S.ct.rotSpeed = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
-  // scan orientation (head-first / feet-first) — flips where the isocentre sits
-  $('ctOrientSeg')?.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    S.ct.orientation = b.dataset.orient;
-    [...b.parentNode.children].forEach(x => x.classList.toggle('on', x === b));
-    updateCTReadouts();
-    ctx.syncScene();                                 // flip the 3D model to head/feet-first
-    if (S.ct.phase === 'planning') redrawScouts();   // and the scout display
-  });
   // isocentre confirm — zero the table position reading (patient stays put)
   $('ctIsocentre')?.addEventListener('click', () => {
     S.ct.tablePos = 0; S.ct.isoZ = S.ct.patient.z; S.ct.isocentred = true;
@@ -191,10 +182,10 @@ function wireCTSettings() {
   const STEP = 1;                       // world unit per press (= 10 mm)
   $('ctDpad')?.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-dir]'); if (!b) return;
-    const p = S.ct.patient, dmm = intoSign() * STEP * MM_PER_UNIT;
+    const p = S.ct.patient, dmm = STEP * MM_PER_UNIT;
     switch (b.dataset.dir) {
-      case 'up':    p.z -= STEP; S.ct.tablePos += dmm; break;   // table into the gantry
-      case 'down':  p.z += STEP; S.ct.tablePos -= dmm; break;   // table out
+      case 'up':    p.z -= STEP; S.ct.tablePos += dmm; break;   // table into the gantry (+I)
+      case 'down':  p.z += STEP; S.ct.tablePos -= dmm; break;   // table out (-S)
       case 'left':  p.x -= STEP; break;
       case 'right': p.x += STEP; break;
     }
@@ -227,7 +218,6 @@ function updateCTReadouts() {
   const et = ctExposureTime();
   set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
   set('ctTablePosV', fmtTablePos(S.ct.tablePos));
-  set('ctOrientV', S.ct.orientation === 'feet' ? 'FEET FIRST' : 'HEAD FIRST');
 }
 
 function setHint(t) { const el = ctx.$('ctHint'); if (el) el.textContent = t; }
@@ -271,27 +261,33 @@ function abortCT() {
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
 // ---- Phase 2: scout acquisition with a simulated patient scan ----
-// START (idle) runs two acquisitions (AP then Lateral), each with breathe-in ->
-// exposure (buzz + table travel through the gantry) -> breathe-normally. The
-// scouts are computed up front but only revealed after the 2nd breathe-normally.
+// START (idle) runs two acquisitions (AP then Lateral). Each: breathe-in -> 1s
+// hold -> exposure (buzz + table travel through the gantry) -> breathe-normally.
+// The topogram is a stack of fixed-gantry fan views (one per table position); it
+// STITCHES IN row-by-row as the table advances, so the image on screen always
+// matches exactly the anatomy the couch has swept under the imaging plane.
 async function acquireScouts() {
-  const { $ } = ctx;
   setPhase('scout');
   setConsoleEnabled(false);
   showScouts(false);
+  resetToIsocentre();                 // compute the scouts from the isocentre position
+  let ap, lat;
   try {
-    lastAP = scoutProjection('AP');
-    lastLAT = scoutProjection('LAT');
+    ap = scoutProjection('AP');
+    lat = scoutProjection('LAT');
   } catch (err) {
     console.error('scout compute failed', err);
     setHint('Scout acquisition failed: ' + err.message);
     setPhase('idle'); setConsoleEnabled(true); return;
   }
-  await runScoutExposure('AP');
-  await runScoutExposure('LAT');
-  // reveal the planning images once the 2nd breathe-normally has played
-  redrawScouts();
+  lastAP = ap; lastLAT = lat;
+  // reveal the (blank) panels so each topogram is visibly stitched during its pass
+  drawScout(ctx.$('scoutAP'), ap, 0);
+  drawScout(ctx.$('scoutLAT'), lat, 0);
   showScouts(true);
+  await runScoutExposure('AP', ap);
+  await runScoutExposure('LAT', lat);
+  resetToIsocentre();                 // settle the patient back at the isocentre
   setPhase('planning');
   setHint('Scouts acquired — position the scan box (next phase). START confirms the plan.');
   setConsoleEnabled(true);
@@ -302,37 +298,43 @@ function resetToIsocentre() {
   const { S } = ctx;
   S.ct.patient.z = S.ct.isoZ;   // model back to where it was when the isocentre was set
   S.ct.tablePos = 0;
-  ctx.syncScene();               // applies patient.z + orientation, resets the bed
+  ctx.syncScene();               // applies patient.z, resets the bed
   updateCTReadouts();
 }
 
-// One animated acquisition: breathe-in, 1s hold, exposure (buzz + table travel),
-// breathe-out. The exposure sound + table travel run for the calculated exposure time.
-async function runScoutExposure(view) {
+// One animated acquisition: breathe-in, 1s hold, exposure (buzz + table travel
+// while the topogram stitches in), breathe-out. The exposure sound + table travel
+// + row-by-row stitching all run for the calculated exposure time.
+async function runScoutExposure(view, data) {
+  const cv = ctx.$(view === 'AP' ? 'scoutAP' : 'scoutLAT');
   Sound.resume();
   resetToIsocentre();
+  drawScout(cv, data, 0);                                   // start from a blank field
   setHint(view + ' scout · breathe in and hold…');
   Sound.play('breathIn');
   await sleep((Sound.duration('breathIn') || 2) * 1000);   // let the breathe-in finish
   await sleep(1000);                                        // 1 s hold before the exposure
   setHint(view + ' scout · scanning…');
   Sound.startBuzz();
-  await animateTableTravel(ctExposureTime() * 1000);
+  // stitch rows 0..t as the couch advances -> image builds in lockstep with travel
+  await animateTableTravel(ctExposureTime() * 1000, (t) => drawScout(cv, data, t * data.nz));
   Sound.stopBuzz();
+  drawScout(cv, data);                                      // guarantee the final full frame
   setHint(view + ' scout · breathe normally.');
   Sound.play('breathNormal');
   await sleep(Math.min(2200, (Sound.duration('breathNormal') || 1.8) * 1000));
 }
 
 // Move the couch (bed + patient) the scan length into the gantry over the exposure
-// time, updating the table position readout in real time. Ends at table pos =
-// +scanLen (feet-first) or -scanLen (head-first).
-function animateTableTravel(dur) {
+// time, updating the table-position readout and calling onFrame(t) each step
+// (t: 0->1). Head-first: the table always feeds into the bore (-z), ending at
+// table position +scanLen (inferior).
+function animateTableTravel(dur, onFrame) {
   return new Promise(res => {
     const three = ctx.three, S = ctx.S;
     const travelU = scanLenU();                        // world units to travel
     const startHandZ = three.handGroup.position.z, startBedZ = bed.position.z;
-    const tpEnd = intoSign() * S.ct.scanLen;           // mm: +I (head-first) / -S (feet-first)
+    const tpEnd = S.ct.scanLen;                        // mm, inferior (+I)
     const t0 = performance.now();
     let done = false;
     const apply = (t) => {
@@ -341,6 +343,7 @@ function animateTableTravel(dur) {
       bed.position.z = startBedZ + dz;
       S.ct.tablePos = tpEnd * t;                       // live table position (mm)
       updateCTReadouts();
+      if (onFrame) onFrame(t);
     };
     const finish = () => { if (done) return; done = true; apply(1); res(); };
     (function step() {
@@ -353,10 +356,17 @@ function animateTableTravel(dur) {
   });
 }
 
-// One scout: a distortion-free topogram. The tube stays at a fixed gantry
-// position and the table translates, i.e. each row (z) is imaged with the source
-// directly over that row -> parallel along the scan axis (no z divergence), fan
-// only across the width. Computed synchronously (fast) so it's ready pre-animation.
+// One scout: a distortion-free topogram acquired exactly as a real scan is — a
+// stack of very thin fan views from a FIXED gantry, one per table position, as the
+// couch translates the patient through the z=0 imaging plane. Fixing the source at
+// z=0 while the patient shifts by dz is identical to holding the patient still and
+// placing the source at z=dz with an in-plane (dz=0) fan, so we evaluate it that
+// way per row: no z-divergence -> zero distortion, fan only across the width.
+//
+// Row j is table step j: the couch has advanced the patient j/(nz-1) * scanLen INTO
+// the bore, so the imaging plane sits over patient +z = +(j/(nz-1))*lenU. This is
+// the SAME +z region the table-travel animation sweeps, so the stitched image and
+// the on-screen motion always show the same anatomy.
 function scoutProjection(view) {
   const { S } = ctx;
   const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
@@ -377,10 +387,10 @@ function scoutProjection(view) {
   const refDist2 = (sx - dcx) * (sx - dcx) + (sy - dcy) * (sy - dcy);
   const halfU = (nw - 1) / 2;
   const dose = new Float32Array(nw * nz);
+  let mn = Infinity, mx = -Infinity;
   for (let j = 0; j < nz; j++) {
-    // scan runs FROM the isocentre (gantry z=0) for the scan length; row 0 is the
-    // isocentre, row nz-1 is scanLen away. Orientation only flips the display.
-    const z = -(j / (nz - 1)) * lenU;
+    // couch step j: imaging plane over patient +z (the region the table sweeps)
+    const z = (j / (nz - 1)) * lenU;
     const src = [sx, sy, z];
     for (let i = 0; i < nw; i++) {
       const u = (i - halfU) * pxU;
@@ -389,38 +399,41 @@ function scoutProjection(view) {
       const { bone, soft, marrow } = phantom.trace(src, [dx, dy, dz], dist);
       let T = 0;
       for (let b = 0; b < bins.length; b++) T += bins[b].w * Math.exp(-(muSoft[b] * soft + muBone[b] * bone + muMarr[b] * marrow));
-      dose[j * nw + i] = I0 * (refDist2 / (dist * dist)) * T;
+      const d = I0 * (refDist2 / (dist * dist)) * T;
+      dose[j * nw + i] = d;
+      if (d < mn) mn = d; if (d > mx) mx = d;
     }
   }
-  return { dose, nw, nz };
+  return { dose, nw, nz, mn, mx };                   // mn/mx: fixed window for stable stitching
 }
 
-// Grayscale topogram: attenuated (bone) -> bright, open field -> dark. Row 0 of the
-// dose is the isocentre; orientation places it at the top (feet-first) or bottom
-// (head-first) of the displayed image.
-function drawScout(cv, data) {
-  const { dose, nw, nz } = data;
-  cv.width = nw; cv.height = nz;
+// Paint the topogram: attenuated (bone) -> bright, open field -> dark. Row 0 of the
+// dose is the isocentre and sits at the BOTTOM of the image (head-first); rows fill
+// upward as the couch advances. rowLimit (default = all) draws only the rows the
+// table has reached so far, so the image stitches in during the travel. The gray
+// window is the scan's fixed mn/mx so a strip's brightness doesn't shift as more
+// rows arrive.
+function drawScout(cv, data, rowLimit) {
+  if (!cv) return;
+  const { dose, nw, nz, mn, mx } = data;
+  const lim = rowLimit == null ? nz : Math.max(0, Math.min(nz, Math.round(rowLimit)));
+  if (cv.width !== nw || cv.height !== nz) { cv.width = nw; cv.height = nz; }
   const g = cv.getContext('2d');
   const img = g.createImageData(nw, nz);
-  const feet = ctx.S.ct.orientation === 'feet';    // isocentre at top when feet-first
-  let mn = Infinity, mx = -Infinity;
-  for (let k = 0; k < dose.length; k++) { const d = dose[k]; if (d < mn) mn = d; if (d > mx) mx = d; }
+  const d8 = img.data;
+  for (let k = 0; k < d8.length; k += 4) { d8[k] = d8[k + 1] = d8[k + 2] = 0; d8[k + 3] = 255; } // unscanned = black
   const rng = (mx - mn) || 1;
-  for (let k = 0; k < dose.length; k++) {
-    const t = (dose[k] - mn) / rng;                 // 0 = most attenuated, 1 = open field
-    const v = Math.round(255 * Math.pow(1 - t, 0.7));
-    const j = (k / nw) | 0, i = k % nw;
-    const imgRow = feet ? j : (nz - 1 - j);         // isocentre (row 0) top or bottom
-    const o = (imgRow * nw + i) * 4;
-    img.data[o] = img.data[o + 1] = img.data[o + 2] = v; img.data[o + 3] = 255;
+  for (let j = 0; j < lim; j++) {
+    const imgRow = nz - 1 - j;                       // isocentre (row 0) at the bottom
+    for (let i = 0; i < nw; i++) {
+      const t = (dose[j * nw + i] - mn) / rng;        // 0 = most attenuated, 1 = open field
+      const v = Math.round(255 * Math.pow(1 - t, 0.7));
+      const o = (imgRow * nw + i) * 4;
+      d8[o] = d8[o + 1] = d8[o + 2] = v;
+    }
   }
   g.putImageData(img, 0, 0);
 }
 
-// keep the last scout data so orientation flips can redraw without re-scanning
+// keep the last scout data for later phases (scan box) to reuse the geometry/dims
 let lastAP = null, lastLAT = null;
-function redrawScouts() {
-  if (lastAP) drawScout(ctx.$('scoutAP'), lastAP);
-  if (lastLAT) drawScout(ctx.$('scoutLAT'), lastLAT);
-}
