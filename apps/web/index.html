@@ -60,39 +60,29 @@
         </div>
       </div>
     </div>
-    <!-- CT reconstruction planning + multiplanar viewer -->
+    <!-- CT reconstruction: linked 2x2 multiplanar workstation -->
     <div class="ctrecons" id="ctRecons">
-      <div class="slhdr">
-        <div class="sltitle">RECONSTRUCTIONS</div>
-        <select id="ctReconScanSel" class="slsel" title="Scan group"></select>
+      <div class="mpr-grid" id="ctMprGrid">
+        <div class="mpr-pane" id="mprPane_coronal" data-pane="coronal"><canvas id="mprCanvas_coronal"></canvas><div class="mpr-lbl"></div></div>
+        <div class="mpr-pane" id="mprPane_sagittal" data-pane="sagittal"><canvas id="mprCanvas_sagittal"></canvas><div class="mpr-lbl"></div></div>
+        <div class="mpr-pane" id="mprPane_axial" data-pane="axial"><canvas id="mprCanvas_axial"></canvas><div class="mpr-lbl"></div></div>
+        <div class="mpr-pane" id="mprPane_oblique" data-pane="oblique"><canvas id="mprCanvas_oblique"></canvas><div class="mpr-lbl"></div></div>
+        <div class="mpr-empty" id="ctMprEmpty">No scans stored — run a scan first, then plan reconstructions here.</div>
       </div>
-      <div class="rc-main">
-        <div class="rc-side">
-          <div class="rc-list" id="ctReconList"></div>
-          <button class="rc-add" id="ctReconAdd" type="button">+ Add reconstruction</button>
-        </div>
-        <div class="rc-viewwrap">
-          <div class="rc-canvaswrap">
-            <canvas id="ctReconCanvas" width="128" height="128"></canvas>
-            <div class="slinfo" id="ctReconInfo"></div>
-            <canvas id="ctReconLoc" class="rc-loc" width="1" height="1" title="Localizer"></canvas>
-          </div>
-        </div>
-      </div>
-      <div class="slctrls">
-        <div class="slrow">
-          <span class="sllab">Slice</span>
-          <input type="range" id="ctReconSlider" min="0" max="0" value="0">
-          <span class="slhint">scroll / drag</span>
-        </div>
-        <div class="slrow">
-          <span class="sllab">Level</span><input type="range" id="ctReconWL" min="-1000" max="2000" value="60">
-          <span class="sllab">Window</span><input type="range" id="ctReconWW" min="1" max="4000" value="800">
-          <div class="segmini" id="ctReconWLPresets">
-            <button data-wl="60" data-ww="400">Soft</button>
-            <button data-wl="500" data-ww="2000">Bone</button>
-            <button data-wl="-600" data-ww="1500">Lung</button>
-          </div>
+      <div class="mpr-bar">
+        <select id="ctReconScanSel" class="slsel" title="Stored scan"></select>
+        <span class="sllab">Algo</span>
+        <select id="ctMprAlgo" class="slsel">
+          <option value="standard">Average</option><option value="edge">Edge</option><option value="blur">Blur</option><option value="mip">MIP</option><option value="minip">MinIP</option>
+        </select>
+        <span class="sllab">Thk</span><input id="ctMprThk" class="mpr-num" type="text" value="5"><span class="sllab" style="min-width:0">mm</span>
+        <button id="ctMprMar" class="mpr-tgl" type="button">MAR OFF</button>
+        <span class="sllab">Level</span><input type="range" id="ctReconWL" min="-1000" max="2000" value="60">
+        <span class="sllab">Window</span><input type="range" id="ctReconWW" min="1" max="4000" value="800">
+        <div class="segmini" id="ctReconWLPresets">
+          <button data-wl="43" data-ww="80">Brain</button>
+          <button data-wl="60" data-ww="400">Soft</button>
+          <button data-wl="500" data-ww="2000">Bone</button>
         </div>
       </div>
     </div>

@@ -1546,49 +1546,45 @@ function slab(scan, axis, x, yrel, d, ns, step, algo) {
   return cnt ? acc / cnt : 0;
 }
 // number of slices a recon scrolls through, and a position label for slice k.
-function reconCount(scan, rec) {
-  const step = Math.max(rec.interval, 0.1);
-  if (rec.plane === 'axial') return Math.max(1, Math.round((scan.nz - 1) * scan.dz / step) + 1);
-  return Math.max(1, Math.round(rec.dfov / step) + 1);
+// Shared volume geometry for the linked MPR grid: in-plane pixel size, the z-extent,
+// and the isotropic vertical pixel count for the coronal/sagittal (x/y-z) reformats.
+function mprGeom(scan) {
+  const N = scan.gridN, p = scan.fovMM / N, zExt = Math.max(scan.dz, (scan.nz - 1) * scan.dz);
+  const zh = clampV(Math.round(N * zExt / scan.fovMM), 16, 512), psz = zExt / zh;
+  return { N, p, zExt, zh, psz, fov: scan.fovMM, z0: scan.z0 };
 }
-function reconPosLabel(scan, rec, k) {
-  const step = Math.max(rec.interval, 0.1);
-  if (rec.plane === 'axial') return fmtTablePos(scan.z0 + k * step) + ' mm';
-  if (rec.plane === 'coronal') { const y = rec.offAP - rec.dfov / 2 + k * step; return 'AP ' + (y >= 0 ? '+' : '') + Math.round(y) + ' mm'; }
-  const x = rec.offRL - rec.dfov / 2 + k * step; return 'R/L ' + (x >= 0 ? '+' : '') + Math.round(x) + ' mm';
-}
-// Reformat one recon slice → { data (μ), w, h }.
-function reformatRecon(scan, rec, k) {
-  const M = RECON_N, ps = rec.dfov / M, step = Math.max(rec.interval, 0.1);
-  const zStart = scan.z0, zExt = Math.max(scan.dz, (scan.nz - 1) * scan.dz), p = scan.fovMM / scan.gridN;
+// Reformat one linked-MPR pane at the current cross-reference position → {data,w,h}.
+// axial = x-y at z; coronal = x-z at y; sagittal = y-z at x (anterior left); oblique =
+// an in-plane-rotated, re-centred axial (the BR box). Slab-combined per algorithm.
+function paneImage(scan, pane, cur, prm) {
+  const g = mprGeom(scan), N = g.N, p = g.p;
+  const nsZ = Math.max(1, Math.round(prm.thk / scan.dz)), nsP = Math.max(1, Math.round(prm.thk / p));
   let w, h, data;
-  if (rec.plane === 'axial') {
-    const d = zStart + k * step, ns = Math.max(1, Math.round(rec.thk / scan.dz));
-    w = M; h = M; data = new Float32Array(w * h);
-    for (let oy = 0; oy < h; oy++) for (let ox = 0; ox < w; ox++) {
-      const x = rec.offRL + (ox - (M - 1) / 2) * ps, yrel = rec.offAP + ((M - 1) / 2 - oy) * ps;   // top row = +y (dorsal)
-      data[oy * w + ox] = slab(scan, 'z', x, yrel, d, ns, scan.dz, rec.algo);
+  if (pane === 'axial' || pane === 'oblique') {
+    const ob = pane === 'oblique', ang = ob ? prm.ob.ang : 0, ca = Math.cos(ang), sa = Math.sin(ang);
+    const fov = ob ? prm.ob.size : g.fov, ps = fov / N, cxc = ob ? prm.ob.cx : 0, cyc = ob ? prm.ob.cy : 0;
+    w = N; h = N; data = new Float32Array(N * N);
+    for (let oy = 0; oy < N; oy++) for (let ox = 0; ox < N; ox++) {
+      const u = (ox - (N - 1) / 2) * ps, v = ((N - 1) / 2 - oy) * ps;        // box-local (top = +v)
+      const x = cxc + u * ca - v * sa, y = cyc + u * sa + v * ca;            // rotate + offset into volume
+      data[oy * N + ox] = slab(scan, 'z', x, y, cur.z, nsZ, scan.dz, prm.algo);
     }
-  } else if (rec.plane === 'coronal') {
-    const yc = rec.offAP - rec.dfov / 2 + k * step, ns = Math.max(1, Math.round(rec.thk / p));
-    w = M; h = clampV(Math.round(M * zExt / rec.dfov), 16, 512); const psz = zExt / h;
-    data = new Float32Array(w * h);
+  } else if (pane === 'coronal') {
+    w = N; h = g.zh; data = new Float32Array(w * h);
     for (let oz = 0; oz < h; oz++) for (let ox = 0; ox < w; ox++) {
-      const x = rec.offRL + (ox - (M - 1) / 2) * ps, d = zStart + oz * psz;                        // top = scan start (superior)
-      data[oz * w + ox] = slab(scan, 'y', x, yc, d, ns, p, rec.algo);
+      const x = (ox - (N - 1) / 2) * p, d = g.z0 + oz * g.psz;              // top = scan start (superior)
+      data[oz * w + ox] = slab(scan, 'y', x, cur.y, d, nsP, p, prm.algo);
     }
-  } else {
-    const xc = rec.offRL - rec.dfov / 2 + k * step, ns = Math.max(1, Math.round(rec.thk / p));
-    w = M; h = clampV(Math.round(M * zExt / rec.dfov), 16, 512); const psz = zExt / h;
-    data = new Float32Array(w * h);
-    for (let oz = 0; oz < h; oz++) for (let oh = 0; oh < w; oh++) {
-      const yrel = rec.offAP + ((M - 1) / 2 - oh) * ps, d = zStart + oz * psz;                      // left = +y (anterior)
-      data[oz * w + oh] = slab(scan, 'x', xc, yrel, d, ns, p, rec.algo);
+  } else {                                                                   // sagittal
+    w = N; h = g.zh; data = new Float32Array(w * h);
+    for (let oz = 0; oz < h; oz++) for (let ox = 0; ox < w; ox++) {
+      const y = ((N - 1) / 2 - ox) * p, d = g.z0 + oz * g.psz;              // left = +y (anterior)
+      data[oz * w + ox] = slab(scan, 'x', cur.x, y, d, nsP, p, prm.algo);
     }
   }
-  if (rec.algo === 'blur') data = filter2D(data, w, h, 'blur');
-  else if (rec.algo === 'edge') data = filter2D(data, w, h, 'edge');
-  if (rec.mar) applyMAR(data, w, h, scan.muWater);
+  if (prm.algo === 'blur') data = filter2D(data, w, h, 'blur');
+  else if (prm.algo === 'edge') data = filter2D(data, w, h, 'edge');
+  if (prm.mar) applyMAR(data, w, h, scan.muWater);
   return { data, w, h };
 }
 // 3×3 box blur, or unsharp edge-enhancement (mu-domain).
@@ -1627,30 +1623,6 @@ function drawReconData(cv, res, muW, wl, ww) {
   }
   g.putImageData(im, 0, 0);
 }
-// Localizer: an orthogonal reference reformat with a line at the current slice, angled
-// to the plane being created, and a small arrow showing the slice-advance direction.
-function drawLocalizer(scan, rec, k, muW, wl, ww) {
-  const cv = ctx.$('ctReconLoc'); if (!cv) return;
-  const refPlane = rec.plane === 'axial' ? 'coronal' : 'axial';
-  const refRec = { plane: refPlane, dfov: scan.fovMM, offRL: 0, offAP: 0, thk: scan.dz, interval: Math.max(scan.dz, scan.fovMM / 40), algo: 'standard', mar: false };
-  const midK = Math.floor(reconCount(scan, refRec) / 2);
-  const res = reformatRecon(scan, refRec, midK);
-  drawReconData(cv, res, muW, wl, ww);
-  const g = cv.getContext('2d'), W = cv.width, H = cv.height, step = Math.max(rec.interval, 0.1);
-  g.save(); g.strokeStyle = '#39d0ff'; g.fillStyle = '#39d0ff'; g.lineWidth = Math.max(1, W * 0.012);
-  const zExt = Math.max(scan.dz, (scan.nz - 1) * scan.dz);
-  if (rec.plane === 'axial') {                       // coronal ref: horizontal line at current z, arrow down (into +I)
-    const yy = clampV((scan.z0 + k * step - scan.z0) / zExt, 0, 1) * H;
-    line(g, 0, yy, W, yy); arrow(g, W * 0.5, yy, 0, 1, W);
-  } else if (rec.plane === 'coronal') {              // axial ref: horizontal line at current AP, arrow toward +AP (down)
-    const yy = clampV(0.5 - (rec.offAP - rec.dfov / 2 + k * step) / scan.fovMM, 0, 1) * H;
-    line(g, 0, yy, W, yy); arrow(g, W * 0.5, yy, 0, 1, W);
-  } else {                                            // axial ref: vertical line at current R/L, arrow toward +R/L (right)
-    const xx = clampV(0.5 + (rec.offRL - rec.dfov / 2 + k * step) / scan.fovMM, 0, 1) * W;
-    line(g, xx, 0, xx, H); arrow(g, xx, H * 0.5, 1, 0, W);
-  }
-  g.restore();
-}
 function line(g, x0, y0, x1, y1) { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
 function arrow(g, x, y, dx, dy, W) {                 // small arrowhead at (x,y) pointing (dx,dy)
   const s = Math.max(5, W * 0.05), px = -dy, py = dx;
@@ -1658,117 +1630,188 @@ function arrow(g, x, y, dx, dy, W) {                 // small arrowhead at (x,y)
   g.lineTo(x + px * s * 0.6, y + py * s * 0.6); g.lineTo(x - px * s * 0.6, y - py * s * 0.6); g.closePath(); g.fill();
 }
 
-function reconScan() {
-  const S = ctx.S;
-  return S.ct.storage.find(s => s.id === S.ct.recon.scanId) || S.ct.storage[S.ct.storage.length - 1] || null;
+// ---- linked 2×2 MPR workstation ----
+// Panes (fixed): coronal (TL), sagittal (TR), axial (BL), oblique axial (BR). A single
+// cross-reference position (S.ct.mpr.cur, physical mm) drives all four; each pane draws
+// the other planes' positions as coloured lines that line up across panes. Click a pane
+// to select + move the crosshair; the wheel scrolls the pane under the cursor. The BR
+// oblique plane is defined by a draggable + rotatable box on the axial pane.
+function mprScan() { const S = ctx.S; return S.ct.storage.find(s => s.id === S.ct.mpr.scanId) || S.ct.storage[S.ct.storage.length - 1] || null; }
+const PLANE_LABEL = { axial: 'AXIAL', coronal: 'CORONAL', sagittal: 'SAGITTAL', oblique: 'OBLIQUE' };
+const PLANE_COLOR = { x: '#3b82f6', y: '#22c55e', z: '#f5a623' };   // sagittal(x)=blue, coronal(y)=green, axial(z)=orange
+const PANES = ['coronal', 'sagittal', 'axial', 'oblique'];
+const algoLabel = (a) => (RECON_ALGOS.find(x => x[0] === a) || RECON_ALGOS[0])[1];
+const scanMinThk = (scan) => (scan.recons && scan.recons[0] ? scan.recons[0].minThk : scan.params.acqThk) || 0.625;
+
+function initMprForScan(scan) {
+  const m = ctx.S.ct.mpr, g = mprGeom(scan);
+  m.scanId = scan.id;
+  m.cur = { x: 0, y: 0, z: scan.z0 + (scan.nz - 1) * scan.dz / 2 };
+  m.thk = scan.recons && scan.recons[0] ? scan.recons[0].thk : scan.params.sliceThk;
+  m.interval = scan.params.interval; m.algo = 'standard'; m.mar = false; m.sel = 'axial';
+  m.ob = { cx: 0, cy: 0, ang: 0, size: Math.max(10, g.fov * 0.7) };
 }
-const PLANE_LABEL = { axial: 'AXIAL', coronal: 'CORONAL', sagittal: 'SAGITTAL' };
+// Physical value at each edge of a pane's image (horizontal L/R, vertical T/B).
+function paneAxes(scan, pane) {
+  const g = mprGeom(scan), f = g.fov / 2, zT = g.z0, zB = g.z0 + g.zExt;
+  if (pane === 'coronal') return { hL: -f, hR: f, vT: zT, vB: zB };
+  if (pane === 'sagittal') return { hL: f, hR: -f, vT: zT, vB: zB };   // anterior (+y) on the left
+  return { hL: -f, hR: f, vT: f, vB: -f };                             // axial / oblique (top = +y)
+}
+function paneMapping(scan, pane, cv) {
+  const g = mprGeom(scan), iw = g.N, ih = (pane === 'coronal' || pane === 'sagittal') ? g.zh : g.N;
+  const W = cv.width, H = cv.height, scale = Math.min(W / iw, H / ih), dw = iw * scale, dh = ih * scale, dx = (W - dw) / 2, dy = (H - dh) / 2;
+  const ax = paneAxes(scan, pane);
+  return { dx, dy, dw, dh, ax, iw, ih,
+    dX: (v) => dx + (v - ax.hL) / (ax.hR - ax.hL) * dw, dY: (v) => dy + (v - ax.vT) / (ax.vB - ax.vT) * dh,
+    invH: (px) => ax.hL + (px - dx) / dw * (ax.hR - ax.hL), invV: (py) => ax.vT + (py - dy) / dh * (ax.vB - ax.vT) };
+}
 
 export function ctRenderRecons() {
   if (!ctx) return;
-  const S = ctx.S, listEl = ctx.$('ctReconList'), sel = ctx.$('ctReconScanSel'); if (!listEl) return;
-  const scan = reconScan();
-  if (sel) {
-    sel.innerHTML = S.ct.storage.map(s => '<option value="' + s.id + '"' + (scan && s.id === scan.id ? ' selected' : '') + '>' + s.label + '</option>').join('');
-    sel.disabled = !S.ct.storage.length;
-  }
-  const cv = ctx.$('ctReconCanvas'), loc = ctx.$('ctReconLoc'), add = ctx.$('ctReconAdd');
-  if (!scan) {
-    listEl.innerHTML = '<div class="ctstore-empty">No scans stored — run a scan first.</div>';
-    if (add) add.disabled = true;
-    if (cv) { cv.width = RECON_N; cv.height = RECON_N; const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height); }
-    if (loc) { loc.width = loc.height = 1; }
-    ctx.$('ctReconInfo').textContent = '';
-    return;
-  }
-  if (add) add.disabled = false;
-  S.ct.recon.scanId = scan.id;
-  if (!scan.recons.find(r => r.id === S.ct.recon.reconId)) { S.ct.recon.reconId = scan.recons[0] ? scan.recons[0].id : null; S.ct.recon.slice = 0; }
-  listEl.innerHTML = scan.recons.map(r => {
-    const active = r.id === S.ct.recon.reconId ? ' active' : '';
-    const del = scan.recons.length > 1 ? '<button class="rc-del" data-id="' + r.id + '" title="Delete">✕</button>' : '';
-    return '<div class="rc-row' + active + '" data-id="' + r.id + '">'
-      + '<span class="rc-open" data-id="' + r.id + '"><b>' + r.name + '</b>'
-      + '<small>' + PLANE_LABEL[r.plane] + ' · DFOV ' + Math.round(r.dfov) + ' mm · ' + fmtNum(r.thk) + 'mm/' + fmtNum(r.interval) + 'mm · ' + (RECON_ALGOS.find(a => a[0] === r.algo)[1]) + (r.mar ? ' · MAR' : '') + '</small></span>'
-      + '<button class="rc-edit" data-id="' + r.id + '" title="Edit">✎</button>' + del + '</div>';
-  }).join('');
-  renderReconViewer(scan, scan.recons.find(r => r.id === S.ct.recon.reconId));
+  const S = ctx.S, grid = ctx.$('ctMprGrid'), sel = ctx.$('ctReconScanSel'); if (!grid) return;
+  const scan = mprScan();
+  if (sel) { sel.innerHTML = S.ct.storage.map(s => '<option value="' + s.id + '"' + (scan && s.id === scan.id ? ' selected' : '') + '>' + s.label + '</option>').join(''); sel.disabled = !S.ct.storage.length; }
+  const empty = ctx.$('ctMprEmpty');
+  if (!scan) { if (empty) empty.style.display = 'flex'; PANES.forEach(p => { const c = ctx.$('mprCanvas_' + p); if (c) { c.width = c.height = 2; c.getContext('2d').clearRect(0, 0, 2, 2); } }); return; }
+  if (empty) empty.style.display = 'none';
+  if (S.ct.mpr.scanId !== scan.id || !S.ct.mpr.cur) initMprForScan(scan);
+  S.ct.mpr.scanId = scan.id;
+  updateMprBar(scan);
+  PANES.forEach(p => drawPane(scan, p));
 }
-function renderReconViewer(scan, rec) {
-  const v = ctx.S.ct.recon, cv = ctx.$('ctReconCanvas'); if (!cv || !rec) return;
-  const count = reconCount(scan, rec);
-  v.slice = clampV(v.slice, 0, count - 1);
-  drawReconData(cv, reformatRecon(scan, rec, v.slice), scan.muWater, v.wl, v.ww);
-  drawLocalizer(scan, rec, v.slice, scan.muWater, v.wl, v.ww);
-  const slider = ctx.$('ctReconSlider'); if (slider) { slider.max = count - 1; slider.value = v.slice; slider.disabled = count < 2; }
-  const info = ctx.$('ctReconInfo');
-  if (info) info.innerHTML = '<span>' + PLANE_LABEL[rec.plane] + ' ' + (v.slice + 1) + ' / ' + count + '</span>'
-    + '<span>' + reconPosLabel(scan, rec, v.slice) + '</span>'
-    + '<span>DFOV ' + Math.round(rec.dfov) + ' mm · ' + fmtNum(rec.thk) + 'mm/' + fmtNum(rec.interval) + 'mm</span>'
-    + '<span>WL ' + Math.round(v.wl) + ' / WW ' + Math.round(v.ww) + '</span>';
+function updateMprBar(scan) {
+  const m = ctx.S.ct.mpr;
+  const al = ctx.$('ctMprAlgo'); if (al && al.value !== m.algo) al.value = m.algo;
+  const tk = ctx.$('ctMprThk'); if (tk && document.activeElement !== tk) tk.value = fmtNum(m.thk);
+  const mar = ctx.$('ctMprMar'); if (mar) { mar.classList.toggle('on', m.mar); mar.textContent = m.mar ? 'MAR ON' : 'MAR OFF'; }
+  const wl = ctx.$('ctReconWL'), ww = ctx.$('ctReconWW'); if (wl) wl.value = m.wl; if (ww) ww.value = m.ww;
+}
+function paneLabelPos(scan, pane) {
+  const c = ctx.S.ct.mpr.cur;
+  if (pane === 'coronal') return 'A/P ' + (c.y >= 0 ? '+' : '') + Math.round(c.y) + ' mm';
+  if (pane === 'sagittal') return 'R/L ' + (c.x >= 0 ? '+' : '') + Math.round(c.x) + ' mm';
+  if (pane === 'oblique') return fmtTablePos(c.z) + ' · ' + Math.round(ctx.S.ct.mpr.ob.ang * 180 / Math.PI) + '°';
+  return fmtTablePos(c.z) + ' mm';
+}
+let _off = null;
+function drawPane(scan, pane) {
+  const paneEl = ctx.$('mprPane_' + pane), cv = ctx.$('mprCanvas_' + pane); if (!cv || !paneEl) return;
+  const m = ctx.S.ct.mpr, prm = { thk: m.thk, interval: m.interval, algo: m.algo, mar: m.mar, ob: m.ob };
+  const rect = cv.getBoundingClientRect(), W = Math.max(2, Math.round(rect.width)), H = Math.max(2, Math.round(rect.height));
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  const img = paneImage(scan, pane, m.cur, prm);
+  if (!_off) _off = document.createElement('canvas');
+  if (_off.width !== img.w || _off.height !== img.h) { _off.width = img.w; _off.height = img.h; }
+  const octx = _off.getContext('2d'), oi = octx.createImageData(img.w, img.h), d8 = oi.data, muW = scan.muWater;
+  for (let i = 0; i < img.data.length; i++) { const hu = 1000 * (img.data[i] - muW) / muW, val = Math.round(255 * huToGray(hu, m.wl, m.ww)), o = i * 4; d8[o] = d8[o + 1] = d8[o + 2] = val; d8[o + 3] = 255; }
+  octx.putImageData(oi, 0, 0);
+  const map = paneMapping(scan, pane, cv);
+  g.imageSmoothingEnabled = true; g.drawImage(_off, map.dx, map.dy, map.dw, map.dh);
+  const cur = m.cur;
+  if (pane === 'coronal') { refLine(g, 'v', map.dX(cur.x), map.dy, map.dh, PLANE_COLOR.x); refLine(g, 'h', map.dY(cur.z), map.dx, map.dw, PLANE_COLOR.z); }
+  else if (pane === 'sagittal') { refLine(g, 'v', map.dX(cur.y), map.dy, map.dh, PLANE_COLOR.y); refLine(g, 'h', map.dY(cur.z), map.dx, map.dw, PLANE_COLOR.z); }
+  else if (pane === 'axial') { refLine(g, 'v', map.dX(cur.x), map.dy, map.dh, PLANE_COLOR.x); refLine(g, 'h', map.dY(cur.y), map.dx, map.dw, PLANE_COLOR.y); drawObliqueBox(g, map); }
+  else if (pane === 'oblique') { g.save(); g.strokeStyle = '#eef4fb'; g.globalAlpha = .5; refLine(g, 'v', map.dx + map.dw / 2, map.dy, map.dh, '#eef4fb'); refLine(g, 'h', map.dy + map.dh / 2, map.dx, map.dw, '#eef4fb'); g.restore(); }
+  paneEl.classList.toggle('sel', m.sel === pane);
+  const lbl = paneEl.querySelector('.mpr-lbl');
+  if (lbl) lbl.textContent = PLANE_LABEL[pane] + '  ·  ' + paneLabelPos(scan, pane) + '  ·  ' + fmtNum(m.thk) + 'mm  ·  ' + algoLabel(m.algo) + (m.mar ? ' · MAR' : '') + '  ·  W/L ' + Math.round(m.ww) + '/' + Math.round(m.wl);
+}
+// Cross-reference line across the image with a slice-order arrow in the margin.
+function refLine(g, dir, pos, off0, len, color) {
+  g.save(); g.strokeStyle = color; g.fillStyle = color; g.lineWidth = 1.4; g.globalAlpha = 0.92;
+  if (dir === 'v') { line(g, pos, off0, pos, off0 + len); g.beginPath(); g.moveTo(pos, off0 - 1); g.lineTo(pos - 4, off0 - 8); g.lineTo(pos + 4, off0 - 8); g.closePath(); g.fill(); }
+  else { line(g, off0, pos, off0 + len, pos); g.beginPath(); g.moveTo(off0 - 1, pos); g.lineTo(off0 - 8, pos - 4); g.lineTo(off0 - 8, pos + 4); g.closePath(); g.fill(); }
+  g.restore();
+}
+function drawObliqueBox(g, map) {
+  const ob = ctx.S.ct.mpr.ob, hs = ob.size / 2, ca = Math.cos(ob.ang), sa = Math.sin(ob.ang);
+  const corner = (u, v) => { const x = ob.cx + u * ca - v * sa, y = ob.cy + u * sa + v * ca; return [map.dX(x), map.dY(y)]; };
+  const c = [corner(-hs, -hs), corner(hs, -hs), corner(hs, hs), corner(-hs, hs)];
+  g.save(); g.strokeStyle = '#e6f2ff'; g.fillStyle = '#e6f2ff'; g.lineWidth = 1.5; g.setLineDash([6, 4]);
+  g.beginPath(); g.moveTo(c[0][0], c[0][1]); for (let i = 1; i < 4; i++) g.lineTo(c[i][0], c[i][1]); g.closePath(); g.stroke();
+  g.setLineDash([]);
+  const topmid = corner(0, hs), handle = corner(0, hs + ob.size * 0.2);
+  line(g, topmid[0], topmid[1], handle[0], handle[1]);
+  g.beginPath(); g.arc(handle[0], handle[1], 4.5, 0, Math.PI * 2); g.fill();
+  g.restore();
 }
 
-// Recon add/edit popup: plane, algorithm, DFOV, R/L + A/P offset (from the scan
-// centre), slice thickness (≥ acquisition element) + interval, and MAR.
-function openReconPopup(scan, rec) {
-  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
-  const isNew = !rec, minThk = scan.recons[0] ? scan.recons[0].minThk : scan.params.acqThk || 0.625;
-  const w = rec ? { ...rec } : { name: 'Recon ' + scan.nextReconId, plane: 'coronal', dfov: Math.round(scan.fovMM), offRL: 0, offAP: 0, thk: Math.max(minThk, scan.params.sliceThk), interval: scan.params.interval, algo: 'standard', mar: false };
-  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
-  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
-  const seg = (k, opts) => '<div class="rp-seg">' + opts.map(o => '<button data-k="' + k + '" data-v="' + o[0] + '"' + (w[k] === o[0] ? ' class="on"' : '') + '>' + o[1] + '</button>').join('') + '</div>';
-  const num = (k, lbl, unit) => '<div class="rp-fld"><label>' + lbl + '</label><input data-n="' + k + '" type="text" value="' + fmtNum(w[k]) + '"><span>' + unit + '</span></div>';
-  function render() {
-    inner.innerHTML = '<div class="rp-pop"><div class="plt">' + (isNew ? 'New reconstruction' : 'Edit reconstruction') + '</div>'
-      + '<div class="rp-row"><label>Plane</label>' + seg('plane', [['axial', 'Axial'], ['coronal', 'Coronal'], ['sagittal', 'Sagittal']]) + '</div>'
-      + '<div class="rp-row"><label>Algorithm</label>' + seg('algo', RECON_ALGOS) + '</div>'
-      + '<div class="rp-grid">' + num('dfov', 'DFOV', 'mm') + num('thk', 'Thickness', 'mm') + num('offRL', 'R/L offset', 'mm') + num('interval', 'Interval', 'mm') + num('offAP', 'A/P offset', 'mm')
-      + '<div class="rp-fld"><label>Metal artifact red.</label><button class="rp-mar' + (w.mar ? ' on' : '') + '" data-mar>' + (w.mar ? 'ON' : 'OFF') + '</button></div></div>'
-      + '<div class="phint">Thickness floor = acquisition element ' + fmtNum(minThk) + ' mm&nbsp;·&nbsp;<b>[ESC]</b> cancel</div>'
-      + '<div class="acq-actions"><button class="acq-ok">' + (isNew ? 'Create' : 'Save') + '</button><button class="acq-cancel">Cancel</button></div></div>';
-    inner.querySelectorAll('.rp-seg button').forEach(b => b.addEventListener('click', () => { w[b.dataset.k] = b.dataset.v; render(); }));
-    const mar = inner.querySelector('[data-mar]'); if (mar) mar.addEventListener('click', () => { w.mar = !w.mar; render(); });
-    inner.querySelectorAll('input[data-n]').forEach(inp => inp.addEventListener('change', () => { w[inp.dataset.n] = sanitizeNum(inp.value, w[inp.dataset.n]); }));
-    inner.querySelector('.acq-ok').addEventListener('click', () => {
-      inner.querySelectorAll('input[data-n]').forEach(inp => { w[inp.dataset.n] = sanitizeNum(inp.value, w[inp.dataset.n]); });
-      w.dfov = clampV(w.dfov, 10, scan.fovMM); w.thk = Math.max(minThk, w.thk); w.interval = clampV(w.interval, 0.1, 50);
-      w.offRL = clampV(w.offRL, -scan.fovMM, scan.fovMM); w.offAP = clampV(w.offAP, -scan.fovMM, scan.fovMM); w.minThk = minThk;
-      if (isNew) { w.id = scan.nextReconId++; scan.recons.push(w); ctx.S.ct.recon.reconId = w.id; ctx.S.ct.recon.slice = 0; }
-      else Object.assign(rec, w);
-      close(); ctRenderRecons();
-    });
-    inner.querySelector('.acq-cancel').addEventListener('click', close);
+// ---- interaction ----
+let _mprRAF = null;
+function renderMprThrottled() { if (_mprRAF) return; _mprRAF = requestAnimationFrame(() => { _mprRAF = null; const s = mprScan(); if (s) PANES.forEach(p => drawPane(s, p)); }); }
+function clampAxis(v, scan) { return clampV(v, -scan.fovMM / 2, scan.fovMM / 2); }
+function clampZ(v, scan) { const g = mprGeom(scan); return clampV(v, g.z0, g.z0 + g.zExt); }
+
+function onPaneWheel(e, pane) {
+  e.preventDefault(); const scan = mprScan(); if (!scan) return;
+  const m = ctx.S.ct.mpr, dir = e.deltaY > 0 ? 1 : -1, step = Math.max(m.interval, 0.5);
+  m.sel = pane;
+  if (pane === 'coronal') m.cur.y = clampAxis(m.cur.y + dir * step, scan);
+  else if (pane === 'sagittal') m.cur.x = clampAxis(m.cur.x + dir * step, scan);
+  else m.cur.z = clampZ(m.cur.z + dir * step, scan);
+  renderMprThrottled();
+}
+function evtToCanvas(e, cv) { const r = cv.getBoundingClientRect(); return { px: (e.clientX - r.left) * (cv.width / r.width), py: (e.clientY - r.top) * (cv.height / r.height) }; }
+
+function onPaneDown(e, pane, cv) {
+  const scan = mprScan(); if (!scan) return;
+  const m = ctx.S.ct.mpr; m.sel = pane; e.preventDefault();
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  const map = paneMapping(scan, pane, cv);
+  const setCross = (ev) => {
+    const { px, py } = evtToCanvas(ev, cv), hv = map.invH(px), vv = map.invV(py);
+    if (pane === 'coronal') { m.cur.x = clampAxis(hv, scan); m.cur.z = clampZ(vv, scan); }
+    else if (pane === 'sagittal') { m.cur.y = clampAxis(hv, scan); m.cur.z = clampZ(vv, scan); }
+    else if (pane === 'axial') { m.cur.x = clampAxis(hv, scan); m.cur.y = clampAxis(vv, scan); }
+    renderMprThrottled();
+  };
+  if (pane === 'oblique') { renderMprThrottled(); return; }   // BR: select only
+  // Axial: the oblique box's rotation handle rotates; a DRAG inside the box moves it,
+  // but a click (no drag) inside the box just sets the crosshair — so the crosshair is
+  // reachable everywhere. Outside the box: crosshair on down + drag.
+  let mode = null, grab = null;
+  if (pane === 'axial') {
+    const { px, py } = evtToCanvas(e, cv), ob = m.ob, x = map.invH(px), y = map.invV(py);
+    const ca = Math.cos(ob.ang), sa = Math.sin(ob.ang), u = (x - ob.cx) * ca + (y - ob.cy) * sa, v = -(x - ob.cx) * sa + (y - ob.cy) * ca, hs = ob.size / 2;
+    if (Math.abs(u) < ob.size * 0.2 && Math.abs(v - (hs + ob.size * 0.2)) < ob.size * 0.22) mode = 'rotate';
+    else if (Math.abs(u) <= hs && Math.abs(v) <= hs) { mode = 'boxpend'; grab = { ox: x - ob.cx, oy: y - ob.cy }; }
   }
-  pop.classList.add('show'); document.addEventListener('keydown', onKey, true); render();
+  if (!mode) setCross(e);
+  const start = { x: e.clientX, y: e.clientY };
+  const move = (ev) => {
+    const moved = Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 4;
+    if (mode === 'rotate') { const { px, py } = evtToCanvas(ev, cv); m.ob.ang = Math.atan2(-(map.invH(px) - m.ob.cx), (map.invV(py) - m.ob.cy)); renderMprThrottled(); return; }
+    if (mode === 'boxpend') { if (!moved) return; mode = 'box'; }
+    if (mode === 'box') { const { px, py } = evtToCanvas(ev, cv); m.ob.cx = clampAxis(map.invH(px) - grab.ox, scan); m.ob.cy = clampAxis(map.invV(py) - grab.oy, scan); renderMprThrottled(); return; }
+    if (!mode) setCross(ev);
+  };
+  const up = (ev) => {
+    if (mode === 'boxpend') setCross(ev);   // click (no drag) inside the box → crosshair
+    cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); cv.removeEventListener('pointercancel', up);
+  };
+  cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 }
 
 function wireRecons() {
-  ctx.$('ctReconList')?.addEventListener('click', (e) => {
-    const scan = reconScan(); if (!scan) return;
-    const del = e.target.closest('.rc-del');
-    if (del) { const id = +del.dataset.id; const i = scan.recons.findIndex(r => r.id === id); if (i >= 0 && scan.recons.length > 1) scan.recons.splice(i, 1); ctRenderRecons(); return; }
-    const edit = e.target.closest('.rc-edit');
-    if (edit) { openReconPopup(scan, scan.recons.find(r => r.id === +edit.dataset.id)); return; }
-    const open = e.target.closest('.rc-open');
-    if (open) { ctx.S.ct.recon.reconId = +open.dataset.id; ctx.S.ct.recon.slice = 0; ctRenderRecons(); }
+  PANES.forEach(pane => {
+    const cv = ctx.$('mprCanvas_' + pane); if (!cv) return;
+    cv.addEventListener('pointerdown', (e) => onPaneDown(e, pane, cv));
+    cv.addEventListener('wheel', (e) => onPaneWheel(e, pane), { passive: false });
   });
-  ctx.$('ctReconAdd')?.addEventListener('click', () => { const scan = reconScan(); if (scan) openReconPopup(scan, null); });
-  const slider = ctx.$('ctReconSlider');
-  slider?.addEventListener('input', () => { ctx.S.ct.recon.slice = parseInt(slider.value, 10) || 0; const s = reconScan(); if (s) renderReconViewer(s, s.recons.find(r => r.id === ctx.S.ct.recon.reconId)); });
-  ctx.$('ctRecons')?.addEventListener('wheel', (e) => {
-    if (!ctx.$('ctRecons').classList.contains('show')) return; e.preventDefault();
-    const scan = reconScan(); if (!scan) return; const rec = scan.recons.find(r => r.id === ctx.S.ct.recon.reconId); if (!rec) return;
-    ctx.S.ct.recon.slice = clampV(ctx.S.ct.recon.slice + (e.deltaY > 0 ? 1 : -1), 0, reconCount(scan, rec) - 1);
-    renderReconViewer(scan, rec);
-  }, { passive: false });
+  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.cur = null; ctRenderRecons(); });
+  ctx.$('ctMprAlgo')?.addEventListener('change', (e) => { ctx.S.ct.mpr.algo = e.target.value; ctRenderRecons(); });
+  ctx.$('ctMprThk')?.addEventListener('change', (e) => { const s = mprScan(); const mn = s ? scanMinThk(s) : 0.625; ctx.S.ct.mpr.thk = Math.max(mn, sanitizeNum(e.target.value, ctx.S.ct.mpr.thk)); ctRenderRecons(); });
+  ctx.$('ctMprMar')?.addEventListener('click', () => { ctx.S.ct.mpr.mar = !ctx.S.ct.mpr.mar; ctRenderRecons(); });
   const wl = ctx.$('ctReconWL'), ww = ctx.$('ctReconWW');
-  const redraw = () => { const s = reconScan(); if (s) renderReconViewer(s, s.recons.find(r => r.id === ctx.S.ct.recon.reconId)); };
-  wl?.addEventListener('input', () => { ctx.S.ct.recon.wl = parseInt(wl.value, 10); redraw(); });
-  ww?.addEventListener('input', () => { ctx.S.ct.recon.ww = parseInt(ww.value, 10); redraw(); });
+  wl?.addEventListener('input', () => { ctx.S.ct.mpr.wl = parseInt(wl.value, 10); renderMprThrottled(); });
+  ww?.addEventListener('input', () => { ctx.S.ct.mpr.ww = parseInt(ww.value, 10); renderMprThrottled(); });
   ctx.$('ctReconWLPresets')?.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-wl]'); if (!b) return;
-    const v = ctx.S.ct.recon; v.wl = +b.dataset.wl; v.ww = +b.dataset.ww; if (wl) wl.value = v.wl; if (ww) ww.value = v.ww; redraw();
+    const m = ctx.S.ct.mpr; m.wl = +b.dataset.wl; m.ww = +b.dataset.ww; if (wl) wl.value = m.wl; if (ww) ww.value = m.ww; ctRenderRecons();
   });
+  window.addEventListener('resize', () => { if (ctx.$('ctRecons')?.classList.contains('show')) renderMprThrottled(); });
 }
 
 // ---- busy state (grey controls during a scan) ----

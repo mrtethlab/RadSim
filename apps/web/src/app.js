@@ -276,7 +276,9 @@ const S = {
     storeCap:4,                // keep at most this many scan groups' worth of data when autoDelete is on
     nextScanId:1,              // running id for stored scans
     viewer:{ scanId:null, slice:0, wl:60, ww:800 },   // cross-sectional (axial) viewer state (HU window/level)
-    recon:{ scanId:null, reconId:null, slice:0, wl:60, ww:800 },   // multiplanar recon viewer state
+    // linked 2x2 MPR workstation: one cross-reference position drives all four panes
+    mpr:{ scanId:null, cur:null, wl:60, ww:800, sel:'axial', thk:5, interval:5, algo:'standard', mar:false,
+          ob:{ cx:0, cy:0, ang:0, size:60 } },
     busy:false,                // true during scan execution (controls greyed out)
   },
 };
