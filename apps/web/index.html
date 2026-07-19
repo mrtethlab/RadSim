@@ -31,6 +31,35 @@
       </div>
       <div class="scangroups" id="ctScanGroups"></div>
     </div>
+    <!-- CT cross-sectional (transverse) viewer: reconstructed slice stack -->
+    <div class="ctslices" id="ctSlices">
+      <div class="slhdr">
+        <div class="sltitle">CROSS-SECTIONAL VIEWER · TRANSVERSE</div>
+        <select id="ctScanSel" class="slsel" title="Stored scan"></select>
+      </div>
+      <div class="slmain">
+        <div class="slcanvaswrap">
+          <canvas id="ctSliceCanvas" width="128" height="128"></canvas>
+          <div class="slinfo" id="ctSliceInfo"></div>
+        </div>
+      </div>
+      <div class="slctrls">
+        <div class="slrow">
+          <span class="sllab">Slice</span>
+          <input type="range" id="ctSliceSlider" min="0" max="0" value="0">
+          <span class="slhint">scroll / drag</span>
+        </div>
+        <div class="slrow">
+          <span class="sllab">Level</span><input type="range" id="ctWL" min="-1000" max="2000" value="60">
+          <span class="sllab">Window</span><input type="range" id="ctWW" min="1" max="4000" value="800">
+          <div class="segmini" id="ctWLPresets">
+            <button data-wl="60" data-ww="400">Soft</button>
+            <button data-wl="500" data-ww="2000">Bone</button>
+            <button data-wl="-600" data-ww="1500">Lung</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="ctpop" id="ctPop"><div class="ctpop-inner" id="ctPopInner"></div></div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
     <div class="bayctl" id="bayCtl">
@@ -43,6 +72,7 @@
           <div class="segmini" id="contentSeg">
             <button data-c="3d" class="on">3D</button>
             <button data-c="image">Image</button>
+            <button data-c="slices" class="ct-only">Slices</button>
           </div>
         </div>
         <div>
@@ -344,6 +374,16 @@
     </div>
 
     <div class="pad">
+      <div class="grp ct-only" id="ctStorageGrp">
+        <div class="lab">Image storage</div>
+        <div class="bod">
+          <label class="cttoggle"><input type="checkbox" id="ctAutoDel" checked>
+            <span>Auto-delete oldest past <b id="ctCapV">4</b> scan groups</span></label>
+          <div class="note" style="margin-top:6px">Reconstructed scans (slices + image data) are held in memory. With this on, the oldest scan is discarded once a new one pushes the total over the limit — so stored data can't grow without bound.</div>
+          <div class="ctstorelist" id="ctStorageList"></div>
+          <button class="ctstoreclear" id="ctStorageClear" type="button">Clear all stored scans</button>
+        </div>
+      </div>
       <div class="grp">
         <div class="lab">Display · window / level</div>
         <div class="bod">

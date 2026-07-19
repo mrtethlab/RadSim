@@ -13,7 +13,7 @@ import { Materials } from './core/materials.js';
 import { Sound } from './audio/sound.js';
 
 let ctx = null;
-let couch = null, gantry = null;      // couch (moves) + gantry ring (static) — separate groups
+let couch = null, gantry = null, gantrySpin = null;  // couch (moves) + gantry ring (static) + rotating tube/detector (scan only)
 let laserTop = null, laserSide = null; // projected alignment lasers (SpotLights) + their cookies
 let laserTopTex = null, laserSideTex = null;
 
@@ -85,6 +85,8 @@ export function initCT(context) {
   wireCTSettings();
   wireCTConsole();
   initScanBoxes();
+  wireStorage();
+  wireSliceViewer();
   applyMode(ctx.S.mode);        // establish initial (x-ray) state + body class
   // keep the scout panels row-locked at the shared scale when the window resizes
   window.addEventListener('resize', () => {
@@ -116,6 +118,16 @@ function buildCTScene() {
   const ringIn = new THREE.Mesh(new THREE.TorusGeometry(12, 0.7, 12, 44),
     new THREE.MeshStandardMaterial({ color: 0x11161b, metalness: 0.3, roughness: 0.8 }));
   ringIn.position.set(0, ISO_Y, 1.4); gantry.add(ringIn);
+  // rotating tube/detector assembly inside the bore — spins about the bore axis (z)
+  // during a scan so the acquisition is visible. Static (parked) otherwise.
+  gantrySpin = new THREE.Group(); gantrySpin.position.set(0, ISO_Y, 0.6);
+  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.2, 1.6),
+    new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb733, emissiveIntensity: 0.9, metalness: 0.3, roughness: 0.4 }));
+  tubeBlk.position.set(0, 13, 0); gantrySpin.add(tubeBlk);                    // focal spot at top of the ring
+  const detArc = new THREE.Mesh(new THREE.TorusGeometry(12, 0.9, 8, 24, Math.PI * 0.9),
+    new THREE.MeshStandardMaterial({ color: 0x1a2833, emissive: 0x0a2230, emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.5 }));
+  detArc.rotation.z = -Math.PI / 2 - Math.PI * 0.45; detArc.position.set(0, 0, 0); gantrySpin.add(detArc);   // opposing detector arc
+  gantrySpin.visible = false; gantry.add(gantrySpin);
   gantry.visible = false; three.scene.add(gantry);
 
   // ---- projected alignment lasers ----
@@ -226,6 +238,8 @@ function wireModeToggle() {
 function resetCTSession() {
   const c = ctx.S.ct;
   cancelScout();                  // stop any in-flight scout acquisition
+  cancelScan();                   // stop any in-flight scan execution
+  stopGantrySpin(); setBusy(false); Sound.stopBuzz();
   stopTableMove(); showScanBoxes(false); resetScanBox();
   ctx.ctLiveView(false);          // stop the tube-POV mirror if a build was running
   c.scoutsReady = false;
@@ -261,6 +275,7 @@ function applyMode(mode) {
   ctx.setBay3DEnabled(true);
   ctx.refreshFilmViewer();        // isolate the two modes' images (clear x-ray in CT)
   greyHelical(mode === 'ct');     // helical params don't apply to a scout
+  if (mode === 'ct') renderStorage();   // reflect any scans still held from before
   setHint(mode === 'ct' ? 'Set the isocentre, then acquire scouts to plan the scan.' : '');
   ctx.syncScene();
   updateCTReadouts();
@@ -376,7 +391,7 @@ function wireCTConsole() {
   $('ctStart')?.addEventListener('click', () => {
     if (S.ct.phase === 'idle') acquireScouts();
     else if (S.ct.phase === 'planning') {
-      if (ctx.$('ctStart').classList.contains('flash')) setHint('Plan confirmed — scan execution arrives in the next phase.');
+      if (ctx.$('ctStart').classList.contains('flash')) runScan();
       else setHint('Reposition the table first (hold the orange TABLE button).');
     }
   });
@@ -419,6 +434,8 @@ function showScouts(on) {
 
 function abortCT() {
   cancelScout();               // stop any in-flight scout acquisition
+  cancelScan();                // stop any in-flight scan execution
+  stopGantrySpin(); setBusy(false); Sound.stopBuzz(); Sound.stopTableSound();
   stopTableMove(); showScanBoxes(false);
   ctx.ctLiveView(false);       // drop the tube-POV mirror if a build was in progress
   ctx.S.ct.scoutsReady = false;
@@ -984,4 +1001,461 @@ function applyTableCommit() {
   c.tableY = -c.plan.committedY;                      // height: table compensates the AP offset
   ctx.syncScene();
   updateCTReadouts();
+}
+
+// ==================== Phase 5/6: scan execution + reconstruction + storage ====================
+// Pressing START (solid, plan confirmed) executes the enabled scan groups in order.
+// Each group: auto table reposition -> scan delay -> breathe-in / helical exposure
+// (gantry spin + couch travel) / breathe-normal -> filtered-back-projection of the
+// transverse slices -> store the reconstructed volume. The slices are then shown in
+// the cross-sectional viewer; old scans auto-delete past a cap so memory stays bounded.
+
+const RECON_N = 128;              // reconstruction grid (N x N pixels)
+const RECON_ANGLES = 128;         // projection angles over 180° (parallel beam)
+const RECON_DET = 128;            // detector samples across the FOV
+const MAX_SLICES = 60;            // cap slices per scan (memory + compute time)
+const RECON_FOV_MM = SCOUT_FOV_MM;             // reconstruction field of view (mm) = the scan FOV
+const RECON_R = (RECON_FOV_MM / MM_PER_UNIT) / 2;   // FOV radius in world units (cm)
+const RECON_DS = (RECON_FOV_MM / MM_PER_UNIT) / RECON_DET;  // detector sample spacing (cm)
+const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slice/rot noise model)
+
+let scanToken = 0;                // invalidates an in-flight scan on abort / mode switch
+function cancelScan() { scanToken++; }
+let spinRAF = null;               // gantry-spin animation handle
+
+// ---- scan sequence ----
+async function runScan() {
+  const S = ctx.S, tok = ++scanToken, alive = () => tok === scanToken;
+  const groups = S.ct.groups.map((g, i) => ({ g, i })).filter(x => x.g.on);
+  if (!groups.length) { setHint('No scan groups enabled.'); return; }
+  setBusy(true);
+  setPhase('scanning');
+  setConsoleEnabled(false);
+  const abortBtn = ctx.$('ctAbort'); if (abortBtn) abortBtn.disabled = false;   // ABORT stays live during the scan
+  ctx.setContent('3d'); ctx.setCTPov('orbit');   // watch the gantry rotate while it scans
+  Sound.resume();
+  let lastEntry = null;
+  try {
+    for (const { g, i } of groups) {
+      if (!alive()) return;
+      await repositionForGroup(i, alive);                  // 1) move the couch for this group
+      if (!alive()) return;
+      if (g.delay > 0) { await scanDelay(g.delay, alive); if (!alive()) return; }   // 2) scan delay
+      lastEntry = await scanGroupExposure(g, i, alive);    // 3) expose + reconstruct + store
+      if (!alive()) return;
+    }
+  } catch (err) {
+    console.error('scan failed', err); setHint('Scan failed: ' + err.message);
+  } finally {
+    stopGantrySpin(); Sound.stopBuzz(); Sound.stopTableSound();
+  }
+  if (!alive()) return;
+  setBusy(false);
+  setPhase('done');
+  resetToIsocentre();
+  if (lastEntry) { S.ct.viewer.scanId = lastEntry.id; S.ct.viewer.slice = 0; ctx.setContent('slices'); }
+  setHint('Scan complete — ' + S.ct.storage.length + ' scan(s) stored. Scroll the slices; ABORT to plan a new scan.');
+}
+
+// Auto-drive the couch to centre THIS group's box on the isocentre (mediolateral, then height).
+async function repositionForGroup(i, alive) {
+  const c = ctx.S.ct, g = grp(i);
+  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * SCOUT_FOV_MM;    // mediolateral offset (mm)
+  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * SCOUT_FOV_MM;  // anteroposterior offset (mm)
+  await animateCommit('committedX', c.plan.targetX, 1.0, alive);
+  if (!alive()) return;
+  await animateCommit('committedY', c.plan.targetY, 0.72, alive);
+}
+
+// Ramp one couch axis to its target (motor momentum + sound), applying the offset live.
+function animateCommit(key, target, pitch, alive) {
+  return new Promise(res => {
+    const c = ctx.S.ct;
+    if (Math.abs(c.plan[key] - target) <= MOVE_THRESH) { c.plan[key] = target; applyTableCommit(); res(); return; }
+    Sound.startTableSound(pitch);
+    let v = 0, last = performance.now(), done = false;
+    const fin = () => { if (done) return; done = true; Sound.stopTableSound(); res(); };
+    (function step() {
+      if (done) return;
+      if (!alive()) { fin(); return; }
+      const now = performance.now(), dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const remaining = target - c.plan[key], dist = Math.abs(remaining);
+      if (dist <= MOVE_THRESH) { c.plan[key] = target; applyTableCommit(); fin(); return; }
+      const decelDist = (v * v) / (2 * ACCEL);
+      if (dist > decelDist) v = Math.min(TABLE_SPEED, v + ACCEL * dt); else v = Math.max(0, v - ACCEL * dt);
+      c.plan[key] += Math.sign(remaining) * Math.min(v * dt, dist);
+      applyTableCommit();
+      requestAnimationFrame(step);
+    })();
+    setTimeout(() => { if (!done) { c.plan[key] = target; applyTableCommit(); fin(); } }, 9000);
+  });
+}
+
+async function scanDelay(sec, alive) {
+  for (let t = Math.round(sec); t > 0; t--) {
+    if (!alive()) return;
+    setHint('Scan delay — starting in ' + t + ' s…');
+    await sleep(1000);
+  }
+}
+
+// One group's exposure: breathe-in, helical acquisition (gantry spin + couch travel
+// over the group's z-range), reconstruction, store, breathe-normal.
+async function scanGroupExposure(g, i, alive) {
+  const S = ctx.S;
+  resetToIsocentre();
+  const startMM = g.box.top * S.ct.scanLen, endMM = g.box.bot * S.ct.scanLen;
+  setHint('G' + (i + 1) + ' · breathe in and hold…');
+  Sound.play('breathIn');
+  await sleep((Sound.duration('breathIn') || 2) * 1000); if (!alive()) return null;
+  await sleep(700); if (!alive()) return null;
+  setHint('G' + (i + 1) + ' · acquiring…');
+  startGantrySpin(g.rotSpeed);
+  Sound.startBuzz();
+  const dur = Math.min(9000, Math.max(2500, groupExpTime(g) * 250));   // scaled visual acquisition time
+  await animateScan(startMM, endMM, dur, alive);
+  Sound.stopBuzz(); stopGantrySpin();
+  if (!alive()) return null;
+  resetToIsocentre();
+  setHint('G' + (i + 1) + ' · reconstructing…');
+  const recon = await reconstructSlices(g, alive, (f) => setHint('G' + (i + 1) + ' · reconstructing… ' + Math.round(f * 100) + '%'));
+  if (!alive() || !recon) return null;
+  setHint('G' + (i + 1) + ' · breathe normally.');
+  Sound.play('breathNormal');
+  const entry = storeScan(g, i, recon);
+  await sleep(Math.min(1800, (Sound.duration('breathNormal') || 1.6) * 1000));
+  return entry;
+}
+
+// Couch travel across the group's scan range (visual), updating the table readout.
+function animateScan(startMM, endMM, dur, alive) {
+  return new Promise(res => {
+    const three = ctx.three, S = ctx.S, isoZ = S.ct.isoZ;
+    const t0 = performance.now(); let done = false;
+    const apply = (t) => {
+      const p = startMM + (endMM - startMM) * t;
+      S.ct.tablePos = p;
+      const dz = -(p / MM_PER_UNIT);
+      three.handGroup.position.z = isoZ + dz; couch.position.z = dz;
+      updateCTReadouts();
+    };
+    const fin = () => { if (done) return; done = true; res(); };
+    (function step() {
+      if (done) return;
+      if (!alive()) { fin(); return; }
+      const t = Math.min(1, (performance.now() - t0) / dur);
+      apply(t);
+      if (t < 1) requestAnimationFrame(step); else { apply(1); fin(); }
+    })();
+    setTimeout(() => { if (!done) { apply(1); fin(); } }, dur + 600);
+  });
+}
+
+function startGantrySpin(rotSpeed) {
+  if (!gantrySpin) return;
+  gantrySpin.visible = true;
+  const spd = (2 * Math.PI) / Math.max(0.2, rotSpeed);   // rad/s (visual)
+  let last = performance.now();
+  const step = () => {
+    const now = performance.now(), dt = (now - last) / 1000; last = now;
+    gantrySpin.rotation.z -= spd * dt;
+    spinRAF = requestAnimationFrame(step);
+  };
+  spinRAF = requestAnimationFrame(step);
+}
+function stopGantrySpin() {
+  if (spinRAF) { cancelAnimationFrame(spinRAF); spinRAF = null; }
+  if (gantrySpin) gantrySpin.visible = false;
+}
+
+// ---- filtered back-projection ----
+// For each transverse slice we compute a parallel-beam sinogram of line integrals
+// ∫μ ds (bone + soft + marrow at the beam's effective energy, with quantum noise
+// scaled by mA/slice/rotation), Ram-Lak filter each view, and back-project into a
+// circular FOV grid. The result approximates μ(x,y); stored as-is and converted to
+// Hounsfield units at display time.
+
+// Box–Muller normal deviate (fine for a browser sim; not used in workflow scripts).
+function gaussian() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// Discrete Ram-Lak kernel, indexed n = -(N-1)..(N-1) at spacing RECON_DS.
+function buildRamLak() {
+  const N = RECON_DET, ds = RECON_DS, h = new Float32Array(2 * N - 1);
+  for (let n = -(N - 1); n <= N - 1; n++) {
+    let v;
+    if (n === 0) v = 1 / (4 * ds * ds);
+    else if (n % 2 === 0) v = 0;
+    else v = -1 / (Math.PI * Math.PI * n * n * ds * ds);
+    h[n + (N - 1)] = v;
+  }
+  return h;
+}
+
+// Forward-project one slice at world plane z = z0 → sinogram [angle][detector].
+function projectSlice(phantom, z0, mu, photons0) {
+  const cx = 0, cy = ISO_Y, R = RECON_R, ds = RECON_DS, halfDet = (RECON_DET - 1) / 2;
+  const sino = new Float32Array(RECON_ANGLES * RECON_DET);
+  for (let a = 0; a < RECON_ANGLES; a++) {
+    const th = a * Math.PI / RECON_ANGLES, ct = Math.cos(th), st = Math.sin(th);
+    const base = a * RECON_DET;
+    for (let k = 0; k < RECON_DET; k++) {
+      const r = (k - halfDet) * ds;
+      // ray: origin at t = -R along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
+      const o = [cx + r * ct + R * st, cy + r * st - R * ct, z0];
+      const d = [-st, ct, 0];
+      const { bone, soft, marrow } = phantom.trace(o, d, 2 * R);
+      let p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow;
+      if (photons0 > 0) {                       // quantum noise from finite detected photons
+        const Nd = Math.max(1, photons0 * Math.exp(-p));
+        p += gaussian() / Math.sqrt(Nd);
+        if (p < 0) p = 0;
+      }
+      sino[base + k] = p;
+    }
+  }
+  return sino;
+}
+
+// Convolve each projection view with the ramp filter.
+function filterSino(sino, h) {
+  const N = RECON_DET, ds = RECON_DS, out = new Float32Array(RECON_ANGLES * RECON_DET);
+  for (let a = 0; a < RECON_ANGLES; a++) {
+    const base = a * N;
+    for (let k = 0; k < N; k++) {
+      let acc = 0;
+      for (let kp = 0; kp < N; kp++) acc += sino[base + kp] * h[(k - kp) + (N - 1)];
+      out[base + k] = acc * ds;
+    }
+  }
+  return out;
+}
+
+// Back-project the filtered sinogram into the reconstruction grid (μ map, cm^-1).
+function backproject(q) {
+  const N = RECON_N, R = RECON_R, ds = RECON_DS, halfDet = (RECON_DET - 1) / 2;
+  const img = new Float32Array(N * N);
+  const px2world = (i) => (-R + (i + 0.5) * (2 * R / N));   // pixel centre → world offset from FOV centre
+  const R2 = R * R;
+  for (let a = 0; a < RECON_ANGLES; a++) {
+    const th = a * Math.PI / RECON_ANGLES, ct = Math.cos(th), st = Math.sin(th), base = a * RECON_DET;
+    for (let iy = 0; iy < N; iy++) {
+      const wy = px2world(iy), rowo = iy * N;
+      for (let ix = 0; ix < N; ix++) {
+        const wx = px2world(ix);
+        if (wx * wx + wy * wy > R2) continue;
+        const kf = (wx * ct + wy * st) / ds + halfDet;
+        const k0 = Math.floor(kf);
+        if (k0 < 0 || k0 >= RECON_DET - 1) continue;
+        const f = kf - k0;
+        img[rowo + ix] += q[base + k0] * (1 - f) + q[base + k0 + 1] * f;
+      }
+    }
+  }
+  const scale = Math.PI / RECON_ANGLES;
+  for (let i = 0; i < img.length; i++) img[i] *= scale;
+  return img;
+}
+
+async function reconstructSlices(g, alive, onProgress) {
+  const spec = Spectrum.make(g.kv), effE = spec.meanE;
+  const mu = { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
+  const muW = mu.soft;                           // reference "water" (soft tissue) for HU
+  const phantom = ctx.buildPhantom();            // built at the committed table position (patient.z = isoZ)
+  const h = buildRamLak();
+  const startMM = g.box.top * ctx.S.ct.scanLen, endMM = g.box.bot * ctx.S.ct.scanLen;
+  const step = Math.max(g.interval, 0.1);
+  const positions = [];
+  for (let d = startMM; d <= endMM + 1e-6 && positions.length < MAX_SLICES; d += step) positions.push(d);
+  const photons0 = PHOTON_BASE * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5);
+  const slices = [];
+  for (let si = 0; si < positions.length; si++) {
+    if (!alive()) return null;
+    const z0 = positions[si] / MM_PER_UNIT;      // world plane for this slice (see scoutProjection geometry)
+    const sino = projectSlice(phantom, z0, mu, photons0);
+    const q = filterSino(sino, h);
+    slices.push({ d: positions[si], mu: backproject(q) });
+    if (onProgress) onProgress((si + 1) / positions.length);
+    await sleep(0);                              // yield to keep the UI alive
+  }
+  return { slices, gridN: RECON_N, fovMM: RECON_FOV_MM, muWater: muW, effE };
+}
+
+// ---- image storage ----
+function tstamp() { try { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }); } catch (_) { return ''; } }
+
+function storeScan(g, i, recon) {
+  const S = ctx.S, id = S.ct.nextScanId++;
+  const entry = {
+    id, label: 'Scan ' + id + ' · G' + (i + 1), ts: tstamp(),
+    params: { kv: g.kv, ma: g.ma, sliceThk: g.sliceThk, pitch: g.pitch, interval: g.interval, rotSpeed: g.rotSpeed },
+    gridN: recon.gridN, fovMM: recon.fovMM, muWater: recon.muWater, effE: recon.effE, slices: recon.slices,
+  };
+  S.ct.storage.push(entry);
+  enforceStorageLimit();
+  renderStorage();
+  return entry;
+}
+// Drop the oldest scans once the count exceeds the cap, so stored slice data can't
+// grow without bound. Only active when auto-delete is enabled.
+function enforceStorageLimit() {
+  const S = ctx.S;
+  if (!S.ct.autoDelete) return;
+  while (S.ct.storage.length > S.ct.storeCap) {
+    const dropped = S.ct.storage.shift();
+    if (S.ct.viewer.scanId === dropped.id) S.ct.viewer.scanId = null;
+  }
+}
+
+function renderStorage() {
+  const el = ctx.$('ctStorageList'); if (!el) return;
+  const S = ctx.S;
+  const cap = ctx.$('ctCapV'); if (cap) cap.textContent = S.ct.storeCap;
+  const chk = ctx.$('ctAutoDel'); if (chk) chk.checked = S.ct.autoDelete;
+  if (!S.ct.storage.length) { el.innerHTML = '<div class="ctstore-empty">No scans stored yet.</div>'; return; }
+  el.innerHTML = S.ct.storage.map(s => {
+    const active = s.id === S.ct.viewer.scanId ? ' active' : '';
+    return '<div class="ctstore-row' + active + '" data-id="' + s.id + '">'
+      + '<span class="cs-open" data-id="' + s.id + '"><b>' + s.label + '</b><small>' + s.ts + ' · ' + s.slices.length + ' slices · ' + s.params.kv + ' kV ' + s.params.ma + ' mA</small></span>'
+      + '<button class="cs-del" data-id="' + s.id + '" title="Delete this scan">✕</button></div>';
+  }).join('');
+}
+
+// ---- cross-sectional viewer ----
+function huToGray(hu, wl, ww) { let t = (hu - (wl - ww / 2)) / ww; return t < 0 ? 0 : t > 1 ? 1 : t; }
+
+// Paint a slice into the viewer canvas: HU-windowed grey, top = +y (dorsal/anterior),
+// circular FOV mask (outside the reconstruction circle is black).
+function drawSliceToCanvas(cv, scan, sl, wl, ww) {
+  const N = scan.gridN, muW = scan.muWater;
+  if (cv.width !== N || cv.height !== N) { cv.width = N; cv.height = N; }
+  const g = cv.getContext('2d'), im = g.createImageData(N, N), d = im.data;
+  const c = N / 2, R2 = c * c;
+  for (let iy = 0; iy < N; iy++) {
+    const srcY = N - 1 - iy;                     // flip so +world-y is at the top of the image
+    for (let ix = 0; ix < N; ix++) {
+      const o = (iy * N + ix) * 4;
+      const dx = ix - c + 0.5, dy = srcY - c + 0.5;
+      let val;
+      if (dx * dx + dy * dy > R2) val = 0;
+      else { const mu = sl.mu[srcY * N + ix]; const hu = 1000 * (mu - muW) / muW; val = Math.round(255 * huToGray(hu, wl, ww)); }
+      d[o] = d[o + 1] = d[o + 2] = val; d[o + 3] = 255;
+    }
+  }
+  g.putImageData(im, 0, 0);
+}
+
+function currentScan() {
+  const S = ctx.S;
+  return S.ct.storage.find(s => s.id === S.ct.viewer.scanId) || S.ct.storage[S.ct.storage.length - 1] || null;
+}
+
+function populateScanSelect() {
+  const sel = ctx.$('ctScanSel'); if (!sel) return;
+  const S = ctx.S, cur = currentScan();
+  sel.innerHTML = S.ct.storage.map(s => '<option value="' + s.id + '"' + (cur && s.id === cur.id ? ' selected' : '') + '>' + s.label + '</option>').join('');
+  sel.disabled = !S.ct.storage.length;
+}
+
+function updateViewerInfo(scan, sl) {
+  const el = ctx.$('ctSliceInfo'); if (!el) return;
+  const v = ctx.S.ct.viewer;
+  if (!scan || !sl) { el.textContent = ''; return; }
+  el.innerHTML =
+    '<span>SLICE ' + (v.slice + 1) + ' / ' + scan.slices.length + '</span>' +
+    '<span>' + fmtTablePos(sl.d) + ' mm</span>' +
+    '<span>' + scan.params.sliceThk + ' mm · ' + scan.params.kv + ' kV</span>' +
+    '<span>WL ' + Math.round(v.wl) + ' / WW ' + Math.round(v.ww) + ' HU</span>';
+}
+
+// Exported: (re)draw the whole viewer for the current scan/slice/window. Called by
+// app.js setContent('slices') and by the viewer's own controls.
+export function ctRenderViewer() {
+  if (!ctx) return;
+  const S = ctx.S, v = S.ct.viewer, cv = ctx.$('ctSliceCanvas'); if (!cv) return;
+  populateScanSelect();
+  const scan = currentScan();
+  const slider = ctx.$('ctSliceSlider');
+  if (!scan || !scan.slices.length) {
+    cv.width = RECON_N; cv.height = RECON_N;
+    const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = '#3a4653'; g.font = '11px "Share Tech Mono",monospace'; g.textAlign = 'center';
+    g.fillText('NO RECONSTRUCTION', cv.width / 2, cv.height / 2);
+    if (slider) { slider.max = 0; slider.value = 0; slider.disabled = true; }
+    updateViewerInfo(null, null);
+    return;
+  }
+  S.ct.viewer.scanId = scan.id;
+  v.slice = Math.max(0, Math.min(scan.slices.length - 1, v.slice));
+  const sl = scan.slices[v.slice];
+  drawSliceToCanvas(cv, scan, sl, v.wl, v.ww);
+  if (slider) { slider.max = scan.slices.length - 1; slider.value = v.slice; slider.disabled = scan.slices.length < 2; }
+  updateViewerInfo(scan, sl);
+}
+// Light redraw (slice/window changed but not the scan list) — same as full render here.
+function refreshViewer() { ctRenderViewer(); }
+
+// ---- busy state (grey controls during a scan) ----
+function setBusy(on) {
+  ctx.S.ct.busy = on;
+  document.body.classList.toggle('ct-busy', on);
+  const st = ctx.$('ctStart'), tb = ctx.$('ctTable');
+  if (st) st.disabled = on; if (tb) tb.disabled = on;
+}
+
+// ---- wiring (called from initCT) ----
+function wireStorage() {
+  const chk = ctx.$('ctAutoDel');
+  if (chk) chk.addEventListener('change', () => {
+    ctx.S.ct.autoDelete = chk.checked;
+    enforceStorageLimit(); renderStorage();
+    if (ctx.S.bayContent === 'slices') ctRenderViewer();
+  });
+  ctx.$('ctStorageClear')?.addEventListener('click', () => {
+    ctx.S.ct.storage.length = 0; ctx.S.ct.viewer.scanId = null;
+    renderStorage(); if (ctx.S.bayContent === 'slices') ctRenderViewer();
+  });
+  ctx.$('ctStorageList')?.addEventListener('click', (e) => {
+    const del = e.target.closest('.cs-del');
+    if (del) {
+      const id = +del.dataset.id, S = ctx.S;
+      const idx = S.ct.storage.findIndex(s => s.id === id);
+      if (idx >= 0) { S.ct.storage.splice(idx, 1); if (S.ct.viewer.scanId === id) S.ct.viewer.scanId = null; }
+      renderStorage(); if (S.bayContent === 'slices') ctRenderViewer();
+      return;
+    }
+    const open = e.target.closest('.cs-open');
+    if (open) { ctx.S.ct.viewer.scanId = +open.dataset.id; ctx.S.ct.viewer.slice = 0; renderStorage(); ctx.setContent('slices'); }
+  });
+  renderStorage();
+}
+
+function wireSliceViewer() {
+  const slider = ctx.$('ctSliceSlider');
+  slider?.addEventListener('input', () => { ctx.S.ct.viewer.slice = parseInt(slider.value, 10) || 0; refreshViewer(); });
+  const scrollSlices = (dir) => {
+    const scan = currentScan(); if (!scan) return;
+    ctx.S.ct.viewer.slice = Math.max(0, Math.min(scan.slices.length - 1, ctx.S.ct.viewer.slice + dir));
+    refreshViewer();
+  };
+  ctx.$('ctSlices')?.addEventListener('wheel', (e) => {
+    if (!ctx.$('ctSlices').classList.contains('show')) return;
+    e.preventDefault(); scrollSlices(e.deltaY > 0 ? 1 : -1);
+  }, { passive: false });
+  const wl = ctx.$('ctWL'), ww = ctx.$('ctWW');
+  wl?.addEventListener('input', () => { ctx.S.ct.viewer.wl = parseInt(wl.value, 10); refreshViewer(); });
+  ww?.addEventListener('input', () => { ctx.S.ct.viewer.ww = parseInt(ww.value, 10); refreshViewer(); });
+  ctx.$('ctWLPresets')?.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-wl]'); if (!b) return;
+    const v = ctx.S.ct.viewer; v.wl = +b.dataset.wl; v.ww = +b.dataset.ww;
+    if (wl) wl.value = v.wl; if (ww) ww.value = v.ww;
+    refreshViewer();
+  });
+  ctx.$('ctScanSel')?.addEventListener('change', (e) => {
+    ctx.S.ct.viewer.scanId = +e.target.value; ctx.S.ct.viewer.slice = 0; renderStorage(); refreshViewer();
+  });
 }

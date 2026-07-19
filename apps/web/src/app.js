@@ -10,7 +10,7 @@ import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
 import { loadModelFile } from './model/loader.js';
 import { ComputeClient } from './compute/client.js';
-import { initCT, ctSyncScene } from './ct.js';
+import { initCT, ctSyncScene, ctRenderViewer } from './ct.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -265,6 +265,13 @@ const S = {
     activeGroup:0,             // the group currently being edited (drives the reposition plan)
     plan:{ targetX:0, targetY:0, committedX:0, committedY:0 },   // required vs applied table move (mm)
     moveBlit:null,             // 'ap'|'lat'|null: mirror this PoV into the monitor during a table move
+    // ---- Phase 5/6: scan execution, reconstruction + image storage ----
+    storage:[],                // stored reconstructed scans (oldest first); each = {id,label,ts,params,gridN,fovMM,muWater,slices:[{d,mu}]}
+    autoDelete:true,           // auto-delete oldest scans past the cap so memory doesn't grow without bound
+    storeCap:4,                // keep at most this many scan groups' worth of data when autoDelete is on
+    nextScanId:1,              // running id for stored scans
+    viewer:{ scanId:null, slice:0, wl:60, ww:800 },   // cross-sectional viewer state (HU window/level)
+    busy:false,                // true during scan execution (controls greyed out)
   },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
@@ -470,16 +477,19 @@ function setContent(c){
   S.bayContent=c;
   const seg=$('contentSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.c===c));
   const img=(c==='image');
+  const slices=(c==='slices');   // CT cross-sectional viewer (reconstructed transverse slices)
   // switching the bay to 3D in CT defaults to Orbit (whole-scene view), not a fixed PoV
-  if(!img && S.mode==='ct') setCTPov('orbit');
+  if(!img && !slices && S.mode==='ct') setCTPov('orbit');
   // In CT with scouts acquired, the Image view IS the scout window (AP+LAT topograms
   // for scan planning); it replaces the radiograph/bignote.
   const scouts=(S.mode==='ct' && S.ct.scoutsReady && img);
   const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
+  const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
   $('bigFilm').style.display=(img && S.hasImage && !scouts)?'block':'none';
   $('bignote').style.display=(img && !S.hasImage && !scouts)?'flex':'none';
-  $('view').style.visibility=img?'hidden':'visible';
+  $('view').style.visibility=(img||slices)?'hidden':'visible';
   if(img && S.hasImage && !scouts) renderRadiograph($('bigFilm'));
+  if(slices) ctRenderViewer();
 }
 /* Enable/disable the bay "3D" view button (greyed out while the scout window owns
    the bay for scan planning). */
