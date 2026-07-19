@@ -148,6 +148,24 @@ function wireModeToggle() {
   });
 }
 
+// Tear down the CT scout session to a clean slate: no scouts, no live-view mirror,
+// idle console, patient/couch/isocentre zeroed. Called on every mode switch so the
+// two modes never share leftover state.
+function resetCTSession() {
+  const c = ctx.S.ct;
+  ctx.ctLiveView(false);          // stop the tube-POV mirror if a build was running
+  c.scoutsReady = false;
+  c.liveView = false;
+  c.isocentred = false;
+  c.isoZ = 0;
+  c.tablePos = 0;
+  c.patient.x = 0; c.patient.z = 0;
+  lastAP = lastLAT = null;
+  ctx.$('ctScouts')?.classList.remove('show');
+  setPhase('idle');               // resets the console label, flash + 3D-enable
+  setConsoleEnabled(true);
+}
+
 function applyMode(mode) {
   ctx.S.mode = mode;
   document.body.classList.toggle('mode-ct', mode === 'ct');
@@ -156,13 +174,17 @@ function applyMode(mode) {
   if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition' : 'Digit · Hand phantom';
-  // scouts are a CT-only overlay; while planning in CT the scout window owns the bay
-  const owns = (mode === 'ct') && (ctx.S.ct.phase === 'scout' || ctx.S.ct.phase === 'planning');
-  if (mode !== 'ct') ctx.S.ct.scoutsReady = false;
-  ctx.setBay3DEnabled(!owns);
-  ctx.setContent(owns ? 'image' : ctx.S.bayContent);
-  ctx.refreshFilmViewer();        // isolate the modes' images (clear x-ray in CT)
+  // A mode switch is a clean slate: tear down the CT scout workflow and any carried
+  // view state so nothing from the other mode lingers (stale image, scout overlay,
+  // tube-POV camera, Image view). Acquisition params + technique are user setup and
+  // deliberately persist.
+  resetCTSession();
+  ctx.setCameraView('orbit');     // drop the CT tube-POV camera
+  ctx.setContent('3d');           // always land in the positioning view, never a stale image
+  ctx.setBay3DEnabled(true);
+  ctx.refreshFilmViewer();        // isolate the two modes' images (clear x-ray in CT)
   greyHelical(mode === 'ct');     // helical params don't apply to a scout
+  setHint(mode === 'ct' ? 'Set the isocentre, then acquire scouts to plan the scan.' : '');
   ctx.syncScene();
   updateCTReadouts();
 }
