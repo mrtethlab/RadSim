@@ -125,7 +125,6 @@
             <div class="valchip cyanlit" id="ctTablePosV">0.0</div></div>
           <div class="row" style="margin-top:10px"><div class="rl">Table height <small>iso align</small></div>
             <div class="valchip" id="ctTableHV">0 mm</div></div>
-          <input type="range" id="ctTableH" min="-80" max="80" step="5" value="0">
           <div class="row" style="margin-top:10px"><div class="rl">Scan start</div>
             <div class="valchip" id="ctScanStartV">0.0 mm</div></div>
           <div class="row" style="margin-top:8px"><div class="rl">Scan end</div>
@@ -137,6 +136,10 @@
               <button class="dp left" data-dir="left" title="Move left">◀</button>
               <button class="dp right" data-dir="right" title="Move right">▶</button>
               <button class="dp down" data-dir="down" title="Table out">▼</button>
+            </div>
+            <div class="thpad" id="ctTablePad">
+              <button id="ctTableUp" class="thbtn" data-th="up" title="Table up (raise)"></button>
+              <button id="ctTableDown" class="thbtn" data-th="down" title="Table down (lower)"></button>
             </div>
           </div>
         </div>

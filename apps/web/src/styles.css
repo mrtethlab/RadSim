@@ -249,6 +249,17 @@ body.mode-ct .xray-only{display:none}
 .dpad .left{grid-column:1; grid-row:2}
 .dpad .right{grid-column:3; grid-row:2}
 .dpad .down{grid-column:2; grid-row:3}
+/* table height: two glossy blue buttons (raise / lower) beside the direction pad */
+.thpad{display:flex; flex-direction:column; gap:9px}
+.thbtn{width:38px; height:38px; border-radius:11px; padding:0; cursor:pointer; color:#eaf4ff;
+  border:1px solid #0b1016;
+  background:radial-gradient(circle at 50% 30%, #5b93d4 0%, #2b5f9c 55%, #1a3f6c 100%);
+  box-shadow:0 2px 5px rgba(0,0,0,.5), inset 0 1.5px 2px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.4);
+  display:flex; align-items:center; justify-content:center}
+.thbtn svg{width:80%; height:80%}
+.thbtn .stroke{fill:none; stroke:currentColor; stroke-width:1.5; stroke-linejoin:round; stroke-linecap:round}
+.thbtn:hover{filter:brightness(1.08)}
+.thbtn:active{transform:translateY(1px); box-shadow:0 1px 2px rgba(0,0,0,.5), inset 0 1px 3px rgba(0,0,0,.45)}
 
 /* CT mode has no radiograph: keep the DR monitor's x-ray corner annotations hidden
    so the viewer panel is fully isolated from the x-ray image. */

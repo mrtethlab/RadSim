@@ -63,6 +63,17 @@ const SYM = {
        '<circle cx="12" cy="13.7" r="2.7" fill="currentColor"/>' +
        '<path d="M11.2 11.1 L12 9.7 L12.8 11.1 Z" fill="currentColor"/>' +
        '</svg>',
+  // TABLE UP / DOWN: an up/down arrow over a reclining patient on the couch.
+  tableUp: '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+           '<path class="stroke" d="M7 8 L12 3.5 L17 8"/><path class="stroke" d="M12 3.7 L12 10"/>' +
+           '<circle cx="7.3" cy="14.6" r="1.5" fill="currentColor"/>' +
+           '<path class="stroke" d="M9.2 16 Q13 14 16.8 16"/>' +
+           '<path class="stroke" d="M4.5 17.7 H19.5 M6.6 17.9 V20.8 M17.4 17.9 V20.8"/></svg>',
+  tableDown: '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+             '<path class="stroke" d="M7 6 L12 10.5 L17 6"/><path class="stroke" d="M12 4 L12 10.3"/>' +
+             '<circle cx="7.3" cy="14.6" r="1.5" fill="currentColor"/>' +
+             '<path class="stroke" d="M9.2 16 Q13 14 16.8 16"/>' +
+             '<path class="stroke" d="M4.5 17.7 H19.5 M6.6 17.9 V20.8 M17.4 17.9 V20.8"/></svg>',
 };
 
 export function initCT(context) {
@@ -155,6 +166,8 @@ function injectSymbols() {
   set('ctAbort', SYM.abort);
   set('ctTable', SYM.table);
   set('ctIsocentre', SYM.iso);
+  set('ctTableUp', SYM.tableUp);
+  set('ctTableDown', SYM.tableDown);
 }
 
 // Called by app.js at the end of syncScene(): show the CT rig or the x-ray rig.
@@ -219,7 +232,6 @@ function resetCTSession() {
   c.tablePos = 0;
   c.tableY = 0;                    // default table height is the centred position
   c.patient.x = 0; c.patient.z = 0;
-  const th = ctx.$('ctTableH'); if (th) th.value = 0;
   lastAP = lastLAT = null;
   ctx.$('ctScouts')?.classList.remove('show');
   setPhase('idle');               // resets the console label, flash + 3D-enable
@@ -269,9 +281,11 @@ function wireCTSettings() {
   $('ctPitch')?.addEventListener('input', (e) => { S.ct.pitch = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctRotSpeed')?.addEventListener('input', (e) => { S.ct.rotSpeed = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
-  // table height — raises/lowers the patient relative to the gantry isocentre
-  $('ctTableH')?.addEventListener('input', (e) => {
-    S.ct.tableY = parseFloat(e.target.value);
+  // table height — two buttons (raise / lower) beside the direction pad, 10 mm/press
+  $('ctTablePad')?.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-th]'); if (!b) return;
+    const d = b.dataset.th === 'up' ? 10 : -10;   // up raises the patient toward/above the isocentre
+    S.ct.tableY = Math.max(-80, Math.min(80, S.ct.tableY + d));
     ctx.syncScene();            // reposition the patient + couch in y
     updateCTReadouts();
   });
