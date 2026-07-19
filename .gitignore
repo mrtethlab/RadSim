@@ -1,0 +1,24 @@
+# node
+node_modules/
+dist/
+.vite/
+*.log
+npm-debug.log*
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+services/compute/.venv/
+.pytest_cache/
+
+# env
+.env
+.env.local
+
+# os / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

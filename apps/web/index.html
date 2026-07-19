@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>RADSIM — X-ray Positioning Simulator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+<div class="app">
+
+  <!-- ============ POSITIONING BAY (Three.js) ============ -->
+  <div class="bay">
+    <canvas id="view"></canvas>
+    <canvas id="bigFilm"></canvas>
+    <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
+    <div class="bayctl">
+      <div>
+        <div class="cl">View</div>
+        <div class="segmini" id="contentSeg">
+          <button data-c="3d" class="on">3D</button>
+          <button data-c="image">Image</button>
+        </div>
+      </div>
+      <div>
+        <div class="cl">Camera</div>
+        <div class="segmini" id="camSeg">
+          <button data-cam="orbit" class="on">Orbit</button>
+          <button data-cam="tube">Tube POV</button>
+        </div>
+      </div>
+      <div>
+        <div class="cl">Render</div>
+        <div class="segmini" id="renderSeg">
+          <button data-hv="soft" class="on">Anatomy</button>
+          <button data-hv="bone">Skeleton</button>
+        </div>
+      </div>
+      <div>
+        <div class="cl">Model <span id="computeDot" title="compute backend">○</span></div>
+        <div class="segmini">
+          <button id="loadModelBtn" type="button">Load .glb</button>
+          <button id="clearModelBtn" type="button">Clear</button>
+        </div>
+        <input id="loadModelInput" type="file" accept=".glb,.gltf" style="display:none"/>
+      </div>
+    </div>
+    <div class="baytag">
+      <div class="k">RADSIM · POSITIONING BAY</div>
+      <div class="s">Digit · Hand phantom</div>
+    </div>
+    <div class="hint">drag&nbsp;·&nbsp;orbit&nbsp;&nbsp;|&nbsp;&nbsp;wheel&nbsp;·&nbsp;zoom&nbsp;&nbsp;|&nbsp;&nbsp;tube&nbsp;pov&nbsp;=&nbsp;bird's&nbsp;eye</div>
+  </div>
+
+  <!-- ============ POSITIONING CONTROLS ============ -->
+  <div class="col">
+    <div class="hdr"><div class="t"><b>POSITION</b> / SETUP</div><div class="u">geometry</div></div>
+    <div class="pad">
+
+      <div class="grp">
+        <div class="lab">Projection <span id="poseName" style="color:var(--cyan)">PA</span></div>
+        <div class="bod">
+          <div class="seg" id="poseSeg">
+            <button data-pose="PA" class="on">PA</button>
+            <button data-pose="OBL">Oblique</button>
+            <button data-pose="LAT">Lateral</button>
+          </div>
+          <div class="row" style="margin-top:12px">
+            <div class="rl">Finger spread</div>
+            <input type="range" id="spread" min="0" max="100" value="45" style="max-width:150px">
+          </div>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="lab">Tube &amp; distance</div>
+        <div class="bod">
+          <div class="row">
+            <div class="rl">SID <small>source→image</small></div>
+            <div class="stepper">
+              <button data-step="sid" data-d="-5">−</button>
+              <div class="sv" id="sidV">100 cm</div>
+              <button data-step="sid" data-d="5">+</button>
+            </div>
+          </div>
+          <div class="row">
+            <div class="rl">OID <small>object→image</small></div>
+            <div class="stepper">
+              <button data-step="oid" data-d="-1">−</button>
+              <div class="sv" id="oidV">0 cm</div>
+              <button data-step="oid" data-d="1">+</button>
+            </div>
+          </div>
+          <div class="row"><div class="rl">Centre · long</div>
+            <input type="range" id="tubeZ" min="-9" max="9" value="0" step="0.5" style="max-width:150px"></div>
+          <div class="row"><div class="rl">Centre · cross</div>
+            <input type="range" id="tubeX" min="-9" max="9" value="0" step="0.5" style="max-width:150px"></div>
+          <div class="row" style="margin-top:8px"><div class="rl">CR · Lat / Med</div>
+            <div class="valchip" id="angLMv">0°</div></div>
+          <input type="range" id="angLM" min="-90" max="90" value="0" step="1">
+          <div class="row" style="margin-top:10px"><div class="rl">CR · Ceph / Caud</div>
+            <div class="valchip" id="angCCv">0°</div></div>
+          <input type="range" id="angCC" min="-90" max="90" value="0" step="1">
+          <div class="row" style="margin-top:5px"><div class="rl"><small>central ray</small></div>
+            <div id="angReadout" style="font-family:var(--seg);color:var(--cyan);font-size:11.5px;text-align:right">PERPENDICULAR</div></div>
+          <div class="mini"><button id="recenter">↺ recenter tube</button></div>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="lab">Collimation</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Field width</div>
+            <div class="valchip" id="collXv">15 cm</div></div>
+          <input type="range" id="collX" min="4" max="24" value="15" step="0.5">
+          <div class="row" style="margin-top:8px"><div class="rl">Field length</div>
+            <div class="valchip" id="collZv">19 cm</div></div>
+          <input type="range" id="collZ" min="4" max="30" value="19" step="0.5">
+          <div class="row" style="margin-top:8px"><div class="rl">Collimator light</div>
+            <button id="lfBtn" class="lfbtn on" title="Toggle collimator light" aria-pressed="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 8 V4 H8"/><path d="M20 8 V4 H16"/><path d="M4 16 V20 H8"/><path d="M20 16 V20 H16"/>
+                <circle class="bulb" cx="12" cy="10.6" r="3.1"/>
+                <path d="M10.5 13.7 h3 M11 15.1 h2"/>
+              </svg>
+            </button></div>
+          <div class="note" style="margin-top:6px">Collimated-out anatomy is cut from the image, and only the light field contributes to the exposure index.</div>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="lab">Detector</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Resolution</div>
+            <div class="valchip" id="resV">320×400</div></div>
+          <div class="seg" id="resSeg">
+            <button data-res="low">Low</button>
+            <button data-res="std" class="on">Std</button>
+            <button data-res="high">High</button>
+          </div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">Anti-scatter grid</div>
+            <div class="valchip" id="gridStateV">OUT</div></div>
+          <div class="seg" id="gridSeg">
+            <button data-grid="off" class="on">Out</button>
+            <button data-grid="on">In</button>
+          </div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">Grid ratio</div>
+            <div class="valchip" id="gridRatioV">10:1</div></div>
+          <div class="seg" id="gridRatioSeg">
+            <button data-ratio="6">6:1</button>
+            <button data-ratio="8">8:1</button>
+            <button data-ratio="10" class="on">10:1</button>
+            <button data-ratio="12">12:1</button>
+          </div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">Grid focal length</div>
+            <div class="valchip" id="gridFocusV">100 cm</div></div>
+          <div class="seg" id="gridFocusSeg">
+            <button data-focus="100" class="on">100</button>
+            <button data-focus="150">150</button>
+            <button data-focus="180">180</button>
+          </div>
+
+          <div class="note" style="margin-top:6px">A focused grid cleans up scatter but cuts primary when SID ≠ focal length, off-centre, or angled across the strips — raising the dose needed for target EI.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ============ GENERATOR CONSOLE + MONITOR ============ -->
+  <div class="col">
+    <div class="hdr"><div class="t"><b>GENERATOR</b> / A1</div><div class="u" id="clock">STANDBY</div></div>
+    <div class="pad">
+
+      <div class="readout">
+        <div class="ro"><div class="cap">kVp</div><div class="val" id="kvV">55</div></div>
+        <div class="ro"><div class="cap">mA</div><div class="val" id="maV">100</div></div>
+        <div class="ro"><div class="cap">mAs</div><div class="val" id="masV">2.0</div></div>
+        <div class="ro green"><div class="cap">TIME</div><div class="val" id="timeV" style="font-size:24px">20<small>ms</small></div></div>
+        <div class="ro cyanlit"><div class="cap">SID</div><div class="val" id="sidRo">100<small>cm</small></div></div>
+        <div class="ro"><div class="cap">FOCAL SPOT</div><div class="val" id="fsV" style="font-size:20px">0.6<small>mm</small></div></div>
+      </div>
+
+      <div class="grp">
+        <div class="lab">Technique</div>
+        <div class="bod">
+          <div class="row"><div class="rl">kVp <small>kilovoltage</small></div>
+            <div class="stepper"><button data-step="kv" data-d="-1">−</button>
+              <div class="sv" id="kvSv">55</div><button data-step="kv" data-d="1">+</button></div></div>
+          <input type="range" id="kv" min="40" max="120" value="55" step="1">
+          <div class="row" style="margin-top:12px"><div class="rl">mA <small>tube current</small></div>
+            <div class="stepper"><button data-step="ma" data-d="-1">−</button>
+              <div class="sv" id="maSv">100</div><button data-step="ma" data-d="1">+</button></div></div>
+          <input type="range" id="ma" min="0" max="10" value="2" step="1">
+          <div class="row" style="margin-top:12px"><div class="rl">mAs</div>
+            <div class="stepper"><button data-step="mas" data-d="-1">−</button>
+              <div class="sv" id="masSv">2.0</div><button data-step="mas" data-d="1">+</button></div></div>
+          <input type="range" id="mas" min="0" max="24" value="7" step="1">
+          <div class="row" style="margin-top:6px"><div class="rl">Exposure time</div>
+            <div style="font-family:var(--seg);color:var(--green);font-size:14px" id="timeInline">20 ms</div></div>
+          <div class="mini" id="apr">
+            <button data-part="hand-pa" data-kv="55" data-mas="2">HAND PA 55/2.0</button>
+            <button data-part="hand-obl" data-kv="60" data-mas="2.5">OBL 60/2.5</button>
+            <button data-part="fine" data-kv="50" data-mas="1.6">DETAIL 50/1.6</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="expose">
+        <div class="warn" id="warn"><div class="lamp"></div><div class="wt" id="warnT">SYSTEM STANDBY</div></div>
+        <div class="btns2">
+          <button class="prep" id="rotor">ROTOR</button>
+          <button class="fire" id="fire" disabled>EXPOSE</button>
+        </div>
+        <div class="note" style="margin-top:8px; text-align:center" id="exposeHint">Engage rotor, then <b>press&nbsp;and&nbsp;hold</b> EXPOSE for the exposure time</div>
+      </div>
+    </div>
+
+    <div class="hdr"><div class="t"><b>IMAGE</b> / VIEWER</div><div class="u">DR&nbsp;flat&nbsp;panel</div></div>
+    <div class="monitor">
+      <canvas id="film" width="330" height="440"></canvas>
+      <div class="noexp" id="noexp">NO IMAGE ACQUIRED</div>
+      <div class="filmnote t" id="fnTL"></div>
+      <div class="filmnote t r" id="fnTR"></div>
+      <div class="filmnote" id="fnBL"></div>
+      <div class="filmnote r" id="fnBR"></div>
+      <div class="prog" id="prog"></div>
+    </div>
+
+    <div class="imgtools">
+      <span class="tlabel">Orient</span>
+      <button id="rotL" title="Rotate left">⟲</button>
+      <button id="rotR" title="Rotate right">⟳</button>
+      <button id="flipH" title="Flip horizontal">⇋</button>
+      <button id="flipV" title="Flip vertical">⇅</button>
+      <button id="imgReset" class="txt" title="Reset orientation">reset</button>
+    </div>
+
+    <div class="di">
+      <div class="dib"><div class="k">EI</div><div class="v" id="eiV">—</div></div>
+      <div class="dib"><div class="k">EI-TARGET</div><div class="v cyanlit" id="eitV">—</div></div>
+      <div class="dib"><div class="k">DI (dev)</div><div class="v" id="diV">—</div></div>
+    </div>
+
+    <div class="pad">
+      <div class="grp">
+        <div class="lab">Display · window / level</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Brightness</div>
+            <input type="range" id="level" min="-60" max="60" value="0"></div>
+          <div class="row"><div class="rl">Contrast</div>
+            <input type="range" id="windo" min="30" max="220" value="100"></div>
+        </div>
+      </div>
+      <div class="note">
+        Image is computed from scratch each exposure: polyenergetic beam, energy-dependent
+        attenuation through the posed hand, inverse-square dose, quantum mottle, and an
+        IEC&nbsp;62494 exposure index. <span class="kbd">Space</span> to expose.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- three.js r185 embedded as plain classic scripts (ES modules pre-transformed to a
+     global THREE at build time) — no fetch, no blob, no import: works fully offline. -->
+<script type="module" src="/src/main.js"></script>
+</body>
+</html>
