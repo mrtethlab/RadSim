@@ -29,10 +29,19 @@ const SYM = {
          'M12 2.5 L12 21.5 M2.5 12 L21.5 12 ' +
          'M12 2.5 L9.2 5.3 M12 2.5 L14.8 5.3 M12 21.5 L9.2 18.7 M12 21.5 L14.8 18.7 ' +
          'M2.5 12 L5.3 9.2 M2.5 12 L5.3 14.8 M21.5 12 L18.7 9.2 M21.5 12 L18.7 14.8"/></svg>',
-  // ISOCENTRE: a patient/figure alignment glyph (blue on the tan console button)
+  // ISOCENTRE: the gantry as a donut cross-section (top + bottom sections) with a
+  // side-view patient head facing up between them and the alignment lightbulb on
+  // the top section (dark glyph on the ivory console button).
   iso: '<svg viewBox="0 0 24 24" aria-hidden="true">' +
-       '<circle cx="12" cy="5.6" r="3.3" fill="currentColor"/>' +
-       '<path d="M6.4 21 C6.4 13.6 9 12 12 12 C15 12 17.6 13.6 17.6 21 Z" fill="currentColor"/>' +
+       // top + bottom donut sections (concave edges form the bore opening)
+       '<path d="M3 2.5 H21 V5.6 Q12 7.7 3 5.6 Z" fill="currentColor"/>' +
+       '<path d="M3 21.5 H21 V18.4 Q12 16.3 3 18.4 Z" fill="currentColor"/>' +
+       // alignment lightbulb on the top section, shining down
+       '<rect x="11.35" y="6" width="1.3" height="1.3" fill="currentColor"/>' +
+       '<circle cx="12" cy="8.4" r="1.4" fill="currentColor"/>' +
+       // patient head, side view facing up: skull + nose pointing up
+       '<circle cx="12" cy="13.7" r="2.7" fill="currentColor"/>' +
+       '<path d="M11.2 11.1 L12 9.7 L12.8 11.1 Z" fill="currentColor"/>' +
        '</svg>',
 };
 
