@@ -773,9 +773,10 @@ function applyBoxDrag(gi, view, edge, s0, du, dv) {
   else if (edge === 'r') b[R] = clampV(s0[R] + du, s0[L] + BOX_MIN, 1);
 }
 
-// Table-window start/end + reposition plan come from the ACTIVE group's box.
+// Scans run sequentially, so the reposition before START is for the NEXT (first)
+// scan = group 1. Moving a later group's box does NOT require a table move.
 function updatePlan() {
-  const c = ctx.S.ct, g = activeGrp(), len = c.scanLen;
+  const c = ctx.S.ct, g = grp(0), len = c.scanLen;
   const set = (id, v) => { const el = ctx.$(id); if (el) el.textContent = v; };
   set('ctScanStartV', fmtTablePos(g.box.top * len) + ' mm');
   set('ctScanEndV', fmtTablePos(g.box.bot * len) + ' mm');
@@ -785,41 +786,50 @@ function updatePlan() {
   renderScanGroups();
 }
 
-// ---- scan-group table ----
+// ---- scan-group table ---- (single click to edit / pick / toggle / delete)
 function wireScanGroupTable() {
   const cont = ctx.$('ctScanGroups'); if (!cont) return;
   cont.addEventListener('click', (e) => {
     if (e.target.closest('.sg-add')) { addGroup(); return; }
-    const tog = e.target.closest('.sg-tog');
-    if (tog) { const gi = +tog.closest('tr').dataset.group; grp(gi).vis = !grp(gi).vis; renderScanBoxes(); renderScanGroups(); return; }
-    const rem = e.target.closest('.sg-remove');
-    if (rem) { const gi = +rem.closest('tr').dataset.group; if (gi > 0) { grp(gi).on = false; if (ctx.S.ct.activeGroup === gi) ctx.S.ct.activeGroup = 0; renderScanBoxes(); updatePlan(); } return; }
+    const del = e.target.closest('.sg-num.del');
+    if (del) { const gi = +del.closest('tr').dataset.group; if (gi > 0) { grp(gi).on = false; if (ctx.S.ct.activeGroup === gi) ctx.S.ct.activeGroup = 0; renderScanBoxes(); updatePlan(); } return; }
+    const eye = e.target.closest('.sg-eye');
+    if (eye) { const gi = +eye.closest('tr').dataset.group; grp(gi).vis = !grp(gi).vis; renderScanBoxes(); renderScanGroups(); return; }
+    const el = e.target.closest('[data-act]');
+    if (el) { openFieldEditor(+el.closest('tr').dataset.group, el.dataset.act); return; }
     const row = e.target.closest('tr[data-group]');
     if (row) { ctx.S.ct.activeGroup = +row.dataset.group; renderScanBoxes(); updatePlan(); }
   });
-  cont.addEventListener('dblclick', (e) => {
-    const el = e.target.closest('[data-act]'); if (!el) return;
-    const gi = +el.closest('tr').dataset.group, g = grp(gi), act = el.dataset.act, len = ctx.S.ct.scanLen;
-    const done = () => { ctx.S.ct.activeGroup = gi; renderScanBoxes(); updatePlan(); };
-    const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
-    const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
-    if (act === 'start') type('Start location (mm)', Math.round(g.box.top * len), (v) => { g.box.top = clampV(v / len, 0, g.box.bot - BOX_MIN); });
-    else if (act === 'end') type('End location (mm)', Math.round(g.box.bot * len), (v) => { g.box.bot = clampV(v / len, g.box.top + BOX_MIN, 1); });
-    else if (act === 'interval') type('Slice interval (mm)', g.interval, (v) => { g.interval = clampV(v, 0.1, 50); });
-    else if (act === 'tilt') type('Gantry tilt (°)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
-    else if (act === 'kv') type('kV', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
-    else if (act === 'ma') type('mA', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
-    else if (act === 'delay') type('Scan delay (s)', g.delay, (v) => { g.delay = clampV(Math.round(v), 0, 600); });
-    else if (act === 'sliceThk') station('Slice thickness (mm)', SLICE_MM, g.sliceThk, (x) => fmtNum(x), (v) => { g.sliceThk = v; });
-    else if (act === 'pitch') station('Pitch', PITCH_STATIONS, g.pitch, (x) => fmtNum(x), (v) => { g.pitch = v; });
-    else if (act === 'rot') station('Rotation time (s / rot)', ROT_STATIONS, g.rotSpeed, (x) => x.toFixed(2) + 's', (v) => { g.rotSpeed = v; });
-  });
+}
+function openFieldEditor(gi, act) {
+  const g = grp(gi), len = ctx.S.ct.scanLen;
+  ctx.S.ct.activeGroup = gi; renderScanBoxes();
+  const done = () => { renderScanBoxes(); updatePlan(); };
+  const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
+  const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
+  if (act === 'start') type('Start location (mm inferior)', Math.round(g.box.top * len), (v) => { g.box.top = clampV(v / len, 0, g.box.bot - BOX_MIN); });
+  else if (act === 'end') type('End location (mm inferior)', Math.round(g.box.bot * len), (v) => { g.box.bot = clampV(v / len, g.box.top + BOX_MIN, 1); });
+  else if (act === 'interval') type('Slice interval (mm)', fmtNum(g.interval), (v) => { g.interval = clampV(v, 0.1, 50); });
+  else if (act === 'tilt') type('Gantry tilt (degrees)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
+  else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
+  else if (act === 'ma') type('Tube current (mA)', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
+  else if (act === 'delay') type('Scan delay (seconds)', g.delay, (v) => { g.delay = clampV(Math.round(v), 0, 600); });
+  else if (act === 'sliceThk') station('Slice thickness (mm)', SLICE_MM, g.sliceThk, (x) => fmtNum(x) + ' mm', (v) => { g.sliceThk = v; });
+  else if (act === 'pitch') station('Pitch', PITCH_STATIONS, g.pitch, (x) => fmtNum(x), (v) => { g.pitch = v; });
+  else if (act === 'rot') station('Rotation time (s / rot)', ROT_STATIONS, g.rotSpeed, (x) => x.toFixed(2) + ' s', (v) => { g.rotSpeed = v; });
+  else { done(); }
 }
 function addGroup() {
   const gs = ctx.S.ct.groups;
   for (let i = 1; i < N_GROUPS; i++) if (!gs[i].on) { gs[i].on = true; ctx.S.ct.activeGroup = i; break; }
   renderScanBoxes(); updatePlan();
 }
+const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>';
+const EYE_CLOSED = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M3 10c2.2 2.9 5.6 4.6 9 4.6S18.8 12.9 21 10"/><path stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6 13.3l-1.6 2M12 15.1v2.4M18 13.3l1.6 2"/></svg>';
+const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff" d="M9 3l-1 1H4v2h16V4h-4l-1-1H9zM6 8l1.2 12.2c.1.9.9 1.8 1.9 1.8h5.8c1 0 1.8-.9 1.9-1.8L18 8H6zm4 2h1v9h-1v-9zm3 0h1v9h-1v-9z"/></svg>';
+const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'Total Images', 'Slice Thickness',
+  'Pitch', 'Rotation Time', 'Slice Interval', 'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
+
 function renderScanGroups() {
   const cont = ctx.$('ctScanGroups'); if (!cont) return;
   const c = ctx.S.ct;
@@ -827,49 +837,60 @@ function renderScanGroups() {
   let rows = '';
   for (let gi = 0; gi < N_GROUPS; gi++) {
     const g = grp(gi); if (!g.on) continue;
+    const num = gi > 0
+      ? '<span class="sg-num del" title="Delete scan group"><span class="lbl">' + (gi + 1) + '</span><span class="trash">' + TRASH + '</span></span>'
+      : '<span class="sg-num">' + (gi + 1) + '</span>';
     rows += '<tr class="sg-row gc' + gi + (gi === c.activeGroup ? ' active' : '') + '" data-group="' + gi + '">'
-      + '<td><span class="sg-num">' + (gi + 1) + '</span>' + (gi > 0 ? ' <span class="sg-remove" title="Remove scan group">×</span>' : '') + '</td>'
-      + '<td><span class="sg-tog' + (g.vis ? ' on' : '') + '" title="Toggle box on scout">◉</span></td>'
+      + '<td>' + num + '</td>'
+      + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle box on scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
       + cell('sg-edit', 'start', fmtTablePos(g.box.top * c.scanLen))
       + cell('sg-edit', 'end', fmtTablePos(g.box.bot * c.scanLen))
       + cell('sg-calc', '', groupImages(g))
-      + cell('sg-station', 'sliceThk', fmtNum(g.sliceThk))
+      + cell('sg-station', 'sliceThk', fmtNum(g.sliceThk) + ' mm')
       + cell('sg-station', 'pitch', fmtNum(g.pitch))
-      + cell('sg-station', 'rot', g.rotSpeed.toFixed(2))
-      + cell('sg-edit', 'interval', fmtNum(g.interval))
+      + cell('sg-station', 'rot', g.rotSpeed.toFixed(2) + ' s')
+      + cell('sg-edit', 'interval', fmtNum(g.interval) + ' mm')
       + cell('sg-edit', 'tilt', g.tilt + '°')
-      + cell('sg-edit', 'kv', g.kv)
-      + cell('sg-edit', 'ma', g.ma)
-      + cell('sg-calc', '', groupExpTime(g).toFixed(1))
-      + cell('sg-edit', 'delay', g.delay + 's')
+      + cell('sg-edit', 'kv', g.kv + ' kV')
+      + cell('sg-edit', 'ma', g.ma + ' mA')
+      + cell('sg-calc', '', groupExpTime(g).toFixed(1) + ' s')
+      + cell('sg-edit', 'delay', g.delay + ' s')
       + '</tr>';
   }
   const anyOff = c.groups.some((g) => !g.on);
-  cont.innerHTML = '<table class="sg-table"><thead><tr>'
-    + '<th>#</th><th>Box</th><th>Start</th><th>End</th><th>Img</th><th>Thk</th><th>Pitch</th><th>Rot</th><th>Intvl</th><th>Tilt</th><th>kV</th><th>mA</th><th>Exp&nbsp;s</th><th>Delay</th>'
-    + '</tr></thead><tbody>' + rows + '</tbody></table>'
-    + (anyOff ? '<button class="sg-add">+ Add scan group</button>' : '');
+  cont.innerHTML = '<table class="sg-table"><thead><tr>' + SG_HEADERS.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>'
+    + rows + '</tbody></table>' + (anyOff ? '<button class="sg-add">+ Add scan group</button>' : '');
 }
 
-// Field-edit popup: typed value (Enter to confirm, Esc/outside to cancel).
+// Modal field-edit popup: blurs the screen; must be confirmed (Enter) or cancelled
+// (Esc) — clicking outside does nothing.
 function openTypedPopup(label, val, onOk) {
   const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
-  inner.innerHTML = '<div class="pl">' + label + '</div><input type="text">';
-  const inp = inner.querySelector('input'); inp.value = val;
-  const close = () => { pop.classList.remove('show'); pop.onmousedown = null; };
-  pop.classList.add('show'); inp.focus(); inp.select();
-  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { onOk(inp.value); close(); } else if (e.key === 'Escape') close(); });
-  pop.onmousedown = (e) => { if (e.target === pop) close(); };
+  inner.innerHTML = '<div class="plt">' + label + '</div><div class="pl">Enter a value:</div>'
+    + '<input type="text" autocomplete="off" spellcheck="false">'
+    + '<div class="phint"><b>[ENTER]</b> to confirm&nbsp;&nbsp;·&nbsp;&nbsp;<b>[ESC]</b> to cancel</div>';
+  const inp = inner.querySelector('input');
+  inp.placeholder = String(val);
+  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => {
+    if (e.key === 'Enter') { onOk(inp.value === '' ? val : inp.value); close(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); }
+  };
+  pop.classList.add('show');
+  document.addEventListener('keydown', onKey, true);
+  setTimeout(() => inp.focus(), 0);
 }
-// Station picker popup: pick one of several preset values.
+// Modal station picker: pick a preset (or Esc to cancel). Outside click does nothing.
 function openStationPopup(label, list, cur, fmt, onSel) {
   const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
-  inner.innerHTML = '<div class="pl">' + label + '</div><div class="ctpop-stations">'
-    + list.map((s) => '<button data-v="' + s + '"' + (s === cur ? ' class="on"' : '') + '>' + fmt(s) + '</button>').join('') + '</div>';
-  const close = () => { pop.classList.remove('show'); pop.onmousedown = null; };
+  inner.innerHTML = '<div class="plt">' + label + '</div><div class="pl">Select a station:</div>'
+    + '<div class="ctpop-stations">' + list.map((s) => '<button data-v="' + s + '"' + (s === cur ? ' class="on"' : '') + '>' + fmt(s) + '</button>').join('') + '</div>'
+    + '<div class="phint"><b>[ESC]</b> to cancel</div>';
+  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
   pop.classList.add('show');
   inner.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { onSel(parseFloat(b.dataset.v)); close(); }));
-  pop.onmousedown = (e) => { if (e.target === pop) close(); };
+  document.addEventListener('keydown', onKey, true);
 }
 // Flash TABLE (orange) while the couch still needs to move; else flash START (green).
 // While a move is pending the DR monitor mirrors the axis' PoV — AP-PoV for the
