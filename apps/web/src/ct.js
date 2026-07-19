@@ -16,7 +16,13 @@ let ctx = null;
 let bed = null, laser = null;   // CT-only 3D objects (created once, shown by mode)
 
 const SLICE_MM = [0.625, 1.25, 2.5, 5, 10];   // slice-thickness stations
-const SFOV_R = 9;                             // scan field-of-view radius (cm)
+const SFOV_R = 9;                             // scan field-of-view radius (world units)
+const MM_PER_UNIT = 10;                       // 1 world unit = 10 mm (detector 240x300 mm)
+
+const scanLenU = () => ctx.S.ct.scanLen / MM_PER_UNIT;             // scan length in world units
+const intoSign = () => (ctx.S.ct.orientation === 'head' ? 1 : -1); // couch-in = +I (head) / -S (feet)
+// table position -> "I###.#" (inferior), "S###.#" (superior), or "0.0" (all mm)
+function fmtTablePos(mm) { return mm > 0.05 ? 'I' + mm.toFixed(1) : mm < -0.05 ? 'S' + (-mm).toFixed(1) : '0.0'; }
 
 // Button glyphs, drawn exactly to spec.
 const SYM = {
@@ -182,13 +188,13 @@ function wireCTSettings() {
     updateCTReadouts();
   });
   // direction pad — nudge the patient/couch; longitudinal travel shows as table position
-  const STEP = 1;   // cm per press
+  const STEP = 1;                       // world unit per press (= 10 mm)
   $('ctDpad')?.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-dir]'); if (!b) return;
-    const p = S.ct.patient;
+    const p = S.ct.patient, dmm = intoSign() * STEP * MM_PER_UNIT;
     switch (b.dataset.dir) {
-      case 'up':    p.z -= STEP; S.ct.tablePos -= STEP; break;   // table into the gantry
-      case 'down':  p.z += STEP; S.ct.tablePos += STEP; break;   // table out
+      case 'up':    p.z -= STEP; S.ct.tablePos += dmm; break;   // table into the gantry
+      case 'down':  p.z += STEP; S.ct.tablePos -= dmm; break;   // table out
       case 'left':  p.x -= STEP; break;
       case 'right': p.x += STEP; break;
     }
@@ -205,9 +211,9 @@ function wireCTSettings() {
 //   exposure time    = rotations x rotation time (s)
 function ctExposureTime() {
   const c = ctx.S.ct;
-  const beamWidth = c.imgPerRotation * (c.sliceThk / 10);     // cm
-  const feedPerRot = Math.max(c.pitch * beamWidth, 1e-3);     // cm / rotation
-  return (c.scanLen / feedPerRot) * c.rotSpeed;               // seconds
+  const beamWidth = c.imgPerRotation * c.sliceThk;           // mm
+  const feedPerRot = Math.max(c.pitch * beamWidth, 1e-3);    // mm / rotation
+  return (c.scanLen / feedPerRot) * c.rotSpeed;              // seconds
 }
 
 function updateCTReadouts() {
@@ -217,10 +223,10 @@ function updateCTReadouts() {
   set('ctImgV', S.ct.imgPerRotation);
   set('ctPitchV', S.ct.pitch.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
   set('ctRotSpeedV', S.ct.rotSpeed.toFixed(2) + ' s');
-  set('ctScanLenV', S.ct.scanLen + ' cm');
+  set('ctScanLenV', S.ct.scanLen + ' mm');
   const et = ctExposureTime();
   set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
-  set('ctTablePosV', (S.ct.tablePos >= 0 ? '+' : '') + S.ct.tablePos.toFixed(1) + ' cm');
+  set('ctTablePosV', fmtTablePos(S.ct.tablePos));
   set('ctOrientV', S.ct.orientation === 'feet' ? 'FEET FIRST' : 'HEAD FIRST');
 }
 
@@ -324,16 +330,16 @@ async function runScoutExposure(view) {
 function animateTableTravel(dur) {
   return new Promise(res => {
     const three = ctx.three, S = ctx.S;
-    const scanLen = S.ct.scanLen;
+    const travelU = scanLenU();                        // world units to travel
     const startHandZ = three.handGroup.position.z, startBedZ = bed.position.z;
-    const tpSign = S.ct.orientation === 'feet' ? 1 : -1;
+    const tpEnd = intoSign() * S.ct.scanLen;           // mm: +I (head-first) / -S (feet-first)
     const t0 = performance.now();
     let done = false;
     const apply = (t) => {
-      const dz = -scanLen * t;                         // travel into the bore (-z)
+      const dz = -travelU * t;                         // travel into the bore (-z)
       three.handGroup.position.z = startHandZ + dz;
       bed.position.z = startBedZ + dz;
-      S.ct.tablePos = tpSign * scanLen * t;            // live table position
+      S.ct.tablePos = tpEnd * t;                       // live table position (mm)
       updateCTReadouts();
     };
     const finish = () => { if (done) return; done = true; apply(1); res(); };
@@ -359,19 +365,22 @@ function scoutProjection(view) {
   const muBone = bins.map(b => Materials.mu('bone', b.E));
   const muMarr = bins.map(b => Materials.mu('marrow', b.E));
   const I0 = S.mas * Math.pow(S.kv / 70, 2);
-  const scanLen = S.ct.scanLen;                     // cm, shared vertical (z) axis
-  const nz = 320, nw = 128;
-  const pxV = scanLen / nz;
-  let sx, sy, dcx, dcy, ux, uy, pxU;
-  if (view === 'AP') { const W = 26; pxU = W / nw; sx = 0; sy = 100; dcx = 0; dcy = 0; ux = 1; uy = 0; }
-  else { const T = 14, yc = 3; pxU = T / nw; sx = 100; sy = yc; dcx = -8; dcy = yc; ux = 0; uy = 1; }
+  const PXMM = 1.5;                                  // mm per (square) pixel — undistorted
+  const lenU = scanLenU();                           // scan length in world units (z axis)
+  const widthMM = view === 'AP' ? 180 : 90;          // width (AP) / thickness (LAT) field
+  const nz = Math.max(2, Math.round(S.ct.scanLen / PXMM));
+  const nw = Math.max(2, Math.round(widthMM / PXMM));
+  const pxU = (widthMM / MM_PER_UNIT) / nw;          // == lenU/nz == PXMM/10 -> square pixels
+  let sx, sy, dcx, dcy, ux, uy;
+  if (view === 'AP') { sx = 0; sy = 100; dcx = 0; dcy = 0; ux = 1; uy = 0; }
+  else { const yc = 1.3; sx = 100; sy = yc; dcx = -8; dcy = yc; ux = 0; uy = 1; }
   const refDist2 = (sx - dcx) * (sx - dcx) + (sy - dcy) * (sy - dcy);
   const halfU = (nw - 1) / 2;
   const dose = new Float32Array(nw * nz);
   for (let j = 0; j < nz; j++) {
-    // the scan runs FROM the isocentre (gantry z=0) for the scan length; row 0 is
-    // the isocentre, row nz-1 is scanLen away. Orientation only flips the display.
-    const z = -(j / (nz - 1)) * scanLen;
+    // scan runs FROM the isocentre (gantry z=0) for the scan length; row 0 is the
+    // isocentre, row nz-1 is scanLen away. Orientation only flips the display.
+    const z = -(j / (nz - 1)) * lenU;
     const src = [sx, sy, z];
     for (let i = 0; i < nw; i++) {
       const u = (i - halfU) * pxU;

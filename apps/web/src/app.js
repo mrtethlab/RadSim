@@ -204,8 +204,8 @@ const S = {
     imgPerRotation:1,          // images reconstructed per gantry rotation
     pitch:1.0,                 // table travel per rotation / total collimation
     rotSpeed:0.5,              // seconds per gantry rotation
-    scanLen:30,                // cm scout/scan length (from isocentre)
-    tablePos:0,                // cm; isocentring zeroes this, patient motion changes it
+    scanLen:300,               // mm scout/scan length (from isocentre)
+    tablePos:0,                // mm; signed: +I (inferior) / -S (superior); isocentre zeroes it
     isoZ:0,                    // patient z recorded when the isocentre was set
     isocentred:false,
     phase:'idle',              // idle | scout | planning | moving | scanning | done
