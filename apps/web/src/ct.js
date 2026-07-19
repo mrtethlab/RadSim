@@ -286,13 +286,10 @@ function wireCTSettings() {
   $('ctPitch')?.addEventListener('input', (e) => { S.ct.pitch = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctRotSpeed')?.addEventListener('input', (e) => { S.ct.rotSpeed = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
-  // table height — two buttons (raise / lower) beside the direction pad, 10 mm/press
-  $('ctTablePad')?.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-th]'); if (!b) return;
-    const d = b.dataset.th === 'up' ? 10 : -10;   // up raises the patient toward/above the isocentre
-    S.ct.tableY = Math.max(-80, Math.min(80, S.ct.tableY + d));
-    ctx.syncScene();            // reposition the patient + couch in y
-    updateCTReadouts();
+  // table height — raise / lower by 1 mm per press; hold to auto-repeat
+  wireHoldRepeat($('ctTablePad'), 'button[data-th]', (b) => {
+    S.ct.tableY = Math.max(-80, Math.min(80, S.ct.tableY + (b.dataset.th === 'up' ? 1 : -1)));
+    ctx.syncScene(); updateCTReadouts();
   });
   // isocentre confirm — zero the table position reading (patient stays put)
   $('ctIsocentre')?.addEventListener('click', () => {
@@ -300,10 +297,9 @@ function wireCTSettings() {
     setHint('Isocentre set. Acquire scouts to begin planning.');
     updateCTReadouts();
   });
-  // direction pad — nudge the patient/couch; longitudinal travel shows as table position
+  // direction pad — nudge the patient/couch (10 mm/press); hold to auto-repeat
   const STEP = 1;                       // world unit per press (= 10 mm)
-  $('ctDpad')?.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-dir]'); if (!b) return;
+  wireHoldRepeat($('ctDpad'), 'button[data-dir]', (b) => {
     const p = S.ct.patient, dmm = STEP * MM_PER_UNIT;
     switch (b.dataset.dir) {
       case 'up':    p.z -= STEP; S.ct.tablePos += dmm; break;   // table into the gantry (+I)
@@ -312,8 +308,7 @@ function wireCTSettings() {
       case 'right': p.x += STEP; break;
     }
     S.ct.isocentred = false;
-    ctx.syncScene();          // ctSyncScene re-applies the patient offset
-    updateCTReadouts();
+    ctx.syncScene(); updateCTReadouts();
   });
 }
 
@@ -346,6 +341,26 @@ function updateCTReadouts() {
 }
 
 function setHint(t) { const el = ctx.$('ctHint'); if (el) el.textContent = t; }
+
+// Press-and-hold auto-repeat for a group of buttons: one step on press, then after
+// a short delay it repeats at a steady rate while held (so large adjustments don't
+// need repeated clicking).
+function wireHoldRepeat(container, selector, step) {
+  if (!container) return;
+  container.addEventListener('pointerdown', (e) => {
+    const b = e.target.closest(selector); if (!b || b.disabled) return;
+    e.preventDefault();
+    step(b);
+    try { b.setPointerCapture(e.pointerId); } catch (_) {}
+    let iv = null;
+    const to = setTimeout(() => { iv = setInterval(() => step(b), 55); }, 340);   // delay -> repeat rate
+    const stop = () => {
+      clearTimeout(to); if (iv) clearInterval(iv);
+      b.removeEventListener('pointerup', stop); b.removeEventListener('pointercancel', stop); b.removeEventListener('lostpointercapture', stop);
+    };
+    b.addEventListener('pointerup', stop); b.addEventListener('pointercancel', stop); b.addEventListener('lostpointercapture', stop);
+  });
+}
 
 // Grey out the helical-only params (images/rotation, pitch, rotation speed): a
 // scout has no gantry rotation, so they don't apply. Re-enabled when the helical
@@ -733,8 +748,9 @@ function updatePlanReady() {
   ctx.$('ctTable')?.classList.toggle('flash', needMove);
   c.moveBlit = needMove ? (needX ? 'ap' : 'lat') : null;   // which PoV to mirror into the monitor
   const noexp = ctx.$('noexp');
-  if (needMove) { if (noexp) noexp.style.display = 'none'; }   // the PoV blit fills the monitor
-  else { ctx.refreshFilmViewer(); }                            // clear the PoV frame + restore NO IMAGE
+  if (needMove && noexp) noexp.style.display = 'none';         // the PoV blit fills the monitor
+  // when no move is pending, LEAVE the last PoV frame frozen in the monitor (don't
+  // revert to NO IMAGE) — it persists until abort/reset/mode-switch clears it.
   showTableReminder(needMove, tableV > 0.05);                  // "moving" only while the motor is actually turning
 }
 function showTableReminder(on, moving) {
@@ -751,7 +767,7 @@ function showTableReminder(on, moving) {
 // table height. Each move has a 0.5 s accel/decel ramp (motor momentum) and a motor
 // sound, pitch-shifted per axis. Releasing mid-move decelerates to a pause; the next
 // axis never starts automatically while held.
-const RAMP = 0.5;                       // s to reach full speed
+const RAMP = 1.0;                       // s to reach full speed (motor momentum)
 const ACCEL = TABLE_SPEED / RAMP;       // mm/s^2
 let tableHeld = false, tableRAF = null, tableLastT = 0;
 let tableV = 0, moveAxis = null, awaitRelease = false;

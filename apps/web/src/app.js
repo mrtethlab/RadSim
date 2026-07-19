@@ -463,6 +463,8 @@ function setContent(c){
   S.bayContent=c;
   const seg=$('contentSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.c===c));
   const img=(c==='image');
+  // switching the bay to 3D in CT defaults to Orbit (whole-scene view), not a fixed PoV
+  if(!img && S.mode==='ct') setCTPov('orbit');
   // In CT with scouts acquired, the Image view IS the scout window (AP+LAT topograms
   // for scan planning); it replaces the radiograph/bignote.
   const scouts=(S.mode==='ct' && S.ct.scoutsReady && img);
