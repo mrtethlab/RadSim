@@ -278,7 +278,10 @@ const S = {
     viewer:{ scanId:null, slice:0, wl:60, ww:800 },   // cross-sectional (axial) viewer state (HU window/level)
     // linked 2x2 MPR workstation: one cross-reference position drives all four panes
     mpr:{ scanId:null, cur:null, wl:60, ww:800, sel:'axial', thk:5, interval:5, algo:'standard', mar:false,
-          ob:{ cx:0, cy:0, ang:0, size:60 } },
+          // oblique plane: a localizer line anchored to one ortho view (view), rotated by
+          // ang within that view, centred at (cu,cv) in that view's in-plane mm; the plane
+          // extends along the axis perpendicular to that view → a true oblique. fov = DFOV.
+          ob:{ view:'axial', ang:0, cu:0, cv:0, fov:60 } },
     busy:false,                // true during scan execution (controls greyed out)
   },
 };

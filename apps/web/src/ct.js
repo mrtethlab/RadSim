@@ -1545,7 +1545,6 @@ function slab(scan, axis, x, yrel, d, ns, step, algo) {
   if (algo === 'minip') return acc === Infinity ? 0 : acc;
   return cnt ? acc / cnt : 0;
 }
-// number of slices a recon scrolls through, and a position label for slice k.
 // Shared volume geometry for the linked MPR grid: in-plane pixel size, the z-extent,
 // and the isotropic vertical pixel count for the coronal/sagittal (x/y-z) reformats.
 function mprGeom(scan) {
@@ -1555,19 +1554,16 @@ function mprGeom(scan) {
 }
 // Reformat one linked-MPR pane at the current cross-reference position → {data,w,h}.
 // axial = x-y at z; coronal = x-z at y; sagittal = y-z at x (anterior left); oblique =
-// an in-plane-rotated, re-centred axial (the BR box). Slab-combined per algorithm.
+// a true arbitrary plane sampled from its {u,v,n} basis (see obliquePlane). Slab-combined.
 function paneImage(scan, pane, cur, prm) {
   const g = mprGeom(scan), N = g.N, p = g.p;
   const nsZ = Math.max(1, Math.round(prm.thk / scan.dz)), nsP = Math.max(1, Math.round(prm.thk / p));
   let w, h, data;
-  if (pane === 'axial' || pane === 'oblique') {
-    const ob = pane === 'oblique', ang = ob ? prm.ob.ang : 0, ca = Math.cos(ang), sa = Math.sin(ang);
-    const fov = ob ? prm.ob.size : g.fov, ps = fov / N, cxc = ob ? prm.ob.cx : 0, cyc = ob ? prm.ob.cy : 0;
+  if (pane === 'axial') {
     w = N; h = N; data = new Float32Array(N * N);
     for (let oy = 0; oy < N; oy++) for (let ox = 0; ox < N; ox++) {
-      const u = (ox - (N - 1) / 2) * ps, v = ((N - 1) / 2 - oy) * ps;        // box-local (top = +v)
-      const x = cxc + u * ca - v * sa, y = cyc + u * sa + v * ca;            // rotate + offset into volume
-      data[oy * N + ox] = slab(scan, 'z', x, y, cur.z, nsZ, scan.dz, prm.algo);
+      const x = (ox - (N - 1) / 2) * p, yrel = ((N - 1) / 2 - oy) * p;      // top = +y (dorsal)
+      data[oy * N + ox] = slab(scan, 'z', x, yrel, cur.z, nsZ, scan.dz, prm.algo);
     }
   } else if (pane === 'coronal') {
     w = N; h = g.zh; data = new Float32Array(w * h);
@@ -1575,11 +1571,31 @@ function paneImage(scan, pane, cur, prm) {
       const x = (ox - (N - 1) / 2) * p, d = g.z0 + oz * g.psz;              // top = scan start (superior)
       data[oz * w + ox] = slab(scan, 'y', x, cur.y, d, nsP, p, prm.algo);
     }
-  } else {                                                                   // sagittal
+  } else if (pane === 'sagittal') {
     w = N; h = g.zh; data = new Float32Array(w * h);
     for (let oz = 0; oz < h; oz++) for (let ox = 0; ox < w; ox++) {
       const y = ((N - 1) / 2 - ox) * p, d = g.z0 + oz * g.psz;              // left = +y (anterior)
       data[oz * w + ox] = slab(scan, 'x', cur.x, y, d, nsP, p, prm.algo);
+    }
+  } else {                                                                   // true oblique plane
+    const ob = ctx.S.ct.mpr.ob, pl = obliquePlane(), zc = g.z0 + g.zExt / 2;
+    const vExt = ob.view === 'axial' ? g.zExt : g.fov, fov = ob.fov;         // v spans the perpendicular-to-anchor axis
+    w = N; const pu = fov / N; h = clampV(Math.round(N * vExt / fov), 16, 512); const pv = vExt / h;
+    const ns = Math.max(1, Math.round(prm.thk / pu));
+    data = new Float32Array(w * h);
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+      const su = (i - (N - 1) / 2) * pu, sv = ((h - 1) / 2 - j) * pv;        // top = +v
+      let acc = prm.algo === 'mip' ? -Infinity : prm.algo === 'minip' ? Infinity : 0, cnt = 0;
+      for (let k = 0; k < ns; k++) {
+        const so = (k - (ns - 1) / 2) * pu;                                  // slab along the plane normal
+        const Px = pl.C[0] + su * pl.u[0] + sv * pl.v[0] + so * pl.n[0];
+        const Py = pl.C[1] + su * pl.u[1] + sv * pl.v[1] + so * pl.n[1];
+        const Pd = pl.C[2] + su * pl.u[2] + sv * pl.v[2] + so * pl.n[2];
+        const val = sampleVol(scan, Px, Py, zc + Pd);
+        if (isNaN(val)) continue;
+        if (prm.algo === 'mip') acc = Math.max(acc, val); else if (prm.algo === 'minip') acc = Math.min(acc, val); else { acc += val; cnt++; }
+      }
+      data[j * w + i] = prm.algo === 'mip' ? (acc === -Infinity ? 0 : acc) : prm.algo === 'minip' ? (acc === Infinity ? 0 : acc) : (cnt ? acc / cnt : 0);
     }
   }
   if (prm.algo === 'blur') data = filter2D(data, w, h, 'blur');
@@ -1649,7 +1665,29 @@ function initMprForScan(scan) {
   m.cur = { x: 0, y: 0, z: scan.z0 + (scan.nz - 1) * scan.dz / 2 };
   m.thk = scan.recons && scan.recons[0] ? scan.recons[0].thk : scan.params.sliceThk;
   m.interval = scan.params.interval; m.algo = 'standard'; m.mar = false; m.sel = 'axial';
-  m.ob = { cx: 0, cy: 0, ang: 0, size: Math.max(10, g.fov * 0.7) };
+  m.ob = { view: 'axial', ang: 0, cu: 0, cv: 0, fov: Math.max(20, g.fov * 0.85) };
+}
+// ---- true-oblique plane geometry ----
+const v3add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+const v3scl = (a, s) => [a[0] * s, a[1] * s, a[2] * s];
+// The oblique plane in centred physical coords (X=R/L, Y=A/P, D'=inferior−zCentre).
+// Anchored to ob.view: the in-view axes a1,a2 hold the localizer line; the plane extends
+// along a3 (perpendicular to that view), so it is genuinely oblique to all three ortho
+// planes unless ang aligns. u = line dir (image horizontal), v = a3 (image vertical),
+// n = in-view normal (the scroll axis).
+function obliquePlane() {
+  const ob = ctx.S.ct.mpr.ob, c = Math.cos(ob.ang), s = Math.sin(ob.ang);
+  let a1, a2, a3;
+  if (ob.view === 'axial') { a1 = [1, 0, 0]; a2 = [0, 1, 0]; a3 = [0, 0, 1]; }
+  else if (ob.view === 'coronal') { a1 = [1, 0, 0]; a2 = [0, 0, 1]; a3 = [0, 1, 0]; }
+  else { a1 = [0, 1, 0]; a2 = [0, 0, 1]; a3 = [1, 0, 0]; }
+  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
+    C: v3add(v3scl(a1, ob.cu), v3scl(a2, ob.cv)) };
+}
+// clamp the localizer centre to the volume (a1 = ±fov/2; a2 = ±fov/2 for axial, ±zExt/2 else)
+function clampOb(scan) {
+  const g = mprGeom(scan), ob = ctx.S.ct.mpr.ob, f = g.fov / 2, z = g.zExt / 2;
+  ob.cu = clampV(ob.cu, -f, f); ob.cv = clampV(ob.cv, ob.view === 'axial' ? -f : -z, ob.view === 'axial' ? f : z);
 }
 // Physical value at each edge of a pane's image (horizontal L/R, vertical T/B).
 function paneAxes(scan, pane) {
@@ -1691,7 +1729,7 @@ function paneLabelPos(scan, pane) {
   const c = ctx.S.ct.mpr.cur;
   if (pane === 'coronal') return 'A/P ' + (c.y >= 0 ? '+' : '') + Math.round(c.y) + ' mm';
   if (pane === 'sagittal') return 'R/L ' + (c.x >= 0 ? '+' : '') + Math.round(c.x) + ' mm';
-  if (pane === 'oblique') return fmtTablePos(c.z) + ' · ' + Math.round(ctx.S.ct.mpr.ob.ang * 180 / Math.PI) + '°';
+  if (pane === 'oblique') { const ob = ctx.S.ct.mpr.ob; return PLANE_LABEL[ob.view] + ' ∠' + Math.round(ob.ang * 180 / Math.PI) + '° · DFOV ' + Math.round(ob.fov) + ' mm'; }
   return fmtTablePos(c.z) + ' mm';
 }
 let _off = null;
@@ -1712,8 +1750,9 @@ function drawPane(scan, pane) {
   const cur = m.cur;
   if (pane === 'coronal') { refLine(g, 'v', map.dX(cur.x), map.dy, map.dh, PLANE_COLOR.x); refLine(g, 'h', map.dY(cur.z), map.dx, map.dw, PLANE_COLOR.z); }
   else if (pane === 'sagittal') { refLine(g, 'v', map.dX(cur.y), map.dy, map.dh, PLANE_COLOR.y); refLine(g, 'h', map.dY(cur.z), map.dx, map.dw, PLANE_COLOR.z); }
-  else if (pane === 'axial') { refLine(g, 'v', map.dX(cur.x), map.dy, map.dh, PLANE_COLOR.x); refLine(g, 'h', map.dY(cur.y), map.dx, map.dw, PLANE_COLOR.y); drawObliqueBox(g, map); }
-  else if (pane === 'oblique') { g.save(); g.strokeStyle = '#eef4fb'; g.globalAlpha = .5; refLine(g, 'v', map.dx + map.dw / 2, map.dy, map.dh, '#eef4fb'); refLine(g, 'h', map.dy + map.dh / 2, map.dx, map.dw, '#eef4fb'); g.restore(); }
+  else if (pane === 'axial') { refLine(g, 'v', map.dX(cur.x), map.dy, map.dh, PLANE_COLOR.x); refLine(g, 'h', map.dY(cur.y), map.dx, map.dw, PLANE_COLOR.y); }
+  else if (pane === 'oblique') { g.save(); g.strokeStyle = '#eef4fb'; g.globalAlpha = .45; refLine(g, 'v', map.dx + map.dw / 2, map.dy, map.dh, '#eef4fb'); refLine(g, 'h', map.dy + map.dh / 2, map.dx, map.dw, '#eef4fb'); g.restore(); }
+  if (pane === m.ob.view && pane !== 'oblique') drawObliqueLine(g, scan, pane, map);   // localizer on its anchor view
   paneEl.classList.toggle('sel', m.sel === pane);
   const lbl = paneEl.querySelector('.mpr-lbl');
   if (lbl) lbl.textContent = PLANE_LABEL[pane] + '  ·  ' + paneLabelPos(scan, pane) + '  ·  ' + fmtNum(m.thk) + 'mm  ·  ' + algoLabel(m.algo) + (m.mar ? ' · MAR' : '') + '  ·  W/L ' + Math.round(m.ww) + '/' + Math.round(m.wl);
@@ -1725,16 +1764,29 @@ function refLine(g, dir, pos, off0, len, color) {
   else { line(g, off0, pos, off0 + len, pos); g.beginPath(); g.moveTo(off0 - 1, pos); g.lineTo(off0 - 8, pos - 4); g.lineTo(off0 - 8, pos + 4); g.closePath(); g.fill(); }
   g.restore();
 }
-function drawObliqueBox(g, map) {
-  const ob = ctx.S.ct.mpr.ob, hs = ob.size / 2, ca = Math.cos(ob.ang), sa = Math.sin(ob.ang);
-  const corner = (u, v) => { const x = ob.cx + u * ca - v * sa, y = ob.cy + u * sa + v * ca; return [map.dX(x), map.dY(y)]; };
-  const c = [corner(-hs, -hs), corner(hs, -hs), corner(hs, hs), corner(-hs, hs)];
-  g.save(); g.strokeStyle = '#e6f2ff'; g.fillStyle = '#e6f2ff'; g.lineWidth = 1.5; g.setLineDash([6, 4]);
-  g.beginPath(); g.moveTo(c[0][0], c[0][1]); for (let i = 1; i < 4; i++) g.lineTo(c[i][0], c[i][1]); g.closePath(); g.stroke();
-  g.setLineDash([]);
-  const topmid = corner(0, hs), handle = corner(0, hs + ob.size * 0.2);
-  line(g, topmid[0], topmid[1], handle[0], handle[1]);
-  g.beginPath(); g.arc(handle[0], handle[1], 4.5, 0, Math.PI * 2); g.fill();
+// Convert an in-view (a1,a2) coord of the oblique anchor to display px on that pane.
+function obDisp(scan, pane, map, cu, cv) {
+  const g = mprGeom(scan), zc = g.z0 + g.zExt / 2;
+  return [map.dX(cu), map.dY(pane === 'axial' ? cv : (zc + cv))];   // vertical is A/P (axial) or inferior (coronal/sagittal)
+}
+// Inverse: a click on the anchor pane → its (a1,a2) in-view coord.
+function obClickAB(scan, pane, map, px, py) {
+  const g = mprGeom(scan), zc = g.z0 + g.zExt / 2, hv = map.invH(px), vv = map.invV(py);
+  return { cu: hv, cv: pane === 'axial' ? vv : (vv - zc) };
+}
+// The oblique localizer: the plane is edge-on to its anchor view, so it appears as a
+// LINE. Drawn with end handles (grab to rotate + scale) and a short normal tick (the
+// direction the oblique slices advance). Scrolling the BR pane moves it along the normal.
+function drawObliqueLine(g, scan, pane, map) {
+  const ob = ctx.S.ct.mpr.ob, c = Math.cos(ob.ang), s = Math.sin(ob.ang), hl = ob.fov / 2;
+  const e1 = obDisp(scan, pane, map, ob.cu + c * hl, ob.cv + s * hl);
+  const e2 = obDisp(scan, pane, map, ob.cu - c * hl, ob.cv - s * hl);
+  const c0 = obDisp(scan, pane, map, ob.cu, ob.cv);
+  const nt = obDisp(scan, pane, map, ob.cu - s * ob.fov * 0.16, ob.cv + c * ob.fov * 0.16);   // normal tick
+  g.save(); g.strokeStyle = '#f2d06b'; g.fillStyle = '#f2d06b'; g.lineWidth = 1.7;
+  line(g, e1[0], e1[1], e2[0], e2[1]);
+  line(g, c0[0], c0[1], nt[0], nt[1]);
+  [e1, e2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
   g.restore();
 }
 
@@ -1750,7 +1802,8 @@ function onPaneWheel(e, pane) {
   m.sel = pane;
   if (pane === 'coronal') m.cur.y = clampAxis(m.cur.y + dir * step, scan);
   else if (pane === 'sagittal') m.cur.x = clampAxis(m.cur.x + dir * step, scan);
-  else m.cur.z = clampZ(m.cur.z + dir * step, scan);
+  else if (pane === 'axial') m.cur.z = clampZ(m.cur.z + dir * step, scan);
+  else { const th = m.ob.ang; m.ob.cu += dir * step * -Math.sin(th); m.ob.cv += dir * step * Math.cos(th); clampOb(scan); }   // oblique: move along the plane normal
   renderMprThrottled();
 }
 function evtToCanvas(e, cv) { const r = cv.getBoundingClientRect(); return { px: (e.clientX - r.left) * (cv.width / r.width), py: (e.clientY - r.top) * (cv.height / r.height) }; }
@@ -1767,30 +1820,33 @@ function onPaneDown(e, pane, cv) {
     else if (pane === 'axial') { m.cur.x = clampAxis(hv, scan); m.cur.y = clampAxis(vv, scan); }
     renderMprThrottled();
   };
-  if (pane === 'oblique') { renderMprThrottled(); return; }   // BR: select only
-  // Axial: the oblique box's rotation handle rotates; a DRAG inside the box moves it,
-  // but a click (no drag) inside the box just sets the crosshair — so the crosshair is
-  // reachable everywhere. Outside the box: crosshair on down + drag.
-  let mode = null, grab = null;
-  if (pane === 'axial') {
-    const { px, py } = evtToCanvas(e, cv), ob = m.ob, x = map.invH(px), y = map.invV(py);
-    const ca = Math.cos(ob.ang), sa = Math.sin(ob.ang), u = (x - ob.cx) * ca + (y - ob.cy) * sa, v = -(x - ob.cx) * sa + (y - ob.cy) * ca, hs = ob.size / 2;
-    if (Math.abs(u) < ob.size * 0.2 && Math.abs(v - (hs + ob.size * 0.2)) < ob.size * 0.22) mode = 'rotate';
-    else if (Math.abs(u) <= hs && Math.abs(v) <= hs) { mode = 'boxpend'; grab = { ox: x - ob.cx, oy: y - ob.cy }; }
+  if (pane === 'oblique') { renderMprThrottled(); return; }   // BR: select only (scroll/wheel drives it)
+  // If this pane is the oblique's anchor, its localizer line takes clicks near it:
+  // an end handle grab rotates + scales the plane; a drag on the body moves it; a plain
+  // click elsewhere sets the cross-reference. So the line coexists with the crosshair.
+  let mode = null, grab = null, endSign = 1;
+  if (pane === m.ob.view) {
+    const { px, py } = evtToCanvas(e, cv), ob = m.ob, ab = obClickAB(scan, pane, map, px, py);
+    const c = Math.cos(ob.ang), s = Math.sin(ob.ang), du = ab.cu - ob.cu, dv = ab.cv - ob.cv;
+    const along = du * c + dv * s, perp = -du * s + dv * c, hl = ob.fov / 2, tol = Math.max(4, ob.fov * 0.14);
+    if (Math.abs(perp) < tol && Math.abs(along) <= hl + tol) {
+      if (Math.abs(along) > hl - tol) { mode = 'end'; endSign = Math.sign(along) || 1; }
+      else { mode = 'move'; grab = { ou: ab.cu - ob.cu, ov: ab.cv - ob.cv }; }
+    }
   }
   if (!mode) setCross(e);
   const start = { x: e.clientX, y: e.clientY };
   const move = (ev) => {
-    const moved = Math.hypot(ev.clientX - start.x, ev.clientY - start.y) > 4;
-    if (mode === 'rotate') { const { px, py } = evtToCanvas(ev, cv); m.ob.ang = Math.atan2(-(map.invH(px) - m.ob.cx), (map.invV(py) - m.ob.cy)); renderMprThrottled(); return; }
-    if (mode === 'boxpend') { if (!moved) return; mode = 'box'; }
-    if (mode === 'box') { const { px, py } = evtToCanvas(ev, cv); m.ob.cx = clampAxis(map.invH(px) - grab.ox, scan); m.ob.cy = clampAxis(map.invV(py) - grab.oy, scan); renderMprThrottled(); return; }
+    const { px, py } = evtToCanvas(ev, cv), ob = m.ob;
+    if (mode === 'end') {                                  // grabbed end follows the cursor → rotate + scale about centre
+      const ab = obClickAB(scan, pane, map, px, py), vu = (ab.cu - ob.cu) * endSign, vv = (ab.cv - ob.cv) * endSign, d = Math.hypot(vu, vv);
+      if (d > 1) { ob.ang = Math.atan2(vv, vu); ob.fov = clampV(2 * d, 12, scan.fovMM * 1.6); }
+      renderMprThrottled(); return;
+    }
+    if (mode === 'move') { const ab = obClickAB(scan, pane, map, px, py); ob.cu = ab.cu - grab.ou; ob.cv = ab.cv - grab.ov; clampOb(scan); renderMprThrottled(); return; }
     if (!mode) setCross(ev);
   };
-  const up = (ev) => {
-    if (mode === 'boxpend') setCross(ev);   // click (no drag) inside the box → crosshair
-    cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); cv.removeEventListener('pointercancel', up);
-  };
+  const up = () => { cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); cv.removeEventListener('pointercancel', up); };
   cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
 }
 
@@ -1799,6 +1855,11 @@ function wireRecons() {
     const cv = ctx.$('mprCanvas_' + pane); if (!cv) return;
     cv.addEventListener('pointerdown', (e) => onPaneDown(e, pane, cv));
     cv.addEventListener('wheel', (e) => onPaneWheel(e, pane), { passive: false });
+    if (pane !== 'oblique') cv.addEventListener('dblclick', (e) => {   // re-anchor the oblique plane onto this view
+      const scan = mprScan(); if (!scan) return; const map = paneMapping(scan, pane, cv), { px, py } = evtToCanvas(e, cv);
+      const ab = obClickAB(scan, pane, map, px, py), m = ctx.S.ct.mpr;
+      m.ob.view = pane; m.ob.cu = ab.cu; m.ob.cv = ab.cv; m.ob.ang = 0; clampOb(scan); m.sel = 'oblique'; ctRenderRecons();
+    });
   });
   ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.cur = null; ctRenderRecons(); });
   ctx.$('ctMprAlgo')?.addEventListener('change', (e) => { ctx.S.ct.mpr.algo = e.target.value; ctRenderRecons(); });
