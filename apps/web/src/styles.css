@@ -250,6 +250,16 @@ body.mode-ct .xray-only{display:none}
 .dpad .right{grid-column:3; grid-row:2}
 .dpad .down{grid-column:2; grid-row:3}
 
+/* CT mode has no radiograph: keep the DR monitor's x-ray corner annotations hidden
+   so the viewer panel is fully isolated from the x-ray image. */
+body.mode-ct .monitor .filmnote{display:none}
+
+/* Helical-scan params (images/rotation, pitch, rotation speed) greyed while a scout
+   owns the workflow — a scout has no gantry rotation so they don't apply. */
+.ctHelical.off{opacity:.35; pointer-events:none; filter:grayscale(1)}
+.ctHelical.off::after{content:'not used for scout'; display:block; margin-top:4px;
+  font-family:var(--seg); font-size:8.5px; letter-spacing:1px; color:var(--muted); text-transform:uppercase}
+
 /* CT scout images — shown side by side over the positioning bay for scan planning.
    The two canvases are sized by layoutScouts() at one shared mm->px scale and
    top-aligned so a horizontal line hits the same table position on both. */

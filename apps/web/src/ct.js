@@ -161,6 +161,8 @@ function applyMode(mode) {
   if (mode !== 'ct') ctx.S.ct.scoutsReady = false;
   ctx.setBay3DEnabled(!owns);
   ctx.setContent(owns ? 'image' : ctx.S.bayContent);
+  ctx.refreshFilmViewer();        // isolate the modes' images (clear x-ray in CT)
+  greyHelical(mode === 'ct');     // helical params don't apply to a scout
   ctx.syncScene();
   updateCTReadouts();
 }
@@ -208,17 +210,12 @@ function wireCTSettings() {
   });
 }
 
-// Exposure (scan) time from the acquisition parameters:
-//   beam width       = images/rotation x slice thickness
-//   table feed/rot   = pitch x beam width
-//   rotations        = scan length / table feed per rotation
-//   exposure time    = rotations x rotation time (s)
-function ctExposureTime() {
-  const c = ctx.S.ct;
-  const beamWidth = c.imgPerRotation * c.sliceThk;           // mm
-  const feedPerRot = Math.max(c.pitch * beamWidth, 1e-3);    // mm / rotation
-  return (c.scanLen / feedPerRot) * c.rotSpeed;              // seconds
-}
+// A scout has NO gantry rotation — the tube is parked and the couch simply
+// translates the patient through the beam at a constant speed. So the scout scan
+// time is just scan length / table speed (independent of pitch / rotation speed /
+// images-per-rotation, which only govern the later helical diagnostic scan).
+const SCOUT_SPEED_MMPS = 80;                                 // scout couch speed (mm/s)
+function scoutScanTime() { return ctx.S.ct.scanLen / SCOUT_SPEED_MMPS; }   // seconds
 
 function updateCTReadouts() {
   const { S, $ } = ctx;
@@ -228,12 +225,24 @@ function updateCTReadouts() {
   set('ctPitchV', S.ct.pitch.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
   set('ctRotSpeedV', S.ct.rotSpeed.toFixed(2) + ' s');
   set('ctScanLenV', S.ct.scanLen + ' mm');
-  const et = ctExposureTime();
+  const et = scoutScanTime();
   set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
   set('ctTablePosV', fmtTablePos(S.ct.tablePos));
+  // Scan extent readouts. For a scout the scan always runs from the isocentre
+  // (0.0) to I(scan length). Phase 3's draggable scan box will drive these from
+  // the box edges instead (start = box near edge, end = box far edge).
+  set('ctScanStartV', fmtTablePos(0) + ' mm');
+  set('ctScanEndV', fmtTablePos(S.ct.scanLen) + ' mm');
 }
 
 function setHint(t) { const el = ctx.$('ctHint'); if (el) el.textContent = t; }
+
+// Grey out the helical-only params (images/rotation, pitch, rotation speed): a
+// scout has no gantry rotation, so they don't apply. Re-enabled when the helical
+// diagnostic-scan phase is built.
+function greyHelical(on) {
+  document.querySelectorAll('.ctHelical').forEach(el => el.classList.toggle('off', on));
+}
 
 // Console + acquisition state machine. Phase 2 implements idle -> scout ->
 // planning; scan-box confirm, table motion, scan + reconstruction come next.
@@ -345,7 +354,7 @@ async function runScoutExposure(view, data) {
   setHint(view + ' scout · scanning…');
   Sound.startBuzz();
   // stitch rows 0..t as the couch advances -> image builds in lockstep with travel
-  await animateTableTravel(ctExposureTime() * 1000, (t) => drawScout(cv, data, t * data.nz));
+  await animateTableTravel(scoutScanTime() * 1000, (t) => drawScout(cv, data, t * data.nz));
   Sound.stopBuzz();
   drawScout(cv, data);                                      // guarantee the final full frame
   setHint(view + ' scout · breathe normally.');

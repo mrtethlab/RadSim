@@ -410,10 +410,24 @@ function setCameraView(m){
   S.viewMode=m;
   const seg=$('camSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.cam===m));
 }
+/* Show the right thing in the small DR monitor for the current mode. X-ray shows
+   its radiograph; CT has no radiograph (its scouts live in the bay, and the
+   reconstruction viewer comes later), so the monitor is cleared — the two modes'
+   images stay isolated, never bleeding a stale x-ray into CT. */
+function refreshFilmViewer(){
+  const f=$('film'), noexp=$('noexp');
+  if(S.mode!=='ct' && S.hasImage){
+    drawFilm();
+    if(noexp) noexp.style.display='none';
+  } else {
+    if(f) f.getContext('2d').clearRect(0,0,f.width,f.height);
+    if(noexp) noexp.style.display='';
+  }
+}
 /* CT scout build: mirror the tube's-eye 3D into the small DR monitor. Forces the
    tube camera while active (saving the user's choice) and hides the NO IMAGE note;
-   restores the camera + film on the way out. The per-frame blit lives in the render
-   loop, gated by S.ct.liveView. */
+   restores the camera + monitor on the way out. The per-frame blit lives in the
+   render loop, gated by S.ct.liveView. */
 function ctLiveView(on){
   const noexp=$('noexp');
   if(on){
@@ -424,11 +438,7 @@ function ctLiveView(on){
   } else {
     S.ct.liveView=false;
     if(ctLiveView._prevCam) setCameraView(ctLiveView._prevCam);
-    if(S.hasImage){ drawFilm(); }
-    else {
-      const f=$('film'); if(f) f.getContext('2d').clearRect(0,0,f.width,f.height);  // drop the stale 3D frame
-      if(noexp) noexp.style.display='';
-    }
+    refreshFilmViewer();       // CT -> cleared; x-ray -> its radiograph
   }
 }
 function setContent(c){
@@ -835,5 +845,6 @@ window.addEventListener('load',()=>{
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
-           poseRot, buildPhantom, ctLiveView, setCameraView, setContent, setBay3DEnabled });
+           poseRot, buildPhantom, ctLiveView, setCameraView, setContent, setBay3DEnabled,
+           refreshFilmViewer });
 });
