@@ -10,6 +10,7 @@ import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
 import { loadModelFile } from './model/loader.js';
 import { ComputeClient } from './compute/client.js';
+import { initCT, ctSyncScene } from './ct.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -195,6 +196,17 @@ const S = {
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
+  // ---- CT mode ----
+  mode:'xray',                 // 'xray' | 'ct'
+  ct:{
+    sliceThk:5,                // mm
+    imgPerSlice:1,             // images reconstructed per slice location
+    pitch:1.0,                 // table travel per rotation / total collimation
+    scanLen:30,                // cm scout/scan length (top=0 -> bottom=scanLen)
+    tablePos:0,                // cm; isocentring zeroes this, patient motion changes it
+    isocentred:false,
+    phase:'idle',              // idle | scout | planning | moving | scanning | done
+  },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
 // the palmar soft tissue between bone and detector is only ~1-1.5 cm.
@@ -275,6 +287,7 @@ function syncScene(){
   three.key.intensity = on ? 0.5 : 0.9;
   three.cr.visible = !on;                       // crosshair now comes from the lamp
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
+  ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
 }
 
 /* Redraw the collimator cookie: bright rectangular aperture sized to the field
@@ -742,4 +755,8 @@ function initExtras(){
 window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); syncScene();
   Sound.init(); initExtras();
+  // CT mode lives in its own module; give it the handles it needs from the app glue.
+  initCT({ THREE, S, $, three, Sound,
+           syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
+           poseRot, buildPhantom });
 });

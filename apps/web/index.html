@@ -14,6 +14,10 @@
   <div class="bay">
     <canvas id="view"></canvas>
     <canvas id="bigFilm"></canvas>
+    <div class="modebar" id="modeBar">
+      <button data-mode="xray" class="on">X-RAY</button>
+      <button data-mode="ct">CT</button>
+    </div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
     <div class="bayctl">
       <div>
@@ -73,7 +77,35 @@
         </div>
       </div>
 
-      <div class="grp">
+      <div class="grp ct-only" id="ctSettings">
+        <div class="lab">CT acquisition</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Slice thickness</div>
+            <div class="valchip" id="ctSliceThkV">5 mm</div></div>
+          <div class="seg" id="ctSliceThkSeg">
+            <button data-v="0.625">0.6</button>
+            <button data-v="1.25">1.25</button>
+            <button data-v="2.5">2.5</button>
+            <button data-v="5" class="on">5</button>
+            <button data-v="10">10</button>
+          </div>
+          <div class="row" style="margin-top:12px"><div class="rl">Images / slice</div>
+            <div class="stepper"><button data-ctstep="imgPerSlice" data-d="-1">−</button>
+              <div class="sv" id="ctImgV">1</div><button data-ctstep="imgPerSlice" data-d="1">+</button></div></div>
+          <div class="row" style="margin-top:12px"><div class="rl">Pitch</div>
+            <div class="valchip" id="ctPitchV">1</div></div>
+          <input type="range" id="ctPitch" min="0.5" max="1.5" step="0.125" value="1">
+          <div class="row" style="margin-top:12px"><div class="rl">Scan length</div>
+            <div class="valchip" id="ctScanLenV">30 cm</div></div>
+          <input type="range" id="ctScanLen" min="5" max="60" step="1" value="30">
+          <div class="row" style="margin-top:12px"><div class="rl">Table position</div>
+            <div class="valchip cyanlit" id="ctTablePosV">+0.0 cm</div></div>
+          <div class="mini"><button id="ctIsocentre">◎ set isocentre (zero table)</button></div>
+          <div class="note" style="margin-top:6px">Transverse (axial) images only. Scan length sets the scout extent: top = 0, bottom = scan length.</div>
+        </div>
+      </div>
+
+      <div class="grp xray-only">
         <div class="lab">Tube &amp; distance</div>
         <div class="bod">
           <div class="row">
@@ -108,7 +140,7 @@
         </div>
       </div>
 
-      <div class="grp">
+      <div class="grp xray-only">
         <div class="lab">Collimation</div>
         <div class="bod">
           <div class="row"><div class="rl">Field width</div>
@@ -129,7 +161,7 @@
         </div>
       </div>
 
-      <div class="grp">
+      <div class="grp xray-only">
         <div class="lab">Detector</div>
         <div class="bod">
           <div class="row"><div class="rl">Resolution</div>
@@ -200,7 +232,7 @@
             <div class="stepper"><button data-step="mas" data-d="-1">−</button>
               <div class="sv" id="masSv">2.0</div><button data-step="mas" data-d="1">+</button></div></div>
           <input type="range" id="mas" min="0" max="24" value="7" step="1">
-          <div class="row" style="margin-top:6px"><div class="rl">Exposure time</div>
+          <div class="row xray-only" style="margin-top:6px"><div class="rl">Exposure time</div>
             <div style="font-family:var(--seg);color:var(--green);font-size:14px" id="timeInline">20 ms</div></div>
           <div class="mini" id="apr">
             <button data-part="hand-pa" data-kv="55" data-mas="2">HAND PA 55/2.0</button>
@@ -210,13 +242,24 @@
         </div>
       </div>
 
-      <div class="expose">
+      <div class="expose xray-only">
         <div class="warn" id="warn"><div class="lamp"></div><div class="wt" id="warnT">SYSTEM STANDBY</div></div>
         <div class="btns2">
           <button class="prep" id="rotor">ROTOR</button>
           <button class="fire" id="fire" disabled>EXPOSE</button>
         </div>
         <div class="note" style="margin-top:8px; text-align:center" id="exposeHint">Engage rotor, then <b>press&nbsp;and&nbsp;hold</b> EXPOSE for the exposure time</div>
+      </div>
+
+      <div class="ctconsole ct-only" id="ctConsole">
+        <div class="warn" id="ctWarn"><div class="lamp"></div><div class="wt" id="ctWarnT">CT · STANDBY</div></div>
+        <div class="ctbtns">
+          <button class="ctbtn abort" id="ctAbort" title="Abort"></button>
+          <button class="ctbtn start" id="ctStart" title="Start scan"></button>
+          <button class="ctbtn table" id="ctTable" title="Move table"></button>
+        </div>
+        <div class="ctbtns-lab"><span>Abort</span><span>Start</span><span>Table</span></div>
+        <div class="note" style="margin-top:8px; text-align:center" id="ctHint">Set the isocentre, then acquire scouts to plan the scan</div>
       </div>
     </div>
 

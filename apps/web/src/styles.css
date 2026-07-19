@@ -175,3 +175,41 @@
   .imgtools button.on{background:var(--cyan-dim); color:#eafcff}
   .imgtools .tlabel{font-family:var(--seg); font-size:9.5px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase; margin-right:2px}
   .imgtools button.txt{font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--muted)}
+
+/* ============================================================================
+   CT MODE  (mode toggle, mode-scoped visibility, CT console)
+   ============================================================================ */
+/* prominent X-RAY / CT selector, centred at the top of the bay */
+.modebar{position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:10;
+  display:flex; gap:3px; background:#0b0e12; border:1px solid var(--edge2); border-radius:9px;
+  padding:3px; box-shadow:0 5px 20px rgba(0,0,0,.55)}
+.modebar button{font-family:var(--disp); font-weight:700; letter-spacing:3px; font-size:15px;
+  color:var(--muted); background:transparent; border:0; padding:8px 28px; border-radius:6px;
+  cursor:pointer; text-transform:uppercase; transition:.15s}
+.modebar button:hover{color:var(--txt)}
+.modebar button[data-mode="xray"].on{color:#06121a; background:var(--cyan); box-shadow:0 0 14px rgba(53,198,214,.55)}
+.modebar button[data-mode="ct"].on{color:#1a1204; background:var(--amber); box-shadow:0 0 14px rgba(255,178,62,.55)}
+
+/* mode-scoped visibility (body class set by ct.js applyMode) */
+.ct-only{display:none}
+body.mode-ct .ct-only{display:block}
+body.mode-ct .xray-only{display:none}
+
+/* CT generator console */
+.ctconsole{margin-top:4px}
+.ctbtns{display:grid; grid-template-columns:1fr 1.3fr 1fr; gap:14px; align-items:center;
+  justify-items:center; margin-top:8px}
+.ctbtn{border-radius:50%; border:2px solid currentColor; background:#0c0f13; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:transform .06s, box-shadow .15s}
+.ctbtn svg{width:58%; height:58%}
+.ctbtn .stroke{fill:none; stroke:currentColor; stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
+.ctbtn.start{width:84px; height:84px; color:var(--green)}
+.ctbtn.abort{width:66px; height:66px; color:var(--red)}
+.ctbtn.table{width:66px; height:66px; color:var(--amber)}
+.ctbtn:hover{box-shadow:0 0 18px currentColor}
+.ctbtn:active{transform:scale(.94)}
+.ctbtn:disabled{opacity:.32; cursor:not-allowed; box-shadow:none}
+.ctbtn.flash{animation:ctflash 1s ease-in-out infinite}
+@keyframes ctflash{0%,100%{box-shadow:0 0 5px currentColor}50%{box-shadow:0 0 22px currentColor,0 0 36px currentColor}}
+.ctbtns-lab{display:grid; grid-template-columns:1fr 1.3fr 1fr; gap:14px; justify-items:center; margin-top:6px;
+  font-family:var(--seg); font-size:9.5px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase}
