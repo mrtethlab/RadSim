@@ -229,6 +229,13 @@
           <button data-cam="tube">Tube POV</button>
         </div>
       </div>
+      <div>
+        <div class="cl">Render</div>
+        <div class="segmini" id="renderSeg">
+          <button data-hv="soft" class="on">Anatomy</button>
+          <button data-hv="bone">Skeleton</button>
+        </div>
+      </div>
     </div>
     <div class="baytag">
       <div class="k">RADSIM · POSITIONING BAY</div>
@@ -495,9 +502,12 @@ const Sound=(()=>{
 const Materials = (()=>{
   const E = [20,30,40,50,60,80,100,120,150];            // keV
   const tables = {
-    soft: { rho:1.05, mr:[0.8096,0.3756,0.2683,0.2269,0.2059,0.1837,0.1707,0.1614,0.1505] },
-    bone: { rho:1.92, mr:[4.001, 1.331, 0.6655,0.4242,0.3148,0.2229,0.1855,0.1650,0.1480] },
-    Al:   { rho:2.70, mr:[3.441, 1.128, 0.5685,0.3681,0.2778,0.2018,0.1704,0.1533,0.1385] },
+    soft:   { rho:1.05, mr:[0.8096,0.3756,0.2683,0.2269,0.2059,0.1837,0.1707,0.1614,0.1505] },
+    bone:   { rho:1.92, mr:[4.001, 1.331, 0.6655,0.4242,0.3148,0.2229,0.1855,0.1650,0.1480] },
+    // medullary cavity: fatty marrow + sparse trabeculae — only mildly denser than
+    // soft tissue, so cortical shafts read as bright rails around a lucent canal.
+    marrow: { rho:1.05, mr:[0.9310,0.4319,0.3085,0.2609,0.2368,0.2113,0.1963,0.1856,0.1731] },
+    Al:     { rho:2.70, mr:[3.441, 1.128, 0.5685,0.3681,0.2778,0.2018,0.1704,0.1533,0.1385] },
   };
   const lnE = E.map(Math.log);
   function interpMR(mat, keV){
@@ -543,15 +553,30 @@ const Spectrum = (()=>{
 
 /* ============================================================================
    MODULE 3 — PHANTOM
-   Analytic geometry (capsules + boxes) in WORLD coordinates (cm). Each
-   primitive carries a material id. Pure geometry query: given a ray, return
+   Analytic geometry (capsules, tapered capsules/rounded cones + boxes) in WORLD
+   coordinates (cm). Each primitive carries a material id. A broad-phase bounding
+   sphere rejects far primitives cheaply. Pure geometry query: given a ray, return
    union path-length spent in each material (bone nested inside soft is handled
    by subtracting bone from soft). No renderer dependency — CT reuses this.
    ============================================================================ */
 class Phantom{
-  constructor(){ this.caps=[]; this.boxes=[]; }
-  addCapsule(a,b,r,mat){ this.caps.push({a,b,r,mat}); }
+  constructor(){ this.caps=[]; this.cones=[]; this.boxes=[]; }
+  // bounding sphere for broad-phase rejection (center xyz + radius)
+  static bsphere(a,b,r1,r2){
+    return [(a[0]+b[0])/2,(a[1]+b[1])/2,(a[2]+b[2])/2,
+            Math.hypot(b[0]-a[0],b[1]-a[1],b[2]-a[2])/2+Math.max(r1,r2)];
+  }
+  addCapsule(a,b,r,mat){ this.caps.push({a,b,r,mat,bs:Phantom.bsphere(a,b,r,r)}); }
+  // tapered capsule (rounded cone): swept sphere, radius r1 at a -> r2 at b.
+  // The narrow-shaft / flared-end primitive that gives bones realistic form.
+  addCone(a,b,r1,r2,mat){ this.cones.push({a,b,r1,r2,mat,bs:Phantom.bsphere(a,b,r1,r2)}); }
   addBox(min,max,mat){ this.boxes.push({min,max,mat}); }
+  // quick reject: does the ray's line miss the primitive's bounding sphere? (d unit)
+  static missSphere(o,d,bs){
+    const wx=bs[0]-o[0],wy=bs[1]-o[1],wz=bs[2]-o[2];
+    const tc=wx*d[0]+wy*d[1]+wz*d[2];
+    return (wx*wx+wy*wy+wz*wz-tc*tc) > bs[3]*bs[3];
+  }
 
   // --- ray vs capsule => [t0,t1] interval inside (or null). Convex => 1 interval.
   static rayCapsule(o,d, a,b,r){
@@ -594,6 +619,47 @@ class Phantom{
     if(!hit) return null;
     return [lo,hi];
   }
+  // --- ray vs rounded cone (tapered capsule) => [t0,t1] interval, or null.
+  // Convex swept sphere: radius ra at pa, rb at pb. Analytic tangent-cone +
+  // end-cap solution (after Inigo Quilez); assumes d is a unit vector. Collecting
+  // the extreme valid roots recovers the entry/exit interval, like rayCapsule.
+  static rayRoundedCone(o,d, pa,pb, ra,rb){
+    const bax=pb[0]-pa[0], bay=pb[1]-pa[1], baz=pb[2]-pa[2];
+    const oax=o[0]-pa[0], oay=o[1]-pa[1], oaz=o[2]-pa[2];
+    const obx=o[0]-pb[0], oby=o[1]-pb[1], obz=o[2]-pb[2];
+    const rr=ra-rb;
+    const m0=bax*bax+bay*bay+baz*baz;
+    const m1=bax*oax+bay*oay+baz*oaz;
+    const m2=bax*d[0]+bay*d[1]+baz*d[2];
+    const m3=d[0]*oax+d[1]*oay+d[2]*oaz;
+    const m5=oax*oax+oay*oay+oaz*oaz;
+    const m6=d[0]*obx+d[1]*oby+d[2]*obz;
+    const m7=obx*obx+oby*oby+obz*obz;
+    const d2=m0-rr*rr;
+    let lo=Infinity, hi=-Infinity, hit=false;
+    // lateral tangent-cone surface (clamped to the valid band between tangencies)
+    const k2=d2 - m2*m2;
+    const k1=d2*m3 - m1*m2 + m2*rr*ra;
+    const k0=d2*m5 - m1*m1 + 2*m1*rr*ra - m0*ra*ra;
+    const h=k1*k1 - k0*k2;
+    if(Math.abs(k2)>1e-12 && h>=0){
+      const s=Math.sqrt(h);
+      for(const t of [(-k1-s)/k2,(-k1+s)/k2]){
+        const y=m1 - ra*rr + t*m2;
+        if(y>0 && y<d2){ if(t<lo)lo=t; if(t>hi)hi=t; hit=true; }
+      }
+    }
+    // end caps (spheres at pa, pb). Any surface hit lies within the convex solid,
+    // so taking the extremes is safe.
+    const h1=m3*m3 - m5 + ra*ra;
+    if(h1>=0){ const s=Math.sqrt(h1), t0=-m3-s, t1=-m3+s;
+      lo=Math.min(lo,t0,t1); hi=Math.max(hi,t0,t1); hit=true; }
+    const h2=m6*m6 - m7 + rb*rb;
+    if(h2>=0){ const s=Math.sqrt(h2), t0=-m6-s, t1=-m6+s;
+      lo=Math.min(lo,t0,t1); hi=Math.max(hi,t0,t1); hit=true; }
+    if(!hit) return null;
+    return [lo,hi];
+  }
   static rayBox(o,d,min,max){
     let t0=-Infinity,t1=Infinity;
     for(let i=0;i<3;i++){
@@ -614,22 +680,33 @@ class Phantom{
     }
     return len + (ce-cs);
   }
-  // ray (origin o, unit dir d) -> {bone, soft} path lengths in cm
-  trace(o,d){
-    const bone=[], soft=[];
+  // ray (origin o, unit dir d) -> {bone, soft, marrow} path lengths in cm.
+  // maxT clips to the source->detector-cell segment so material past the detector
+  // (e.g. anatomy dipping below the receptor plane) is never counted.
+  trace(o,d,maxT=Infinity){
+    const bone=[], soft=[], marrow=[];
+    const bin=(mat)=> mat==='bone'?bone : mat==='marrow'?marrow : soft;
+    const add=(iv,mat)=>{ if(!iv) return; const lo=Math.max(iv[0],0), hi=Math.min(iv[1],maxT); if(hi>lo) bin(mat).push([lo,hi]); };
     for(const c of this.caps){
-      const iv = Phantom.rayCapsule(o,d,c.a,c.b,c.r);
-      if(iv && iv[1]>0){ iv[0]=Math.max(iv[0],0);
-        (c.mat==='bone'?bone:soft).push(iv); }
+      if(Phantom.missSphere(o,d,c.bs)) continue;
+      add(Phantom.rayCapsule(o,d,c.a,c.b,c.r), c.mat);
+    }
+    for(const c of this.cones){
+      if(Phantom.missSphere(o,d,c.bs)) continue;
+      add(Phantom.rayRoundedCone(o,d,c.a,c.b,c.r1,c.r2), c.mat);
     }
     for(const bx of this.boxes){
-      const iv = Phantom.rayBox(o,d,bx.min,bx.max);
-      if(iv && iv[1]>0){ iv[0]=Math.max(iv[0],0);
-        (bx.mat==='bone'?bone:soft).push(iv); }
+      add(Phantom.rayBox(o,d,bx.min,bx.max), bx.mat);
     }
-    const boneLen = Phantom.unionLen(bone);
-    const softLen = Phantom.unionLen(soft);
-    return { bone:boneLen, soft:Math.max(0, softLen-boneLen) }; // bone displaces soft
+    // nested materials: marrow inside cortical bone inside soft tissue
+    const marrowLen = Phantom.unionLen(marrow);
+    const boneU     = Phantom.unionLen(bone);
+    const softU     = Phantom.unionLen(soft);
+    return {
+      marrow: marrowLen,
+      bone:   Math.max(0, boneU - marrowLen),   // cortical shell = bone minus its canal
+      soft:   Math.max(0, softU - boneU),        // soft displaced by all bone
+    };
   }
 }
 
@@ -651,6 +728,7 @@ const AttenuationEngine = (()=>{
     // precompute mu per material per bin
     const muSoft = bins.map(b=>Materials.mu('soft',b.E));
     const muBone = bins.map(b=>Materials.mu('bone',b.E));
+    const muMarrow = bins.map(b=>Materials.mu('marrow',b.E));
     const halfU=(nx-1)/2, halfV=(ny-1)/2;
     for(let j=0;j<ny;j++){
       const cv=(j-halfV)*pxV;
@@ -662,11 +740,11 @@ const AttenuationEngine = (()=>{
         const pz=detCenter[2]+detU[2]*cu+detV[2]*cv;
         let dx=px-source[0], dy=py-source[1], dz=pz-source[2];
         const dist=Math.hypot(dx,dy,dz); dx/=dist;dy/=dist;dz/=dist;
-        const {bone,soft}=phantom.trace(source,[dx,dy,dz]);
+        const {bone,soft,marrow}=phantom.trace(source,[dx,dy,dz], dist);
         // polyenergetic transmission
         let T=0;
         for(let b=0;b<bins.length;b++){
-          T += bins[b].w * Math.exp(-(muSoft[b]*soft + muBone[b]*bone));
+          T += bins[b].w * Math.exp(-(muSoft[b]*soft + muBone[b]*bone + muMarrow[b]*marrow));
         }
         // inverse-square (normalized to source-image distance)
         const invSq = (cfg.refDist*cfg.refDist)/(dist*dist);
@@ -832,92 +910,213 @@ function initScene(){
 /* ---- DETAILED HAND ANATOMY (single source of truth) ----------------------
    Local frame: -x = radial (thumb) side, +x = ulnar (little) side,
                 +z = distal (fingertips), -z = proximal (wrist), y = dorsal.
-   buildHandPrimitives(spread) returns {skin:[{a,b,r}], bone:[{a,b,r}]} in LOCAL
-   coords. SKIN capsules form the soft-tissue envelope shown opaque in 3D and
-   used as the 'soft' attenuator. BONE capsules are physics-only (revealed only
-   on exposure). Finger abduction (spread) rotates each digit about its MCP. */
-function buildHandPrimitives(spread){
+   buildHandPrimitives(spread) returns {skin:[{a,b,r}], bone:[{a,b,r1,r2}]} in
+   LOCAL coords. SKIN capsules form the soft-tissue envelope shown opaque in 3D
+   and used as the 'soft' attenuator. BONE is a list of tapered capsules (rounded
+   cones): each carries end radii r1,r2 so shafts stay thin and epiphyses flare,
+   giving true skeletal form. Bones are physics-only (revealed on exposure).
+   Every long bone = narrow diaphysis with flared metaphyseal ends, with small
+   gaps left at the joints so articular spaces read as radiolucent lines.
+   Full complement: distal radius+ulna, 8 carpals, 5 metacarpals, 14 phalanges. */
+function buildHandPrimitives(spread, pose='PA'){
   const skin=[], bone=[];
-  const K=(a,b,r)=>skin.push({a,b,r});
-  const O=(a,b,r)=>bone.push({a,b,r});
+  const poseRotVal = pose==='PA'?0 : pose==='OBL'?-Math.PI/4 : -Math.PI/2;
+  const K=(a,b,r)=>skin.push({a,b,r});                    // constant-radius soft capsule
+  const S2=(a,b,r1,r2)=>skin.push({a,b,r1,r2});           // tapered soft tissue (rounded cone)
+  const seg=(a,b,r1,r2)=>bone.push({a,b,r1,r2});          // cortical bone segment
+  const mar=(a,b,r1,r2)=>bone.push({a,b,r1,r2,mat:'marrow'}); // medullary canal
   const rotY=(dir,ang)=>{ const c=Math.cos(ang),s=Math.sin(ang);
     return [dir[0]*c+dir[2]*s, 0, -dir[0]*s+dir[2]*c]; };
+  const lerp=(p,q,t)=>[p[0]+(q[0]-p[0])*t, p[1]+(q[1]-p[1])*t, p[2]+(q[2]-p[2])*t];
+  const dist=(p,q)=>Math.hypot(q[0]-p[0],q[1]-p[1],q[2]-p[2]);
+  // trim a bone axis inward by proximal/distal joint gaps (cm) -> [a,b]
+  const trim=(p,q,g0,g1)=>{ const L=dist(p,q)||1; return [lerp(p,q,g0/L), lerp(p,q,1-g1/L)]; };
+  // long bone: wide base -> narrow cortical diaphysis -> flared head, with a
+  // spindle-shaped medullary canal down the shaft (=> bright cortical rails,
+  // lucent centre — the hallmark of a real long-bone radiograph). mf=canal/shaft.
+  const longBone=(p0,p1,rBase,rShaft,rHead,f0,f1,mf=0.60)=>{
+    const a=lerp(p0,p1,f0), b=lerp(p0,p1,f1);
+    seg(p0,a,rBase,rShaft); seg(a,b,rShaft,rShaft); seg(b,p1,rShaft,rHead);
+    if(mf>0){
+      const sp=f1-f0, ca=lerp(p0,p1,f0+sp*0.14), cm=lerp(p0,p1,(f0+f1)/2), cb=lerp(p0,p1,f1-sp*0.14);
+      const mr=rShaft*mf;
+      mar(ca,cm, 0.02, mr); mar(cm,cb, mr, 0.02);        // taper to points so it stays inside cortex
+    }
+  };
+  // articular joint space (cm) left between neighbouring bone ends.
+  const G=0.13;
+  // longBone placed between joint points, insetting each articular end (jP/jQ) by
+  // radius + G/2 so the bone SURFACE stops G/2 short of the joint -> every joint
+  // shows a thin, uniform radiolucent line even though the epiphyses stay flared.
+  const jointBone=(P,Q,rBase,rShaft,rHead,mf,jP,jQ)=>{
+    const gp=jP?rBase+G/2:0.02, gd=jQ?rHead+G/2:0.02;
+    const [a,b]=trim(P,Q,gp,gd);
+    longBone(a,b, rBase,rShaft,rHead, 0.20,0.80, mf);
+  };
+  // gentle sagittal (side-profile) arch: a small dorsal rise peaking at the
+  // knuckles (z~4.5) and easing to ~0 at the wrist and fingertips, so the hand
+  // isn't dead flat. Applied to every point at the end; because bones are built
+  // from several segments they each follow the curve and read as slightly arched.
+  const archAmp=0.55;
+  const archY=(z)=>{ const t=(z+2)/13.5; return (t>0&&t<1)? archAmp*Math.sin(Math.PI*t) : 0; };
 
-  // ---- forearm + wrist soft tissue ----
-  K([-1.6,0,-8.6],[1.6,0,-5.6], 2.5);
-  K([-1.8,0,-6.2],[1.8,0,-3.1], 2.3);
-  // ---- radius & ulna (distal) ----
-  O([-1.05,0,-8.3],[-1.25,0,-3.35], 0.95);   // radius (radial, flares distally)
-  O([ 1.05,0,-8.3],[ 1.00,0,-3.35], 0.80);   // ulna
-  // ---- 8 carpals, two rows (short capsules ~ ossicles) ----
-  const carp=[[-1.55,-3.05],[-0.55,-3.15],[0.45,-3.10],[1.45,-3.00],   // proximal row
-              [-1.30,-2.25],[-0.35,-2.30],[0.60,-2.25],[1.55,-2.35]];  // distal row
-  for(const [cx,cz] of carp) O([cx,0,cz-0.13],[cx,0,cz+0.13], 0.60);
-  // ---- palm soft-tissue masses ----
-  K([-2.6,0,2.3],[2.9,0,2.3], 1.45);         // distal palm (metacarpal heads)
-  K([-2.5,0,0.3],[2.7,0,0.3], 1.70);         // mid palm
-  K([-2.7,0,-1.6],[2.5,0,-1.6], 1.70);       // proximal palm
-  K([-3.5,0,-1.3],[-2.1,0,1.9], 1.55);       // thenar eminence
-  K([ 2.7,0,-1.5],[2.5,0,1.3], 1.20);        // hypothenar eminence
+  // ================= SKELETON =================
+  // ---- distal half of radius & ulna ----
+  longBone([-1.0,0,-8.3],[-1.28,0,-3.75], 0.80,0.72,1.16, 0.12,0.74, 0.66); // radius, broad distal metaphysis
+  seg([-1.28,0,-3.70],[-1.72,0,-3.12], 0.95,0.20);                    // radial styloid process
+  longBone([ 1.0,0,-8.3],[ 1.00,0,-4.15], 0.60,0.52,0.80, 0.12,0.72, 0.62); // ulna, smaller head, sits proximal
+  seg([ 1.00,0,-4.10],[ 1.22,0,-3.72], 0.74,0.15);                    // ulnar styloid process
 
-  // ---- four fingers: metacarpal + 3 phalanges, abduct about MCP ----
+  // ---- 8 carpals (irregular trabecular ossicles with thin inter-carpal spaces) ----
+  seg([-1.66,0.05,-3.50],[-1.34,0,-2.94], 0.38,0.44);  // scaphoid
+  seg([-0.74,0.05,-3.42],[-0.54,0,-3.00], 0.40,0.42);  // lunate
+  seg([ 0.42,0.05,-3.36],[ 0.58,0,-3.04], 0.36,0.38);  // triquetrum
+  seg([ 0.84,-0.70,-3.50],[0.94,-0.70,-3.22], 0.32,0.34); // pisiform (palmar)
+  seg([-1.56,0.05,-2.44],[-1.42,0,-1.94], 0.35,0.41);  // trapezium (seats the thumb MC)
+  seg([-0.68,0.05,-2.60],[-0.58,0,-2.14], 0.32,0.36);  // trapezoid
+  seg([ 0.10,0.05,-3.00],[ 0.20,0,-1.96], 0.38,0.50);  // capitate (keystone, extends proximally)
+  seg([ 1.08,0.00,-2.74],[ 1.20,0,-2.04], 0.38,0.46);  // hamate
+
+  // ================= SOFT-TISSUE ENVELOPE =================
+  // Palm/forearm masses; the digits are built as one continuous slender sheath
+  // each (below), so the metacarpal region and fingers read smooth, not lumpy.
+  // Thinner palm so the hand rests low: palmar soft between bone and detector <2cm.
+  K([-1.6,0,-8.6],[1.6,0,-5.6], 2.0);        // forearm
+  K([-1.8,0,-6.2],[1.8,0,-3.1], 1.9);        // wrist
+  K([-2.4,0,0.7],[2.7,0,0.7], 1.12);         // distal palm (over the metacarpals)
+  K([-2.5,0,-0.8],[2.5,0,-0.8], 1.28);       // mid palm
+  K([-2.3,0,-2.1],[2.1,0,-2.1], 1.18);       // proximal palm -> wrist
+  K([-3.2,0,-1.2],[-1.7,0,1.6], 1.20);       // thenar eminence (radial bulk)
+  K([ 2.6,0,-1.3],[2.4,0,1.3], 0.95);        // hypothenar eminence (ulnar bulk)
+
+  // ---- five metacarpals + fingers/phalanges ----
+  // Metacarpal bases converge on the distal carpal row and fan out to the
+  // knuckles; every articular end is inset (jointBone) so each joint shows the
+  // thin, open radiolucent space seen on a real PA hand.
   const fingers=[
-    // cmc (metacarpal base), mcp (knuckle), phalanx lengths, bone/skin radii, abduction sign
-    {cmc:[-1.55,0,-1.1], mcp:[-2.4,0,4.6], ph:[2.6,1.6,1.1], br:0.42, sr:0.62, mc:0.42, ab:-0.34},
-    {cmc:[-0.50,0,-1.2], mcp:[-0.6,0,5.2], ph:[3.0,1.9,1.2], br:0.44, sr:0.66, mc:0.44, ab:-0.06},
-    {cmc:[ 0.60,0,-1.2], mcp:[ 1.1,0,4.8], ph:[2.8,1.8,1.1], br:0.42, sr:0.63, mc:0.43, ab: 0.20},
-    {cmc:[ 1.70,0,-1.0], mcp:[ 2.6,0,4.0], ph:[2.2,1.3,0.9], br:0.37, sr:0.55, mc:0.39, ab: 0.42},
+    // cmc (base, at carpus), mcp (knuckle), phalanx lengths, thickness, abduction sign
+    {cmc:[-0.75,0,-1.5], mcp:[-2.30,0,4.5], ph:[2.6,1.6,1.1], br:0.42, ab:-0.28},  // index
+    {cmc:[ 0.10,0,-1.6], mcp:[-0.40,0,5.1], ph:[3.0,1.9,1.2], br:0.44, ab:-0.05},  // middle
+    {cmc:[ 0.75,0,-1.6], mcp:[ 1.30,0,4.7], ph:[2.8,1.8,1.1], br:0.42, ab: 0.16},  // ring
+    {cmc:[ 1.20,0,-1.5], mcp:[ 2.70,0,3.9], ph:[2.2,1.3,0.9], br:0.37, ab: 0.36},  // little
   ];
+  const MC=[0.52,0.32,0.56];                        // metacarpal base/shaft/head cortical radii
+  const PH=[[0.50,0.30,0.44],[0.42,0.26,0.38],[0.36,0.23,0.44]]; // per-phalanx radii
+  const PHmf=[0.60,0.58,0];                          // marrow-canal fraction (distal ~solid)
+  // Build a digit's phalanges flexed at the MCP + IP joints so the tip settles onto
+  // the board (world y ~ 0), like a relaxed hand. The digit starts at the arched
+  // knuckle height and curls palmar-ward; flexion is solved so the drop lands the
+  // tip on the receptor. Everything it emits is tagged .flex so the dorsal arch
+  // applied afterwards leaves it alone (it already carries its own y).
+  function flexDigit(mcp, hdir, phLens, phRad, phMf, softR, cb, startY){
+    const n=phLens.length, y0=(startY!==undefined?startY:archY(mcp[2]));
+    const targetDrop=Math.max(0, y0 + REST_LIFT - 0.6);   // leaves the soft fingertip pad resting on the board
+    let s=0.2;                                             // solve curl scale: sum(L*sin(cb*s))=targetDrop
+    for(let it=0;it<50;it++){ let drop=0,dd=0;
+      for(let k=0;k<n;k++){ const a=cb[k]*s; drop+=phLens[k]*Math.sin(a); dd+=phLens[k]*cb[k]*Math.cos(a); }
+      s+=(targetDrop-drop)/Math.max(dd,1e-3); s=Math.max(0,Math.min(1.3,s)); }
+    const J=[[mcp[0],y0,mcp[2]]];
+    for(let k=0;k<n;k++){ const a=cb[k]*s, dv=[hdir[0]*Math.cos(a),-Math.sin(a),hdir[2]*Math.cos(a)];
+      const p=J[k],L=phLens[k]; J.push([p[0]+dv[0]*L,p[1]+dv[1]*L,p[2]+dv[2]*L]); }
+    for(let idx=0;idx<n;idx++){ const p=J[idx],q=J[idx+1],[rb,rs,rh]=phRad[idx];
+      if(idx<n-1){ jointBone(p,q, rb,rs,rh, phMf[idx], true, true); }
+      else { const gp=rb+G/2,[a,b]=trim(p,q,gp,0),m=lerp(a,b,0.52); seg(a,m,rb,rs); seg(m,b,rs,rh); } }
+    for(let idx=0;idx<n;idx++) S2(J[idx],J[idx+1], softR[idx], softR[idx+1]);
+    const last=J[n],prev=J[n-1], dv=[last[0]-prev[0],last[1]-prev[1],last[2]-prev[2]], dl=Math.hypot(dv[0],dv[1],dv[2])||1;
+    S2(last,[last[0]+dv[0]/dl*0.34,last[1]+dv[1]/dl*0.34,last[2]+dv[2]/dl*0.34], softR[n], softR[n]*0.72);
+  }
+  // metacarpals (dorsal-arched) + the palm->knuckle soft that connects to the digit
   for(const f of fingers){
-    O(f.cmc, f.mcp, f.mc);                              // metacarpal bone
-    K(f.cmc, f.mcp, 0.72);                              // metacarpal soft tissue (bridges palm->knuckle)
-    let dir=rotY([0,0,1], f.ab*spread);                 // +z fanned by abduction
-    let p=[...f.mcp], sr=f.sr, br=f.br;
-    for(const L of f.ph){
-      const q=[p[0]+dir[0]*L, 0, p[2]+dir[2]*L];
-      K(p,q,sr); O(p,q,br);
-      p=q; sr*=0.80; br*=0.80;
-    }
+    const sc=f.br/0.44;
+    const mcProx=[f.cmc[0], 0, f.cmc[2]-0.55];
+    jointBone(mcProx, f.mcp, MC[0]*sc, MC[1]*sc, MC[2]*sc, 0.60, true, true);
+    S2(f.cmc, f.mcp, 0.86*sc, 0.66*sc);              // metacarpal soft (palm -> knuckle waist)
   }
-  // ---- thumb: metacarpal + 2 phalanges, strong abduction outward ----
+  // ---- flexed digits (finger tips resting on the receptor) ----
+  const bStart=bone.length, sStart=skin.length;
+  for(const f of fingers){
+    const sc=f.br/0.44, hdir=rotY([0,0,1], f.ab*spread);
+    flexDigit(f.mcp, hdir, f.ph, PH.map(r=>r.map(v=>v*sc)), PHmf,
+              [0.66*sc,0.74*sc,0.66*sc,0.58*sc], [1,2,3.2]);
+  }
+  // ---- thumb: built as one unit so the lateral view can drop it parallel to the board ----
+  const tBone0=bone.length, tSkin0=skin.length;
   {
-    const cmc=[-3.0,0,-1.6], mcp=[-4.3,0,1.5];
-    O(cmc,mcp,0.48); K(cmc,mcp,0.85);                   // thumb metacarpal (+ thenar skin)
-    let base=[mcp[0]-cmc[0],0,mcp[2]-cmc[2]];
-    const bl=Math.hypot(base[0],base[2]); base=[base[0]/bl,0,base[2]/bl];
-    let dir=rotY(base, -0.45*spread);                   // abduct thumb away from palm
-    let p=[...mcp], sr=0.72, br=0.46;
-    for(const L of [2.5,1.9]){
-      const q=[p[0]+dir[0]*L, 0, p[2]+dir[2]*L];
-      K(p,q,sr); O(p,q,br);
-      p=q; sr*=0.83; br*=0.83;
+    const tCmc=[-1.80,0,-1.75], tMcp=[-3.45,0,1.7];   // 1st MC base seated at the trapezium
+    jointBone(tCmc, tMcp, 0.50,0.38,0.54, 0.58, true, true);
+    S2(tCmc, tMcp, 0.90, 0.72);
+    let base=[tMcp[0]-tCmc[0],0,tMcp[2]-tCmc[2]]; const bl=Math.hypot(base[0],base[2])||1; base=[base[0]/bl,0,base[2]/bl];
+    const hdir=rotY(base, -0.30*spread);
+    // LATERAL: thumb extended flat (cb=0) so it lies parallel to the board; other
+    // views: flexed like the fingers so its tip rests on the receptor.
+    const tCb = pose==='LAT' ? [0,0] : [1,2.2];
+    // thumb metacarpal is un-arched (its own flex unit) -> start phalanges at its head (y=0)
+    flexDigit(tMcp, hdir, [2.5,1.9], [[0.50,0.34,0.46],[0.42,0.26,0.46]], [0.58,0], [0.72,0.70,0.58], tCb, 0);
+    // LATERAL: counter-rotate the whole thumb about its CMC so that after the
+    // pose's -90° roll it lies parallel to the detector (dropped) rather than
+    // swinging up with the hand. Net thumb roll = 0 => stays in the PA plane.
+    if(pose==='LAT'){
+      const c=Math.cos(-poseRotVal), s=Math.sin(-poseRotVal), px=tCmc[0], py=tCmc[1];
+      const rz=(p)=>{ const dx=p[0]-px, dy=p[1]-py; return [px+dx*c-dy*s, py+dx*s+dy*c, p[2]]; };
+      for(let i=tBone0;i<bone.length;i++){ bone[i].a=rz(bone[i].a); bone[i].b=rz(bone[i].b); }
+      for(let i=tSkin0;i<skin.length;i++){ skin[i].a=rz(skin[i].a); skin[i].b=rz(skin[i].b); }
     }
+    for(let i=tBone0;i<bone.length;i++) bone[i].thumb=true;
+    for(let i=tSkin0;i<skin.length;i++) skin[i].thumb=true;
   }
+  for(let i=bStart;i<bone.length;i++) bone[i].flex=true;
+  for(let i=sStart;i<skin.length;i++) skin[i].flex=true;
+  // apply the dorsal sagittal arch to every NON-flexed endpoint (flexed digits carry their own y)
+  const bend=(c)=>{ c.a=[c.a[0], c.a[1]+archY(c.a[2]), c.a[2]]; c.b=[c.b[0], c.b[1]+archY(c.b[2]), c.b[2]]; };
+  for(const c of skin) if(!c.flex) bend(c);
+  for(const c of bone) if(!c.flex) bend(c);
   return {skin, bone};
 }
 
-/* 3D positioning view shows the SKIN ONLY (opaque). Bones are never added to
-   the scene — they appear only in the computed radiograph, like a real x-ray. */
+/* 3D positioning view can show the soft-tissue anatomy (default) OR just the
+   skeleton — a DISPLAY choice only (S.handView); the simulated image is always
+   computed from the full soft+bone phantom regardless. Both are built as tapered
+   capsules so the mesh matches the ray-traced geometry exactly. */
 let handMeshes=[];
 function buildHandMeshes(){
   handMeshes.forEach(m=>three.handGroup.remove(m)); handMeshes=[];
   const skinMat=new THREE.MeshStandardMaterial({color:0xe6b291, roughness:.9, metalness:0,
      emissive:0x2a1712, emissiveIntensity:.12});
-  function capMesh(a,b,r){
+  const boneMat=new THREE.MeshStandardMaterial({color:0xeae3cf, roughness:.7, metalness:0,
+     emissive:0x161310, emissiveIntensity:.08});
+  // rounded-cone mesh: frustum (radii r1@a -> r2@b) + spherical end caps
+  function coneMesh(a,b,r1,r2,mat){
     const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b);
-    const len=Math.max(A.distanceTo(B),1e-4);
+    const len=Math.max(A.distanceTo(B),1e-4), e=1e-3;
     const grp=new THREE.Group();
-    const cyl=new THREE.Mesh(new THREE.CylinderGeometry(r,r,len,16),skinMat);
+    const cyl=new THREE.Mesh(new THREE.CylinderGeometry(Math.max(r2,e),Math.max(r1,e),len,16),mat);
     cyl.position.copy(A).add(B).multiplyScalar(0.5);
     cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.clone().sub(A).normalize());
-    cyl.castShadow=true; cyl.receiveShadow=true;
-    grp.add(cyl);
-    for(const p of [A,B]){ const s=new THREE.Mesh(new THREE.SphereGeometry(r,16,12),skinMat);
+    cyl.castShadow=true; cyl.receiveShadow=true; grp.add(cyl);
+    for(const [p,r] of [[A,r1],[B,r2]]){ const s=new THREE.Mesh(new THREE.SphereGeometry(Math.max(r,e),16,12),mat);
       s.position.copy(p); s.castShadow=true; s.receiveShadow=true; grp.add(s); }
     return grp;
   }
-  const {skin}=buildHandPrimitives(S.spread);
-  for(const c of skin){ const m=capMesh(c.a,c.b,c.r); handMeshes.push(m); three.handGroup.add(m); }
+  const softGrp=new THREE.Group(), boneGrp=new THREE.Group();
+  const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
+  for(const c of skin){ const r1=c.r1!==undefined?c.r1:c.r, r2=c.r1!==undefined?c.r2:c.r;
+    softGrp.add(coneMesh(c.a,c.b,r1,r2,skinMat)); }
+  for(const c of bone){ if(c.mat==='marrow') continue;    // canal is internal — not shown in 3D
+    boneGrp.add(coneMesh(c.a,c.b,c.r1,c.r2,boneMat)); }
+  three.handGroup.add(softGrp); three.handGroup.add(boneGrp);
+  three.softGrp=softGrp; three.boneGrp=boneGrp; handMeshes=[softGrp,boneGrp];
+  applyHandView();
+}
+/* Toggle which model is visible (display only). */
+function applyHandView(){
+  if(!three.softGrp||!three.boneGrp) return;
+  const boneOnly=(S.handView==='bone');
+  three.softGrp.visible=!boneOnly; three.boneGrp.visible=boneOnly;
+}
+function setHandView(v){
+  S.handView=v;
+  const seg=$('renderSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.hv===v));
+  applyHandView();
 }
 
 /* ============================================================================
@@ -928,10 +1127,11 @@ const S = {
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
-  resolution:'std', gridOn:false, gridRatio:10, gridFocus:100,
+  resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
 };
-// detector base lift (cm): hand thickness centre resting on the receptor -> OID 0
-const REST_LIFT=3.4;
+// detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
+// the palmar soft tissue between bone and detector is only ~1-1.5 cm.
+const REST_LIFT=1.4;
 // detector pixel matrices per resolution tier (4:5, matches 24x30 cm receptor)
 const RES_MAP={ low:[176,220], std:[320,400], high:[480,600] };
 const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125];
@@ -946,6 +1146,20 @@ const $=id=>document.getElementById(id);
    Negative rotation lifts the radial (thumb) side, i.e. external rotation. */
 function poseRot(){ return S.pose==='PA'?0 : S.pose==='OBL'?-Math.PI/4 : -Math.PI/2; }
 
+/* Base lift (cm, before OID) that rests the hand on the receptor for the current
+   pose. PA keeps the flat resting height (palm/fingers down, forearm allowed to
+   dip and get clipped). OBL/LAT rest the LOWEST rotated surface point on the
+   detector, so nothing clips through as the hand rolls onto its edge. */
+function baseLift(skin, bone, rot){
+  if(rot===0) return REST_LIFT;
+  const cosR=Math.cos(rot), sinR=Math.sin(rot);
+  let minY=Infinity;
+  const low=(p,r)=>{ const yr=p[0]*sinR + p[1]*cosR - r; if(yr<minY) minY=yr; };
+  for(const c of skin){ const r1=c.r1!==undefined?c.r1:c.r, r2=c.r1!==undefined?c.r2:c.r; low(c.a,r1); low(c.b,r2); }
+  for(const c of bone){ low(c.a,c.r1); low(c.b,c.r2); }
+  return -minY + 0.05;   // +margin so the edge rests just above the receptor
+}
+
 /* Build the world-space physics phantom from current pose (bakes transform).
    Same skin+bone primitives shown in 3D, rotated by pose and lifted onto the
    detector so bone is nested inside soft tissue. */
@@ -953,23 +1167,27 @@ function buildPhantom(){
   const ph=new Phantom();
   const rot=poseRot();
   const cosR=Math.cos(rot), sinR=Math.sin(rot);
-  const liftY=REST_LIFT+S.oid;   // hand thickness centre above detector -> OID/mag
+  const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
+  const liftY=baseLift(skin,bone,rot)+S.oid;   // rest on receptor (pose-aware) + OID
   function xf(p){                // rotate about long (z) axis, then lift
     const x=p[0], y=p[1], z=p[2];
     return [x*cosR - y*sinR, x*sinR + y*cosR + liftY, z];
   }
-  const {skin,bone}=buildHandPrimitives(S.spread);
-  for(const c of skin) ph.addCapsule(xf(c.a),xf(c.b),c.r,'soft');
-  for(const c of bone) ph.addCapsule(xf(c.a),xf(c.b),c.r,'bone');
+  for(const c of skin){
+    if(c.r1!==undefined) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,'soft');
+    else ph.addCapsule(xf(c.a),xf(c.b),c.r,'soft');
+  }
+  for(const c of bone) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,c.mat||'bone');
   return ph;
 }
 
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
-  // hand pose (lifted by OID above the receptor)
+  // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips)
   three.handGroup.rotation.z = poseRot();
-  three.handGroup.position.y = REST_LIFT+S.oid;
+  { const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
+    three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid; }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
   const src=sourcePos();
@@ -1094,6 +1312,7 @@ function bind(){
     const b=e.target.closest('button'); if(!b)return;
     [...$('poseSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
     S.pose=b.dataset.pose; $('poseName').textContent=b.textContent.toUpperCase();
+    buildHandMeshes();   // thumb geometry is pose-dependent (LAT lays it flat)
     resetPrep(); syncScene();
   });
   $('spread').addEventListener('input',e=>{ S.spread=e.target.value/100;
@@ -1153,6 +1372,8 @@ function bind(){
   $('contentSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setContent(b.dataset.c);});
   // camera: free orbit  <->  tube POV bird's-eye
   $('camSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCameraView(b.dataset.cam);});
+  // render mode: soft-tissue anatomy  <->  skeleton (display only)
+  $('renderSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setHandView(b.dataset.hv);});
   // collimator light on/off
   $('lfBtn').addEventListener('click',()=>{ S.lfOn=!S.lfOn;
     $('lfBtn').classList.toggle('on',S.lfOn); $('lfBtn').setAttribute('aria-pressed',S.lfOn);
@@ -1278,7 +1499,7 @@ async function computeRadiograph(){
   // quanta per pixel scale with pixel AREA: finer matrices collect fewer photons
   // per element -> more quantum mottle (the resolution/noise trade-off).
   const STD_PX=(detW/320)*(detH/400);
-  const photonScale = 90 * (pxU*pxV)/STD_PX;
+  const photonScale = 260 * (pxU*pxV)/STD_PX;   // higher quanta -> lower mottle (clean DR look)
 
   // collimation mask: which detector cells fall inside the beam cone.
   // Tested in the tube frame so the exposed field keystones with CR angle,
