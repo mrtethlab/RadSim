@@ -156,7 +156,11 @@ function applyMode(mode) {
   if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition' : 'Digit · Hand phantom';
-  if (mode !== 'ct') showScouts(false);   // scouts are a CT-only overlay
+  // scouts are a CT-only overlay; while planning in CT the scout window owns the bay
+  const owns = (mode === 'ct') && (ctx.S.ct.phase === 'scout' || ctx.S.ct.phase === 'planning');
+  if (mode !== 'ct') ctx.S.ct.scoutsReady = false;
+  ctx.setBay3DEnabled(!owns);
+  ctx.setContent(owns ? 'image' : ctx.S.bayContent);
   ctx.syncScene();
   updateCTReadouts();
 }
@@ -252,19 +256,28 @@ function setPhase(p) {
   const labels = { idle: 'CT · STANDBY', scout: 'CT · SCOUT', planning: 'CT · PLAN SCAN',
                    moving: 'CT · TABLE MOVE', scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
   const wt = $('ctWarnT'); if (wt) wt.textContent = labels[p] || 'CT';
+  // while the scout window owns the bay for planning, the 3D view is greyed out
+  ctx.setBay3DEnabled(!(p === 'scout' || p === 'planning'));
 }
 
 function setConsoleEnabled(on) {
   ['ctStart', 'ctAbort', 'ctTable'].forEach(id => { const b = ctx.$(id); if (b) b.disabled = !on; });
 }
 
-function showScouts(on) { ctx.$('ctScouts')?.classList.toggle('show', on); }
+// Scouts live in the bay's Image view. Turning them on marks them ready and
+// switches the bay to Image (which reveals the scout window); off just refreshes
+// the current view so they drop away.
+function showScouts(on) {
+  ctx.S.ct.scoutsReady = on;
+  ctx.setContent(on ? 'image' : ctx.S.bayContent);
+}
 
 function abortCT() {
-  ctx.ctLiveView(false);   // drop the tube-POV mirror if a build was in progress
-  showScouts(false);
-  setPhase('idle');
-  ctx.syncScene();   // restore the model/bed after any scan animation
+  ctx.ctLiveView(false);       // drop the tube-POV mirror if a build was in progress
+  ctx.S.ct.scoutsReady = false;
+  setPhase('idle');            // re-enables the 3D view
+  ctx.setContent('3d');        // back to the positioning view
+  ctx.syncScene();             // restore the model/bed after any scan animation
   setHint('Set the isocentre, then acquire scouts to plan the scan.');
 }
 
@@ -277,9 +290,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 // STITCHES IN row-by-row as the table advances, so the image on screen always
 // matches exactly the anatomy the couch has swept under the imaging plane.
 async function acquireScouts() {
-  setPhase('scout');
+  setPhase('scout');                  // greys out the 3D view; scout window owns the bay
   setConsoleEnabled(false);
-  showScouts(false);
   resetToIsocentre();                 // compute the scouts from the isocentre position
   let ap, lat;
   try {
@@ -288,13 +300,13 @@ async function acquireScouts() {
   } catch (err) {
     console.error('scout compute failed', err);
     setHint('Scout acquisition failed: ' + err.message);
-    setPhase('idle'); setConsoleEnabled(true); return;
+    setPhase('idle'); ctx.setContent('3d'); setConsoleEnabled(true); return;
   }
   lastAP = ap; lastLAT = lat;
+  showScouts(true);                   // switch the bay to the Image (scout) view
   // reveal the (blank) panels so each topogram is visibly stitched during its pass
   drawScout(ctx.$('scoutAP'), ap, 0);
   drawScout(ctx.$('scoutLAT'), lat, 0);
-  showScouts(true);
   layoutScouts();                     // shared scale + row alignment across AP/LAT
   ctx.ctLiveView(true);               // watch the scan in the small monitor (tube POV)
   try {

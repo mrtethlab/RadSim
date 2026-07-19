@@ -29,35 +29,40 @@
       </div>
     </div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
-    <div class="bayctl">
-      <div>
-        <div class="cl">View</div>
-        <div class="segmini" id="contentSeg">
-          <button data-c="3d" class="on">3D</button>
-          <button data-c="image">Image</button>
+    <div class="bayctl" id="bayCtl">
+      <button class="baymenu-btn" id="bayMenuBtn" type="button" aria-expanded="false" aria-controls="bayMenu">
+        <span class="gear" aria-hidden="true">⚙</span> VIEW OPTIONS <span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="baymenu" id="bayMenu" role="menu">
+        <div>
+          <div class="cl">View</div>
+          <div class="segmini" id="contentSeg">
+            <button data-c="3d" class="on">3D</button>
+            <button data-c="image">Image</button>
+          </div>
         </div>
-      </div>
-      <div>
-        <div class="cl">Camera</div>
-        <div class="segmini" id="camSeg">
-          <button data-cam="orbit" class="on">Orbit</button>
-          <button data-cam="tube">Tube POV</button>
+        <div>
+          <div class="cl">Camera</div>
+          <div class="segmini" id="camSeg">
+            <button data-cam="orbit" class="on">Orbit</button>
+            <button data-cam="tube">Tube POV</button>
+          </div>
         </div>
-      </div>
-      <div>
-        <div class="cl">Render</div>
-        <div class="segmini" id="renderSeg">
-          <button data-hv="soft" class="on">Anatomy</button>
-          <button data-hv="bone">Skeleton</button>
+        <div>
+          <div class="cl">Render</div>
+          <div class="segmini" id="renderSeg">
+            <button data-hv="soft" class="on">Anatomy</button>
+            <button data-hv="bone">Skeleton</button>
+          </div>
         </div>
-      </div>
-      <div>
-        <div class="cl">Model <span id="computeDot" title="compute backend">○</span></div>
-        <div class="segmini">
-          <button id="loadModelBtn" type="button">Load .glb</button>
-          <button id="clearModelBtn" type="button">Clear</button>
+        <div>
+          <div class="cl">Model <span id="computeDot" title="compute backend">○</span></div>
+          <div class="segmini">
+            <button id="loadModelBtn" type="button">Load .glb</button>
+            <button id="clearModelBtn" type="button">Clear</button>
+          </div>
+          <input id="loadModelInput" type="file" accept=".glb,.gltf" style="display:none"/>
         </div>
-        <input id="loadModelInput" type="file" accept=".glb,.gltf" style="display:none"/>
       </div>
     </div>
     <div class="baytag">

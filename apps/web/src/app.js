@@ -98,6 +98,20 @@ function initScene(){
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
   function updateCamera(){
+    if(S.mode==='ct' && S.viewMode==='tube'){
+      // CT scout: the camera is BOLTED TO THE GANTRY, at the inner-top rim of the
+      // bore (y≈17.4, ring inner radius 11.6 above centre y=6) and aimed at the
+      // fixed scan plane (isocentre, z=0) — a slight aerial tilt from the entry
+      // side so the couch + hand read in 3D. It never tracks the patient: as the
+      // couch drives the model through, the anatomy is seen passing under the fixed
+      // laser, exactly like a real CT where only the table moves.
+      if(cam.fov!==58){ cam.fov=58; cam.updateProjectionMatrix(); }
+      cam.up.set(0,0,1);                        // +z (un-scanned anatomy) toward top
+      cam.position.set(0, 17.4, 2);             // overhead from the rim (nothing behind it)
+      cam.lookAt(0, 1, -1.5);                   // slight lean into the bore for depth
+      return;
+    }
+    if(cam.fov!==42){ cam.fov=42; cam.updateProjectionMatrix(); }
     if(S.viewMode==='tube'){
       // look from the tube along the central ray, framed to the hand (bird's eye)
       const s=sourcePos(), t=[S.tubeX,0,S.tubeZ];
@@ -224,6 +238,7 @@ const S = {
     phase:'idle',              // idle | scout | planning | moving | scanning | done
     patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
     liveView:false,            // true while a scout build mirrors tube-POV into #film
+    scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
   },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
@@ -420,10 +435,20 @@ function setContent(c){
   S.bayContent=c;
   const seg=$('contentSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.c===c));
   const img=(c==='image');
-  $('bigFilm').style.display=(img && S.hasImage)?'block':'none';
-  $('bignote').style.display=(img && !S.hasImage)?'flex':'none';
+  // In CT with scouts acquired, the Image view IS the scout window (AP+LAT topograms
+  // for scan planning); it replaces the radiograph/bignote.
+  const scouts=(S.mode==='ct' && S.ct.scoutsReady && img);
+  const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
+  $('bigFilm').style.display=(img && S.hasImage && !scouts)?'block':'none';
+  $('bignote').style.display=(img && !S.hasImage && !scouts)?'flex':'none';
   $('view').style.visibility=img?'hidden':'visible';
-  if(img && S.hasImage) renderRadiograph($('bigFilm'));
+  if(img && S.hasImage && !scouts) renderRadiograph($('bigFilm'));
+}
+/* Enable/disable the bay "3D" view button (greyed out while the scout window owns
+   the bay for scan planning). */
+function setBay3DEnabled(on){
+  const b=document.querySelector('#contentSeg button[data-c="3d"]');
+  if(b) b.disabled=!on;
 }
 
 /* ---- Controls wiring ---- */
@@ -489,8 +514,18 @@ function bind(){
   // display
   $('level').addEventListener('input',e=>{S.lev=parseInt(e.target.value); if(S.hasImage) drawFilm();});
   $('windo').addEventListener('input',e=>{S.win=parseInt(e.target.value); if(S.hasImage) drawFilm();});
+  // bay options dropdown (top-right): toggle open, close on outside click / Esc
+  const bayCtl=$('bayCtl'), bayBtn=$('bayMenuBtn');
+  if(bayBtn){
+    bayBtn.addEventListener('click',e=>{ e.stopPropagation();
+      const open=bayCtl.classList.toggle('open'); bayBtn.setAttribute('aria-expanded', open?'true':'false'); });
+    document.addEventListener('click',e=>{ if(bayCtl.classList.contains('open') && !bayCtl.contains(e.target)){
+      bayCtl.classList.remove('open'); bayBtn.setAttribute('aria-expanded','false'); }});
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape' && bayCtl.classList.contains('open')){
+      bayCtl.classList.remove('open'); bayBtn.setAttribute('aria-expanded','false'); }});
+  }
   // bay content: 3D positioning  <->  large saved image
-  $('contentSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setContent(b.dataset.c);});
+  $('contentSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b || b.disabled)return; setContent(b.dataset.c);});
   // camera: free orbit  <->  tube POV bird's-eye
   $('camSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCameraView(b.dataset.cam);});
   // render mode: soft-tissue anatomy  <->  skeleton (display only)
@@ -800,5 +835,5 @@ window.addEventListener('load',()=>{
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
-           poseRot, buildPhantom, ctLiveView, setCameraView });
+           poseRot, buildPhantom, ctLiveView, setCameraView, setContent, setBay3DEnabled });
 });

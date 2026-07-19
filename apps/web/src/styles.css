@@ -155,14 +155,29 @@
   .lfbtn.on .bulb{fill:rgba(255,178,62,.35)}
 
   /* bay overlays: camera + content toggles, big saved-image view */
-  .bayctl{position:absolute; top:12px; right:12px; z-index:9; display:flex; flex-direction:column; gap:9px; align-items:flex-end}
-  .bayctl .cl{font-family:var(--seg); font-size:9px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase; margin-bottom:2px; text-align:right}
+  .bayctl{position:absolute; top:12px; right:12px; z-index:9; display:flex; flex-direction:column; gap:8px; align-items:flex-end}
+  /* dropdown trigger */
+  .baymenu-btn{display:inline-flex; align-items:center; gap:7px; background:rgba(10,13,16,.86);
+     border:1px solid var(--edge2); border-radius:3px; color:var(--muted); cursor:pointer;
+     padding:7px 11px; font-family:var(--disp); font-size:12px; letter-spacing:1.4px; text-transform:uppercase}
+  .baymenu-btn:hover{color:var(--txt); border-color:var(--edge)}
+  .baymenu-btn .gear{font-size:13px; line-height:1}
+  .baymenu-btn .caret{font-size:10px; transition:transform .15s}
+  .bayctl.open .baymenu-btn{color:#eafcff; border-color:var(--cyan-dim)}
+  .bayctl.open .baymenu-btn .caret{transform:rotate(180deg)}
+  /* dropdown panel */
+  .baymenu{display:none; flex-direction:column; gap:11px; padding:12px 13px; margin-top:2px;
+     background:rgba(9,12,15,.96); border:1px solid var(--edge2); border-radius:4px;
+     box-shadow:0 10px 30px rgba(0,0,0,.55); backdrop-filter:blur(3px)}
+  .bayctl.open .baymenu{display:flex}
+  .bayctl .cl{font-family:var(--seg); font-size:9px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase; margin-bottom:4px; text-align:left}
   .segmini{display:flex; border:1px solid var(--edge2); border-radius:3px; overflow:hidden; background:rgba(10,13,16,.82)}
   .segmini button{background:transparent; color:var(--muted); border:none; border-right:1px solid var(--edge);
      padding:6px 11px; font-family:var(--disp); font-size:12px; letter-spacing:1px; text-transform:uppercase; cursor:pointer}
   .segmini button:last-child{border-right:none}
   .segmini button.on{background:var(--cyan-dim); color:#eafcff}
-  .segmini button:hover:not(.on){color:var(--txt)}
+  .segmini button:hover:not(.on):not(:disabled){color:var(--txt)}
+  .segmini button:disabled{opacity:.32; cursor:not-allowed}
   #bigFilm{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; display:none; z-index:8}
   .bignote{position:absolute; inset:0; z-index:8; display:none; align-items:center; justify-content:center;
      background:#000; color:var(--muted2); font-family:var(--seg); letter-spacing:3px; font-size:13px}
