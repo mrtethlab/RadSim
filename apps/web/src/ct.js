@@ -1185,12 +1185,13 @@ async function scanDelay(sec, alive) {
   }
 }
 
-// One group's exposure: breathe-in, helical acquisition (gantry spin + couch travel
-// over the group's z-range), reconstruction, store, breathe-normal.
+// One group's exposure: breathe-in, then the helical acquisition — the transverse
+// slices are reconstructed one by one and shown coming up live in the DR image viewer
+// as the couch advances to each slice position (gantry spinning), then store +
+// breathe-normal. The reconstruction itself paces the acquisition.
 async function scanGroupExposure(g, i, alive) {
   const S = ctx.S;
   resetToIsocentre();
-  const startMM = g.box.top * S.ct.scanLen, endMM = g.box.bot * S.ct.scanLen;
   setHint('G' + (i + 1) + ' · breathe in and hold…');
   Sound.play('breathIn');
   await sleep((Sound.duration('breathIn') || 2) * 1000); if (!alive()) return null;
@@ -1198,14 +1199,12 @@ async function scanGroupExposure(g, i, alive) {
   setHint('G' + (i + 1) + ' · acquiring…');
   startGantrySpin(g.rotSpeed);
   Sound.startBuzz();
-  const dur = Math.min(9000, Math.max(2500, groupExpTime(g) * 250));   // scaled visual acquisition time
-  await animateScan(startMM, endMM, dur, alive);
+  const recon = await reconstructSlices(g, alive,
+    (f) => setHint('G' + (i + 1) + ' · acquiring… ' + Math.round(f * 100) + '%'),
+    (si, nz, d, img, meta) => { moveCouchTo(d); drawScanPreview(img, meta, si, nz); });
   Sound.stopBuzz(); stopGantrySpin();
-  if (!alive()) return null;
-  resetToIsocentre();
-  setHint('G' + (i + 1) + ' · reconstructing…');
-  const recon = await reconstructSlices(g, alive, (f) => setHint('G' + (i + 1) + ' · reconstructing… ' + Math.round(f * 100) + '%'));
   if (!alive() || !recon) return null;
+  resetToIsocentre();
   setHint('G' + (i + 1) + ' · breathe normally.');
   Sound.play('breathNormal');
   const entry = storeScan(g, i, recon);
@@ -1213,28 +1212,31 @@ async function scanGroupExposure(g, i, alive) {
   return entry;
 }
 
-// Couch travel across the group's scan range (visual), updating the table readout.
-function animateScan(startMM, endMM, dur, alive) {
-  return new Promise(res => {
-    const three = ctx.three, S = ctx.S, isoZ = S.ct.isoZ;
-    const t0 = performance.now(); let done = false;
-    const apply = (t) => {
-      const p = startMM + (endMM - startMM) * t;
-      S.ct.tablePos = p;
-      const dz = -(p / MM_PER_UNIT);
-      three.handGroup.position.z = isoZ + dz; couch.position.z = dz;
-      updateCTReadouts();
-    };
-    const fin = () => { if (done) return; done = true; res(); };
-    (function step() {
-      if (done) return;
-      if (!alive()) { fin(); return; }
-      const t = Math.min(1, (performance.now() - t0) / dur);
-      apply(t);
-      if (t < 1) requestAnimationFrame(step); else { apply(1); fin(); }
-    })();
-    setTimeout(() => { if (!done) { apply(1); fin(); } }, dur + 600);
-  });
+// Step the couch (bed + patient) to a table position (mm inferior) as its slice is acquired.
+function moveCouchTo(d) {
+  const three = ctx.three, S = ctx.S, isoZ = S.ct.isoZ, dz = -(d / MM_PER_UNIT);
+  S.ct.tablePos = d;
+  three.handGroup.position.z = isoZ + dz; couch.position.z = dz;
+  updateCTReadouts();
+}
+
+// Paint the just-reconstructed transverse slice into the DR image viewer (#film), so
+// the operator watches the images build during the scan (like the scout stitch). Uses
+// the axial viewer's window; the render loop leaves #film alone while scanning.
+function drawScanPreview(mu, meta, si, count) {
+  const f = ctx.$('film'); if (!f) return;
+  const N = meta.gridN, muW = meta.muWater, v = ctx.S.ct.viewer, c = N / 2, R2 = c * c;
+  if (f.width !== N || f.height !== N) { f.width = N; f.height = N; }
+  const g = f.getContext('2d'), im = g.createImageData(N, N), d8 = im.data;
+  for (let iy = 0; iy < N; iy++) { const sy = N - 1 - iy;
+    for (let ix = 0; ix < N; ix++) {
+      const o = (iy * N + ix) * 4, dx = ix - c + 0.5, dy = sy - c + 0.5;
+      let val; if (dx * dx + dy * dy > R2) val = 0; else { const hu = 1000 * (mu[sy * N + ix] - muW) / muW; val = Math.round(255 * huToGray(hu, v.wl, v.ww)); }
+      d8[o] = d8[o + 1] = d8[o + 2] = val; d8[o + 3] = 255;
+    } }
+  g.putImageData(im, 0, 0);
+  const noexp = ctx.$('noexp'); if (noexp) noexp.style.display = 'none';
+  const prog = ctx.$('prog'); if (prog) prog.style.width = Math.round((si + 1) / count * 100) + '%';
 }
 
 function startGantrySpin(rotSpeed) {
@@ -1347,7 +1349,7 @@ function backproject(q, geo) {
   return img;
 }
 
-async function reconstructSlices(g, alive, onProgress) {
+async function reconstructSlices(g, alive, onProgress, onSlice) {
   const spec = Spectrum.make(g.kv), effE = spec.meanE;
   const mu = { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
   const muW = mu.soft;                           // reference "water" (soft tissue) for HU
@@ -1361,16 +1363,21 @@ async function reconstructSlices(g, alive, onProgress) {
   for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
   const photons0 = PHOTON_BASE * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5);
   // Reconstruct the full transverse stack into one contiguous volume so it can be
-  // resampled in any plane (axial / coronal / sagittal) for multiplanar recons.
+  // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
+  // slice is emitted via onSlice as it completes so the scan shows the images coming
+  // up live (the couch advances to that slice's position as it appears).
   const N = RECON_N, nz = positions.length, vol = new Float32Array(nz * N * N);
+  const meta = { gridN: N, fovMM, muWater: muW };
   for (let si = 0; si < nz; si++) {
     if (!alive()) return null;
     const zw = positions[si] / MM_PER_UNIT;      // world plane for this slice (see scoutProjection geometry)
     const sino = projectSlice(phantom, zw, mu, photons0, geo);
     const q = filterSino(sino, h, geo.ds);
-    vol.set(backproject(q, geo), si * N * N);
+    const img = backproject(q, geo);
+    vol.set(img, si * N * N);
+    if (onSlice) onSlice(si, nz, positions[si], img, meta);
     if (onProgress) onProgress((si + 1) / nz);
-    await sleep(0);                              // yield to keep the UI alive
+    await sleep(0);                              // yield so the couch + preview repaint between slices
   }
   const slices = positions.map((d, i) => ({ d, mu: vol.subarray(i * N * N, (i + 1) * N * N) }));
   const dz = nz > 1 ? (positions[nz - 1] - positions[0]) / (nz - 1) : Math.max(g.interval, 0.1);
