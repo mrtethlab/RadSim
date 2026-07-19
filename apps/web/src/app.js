@@ -35,7 +35,8 @@ function initScene(){
   const det=new THREE.Mesh(new THREE.BoxGeometry(24,1.2,30),
     new THREE.MeshStandardMaterial({color:0x11161b,metalness:0,roughness:1}));
   det.position.y=-0.6; det.receiveShadow=true; scene.add(det);
-  // white L-shaped corner markers outlining the 24x30 receptor area
+  // white L-shaped corner markers outlining the 24x30 receptor area (x-ray only)
+  const detMarks=new THREE.Group(); scene.add(detMarks);
   (function cornerMarkers(){
     const markMat=new THREE.MeshBasicMaterial({color:0xffffff});
     const hx=12, hz=15, arm=3.2, th=0.35, yy=0.07;
@@ -44,7 +45,7 @@ function initScene(){
       a.position.set(x+dx*arm/2, yy, z);
       const b=new THREE.Mesh(new THREE.BoxGeometry(th,0.08,arm),markMat);
       b.position.set(x, yy, z+dz*arm/2);
-      scene.add(a,b);
+      detMarks.add(a,b);
     }
     bracket( hx, hz,-1,-1); bracket(-hx, hz, 1,-1);
     bracket( hx,-hz,-1, 1); bracket(-hx,-hz, 1, 1);
@@ -90,7 +91,7 @@ function initScene(){
   const beam=new THREE.Group(); scene.add(beam);         // retired (unused)
   const handGroup=new THREE.Group(); scene.add(handGroup);
 
-  three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,
+  three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,
          amb,key,lamp,cookieCanvas,cookieTex,lampAngle};
   buildHandMeshes();
 

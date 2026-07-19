@@ -80,7 +80,8 @@ export function ctSyncScene() {
   const isCT = S.mode === 'ct';
   bed.visible = isCT;
   laser.visible = isCT;
-  if (three.det) three.det.visible = !isCT;   // hide the flat-panel detector in CT
+  if (three.det) three.det.visible = !isCT;          // hide the flat-panel detector in CT
+  if (three.detMarks) three.detMarks.visible = !isCT; // and its corner brackets
   if (isCT) {
     // no collimator light field in CT — only the laser
     three.lamp.intensity = 0; three.lamp.castShadow = false;
