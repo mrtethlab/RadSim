@@ -87,6 +87,7 @@ export function initCT(context) {
   initScanBoxes();
   wireStorage();
   wireSliceViewer();
+  wireRecons();
   applyMode(ctx.S.mode);        // establish initial (x-ray) state + body class
   // keep the scout panels row-locked at the shared scale when the window resizes
   window.addEventListener('resize', () => {
@@ -1359,17 +1360,21 @@ async function reconstructSlices(g, alive, onProgress) {
   const positions = [];
   for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
   const photons0 = PHOTON_BASE * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5);
-  const slices = [];
-  for (let si = 0; si < positions.length; si++) {
+  // Reconstruct the full transverse stack into one contiguous volume so it can be
+  // resampled in any plane (axial / coronal / sagittal) for multiplanar recons.
+  const N = RECON_N, nz = positions.length, vol = new Float32Array(nz * N * N);
+  for (let si = 0; si < nz; si++) {
     if (!alive()) return null;
-    const z0 = positions[si] / MM_PER_UNIT;      // world plane for this slice (see scoutProjection geometry)
-    const sino = projectSlice(phantom, z0, mu, photons0, geo);
+    const zw = positions[si] / MM_PER_UNIT;      // world plane for this slice (see scoutProjection geometry)
+    const sino = projectSlice(phantom, zw, mu, photons0, geo);
     const q = filterSino(sino, h, geo.ds);
-    slices.push({ d: positions[si], mu: backproject(q, geo) });
-    if (onProgress) onProgress((si + 1) / positions.length);
+    vol.set(backproject(q, geo), si * N * N);
+    if (onProgress) onProgress((si + 1) / nz);
     await sleep(0);                              // yield to keep the UI alive
   }
-  return { slices, gridN: RECON_N, fovMM, muWater: muW, effE };
+  const slices = positions.map((d, i) => ({ d, mu: vol.subarray(i * N * N, (i + 1) * N * N) }));
+  const dz = nz > 1 ? (positions[nz - 1] - positions[0]) / (nz - 1) : Math.max(g.interval, 0.1);
+  return { slices, vol, nz, gridN: N, fovMM, z0: positions[0], dz, centerY: ISO_Y, muWater: muW, effE };
 }
 
 // ---- image storage ----
@@ -1377,10 +1382,17 @@ function tstamp() { try { return new Date().toLocaleTimeString([], { hour: '2-di
 
 function storeScan(g, i, recon) {
   const S = ctx.S, id = S.ct.nextScanId++;
+  const el = acqThkOf(g);                          // detector element = minimum recon thickness
   const entry = {
     id, label: 'Scan ' + id + ' · G' + (i + 1), ts: tstamp(),
-    params: { kv: g.kv, ma: g.ma, sliceThk: g.sliceThk, pitch: g.pitch, interval: g.interval, rotSpeed: g.rotSpeed },
+    params: { kv: g.kv, ma: g.ma, sliceThk: g.sliceThk, pitch: g.pitch, interval: g.interval, rotSpeed: g.rotSpeed, acqThk: el, detRows: g.detRows, beamColl: g.beamColl },
     gridN: recon.gridN, fovMM: recon.fovMM, muWater: recon.muWater, effE: recon.effE, slices: recon.slices,
+    // full volume + geometry for multiplanar resampling
+    vol: recon.vol, nz: recon.nz, z0: recon.z0, dz: recon.dz, centerY: recon.centerY,
+    // planned reconstructions (Phase 3/4). One default transverse recon at the box DFOV.
+    nextReconId: 2,
+    recons: [{ id: 1, name: 'Axial', plane: 'axial', dfov: recon.fovMM, offRL: 0, offAP: 0,
+               thk: Math.max(g.sliceThk, el), interval: g.interval, algo: 'standard', mar: false, minThk: el }],
   };
   S.ct.storage.push(entry);
   enforceStorageLimit();
@@ -1486,29 +1498,270 @@ export function ctRenderViewer() {
 // Light redraw (slice/window changed but not the scan list) — same as full render here.
 function refreshViewer() { ctRenderViewer(); }
 
-// Reconstruction planning / multiplanar viewer. Full planner (per-plane recons with
-// localizers, algorithms, MAR) arrives in a later phase; for now it lists the stored
-// scans and their default transverse reconstruction so the tab is functional.
+// ==================== Phase 3/4: multiplanar reconstruction ====================
+// Each stored scan keeps its full transverse VOLUME (scan.vol, nz × N × N). A recon
+// resamples that volume in a chosen plane (axial / coronal / sagittal), cropped to a
+// DFOV around an R/L + A/P offset, at a slice thickness (slab) and interval, with a
+// processing algorithm (standard / edge / blur / MIP / MinIP) and optional metal-
+// artifact reduction. The Recons tab lists a scan's recons, edits them via a popup,
+// and shows the selected recon with a scroll slider + a localizer (a line at the
+// current slice on an orthogonal reference, angled to the plane, with a slice-order arrow).
+const RECON_ALGOS = [['standard', 'Standard'], ['edge', 'Edge'], ['blur', 'Blur'], ['mip', 'MIP'], ['minip', 'MinIP']];
+
+// Trilinear sample of the volume at world (x mm, y mm relative to ISO_Y, inferior d mm).
+// Returns NaN outside the acquired volume.
+function sampleVol(scan, xmm, yrel, dmm) {
+  const N = scan.gridN, nz = scan.nz, p = scan.fovMM / N;
+  const fx = xmm / p + (N - 1) / 2, fy = yrel / p + (N - 1) / 2, fz = (dmm - scan.z0) / scan.dz;
+  if (fx < -0.5 || fx > N - 0.5 || fy < -0.5 || fy > N - 0.5 || fz < -0.5 || fz > nz - 0.5) return NaN;
+  const cx = clampV(fx, 0, N - 1.0001), cy = clampV(fy, 0, N - 1.0001), cz = clampV(fz, 0, nz - 1.0001);
+  const x0 = Math.floor(cx), y0 = Math.floor(cy), z0 = Math.floor(cz), tx = cx - x0, ty = cy - y0, tz = cz - z0;
+  const v = scan.vol, NN = N * N;
+  const at = (z, y, x) => v[z * NN + y * N + x];
+  const c00 = at(z0, y0, x0) * (1 - tx) + at(z0, y0, x0 + 1) * tx;
+  const c01 = at(z0, y0 + 1, x0) * (1 - tx) + at(z0, y0 + 1, x0 + 1) * tx;
+  const c10 = at(z0 + 1, y0, x0) * (1 - tx) + at(z0 + 1, y0, x0 + 1) * tx;
+  const c11 = at(z0 + 1, y0 + 1, x0) * (1 - tx) + at(z0 + 1, y0 + 1, x0 + 1) * tx;
+  const c0 = c00 * (1 - ty) + c01 * ty, c1 = c10 * (1 - ty) + c11 * ty;
+  return c0 * (1 - tz) + c1 * tz;
+}
+// Combine a slab of ns samples stepping along one axis through a point, per algorithm.
+function slab(scan, axis, x, yrel, d, ns, step, algo) {
+  let acc = algo === 'mip' ? -Infinity : algo === 'minip' ? Infinity : 0, cnt = 0;
+  for (let j = 0; j < ns; j++) {
+    const o = (j - (ns - 1) / 2) * step;
+    const v = axis === 'z' ? sampleVol(scan, x, yrel, d + o) : axis === 'y' ? sampleVol(scan, x, yrel + o, d) : sampleVol(scan, x + o, yrel, d);
+    if (isNaN(v)) continue;
+    if (algo === 'mip') acc = Math.max(acc, v); else if (algo === 'minip') acc = Math.min(acc, v); else { acc += v; cnt++; }
+  }
+  if (algo === 'mip') return acc === -Infinity ? 0 : acc;
+  if (algo === 'minip') return acc === Infinity ? 0 : acc;
+  return cnt ? acc / cnt : 0;
+}
+// number of slices a recon scrolls through, and a position label for slice k.
+function reconCount(scan, rec) {
+  const step = Math.max(rec.interval, 0.1);
+  if (rec.plane === 'axial') return Math.max(1, Math.round((scan.nz - 1) * scan.dz / step) + 1);
+  return Math.max(1, Math.round(rec.dfov / step) + 1);
+}
+function reconPosLabel(scan, rec, k) {
+  const step = Math.max(rec.interval, 0.1);
+  if (rec.plane === 'axial') return fmtTablePos(scan.z0 + k * step) + ' mm';
+  if (rec.plane === 'coronal') { const y = rec.offAP - rec.dfov / 2 + k * step; return 'AP ' + (y >= 0 ? '+' : '') + Math.round(y) + ' mm'; }
+  const x = rec.offRL - rec.dfov / 2 + k * step; return 'R/L ' + (x >= 0 ? '+' : '') + Math.round(x) + ' mm';
+}
+// Reformat one recon slice → { data (μ), w, h }.
+function reformatRecon(scan, rec, k) {
+  const M = RECON_N, ps = rec.dfov / M, step = Math.max(rec.interval, 0.1);
+  const zStart = scan.z0, zExt = Math.max(scan.dz, (scan.nz - 1) * scan.dz), p = scan.fovMM / scan.gridN;
+  let w, h, data;
+  if (rec.plane === 'axial') {
+    const d = zStart + k * step, ns = Math.max(1, Math.round(rec.thk / scan.dz));
+    w = M; h = M; data = new Float32Array(w * h);
+    for (let oy = 0; oy < h; oy++) for (let ox = 0; ox < w; ox++) {
+      const x = rec.offRL + (ox - (M - 1) / 2) * ps, yrel = rec.offAP + ((M - 1) / 2 - oy) * ps;   // top row = +y (dorsal)
+      data[oy * w + ox] = slab(scan, 'z', x, yrel, d, ns, scan.dz, rec.algo);
+    }
+  } else if (rec.plane === 'coronal') {
+    const yc = rec.offAP - rec.dfov / 2 + k * step, ns = Math.max(1, Math.round(rec.thk / p));
+    w = M; h = clampV(Math.round(M * zExt / rec.dfov), 16, 512); const psz = zExt / h;
+    data = new Float32Array(w * h);
+    for (let oz = 0; oz < h; oz++) for (let ox = 0; ox < w; ox++) {
+      const x = rec.offRL + (ox - (M - 1) / 2) * ps, d = zStart + oz * psz;                        // top = scan start (superior)
+      data[oz * w + ox] = slab(scan, 'y', x, yc, d, ns, p, rec.algo);
+    }
+  } else {
+    const xc = rec.offRL - rec.dfov / 2 + k * step, ns = Math.max(1, Math.round(rec.thk / p));
+    w = M; h = clampV(Math.round(M * zExt / rec.dfov), 16, 512); const psz = zExt / h;
+    data = new Float32Array(w * h);
+    for (let oz = 0; oz < h; oz++) for (let oh = 0; oh < w; oh++) {
+      const yrel = rec.offAP + ((M - 1) / 2 - oh) * ps, d = zStart + oz * psz;                      // left = +y (anterior)
+      data[oz * w + oh] = slab(scan, 'x', xc, yrel, d, ns, p, rec.algo);
+    }
+  }
+  if (rec.algo === 'blur') data = filter2D(data, w, h, 'blur');
+  else if (rec.algo === 'edge') data = filter2D(data, w, h, 'edge');
+  if (rec.mar) applyMAR(data, w, h, scan.muWater);
+  return { data, w, h };
+}
+// 3×3 box blur, or unsharp edge-enhancement (mu-domain).
+function filter2D(src, w, h, kind) {
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let s = 0, n = 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      const yy = y + dy, xx = x + dx; if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue; s += src[yy * w + xx]; n++;
+    }
+    const blur = s / n, v = src[y * w + x];
+    out[y * w + x] = kind === 'blur' ? blur : v + 0.9 * (v - blur);   // edge = unsharp mask
+  }
+  return out;
+}
+// Light metal-artifact reduction: cap extreme (metal) μ and blend with the local mean
+// so the bright blooming + streaks around dense objects are softened.
+function applyMAR(data, w, h, muW) {
+  const cap = muW * 2.6;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x; if (data[i] <= cap) continue;
+    let s = 0, n = 0;
+    for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+      const yy = y + dy, xx = x + dx; if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue; s += Math.min(data[yy * w + xx], cap); n++;
+    }
+    data[i] = 0.5 * cap + 0.5 * (s / n);
+  }
+}
+function drawReconData(cv, res, muW, wl, ww) {
+  const { data, w, h } = res;
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+  const g = cv.getContext('2d'), im = g.createImageData(w, h), d8 = im.data;
+  for (let i = 0; i < data.length; i++) {
+    const hu = 1000 * (data[i] - muW) / muW, v = Math.round(255 * huToGray(hu, wl, ww)), o = i * 4;
+    d8[o] = d8[o + 1] = d8[o + 2] = v; d8[o + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+}
+// Localizer: an orthogonal reference reformat with a line at the current slice, angled
+// to the plane being created, and a small arrow showing the slice-advance direction.
+function drawLocalizer(scan, rec, k, muW, wl, ww) {
+  const cv = ctx.$('ctReconLoc'); if (!cv) return;
+  const refPlane = rec.plane === 'axial' ? 'coronal' : 'axial';
+  const refRec = { plane: refPlane, dfov: scan.fovMM, offRL: 0, offAP: 0, thk: scan.dz, interval: Math.max(scan.dz, scan.fovMM / 40), algo: 'standard', mar: false };
+  const midK = Math.floor(reconCount(scan, refRec) / 2);
+  const res = reformatRecon(scan, refRec, midK);
+  drawReconData(cv, res, muW, wl, ww);
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height, step = Math.max(rec.interval, 0.1);
+  g.save(); g.strokeStyle = '#39d0ff'; g.fillStyle = '#39d0ff'; g.lineWidth = Math.max(1, W * 0.012);
+  const zExt = Math.max(scan.dz, (scan.nz - 1) * scan.dz);
+  if (rec.plane === 'axial') {                       // coronal ref: horizontal line at current z, arrow down (into +I)
+    const yy = clampV((scan.z0 + k * step - scan.z0) / zExt, 0, 1) * H;
+    line(g, 0, yy, W, yy); arrow(g, W * 0.5, yy, 0, 1, W);
+  } else if (rec.plane === 'coronal') {              // axial ref: horizontal line at current AP, arrow toward +AP (down)
+    const yy = clampV(0.5 - (rec.offAP - rec.dfov / 2 + k * step) / scan.fovMM, 0, 1) * H;
+    line(g, 0, yy, W, yy); arrow(g, W * 0.5, yy, 0, 1, W);
+  } else {                                            // axial ref: vertical line at current R/L, arrow toward +R/L (right)
+    const xx = clampV(0.5 + (rec.offRL - rec.dfov / 2 + k * step) / scan.fovMM, 0, 1) * W;
+    line(g, xx, 0, xx, H); arrow(g, xx, H * 0.5, 1, 0, W);
+  }
+  g.restore();
+}
+function line(g, x0, y0, x1, y1) { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); }
+function arrow(g, x, y, dx, dy, W) {                 // small arrowhead at (x,y) pointing (dx,dy)
+  const s = Math.max(5, W * 0.05), px = -dy, py = dx;
+  g.beginPath(); g.moveTo(x + dx * s, y + dy * s);
+  g.lineTo(x + px * s * 0.6, y + py * s * 0.6); g.lineTo(x - px * s * 0.6, y - py * s * 0.6); g.closePath(); g.fill();
+}
+
+function reconScan() {
+  const S = ctx.S;
+  return S.ct.storage.find(s => s.id === S.ct.recon.scanId) || S.ct.storage[S.ct.storage.length - 1] || null;
+}
+const PLANE_LABEL = { axial: 'AXIAL', coronal: 'CORONAL', sagittal: 'SAGITTAL' };
+
 export function ctRenderRecons() {
   if (!ctx) return;
-  const body = ctx.$('ctReconsBody'), sel = ctx.$('ctReconScanSel'); if (!body) return;
-  const S = ctx.S, scans = S.ct.storage;
+  const S = ctx.S, listEl = ctx.$('ctReconList'), sel = ctx.$('ctReconScanSel'); if (!listEl) return;
+  const scan = reconScan();
   if (sel) {
-    const cur = currentScan();
-    sel.innerHTML = scans.map(s => '<option value="' + s.id + '"' + (cur && s.id === cur.id ? ' selected' : '') + '>' + s.label + '</option>').join('');
-    sel.disabled = !scans.length;
+    sel.innerHTML = S.ct.storage.map(s => '<option value="' + s.id + '"' + (scan && s.id === scan.id ? ' selected' : '') + '>' + s.label + '</option>').join('');
+    sel.disabled = !S.ct.storage.length;
   }
-  if (!scans.length) { body.innerHTML = '<div class="ctstore-empty">No scans stored — run a scan first, then plan reconstructions here.</div>'; return; }
-  const scan = currentScan();
-  body.innerHTML =
-    '<div class="rc-scan"><b>' + scan.label + '</b> · ' + scan.slices.length + ' images · ' +
-    scan.params.sliceThk + ' mm acq · DFOV ' + Math.round(scan.fovMM) + ' mm</div>' +
-    '<div class="rc-list">' +
-    '<div class="rc-row default"><span class="rc-plane">AXIAL</span>' +
-    '<span class="rc-meta">Transverse · ' + scan.params.sliceThk + ' mm / ' + fmtNum(scan.params.interval) + ' mm · DFOV ' + Math.round(scan.fovMM) + ' mm</span>' +
-    '<span class="rc-tag">default</span></div>' +
-    '</div>' +
-    '<div class="rc-note">Multiplanar reconstruction planning (coronal / sagittal, localizers, processing algorithms, metal-artifact reduction) is being built in the next phase.</div>';
+  const cv = ctx.$('ctReconCanvas'), loc = ctx.$('ctReconLoc'), add = ctx.$('ctReconAdd');
+  if (!scan) {
+    listEl.innerHTML = '<div class="ctstore-empty">No scans stored — run a scan first.</div>';
+    if (add) add.disabled = true;
+    if (cv) { cv.width = RECON_N; cv.height = RECON_N; const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height); }
+    if (loc) { loc.width = loc.height = 1; }
+    ctx.$('ctReconInfo').textContent = '';
+    return;
+  }
+  if (add) add.disabled = false;
+  S.ct.recon.scanId = scan.id;
+  if (!scan.recons.find(r => r.id === S.ct.recon.reconId)) { S.ct.recon.reconId = scan.recons[0] ? scan.recons[0].id : null; S.ct.recon.slice = 0; }
+  listEl.innerHTML = scan.recons.map(r => {
+    const active = r.id === S.ct.recon.reconId ? ' active' : '';
+    const del = scan.recons.length > 1 ? '<button class="rc-del" data-id="' + r.id + '" title="Delete">✕</button>' : '';
+    return '<div class="rc-row' + active + '" data-id="' + r.id + '">'
+      + '<span class="rc-open" data-id="' + r.id + '"><b>' + r.name + '</b>'
+      + '<small>' + PLANE_LABEL[r.plane] + ' · DFOV ' + Math.round(r.dfov) + ' mm · ' + fmtNum(r.thk) + 'mm/' + fmtNum(r.interval) + 'mm · ' + (RECON_ALGOS.find(a => a[0] === r.algo)[1]) + (r.mar ? ' · MAR' : '') + '</small></span>'
+      + '<button class="rc-edit" data-id="' + r.id + '" title="Edit">✎</button>' + del + '</div>';
+  }).join('');
+  renderReconViewer(scan, scan.recons.find(r => r.id === S.ct.recon.reconId));
+}
+function renderReconViewer(scan, rec) {
+  const v = ctx.S.ct.recon, cv = ctx.$('ctReconCanvas'); if (!cv || !rec) return;
+  const count = reconCount(scan, rec);
+  v.slice = clampV(v.slice, 0, count - 1);
+  drawReconData(cv, reformatRecon(scan, rec, v.slice), scan.muWater, v.wl, v.ww);
+  drawLocalizer(scan, rec, v.slice, scan.muWater, v.wl, v.ww);
+  const slider = ctx.$('ctReconSlider'); if (slider) { slider.max = count - 1; slider.value = v.slice; slider.disabled = count < 2; }
+  const info = ctx.$('ctReconInfo');
+  if (info) info.innerHTML = '<span>' + PLANE_LABEL[rec.plane] + ' ' + (v.slice + 1) + ' / ' + count + '</span>'
+    + '<span>' + reconPosLabel(scan, rec, v.slice) + '</span>'
+    + '<span>DFOV ' + Math.round(rec.dfov) + ' mm · ' + fmtNum(rec.thk) + 'mm/' + fmtNum(rec.interval) + 'mm</span>'
+    + '<span>WL ' + Math.round(v.wl) + ' / WW ' + Math.round(v.ww) + '</span>';
+}
+
+// Recon add/edit popup: plane, algorithm, DFOV, R/L + A/P offset (from the scan
+// centre), slice thickness (≥ acquisition element) + interval, and MAR.
+function openReconPopup(scan, rec) {
+  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
+  const isNew = !rec, minThk = scan.recons[0] ? scan.recons[0].minThk : scan.params.acqThk || 0.625;
+  const w = rec ? { ...rec } : { name: 'Recon ' + scan.nextReconId, plane: 'coronal', dfov: Math.round(scan.fovMM), offRL: 0, offAP: 0, thk: Math.max(minThk, scan.params.sliceThk), interval: scan.params.interval, algo: 'standard', mar: false };
+  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  const seg = (k, opts) => '<div class="rp-seg">' + opts.map(o => '<button data-k="' + k + '" data-v="' + o[0] + '"' + (w[k] === o[0] ? ' class="on"' : '') + '>' + o[1] + '</button>').join('') + '</div>';
+  const num = (k, lbl, unit) => '<div class="rp-fld"><label>' + lbl + '</label><input data-n="' + k + '" type="text" value="' + fmtNum(w[k]) + '"><span>' + unit + '</span></div>';
+  function render() {
+    inner.innerHTML = '<div class="rp-pop"><div class="plt">' + (isNew ? 'New reconstruction' : 'Edit reconstruction') + '</div>'
+      + '<div class="rp-row"><label>Plane</label>' + seg('plane', [['axial', 'Axial'], ['coronal', 'Coronal'], ['sagittal', 'Sagittal']]) + '</div>'
+      + '<div class="rp-row"><label>Algorithm</label>' + seg('algo', RECON_ALGOS) + '</div>'
+      + '<div class="rp-grid">' + num('dfov', 'DFOV', 'mm') + num('thk', 'Thickness', 'mm') + num('offRL', 'R/L offset', 'mm') + num('interval', 'Interval', 'mm') + num('offAP', 'A/P offset', 'mm')
+      + '<div class="rp-fld"><label>Metal artifact red.</label><button class="rp-mar' + (w.mar ? ' on' : '') + '" data-mar>' + (w.mar ? 'ON' : 'OFF') + '</button></div></div>'
+      + '<div class="phint">Thickness floor = acquisition element ' + fmtNum(minThk) + ' mm&nbsp;·&nbsp;<b>[ESC]</b> cancel</div>'
+      + '<div class="acq-actions"><button class="acq-ok">' + (isNew ? 'Create' : 'Save') + '</button><button class="acq-cancel">Cancel</button></div></div>';
+    inner.querySelectorAll('.rp-seg button').forEach(b => b.addEventListener('click', () => { w[b.dataset.k] = b.dataset.v; render(); }));
+    const mar = inner.querySelector('[data-mar]'); if (mar) mar.addEventListener('click', () => { w.mar = !w.mar; render(); });
+    inner.querySelectorAll('input[data-n]').forEach(inp => inp.addEventListener('change', () => { w[inp.dataset.n] = sanitizeNum(inp.value, w[inp.dataset.n]); }));
+    inner.querySelector('.acq-ok').addEventListener('click', () => {
+      inner.querySelectorAll('input[data-n]').forEach(inp => { w[inp.dataset.n] = sanitizeNum(inp.value, w[inp.dataset.n]); });
+      w.dfov = clampV(w.dfov, 10, scan.fovMM); w.thk = Math.max(minThk, w.thk); w.interval = clampV(w.interval, 0.1, 50);
+      w.offRL = clampV(w.offRL, -scan.fovMM, scan.fovMM); w.offAP = clampV(w.offAP, -scan.fovMM, scan.fovMM); w.minThk = minThk;
+      if (isNew) { w.id = scan.nextReconId++; scan.recons.push(w); ctx.S.ct.recon.reconId = w.id; ctx.S.ct.recon.slice = 0; }
+      else Object.assign(rec, w);
+      close(); ctRenderRecons();
+    });
+    inner.querySelector('.acq-cancel').addEventListener('click', close);
+  }
+  pop.classList.add('show'); document.addEventListener('keydown', onKey, true); render();
+}
+
+function wireRecons() {
+  ctx.$('ctReconList')?.addEventListener('click', (e) => {
+    const scan = reconScan(); if (!scan) return;
+    const del = e.target.closest('.rc-del');
+    if (del) { const id = +del.dataset.id; const i = scan.recons.findIndex(r => r.id === id); if (i >= 0 && scan.recons.length > 1) scan.recons.splice(i, 1); ctRenderRecons(); return; }
+    const edit = e.target.closest('.rc-edit');
+    if (edit) { openReconPopup(scan, scan.recons.find(r => r.id === +edit.dataset.id)); return; }
+    const open = e.target.closest('.rc-open');
+    if (open) { ctx.S.ct.recon.reconId = +open.dataset.id; ctx.S.ct.recon.slice = 0; ctRenderRecons(); }
+  });
+  ctx.$('ctReconAdd')?.addEventListener('click', () => { const scan = reconScan(); if (scan) openReconPopup(scan, null); });
+  const slider = ctx.$('ctReconSlider');
+  slider?.addEventListener('input', () => { ctx.S.ct.recon.slice = parseInt(slider.value, 10) || 0; const s = reconScan(); if (s) renderReconViewer(s, s.recons.find(r => r.id === ctx.S.ct.recon.reconId)); });
+  ctx.$('ctRecons')?.addEventListener('wheel', (e) => {
+    if (!ctx.$('ctRecons').classList.contains('show')) return; e.preventDefault();
+    const scan = reconScan(); if (!scan) return; const rec = scan.recons.find(r => r.id === ctx.S.ct.recon.reconId); if (!rec) return;
+    ctx.S.ct.recon.slice = clampV(ctx.S.ct.recon.slice + (e.deltaY > 0 ? 1 : -1), 0, reconCount(scan, rec) - 1);
+    renderReconViewer(scan, rec);
+  }, { passive: false });
+  const wl = ctx.$('ctReconWL'), ww = ctx.$('ctReconWW');
+  const redraw = () => { const s = reconScan(); if (s) renderReconViewer(s, s.recons.find(r => r.id === ctx.S.ct.recon.reconId)); };
+  wl?.addEventListener('input', () => { ctx.S.ct.recon.wl = parseInt(wl.value, 10); redraw(); });
+  ww?.addEventListener('input', () => { ctx.S.ct.recon.ww = parseInt(ww.value, 10); redraw(); });
+  ctx.$('ctReconWLPresets')?.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-wl]'); if (!b) return;
+    const v = ctx.S.ct.recon; v.wl = +b.dataset.wl; v.ww = +b.dataset.ww; if (wl) wl.value = v.wl; if (ww) ww.value = v.ww; redraw();
+  });
 }
 
 // ---- busy state (grey controls during a scan) ----

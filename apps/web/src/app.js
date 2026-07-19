@@ -275,7 +275,8 @@ const S = {
     autoDelete:true,           // auto-delete oldest scans past the cap so memory doesn't grow without bound
     storeCap:4,                // keep at most this many scan groups' worth of data when autoDelete is on
     nextScanId:1,              // running id for stored scans
-    viewer:{ scanId:null, slice:0, wl:60, ww:800 },   // cross-sectional viewer state (HU window/level)
+    viewer:{ scanId:null, slice:0, wl:60, ww:800 },   // cross-sectional (axial) viewer state (HU window/level)
+    recon:{ scanId:null, reconId:null, slice:0, wl:60, ww:800 },   // multiplanar recon viewer state
     busy:false,                // true during scan execution (controls greyed out)
   },
 };

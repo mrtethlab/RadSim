@@ -427,22 +427,47 @@ body.mode-ct .di{display:none}
 
 /* ---- CT reconstruction planning / multiplanar viewer over the bay ---- */
 .ctrecons{display:none; position:absolute; inset:0; z-index:7; background:#050607;
-  padding:40px 16px 14px; flex-direction:column; gap:12px}
+  padding:40px 16px 14px; flex-direction:column; gap:10px}
 .ctrecons.show{display:flex}
-.ctrecons-body{flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:12px}
-.rc-scan{font-family:var(--disp); font-size:14px; color:var(--txt); padding:8px 10px; background:#0b1116;
-  border:1px solid var(--edge2); border-radius:4px}
-.rc-scan b{color:var(--cyan)}
-.rc-list{display:flex; flex-direction:column; gap:6px}
-.rc-row{display:flex; align-items:center; gap:12px; background:#0b1116; border:1px solid var(--edge2);
-  border-left:4px solid var(--cyan-dim); border-radius:4px; padding:9px 12px}
-.rc-row.default{border-left-color:var(--cyan)}
-.rc-plane{font-family:var(--seg); font-size:12px; letter-spacing:1.5px; color:var(--cyan); min-width:74px}
-.rc-meta{flex:1 1 auto; font-family:var(--disp); font-size:13px; color:var(--txt)}
-.rc-tag{font-family:var(--seg); font-size:9px; letter-spacing:1px; color:var(--muted2); text-transform:uppercase;
-  border:1px solid var(--edge2); border-radius:3px; padding:2px 6px}
-.rc-note{font-family:var(--disp); font-size:12.5px; color:var(--muted); line-height:1.5;
-  border:1px dashed var(--edge2); border-radius:4px; padding:10px 12px}
+.rc-main{flex:1 1 auto; min-height:0; display:flex; gap:14px}
+.rc-side{flex:0 0 240px; display:flex; flex-direction:column; gap:8px; min-height:0}
+.rc-list{flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:6px}
+.rc-row{display:flex; align-items:center; gap:6px; background:#0b1116; border:1px solid var(--edge2);
+  border-left:4px solid var(--cyan-dim); border-radius:4px; padding:7px 9px}
+.rc-row.active{border-left-color:var(--cyan); background:rgba(53,198,214,.08)}
+.rc-open{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; cursor:pointer}
+.rc-open b{color:var(--txt); font-size:13.5px}
+.rc-open small{color:var(--muted); font-family:var(--seg); font-size:9px; letter-spacing:.3px; white-space:normal}
+.rc-open:hover b{color:#fff}
+.rc-edit,.rc-del{background:none; border:none; color:var(--muted2); font-size:13px; cursor:pointer; padding:2px 4px; line-height:1}
+.rc-edit:hover{color:var(--cyan)} .rc-del:hover{color:var(--red)}
+.rc-add{flex:0 0 auto; background:var(--panel2); border:1px dashed var(--edge2); color:var(--cyan);
+  font-family:var(--disp); font-size:12px; letter-spacing:1px; padding:8px; border-radius:4px; cursor:pointer; text-transform:uppercase}
+.rc-add:hover{border-color:var(--cyan); color:#fff} .rc-add:disabled{opacity:.4; cursor:default}
+.rc-viewwrap{flex:1 1 auto; min-width:0; display:flex; align-items:center; justify-content:center}
+.rc-canvaswrap{position:relative; height:100%; max-width:100%; display:flex; align-items:center; justify-content:center}
+#ctReconCanvas{max-height:100%; max-width:100%; background:#000; border:1px solid var(--edge2); image-rendering:auto; display:block}
+.rc-loc{position:absolute; right:8px; bottom:8px; width:112px; height:auto; max-height:150px;
+  border:1px solid var(--cyan-dim); background:#000; box-shadow:0 2px 8px rgba(0,0,0,.6)}
+/* recon add/edit popup */
+.rp-pop{min-width:360px; max-width:92vw}
+.rp-row{display:flex; align-items:center; gap:10px; margin-bottom:10px}
+.rp-row>label{font-family:var(--seg); font-size:10px; letter-spacing:1px; color:var(--muted); text-transform:uppercase; min-width:74px}
+.rp-seg{display:flex; flex-wrap:wrap; gap:0; border:1px solid var(--edge2); border-radius:3px; overflow:hidden}
+.rp-seg button{background:var(--panel2); color:var(--txt); border:none; border-right:1px solid var(--edge2);
+  font-family:var(--disp); font-size:13px; padding:6px 11px; cursor:pointer}
+.rp-seg button:last-child{border-right:none}
+.rp-seg button.on{background:var(--cyan-dim); color:#eafcff}
+.rp-grid{display:grid; grid-template-columns:1fr 1fr; gap:9px 14px; margin:12px 0 4px}
+.rp-fld{display:flex; align-items:center; gap:6px}
+.rp-fld label{flex:1 1 auto; font-family:var(--disp); font-size:13px; color:var(--txt)}
+.rp-fld input{width:64px; background:#060a0d; border:1px solid var(--edge2); color:#eafcff;
+  font-family:var(--disp); font-size:14px; padding:5px 7px; border-radius:3px; text-align:center; outline:none}
+.rp-fld input:focus{border-color:var(--cyan)}
+.rp-fld span{font-family:var(--seg); font-size:10px; color:var(--muted)}
+.rp-mar{background:var(--panel2); border:1px solid var(--edge2); color:var(--muted); font-family:var(--seg);
+  font-size:11px; padding:5px 12px; border-radius:3px; cursor:pointer}
+.rp-mar.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
 
 /* ---- CT image-storage panel (right column) ---- */
 .cttoggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13.5px; color:var(--txt)}

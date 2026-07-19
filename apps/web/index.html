@@ -60,13 +60,41 @@
         </div>
       </div>
     </div>
-    <!-- CT reconstruction planning + multiplanar viewer (Phase 4) -->
+    <!-- CT reconstruction planning + multiplanar viewer -->
     <div class="ctrecons" id="ctRecons">
       <div class="slhdr">
         <div class="sltitle">RECONSTRUCTIONS</div>
         <select id="ctReconScanSel" class="slsel" title="Scan group"></select>
       </div>
-      <div class="ctrecons-body" id="ctReconsBody"></div>
+      <div class="rc-main">
+        <div class="rc-side">
+          <div class="rc-list" id="ctReconList"></div>
+          <button class="rc-add" id="ctReconAdd" type="button">+ Add reconstruction</button>
+        </div>
+        <div class="rc-viewwrap">
+          <div class="rc-canvaswrap">
+            <canvas id="ctReconCanvas" width="128" height="128"></canvas>
+            <div class="slinfo" id="ctReconInfo"></div>
+            <canvas id="ctReconLoc" class="rc-loc" width="1" height="1" title="Localizer"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="slctrls">
+        <div class="slrow">
+          <span class="sllab">Slice</span>
+          <input type="range" id="ctReconSlider" min="0" max="0" value="0">
+          <span class="slhint">scroll / drag</span>
+        </div>
+        <div class="slrow">
+          <span class="sllab">Level</span><input type="range" id="ctReconWL" min="-1000" max="2000" value="60">
+          <span class="sllab">Window</span><input type="range" id="ctReconWW" min="1" max="4000" value="800">
+          <div class="segmini" id="ctReconWLPresets">
+            <button data-wl="60" data-ww="400">Soft</button>
+            <button data-wl="500" data-ww="2000">Bone</button>
+            <button data-wl="-600" data-ww="1500">Lung</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="ctpop" id="ctPop"><div class="ctpop-inner" id="ctPopInner"></div></div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
