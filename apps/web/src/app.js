@@ -132,7 +132,20 @@ function initScene(){
       renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix();
     }
   }
-  (function loop(){resize();updateCamera();renderer.render(scene,cam);requestAnimationFrame(loop);})();
+  (function loop(){
+    resize(); updateCamera(); renderer.render(scene,cam);
+    // CT scout build: mirror the tube's-eye 3D into the small DR monitor so the
+    // scan can be watched there while the scouts stitch in over the bay. The blit
+    // must happen in the same tick as render() to read the WebGL drawing buffer.
+    if(S.mode==='ct' && S.ct.liveView){
+      const film=document.getElementById('film');
+      if(film){
+        if(film.width!==canvas.width || film.height!==canvas.height){ film.width=canvas.width; film.height=canvas.height; }
+        film.getContext('2d').drawImage(canvas,0,0);
+      }
+    }
+    requestAnimationFrame(loop);
+  })();
 }
 
 /* ---- DETAILED HAND ANATOMY (single source of truth) ----------------------
@@ -210,6 +223,7 @@ const S = {
     isocentred:false,
     phase:'idle',              // idle | scout | planning | moving | scanning | done
     patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
+    liveView:false,            // true while a scout build mirrors tube-POV into #film
   },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
@@ -380,6 +394,27 @@ function updateGeomReadouts(){
 function setCameraView(m){
   S.viewMode=m;
   const seg=$('camSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.cam===m));
+}
+/* CT scout build: mirror the tube's-eye 3D into the small DR monitor. Forces the
+   tube camera while active (saving the user's choice) and hides the NO IMAGE note;
+   restores the camera + film on the way out. The per-frame blit lives in the render
+   loop, gated by S.ct.liveView. */
+function ctLiveView(on){
+  const noexp=$('noexp');
+  if(on){
+    ctLiveView._prevCam = S.viewMode;
+    setCameraView('tube');
+    if(noexp) noexp.style.display='none';
+    S.ct.liveView=true;
+  } else {
+    S.ct.liveView=false;
+    if(ctLiveView._prevCam) setCameraView(ctLiveView._prevCam);
+    if(S.hasImage){ drawFilm(); }
+    else {
+      const f=$('film'); if(f) f.getContext('2d').clearRect(0,0,f.width,f.height);  // drop the stale 3D frame
+      if(noexp) noexp.style.display='';
+    }
+  }
 }
 function setContent(c){
   S.bayContent=c;
@@ -765,5 +800,5 @@ window.addEventListener('load',()=>{
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
-           poseRot, buildPhantom });
+           poseRot, buildPhantom, ctLiveView, setCameraView });
 });

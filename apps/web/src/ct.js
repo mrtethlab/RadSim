@@ -18,6 +18,10 @@ let bed = null, laser = null;   // CT-only 3D objects (created once, shown by mo
 const SLICE_MM = [0.625, 1.25, 2.5, 5, 10];   // slice-thickness stations
 const SFOV_R = 9;                             // scan field-of-view radius (world units)
 const MM_PER_UNIT = 10;                       // 1 world unit = 10 mm (detector 240x300 mm)
+// scout field widths (mm across the image); AP is the coronal width, LAT the
+// sagittal thickness. Shared by the projection and the on-screen layout so the two
+// panels display at one scale (AP twice as wide as LAT).
+const SCOUT_WIDTH_MM = { AP: 180, LAT: 90 };
 
 const scanLenU = () => ctx.S.ct.scanLen / MM_PER_UNIT;             // scan length in world units
 // Head-first is the only orientation: the couch always feeds the patient INTO the
@@ -64,6 +68,10 @@ export function initCT(context) {
   wireCTSettings();
   wireCTConsole();
   applyMode(ctx.S.mode);        // establish initial (x-ray) state + body class
+  // keep the scout panels row-locked at the shared scale when the window resizes
+  window.addEventListener('resize', () => {
+    if (ctx.$('ctScouts')?.classList.contains('show')) layoutScouts();
+  });
 }
 
 // Build the couch + gantry bore and the isocentre laser (hidden until CT mode).
@@ -76,13 +84,14 @@ function buildCTScene() {
   pad.position.set(0, -0.6, 8); pad.receiveShadow = true; bed.add(pad);
   const rail = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.5, 66), new THREE.MeshStandardMaterial({ color: 0x2f3a44, metalness: 0.4, roughness: 0.5 }));
   rail.position.set(0, -1.15, 8); bed.add(rail);
-  // gantry bore: the patient travels through it along +z/-z
+  // gantry bore: sits AT the isocentre / laser plane (z = 0) so the scan plane is
+  // inside the bore. The patient travels through it (-z) during acquisition.
   const ring = new THREE.Mesh(new THREE.TorusGeometry(15, 3.4, 18, 44),
     new THREE.MeshStandardMaterial({ color: 0x2b333c, metalness: 0.55, roughness: 0.4 }));
-  ring.position.set(0, 6, -16); bed.add(ring);
+  ring.position.set(0, 6, 0); bed.add(ring);
   const ringIn = new THREE.Mesh(new THREE.TorusGeometry(12, 0.7, 12, 44),
     new THREE.MeshStandardMaterial({ color: 0x11161b, metalness: 0.3, roughness: 0.8 }));
-  ringIn.position.set(0, 6, -14.6); bed.add(ringIn);
+  ringIn.position.set(0, 6, 1.4); bed.add(ringIn);
   bed.visible = false; three.scene.add(bed);
 
   // alignment lasers: a thin axial line projected across the patient at the scan
@@ -252,6 +261,7 @@ function setConsoleEnabled(on) {
 function showScouts(on) { ctx.$('ctScouts')?.classList.toggle('show', on); }
 
 function abortCT() {
+  ctx.ctLiveView(false);   // drop the tube-POV mirror if a build was in progress
   showScouts(false);
   setPhase('idle');
   ctx.syncScene();   // restore the model/bed after any scan animation
@@ -285,8 +295,14 @@ async function acquireScouts() {
   drawScout(ctx.$('scoutAP'), ap, 0);
   drawScout(ctx.$('scoutLAT'), lat, 0);
   showScouts(true);
-  await runScoutExposure('AP', ap);
-  await runScoutExposure('LAT', lat);
+  layoutScouts();                     // shared scale + row alignment across AP/LAT
+  ctx.ctLiveView(true);               // watch the scan in the small monitor (tube POV)
+  try {
+    await runScoutExposure('AP', ap);
+    await runScoutExposure('LAT', lat);
+  } finally {
+    ctx.ctLiveView(false);
+  }
   resetToIsocentre();                 // settle the patient back at the isocentre
   setPhase('planning');
   setHint('Scouts acquired — position the scan box (next phase). START confirms the plan.');
@@ -377,7 +393,7 @@ function scoutProjection(view) {
   const I0 = S.mas * Math.pow(S.kv / 70, 2);
   const PXMM = 1.5;                                  // mm per (square) pixel — undistorted
   const lenU = scanLenU();                           // scan length in world units (z axis)
-  const widthMM = view === 'AP' ? 180 : 90;          // width (AP) / thickness (LAT) field
+  const widthMM = SCOUT_WIDTH_MM[view];              // width (AP) / thickness (LAT) field
   const nz = Math.max(2, Math.round(S.ct.scanLen / PXMM));
   const nw = Math.max(2, Math.round(widthMM / PXMM));
   const pxU = (widthMM / MM_PER_UNIT) / nw;          // == lenU/nz == PXMM/10 -> square pixels
@@ -433,6 +449,31 @@ function drawScout(cv, data, rowLimit) {
     }
   }
   g.putImageData(img, 0, 0);
+}
+
+// Lay the two scouts out at ONE shared mm->px scale, top-aligned, so a horizontal
+// line crosses both panels at the SAME table position (they differ only as
+// orthogonal views). AP ends up twice as wide as LAT (180 vs 90 mm); both share the
+// same height (scan length), which is what lets a scan box lock the two views into a
+// single 3D cylinder. The panel aspect follows scan length: short scans read square,
+// long scans read portrait.
+function layoutScouts() {
+  const box = ctx.$('ctScouts');
+  const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
+  if (!box || !ap || !lat) return;
+  const len = ctx.S.ct.scanLen;                        // mm along the scan axis (both)
+  const wAP = SCOUT_WIDTH_MM.AP, wLAT = SCOUT_WIDTH_MM.LAT;
+  const cs = getComputedStyle(box);
+  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const colGap = parseFloat(cs.columnGap || cs.gap) || 16;
+  const hdr = box.querySelector('.scouthdr');
+  const hdrH = (hdr ? hdr.offsetHeight : 18) + 6;      // header + column inner gap
+  const availW = Math.max(40, box.clientWidth - padX - colGap);
+  const availH = Math.max(40, box.clientHeight - padY - hdrH);
+  const scale = Math.min(availW / (wAP + wLAT), availH / len);   // shared px per mm
+  const set = (cv, wmm) => { cv.style.width = (wmm * scale) + 'px'; cv.style.height = (len * scale) + 'px'; };
+  set(ap, wAP); set(lat, wLAT);
 }
 
 // keep the last scout data for later phases (scan box) to reuse the geometry/dims
