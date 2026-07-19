@@ -83,6 +83,7 @@ export function initCT(context) {
   wireModeToggle();
   wireCTSettings();
   wireCTConsole();
+  initScanBoxes();
   applyMode(ctx.S.mode);        // establish initial (x-ray) state + body class
   // keep the scout panels row-locked at the shared scale when the window resizes
   window.addEventListener('resize', () => {
@@ -224,6 +225,7 @@ function wireModeToggle() {
 function resetCTSession() {
   const c = ctx.S.ct;
   cancelScout();                  // stop any in-flight scout acquisition
+  stopTableMove(); showScanBoxes(false); resetScanBox();
   ctx.ctLiveView(false);          // stop the tube-POV mirror if a build was running
   c.scoutsReady = false;
   c.liveView = false;
@@ -332,11 +334,12 @@ function updateCTReadouts() {
   const et = scoutScanTime();
   set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
   set('ctTablePosV', fmtTablePos(S.ct.tablePos));
-  // Scan extent readouts. For a scout the scan always runs from the isocentre
-  // (0.0) to I(scan length). Phase 3's draggable scan box will drive these from
-  // the box edges instead (start = box near edge, end = box far edge).
-  set('ctScanStartV', fmtTablePos(0) + ' mm');
-  set('ctScanEndV', fmtTablePos(S.ct.scanLen) + ' mm');
+  // Scan extent readouts. Before planning the scan runs isocentre (0.0) -> I(scan
+  // length); during planning updatePlan() drives these from the scan-box edges.
+  if (S.ct.phase !== 'planning') {
+    set('ctScanStartV', fmtTablePos(0) + ' mm');
+    set('ctScanEndV', fmtTablePos(S.ct.scanLen) + ' mm');
+  }
   set('ctTableHV', (S.ct.tableY > 0 ? '+' : '') + S.ct.tableY + ' mm' + (S.ct.tableY === 0 ? ' · centred' : ''));
 }
 
@@ -355,18 +358,29 @@ function wireCTConsole() {
   const { $, S } = ctx;
   $('ctStart')?.addEventListener('click', () => {
     if (S.ct.phase === 'idle') acquireScouts();
-    else if (S.ct.phase === 'planning') setHint('Scan-box confirmation + scan execution arrive in later phases.');
+    else if (S.ct.phase === 'planning') {
+      if (ctx.$('ctStart').classList.contains('flash')) setHint('Plan confirmed — scan execution arrives in the next phase.');
+      else setHint('Reposition the table first (hold the orange TABLE button).');
+    }
   });
   $('ctAbort')?.addEventListener('click', abortCT);
-  $('ctTable')?.addEventListener('click', () => setHint('Table motion arrives with scan planning.'));
+  // TABLE is a press-and-HOLD: it drives the couch to the planned position while held.
+  const tbl = $('ctTable');
+  if (tbl) {
+    tbl.addEventListener('pointerdown', (e) => { e.preventDefault(); try { tbl.setPointerCapture(e.pointerId); } catch (_) {} startTableMove(); });
+    tbl.addEventListener('pointerup', stopTableMove);
+    tbl.addEventListener('pointercancel', stopTableMove);
+    tbl.addEventListener('lostpointercapture', stopTableMove);
+  }
   setPhase('idle');
 }
 
 function setPhase(p) {
   const { S, $ } = ctx;
   S.ct.phase = p;
-  const start = $('ctStart');
-  if (start) start.classList.toggle('flash', p === 'planning');
+  // planning decides the flashing button from the plan; other phases flash nothing
+  if (p === 'planning') { updatePlanReady(); }
+  else { $('ctStart')?.classList.remove('flash'); $('ctTable')?.classList.remove('flash'); showTableReminder(false); }
   const labels = { idle: 'CT · STANDBY', scout: 'CT · SCOUT', planning: 'CT · PLAN SCAN',
                    moving: 'CT · TABLE MOVE', scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
   const wt = $('ctWarnT'); if (wt) wt.textContent = labels[p] || 'CT';
@@ -388,6 +402,7 @@ function showScouts(on) {
 
 function abortCT() {
   cancelScout();               // stop any in-flight scout acquisition
+  stopTableMove(); showScanBoxes(false);
   ctx.ctLiveView(false);       // drop the tube-POV mirror if a build was in progress
   ctx.S.ct.scoutsReady = false;
   setPhase('idle');            // re-enables the 3D view
@@ -435,8 +450,10 @@ async function acquireScouts() {
     if (alive()) ctx.ctLiveView(false);
   }
   resetToIsocentre();                 // settle the patient back at the isocentre
+  resetScanBox(); renderScanBoxes(); showScanBoxes(true);
   setPhase('planning');
-  setHint('Scouts acquired — position the scan box (next phase). START confirms the plan.');
+  updatePlan();                       // start/end readouts + flashing button
+  setHint('Position the scan box on the scouts; adjust the table if prompted, then START.');
   setConsoleEnabled(true);
 }
 
@@ -563,8 +580,8 @@ function scoutProjection(view) {
 }
 
 // Paint the topogram: attenuated (bone) -> bright, open field -> dark. Row 0 of the
-// dose is the isocentre and sits at the BOTTOM of the image (head-first); rows fill
-// upward as the couch advances. rowLimit (default = all) draws only the rows the
+// dose is the isocentre and sits at the TOP of the image (= scan start); rows fill
+// downward as the couch advances. rowLimit (default = all) draws only the rows the
 // table has reached so far, so the image stitches in during the travel. The gray
 // window is the scan's fixed mn/mx so a strip's brightness doesn't shift as more
 // rows arrive.
@@ -579,7 +596,7 @@ function drawScout(cv, data, rowLimit) {
   for (let k = 0; k < d8.length; k += 4) { d8[k] = d8[k + 1] = d8[k + 2] = 0; d8[k + 3] = 255; } // unscanned = black
   const rng = (mx - mn) || 1;
   for (let j = 0; j < lim; j++) {
-    const imgRow = nz - 1 - j;                       // isocentre (row 0) at the bottom
+    const imgRow = j;                                // isocentre (row 0) at the top (= start)
     for (let i = 0; i < nw; i++) {
       const t = (dose[j * nw + i] - mn) / rng;        // 0 = most attenuated, 1 = open field
       const v = Math.round(255 * Math.pow(1 - t, 0.7));
@@ -621,3 +638,138 @@ let lastAP = null, lastLAT = null;
 // switch / abort), so a running acquisition stops moving the couch in the background.
 let scoutToken = 0;
 function cancelScout() { scoutToken++; }
+
+// ============================ Phase 3: interactive scan box ============================
+// A single scan box is drawn over both scouts. Its vertical (scan-axis) extent is
+// SHARED between AP and LAT so the planned volume is a cylinder; the horizontal
+// extent is independent per view (AP = mediolateral width, LAT = anteroposterior
+// depth). Boxes are DOM overlays in normalized (0..1) scout coords.
+const BOX_MIN = 0.05;                 // smallest box extent (normalized)
+const MOVE_THRESH = 0.5;              // mm: below this, no table move is needed
+const TABLE_SPEED = 45;              // mm/s couch reposition speed
+
+function initScanBoxes() {
+  wireScanBox('boxAP', 'ap');
+  wireScanBox('boxLAT', 'lat');
+}
+// The boxes only show in the planning phase.
+function showScanBoxes(on) { ctx.$('ctScouts')?.classList.toggle('planning', on); }
+// Centred default box + cleared committed table move.
+function resetScanBox() {
+  const c = ctx.S.ct;
+  c.box = { top: 0.10, bot: 0.90, apL: 0.30, apR: 0.70, latL: 0.30, latR: 0.70 };
+  c.plan.targetX = c.plan.targetY = c.plan.committedX = c.plan.committedY = 0;
+}
+function placeBox(id, l, t, r, b) {
+  const el = ctx.$(id); if (!el) return;
+  el.style.left = (l * 100) + '%'; el.style.top = (t * 100) + '%';
+  el.style.width = ((r - l) * 100) + '%'; el.style.height = ((b - t) * 100) + '%';
+}
+function renderScanBoxes() {
+  const b = ctx.S.ct.box;
+  placeBox('boxAP', b.apL, b.top, b.apR, b.bot);
+  placeBox('boxLAT', b.latL, b.top, b.latR, b.bot);
+}
+
+// Drag the box body (move) or an edge handle (resize). Vertical (top/bot) is shared
+// between the two boxes (cylinder lock); boxes stay axis-aligned rectangles.
+function wireScanBox(id, which) {
+  const box = ctx.$(id); if (!box) return;
+  box.addEventListener('pointerdown', (e) => {
+    if (ctx.S.ct.phase !== 'planning') return;
+    const rect = box.parentElement.getBoundingClientRect();
+    const edge = e.target.classList.contains('eh') ? e.target.dataset.edge : null;   // t|b|l|r or null (move)
+    const s = { x: e.clientX, y: e.clientY, box: { ...ctx.S.ct.box } };
+    try { box.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault(); e.stopPropagation();
+    const onMove = (ev) => {
+      applyBoxDrag(which, edge, s.box, (ev.clientX - s.x) / rect.width, (ev.clientY - s.y) / rect.height);
+      renderScanBoxes(); updatePlan();
+    };
+    const onUp = () => {
+      try { box.releasePointerCapture(e.pointerId); } catch (_) {}
+      box.removeEventListener('pointermove', onMove);
+      box.removeEventListener('pointerup', onUp); box.removeEventListener('pointercancel', onUp);
+    };
+    box.addEventListener('pointermove', onMove);
+    box.addEventListener('pointerup', onUp); box.addEventListener('pointercancel', onUp);
+  });
+}
+function applyBoxDrag(which, edge, s0, du, dv) {
+  const b = ctx.S.ct.box, clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const L = which === 'ap' ? 'apL' : 'latL', R = which === 'ap' ? 'apR' : 'latR';
+  if (!edge) {                                          // move the whole box
+    const w = s0[R] - s0[L], nl = clamp(s0[L] + du, 0, 1 - w); b[L] = nl; b[R] = nl + w;
+    const h = s0.bot - s0.top, nt = clamp(s0.top + dv, 0, 1 - h); b.top = nt; b.bot = nt + h;   // vertical is shared
+  } else if (edge === 't') { b.top = clamp(s0.top + dv, 0, s0.bot - BOX_MIN); }
+  else if (edge === 'b') { b.bot = clamp(s0.bot + dv, s0.top + BOX_MIN, 1); }
+  else if (edge === 'l') { b[L] = clamp(s0[L] + du, 0, s0[R] - BOX_MIN); }
+  else if (edge === 'r') { b[R] = clamp(s0[R] + du, s0[L] + BOX_MIN, 1); }
+}
+
+// Scan start/end come from the AP box top/bottom; the required table moves come from
+// the box centres (AP centre -> lateral / mediolateral; LAT centre -> height /
+// anteroposterior). Then refresh which console button flashes.
+function updatePlan() {
+  const c = ctx.S.ct, b = c.box, len = c.scanLen;
+  const set = (id, v) => { const el = ctx.$(id); if (el) el.textContent = v; };
+  set('ctScanStartV', fmtTablePos(b.top * len) + ' mm');        // top of AP box = start
+  set('ctScanEndV', fmtTablePos(b.bot * len) + ' mm');          // bottom of AP box = end
+  c.plan.targetX = ((b.apL + b.apR) / 2 - 0.5) * SCOUT_FOV_MM;   // mediolateral offset (mm)
+  c.plan.targetY = ((b.latL + b.latR) / 2 - 0.5) * SCOUT_FOV_MM; // anteroposterior offset (mm)
+  updatePlanReady();
+}
+// Flash TABLE (orange) while the couch still needs to move; else flash START (green).
+function updatePlanReady() {
+  const c = ctx.S.ct;
+  const needMove = Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH
+                || Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH;
+  ctx.$('ctStart')?.classList.toggle('flash', !needMove);
+  ctx.$('ctTable')?.classList.toggle('flash', needMove);
+  showTableReminder(needMove);
+}
+function showTableReminder(on) {
+  const el = ctx.$('ctReminder'); if (!el) return;
+  el.style.display = on ? 'flex' : 'none';
+  if (on) el.textContent = 'TABLE REPOSITION REQUIRED — press and HOLD the orange TABLE button to move the couch into position before scanning.';
+}
+
+// ---- TABLE hold-to-move: lateral first, then height; constant speed; pause on release ----
+let tableHeld = false, tableRAF = null, tableLastT = 0;
+function startTableMove() {
+  const c = ctx.S.ct;
+  if (c.phase !== 'planning' || tableHeld) return;
+  if (Math.abs(c.plan.targetX - c.plan.committedX) <= MOVE_THRESH
+   && Math.abs(c.plan.targetY - c.plan.committedY) <= MOVE_THRESH) return;   // nothing to do
+  tableHeld = true; tableLastT = performance.now();
+  (function step() {
+    if (!tableHeld) return;
+    const now = performance.now(), dt = Math.min(0.05, (now - tableLastT) / 1000); tableLastT = now;
+    stepTableMove(dt);
+    tableRAF = requestAnimationFrame(step);
+  })();
+}
+function stopTableMove() { tableHeld = false; if (tableRAF) cancelAnimationFrame(tableRAF); tableRAF = null; }
+function stepTableMove(dt) {
+  const c = ctx.S.ct, d = TABLE_SPEED * dt;
+  const remX = c.plan.targetX - c.plan.committedX, remY = c.plan.targetY - c.plan.committedY;
+  if (Math.abs(remX) > MOVE_THRESH) {                 // 1) mediolateral
+    c.plan.committedX += Math.sign(remX) * Math.min(Math.abs(remX), d);
+    setHint('Table moving — mediolateral (lateral)…');
+  } else if (Math.abs(remY) > MOVE_THRESH) {          // 2) then table height
+    c.plan.committedY += Math.sign(remY) * Math.min(Math.abs(remY), d);
+    setHint('Table moving — anteroposterior (height)…');
+  } else {
+    stopTableMove(); setHint('Table in position — press START to scan.');
+  }
+  applyTableCommit();
+  updatePlanReady();
+}
+// Apply the committed lateral/height offset to the 3D couch + patient.
+function applyTableCommit() {
+  const c = ctx.S.ct;
+  c.patient.x = -c.plan.committedX / MM_PER_UNIT;     // lateral: move patient opposite the box offset to centre it
+  c.tableY = -c.plan.committedY;                      // height: table compensates the AP offset
+  ctx.syncScene();
+  updateCTReadouts();
+}

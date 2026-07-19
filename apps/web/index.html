@@ -21,11 +21,25 @@
     <div class="ctscouts" id="ctScouts">
       <div class="scoutcol">
         <div class="scouthdr">AP SCOUT</div>
-        <canvas id="scoutAP"></canvas>
+        <div class="scoutwrap">
+          <canvas id="scoutAP"></canvas>
+          <div class="scanbox" id="boxAP">
+            <div class="xh xh-h"></div><div class="xh xh-v"></div>
+            <div class="eh eh-t" data-edge="t"></div><div class="eh eh-b" data-edge="b"></div>
+            <div class="eh eh-l" data-edge="l"></div><div class="eh eh-r" data-edge="r"></div>
+          </div>
+        </div>
       </div>
       <div class="scoutcol">
         <div class="scouthdr">LATERAL SCOUT</div>
-        <canvas id="scoutLAT"></canvas>
+        <div class="scoutwrap">
+          <canvas id="scoutLAT"></canvas>
+          <div class="scanbox" id="boxLAT">
+            <div class="xh xh-h"></div><div class="xh xh-v"></div>
+            <div class="eh eh-t" data-edge="t"></div><div class="eh eh-b" data-edge="b"></div>
+            <div class="eh eh-l" data-edge="l"></div><div class="eh eh-r" data-edge="r"></div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
@@ -316,6 +330,7 @@
     <div class="monitor">
       <canvas id="film" width="330" height="440"></canvas>
       <div class="noexp" id="noexp">NO IMAGE ACQUIRED</div>
+      <div class="ctreminder" id="ctReminder"></div>
       <div class="filmnote t" id="fnTL"></div>
       <div class="filmnote t r" id="fnTR"></div>
       <div class="filmnote" id="fnBL"></div>

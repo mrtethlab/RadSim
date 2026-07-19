@@ -245,6 +245,9 @@ const S = {
     pov:'ap',                  // CT camera perspective: 'ap' (top) | 'lat' (90° around the bore)
     liveView:false,            // true while a scout build mirrors tube-POV into #film
     scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
+    // ---- Phase 3: scan box (normalized scout coords; top/bot shared = cylinder lock) ----
+    box:{ top:0.10, bot:0.90, apL:0.30, apR:0.70, latL:0.30, latR:0.70 },
+    plan:{ targetX:0, targetY:0, committedX:0, committedY:0 },   // required vs applied table move (mm)
   },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so

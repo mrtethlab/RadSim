@@ -285,3 +285,24 @@ body.mode-ct .di{display:none}
   text-transform:uppercase}
 .scoutcol canvas{background:#000; border:1px solid var(--edge2); image-rendering:auto;
   display:block}
+/* scan-planning box: a wrapper shrink-wraps the canvas so the box can be placed in
+   % (== normalized scout coords). Box is nearly transparent to read the scout. */
+.scoutwrap{position:relative; display:inline-block; line-height:0}
+.scanbox{position:absolute; box-sizing:border-box; display:none; touch-action:none;
+  border:1.5px solid rgba(120,225,255,.95); background:rgba(90,190,255,.10); cursor:move;
+  box-shadow:0 0 0 1px rgba(0,0,0,.4)}
+#ctScouts.planning .scanbox{display:block}
+.scanbox .xh{position:absolute; pointer-events:none}
+.scanbox .xh-h{left:0; right:0; top:50%; border-top:1px dashed rgba(170,235,255,.85)}
+.scanbox .xh-v{top:0; bottom:0; left:50%; border-left:1px dashed rgba(170,235,255,.85)}
+.scanbox .eh{position:absolute; width:11px; height:11px; background:#cdeeff; border:1px solid #08131c;
+  border-radius:2px; box-shadow:0 1px 2px rgba(0,0,0,.5)}
+.scanbox .eh-t{top:0; left:50%; transform:translate(-50%,-50%); cursor:ns-resize}
+.scanbox .eh-b{top:100%; left:50%; transform:translate(-50%,-50%); cursor:ns-resize}
+.scanbox .eh-l{left:0; top:50%; transform:translate(-50%,-50%); cursor:ew-resize}
+.scanbox .eh-r{left:100%; top:50%; transform:translate(-50%,-50%); cursor:ew-resize}
+/* table-reposition reminder in the DR monitor */
+.ctreminder{position:absolute; inset:auto 10px 10px 10px; z-index:5; display:none;
+  align-items:center; justify-content:center; text-align:center; padding:10px 12px;
+  background:rgba(46,28,4,.92); border:1px solid var(--amber); border-radius:4px;
+  color:var(--amber); font-family:var(--seg); font-size:11px; letter-spacing:.6px; line-height:1.5}
