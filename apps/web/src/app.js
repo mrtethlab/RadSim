@@ -105,10 +105,10 @@ function initScene(){
       // side so the couch + hand read in 3D. It never tracks the patient: as the
       // couch drives the model through, the anatomy is seen passing under the fixed
       // laser, exactly like a real CT where only the table moves.
-      if(cam.fov!==58){ cam.fov=58; cam.updateProjectionMatrix(); }
-      cam.up.set(0,0,1);                        // +z (un-scanned anatomy) toward top
-      cam.position.set(0, 17.4, 2);             // overhead from the rim (nothing behind it)
-      cam.lookAt(0, 1, -1.5);                   // slight lean into the bore for depth
+      if(cam.fov!==60){ cam.fov=60; cam.updateProjectionMatrix(); }   // wide enough for both bore sides
+      cam.up.set(0,1,0);                        // y-up aerial into the bore
+      cam.position.set(0, 21, 25);             // above + in front of the gantry
+      cam.lookAt(0, 6, -3);                     // down the bore at the isocentre
       return;
     }
     if(cam.fov!==42){ cam.fov=42; cam.updateProjectionMatrix(); }
@@ -237,6 +237,8 @@ const S = {
     isocentred:false,
     phase:'idle',              // idle | scout | planning | moving | scanning | done
     patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
+    tableY:0,                  // table height (mm); 0 = patient centred at the isocentre
+    patientY:6,                // patient world-y for the current table height (set by ct.js)
     liveView:false,            // true while a scout build mirrors tube-POV into #film
     scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
   },
@@ -279,7 +281,9 @@ function buildPhantom(){
   const rot=poseRot();
   const cosR=Math.cos(rot), sinR=Math.sin(rot);
   const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-  const liftY=baseLift(skin,bone,rot)+S.oid;   // rest on receptor (pose-aware) + OID
+  // x-ray: rest on the receptor (pose-aware) + OID. CT: sit at the table height
+  // (patientY), so the 3D model and the traced phantom share one vertical position.
+  const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,rot)+S.oid;
   // in CT the patient is offset from the gantry isocentre by the direction pad
   const cx = S.mode==='ct' ? S.ct.patient.x : 0;
   const cz = S.mode==='ct' ? S.ct.patient.z : 0;
