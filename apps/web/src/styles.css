@@ -264,6 +264,9 @@ body.mode-ct .xray-only{display:none}
 /* CT mode has no radiograph: keep the DR monitor's x-ray corner annotations hidden
    so the viewer panel is fully isolated from the x-ray image. */
 body.mode-ct .monitor .filmnote{display:none}
+/* CT has no radiograph: the orient tools + exposure-index panel don't apply */
+body.mode-ct .imgtools{display:none}
+body.mode-ct .di{display:none}
 
 /* Helical-scan params (images/rotation, pitch, rotation speed) greyed while a scout
    owns the workflow — a scout has no gantry rotation so they don't apply. */

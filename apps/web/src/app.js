@@ -97,8 +97,9 @@ function initScene(){
 
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
+  const ctFixedPov = () => S.mode==='ct' && (S.ct.pov==='ap' || S.ct.pov==='lat');
   function updateCamera(){
-    if(S.mode==='ct'){
+    if(ctFixedPov()){
       // Two fixed CT PoVs — both perpendicular into the bore, inside the inner rim
       // so the ring never overhangs the patient, same distance from the isocentre
       // (10.5) and same (very wide) FOV. Lat is the AP view rotated 90° about the
@@ -111,7 +112,7 @@ function initScene(){
       return;
     }
     if(cam.fov!==42){ cam.fov=42; cam.updateProjectionMatrix(); }
-    if(S.viewMode==='tube'){
+    if(S.mode!=='ct' && S.viewMode==='tube'){
       // look from the tube along the central ray, framed to the hand (bird's eye)
       const s=sourcePos(), t=[S.tubeX,0,S.tubeZ];
       let dx=s[0]-t[0], dy=s[1]-t[1], dz=s[2]-t[2];
@@ -127,14 +128,17 @@ function initScene(){
     }
   }
   let drag=false,lx=0,ly=0;
+  // orbit is draggable when active: x-ray orbit, or CT with the Orbit perspective
+  const orbitActive = () => S.mode==='ct' ? S.ct.pov==='orbit' : S.viewMode==='orbit';
   canvas.addEventListener('pointerdown',e=>{ if(S.bayContent!=='3d')return;
-    if(S.viewMode!=='orbit') setCameraView('orbit');
+    if(S.mode==='ct'){ if(S.ct.pov!=='orbit') return; }   // CT: only the Orbit view drags (AP/Lat are fixed)
+    else if(S.viewMode!=='orbit') setCameraView('orbit');
     drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
   canvas.addEventListener('pointermove',e=>{ if(!drag)return;
     az+=(e.clientX-lx)*0.008; el+=(e.clientY-ly)*0.006;
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
   canvas.addEventListener('pointerup',()=>drag=false);
-  canvas.addEventListener('wheel',e=>{ if(S.viewMode!=='orbit')return;
+  canvas.addEventListener('wheel',e=>{ if(!orbitActive())return;
     e.preventDefault();rad=Math.max(55,Math.min(240,rad+e.deltaY*0.09));},{passive:false});
 
   let prevW=0, prevH=0;
