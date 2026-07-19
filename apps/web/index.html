@@ -113,7 +113,13 @@
               <button class="dp down" data-dir="down" title="Table out">▼</button>
             </div>
           </div>
-          <div class="note" style="margin-top:6px">Transverse (axial) images only. Move the patient onto the laser, then set the isocentre to zero the table.</div>
+          <div class="row" style="margin-top:12px"><div class="rl">Orientation <small>isocentre edge</small></div>
+            <div class="valchip" id="ctOrientV">HEAD FIRST</div></div>
+          <div class="seg" id="ctOrientSeg">
+            <button data-orient="head" class="on">Head first</button>
+            <button data-orient="feet">Feet first</button>
+          </div>
+          <div class="note" style="margin-top:6px">The scan runs from the isocentre (table 0) for the scan length. Head-first puts the isocentre at the bottom of the image, feet-first at the top. Re-scout = ABORT then START.</div>
         </div>
       </div>
 

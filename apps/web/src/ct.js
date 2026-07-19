@@ -8,8 +8,9 @@
 // its own 3D objects (bed, laser) and overrides scene visibility in ctSyncScene(),
 // which app.js calls at the end of syncScene().
 
-import { AttenuationEngine } from './core/engine.js';
 import { Spectrum } from './core/spectrum.js';
+import { Materials } from './core/materials.js';
+import { Sound } from './audio/sound.js';
 
 let ctx = null;
 let bed = null, laser = null;   // CT-only 3D objects (created once, shown by mode)
@@ -156,9 +157,19 @@ function wireCTSettings() {
     }
     updateCTReadouts();
   });
-  // pitch + scan length (ranges)
+  // pitch + scan length (ranges). Changing scan length does NOT live-update a
+  // scout: like a real CT, re-scouting means ABORT then START (rescan) — but it
+  // does not require re-setting the isocentre (table zero persists).
   $('ctPitch')?.addEventListener('input', (e) => { S.ct.pitch = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
+  // scan orientation (head-first / feet-first) — flips where the isocentre sits
+  $('ctOrientSeg')?.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    S.ct.orientation = b.dataset.orient;
+    [...b.parentNode.children].forEach(x => x.classList.toggle('on', x === b));
+    updateCTReadouts();
+    if (S.ct.phase === 'planning') redrawScouts();   // display flip only, no rescan
+  });
   // isocentre confirm — zero the table position reading (patient stays put)
   $('ctIsocentre')?.addEventListener('click', () => {
     S.ct.tablePos = 0; S.ct.isocentred = true;
@@ -190,6 +201,7 @@ function updateCTReadouts() {
   set('ctPitchV', S.ct.pitch.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
   set('ctScanLenV', S.ct.scanLen + ' cm');
   set('ctTablePosV', (S.ct.tablePos >= 0 ? '+' : '') + S.ct.tablePos.toFixed(1) + ' cm');
+  set('ctOrientV', S.ct.orientation === 'feet' ? 'FEET FIRST' : 'HEAD FIRST');
 }
 
 function setHint(t) { const el = ctx.$('ctHint'); if (el) el.textContent = t; }
@@ -229,60 +241,120 @@ function abortCT() {
   setHint('Set the isocentre, then acquire scouts to plan the scan.');
 }
 
-// ---- Phase 2: scout acquisition (AP + Lateral topograms over the scan length) ----
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+// ---- Phase 2: scout acquisition with a simulated patient scan ----
+// START (idle) runs two acquisitions (AP then Lateral), each with breathe-in ->
+// exposure (buzz + table travel through the gantry) -> breathe-normally. The
+// scouts are computed up front but only revealed after the 2nd breathe-normally.
 async function acquireScouts() {
   const { $ } = ctx;
   setPhase('scout');
   setConsoleEnabled(false);
-  setHint('Acquiring scout images…');
+  showScouts(false);
   try {
-    drawScout($('scoutAP'),  await scoutProjection('AP'));
-    drawScout($('scoutLAT'), await scoutProjection('LAT'));
-    showScouts(true);
-    setPhase('planning');
-    setHint('Scouts acquired — scan-box planning is next. (Press START to continue in a later phase.)');
+    lastAP = scoutProjection('AP');
+    lastLAT = scoutProjection('LAT');
   } catch (err) {
-    console.error('scout acquisition failed', err);
+    console.error('scout compute failed', err);
     setHint('Scout acquisition failed: ' + err.message);
-    setPhase('idle');
-  } finally {
-    setConsoleEnabled(true);
+    setPhase('idle'); setConsoleEnabled(true); return;
   }
+  await runScoutExposure('AP');
+  await runScoutExposure('LAT');
+  // reveal the planning images once the 2nd breathe-normally has played
+  redrawScouts();
+  showScouts(true);
+  setPhase('planning');
+  setHint('Scouts acquired — position the scan box (next phase). START confirms the plan.');
+  setConsoleEnabled(true);
 }
 
-// One scout (topogram): a single AP or Lateral projection over the scan length.
-// Both share the z (scan-length) axis so a scan box can span them consistently.
-async function scoutProjection(view) {
+// One animated acquisition: breathe-in, exposure (buzz + table sweep), breathe-out.
+async function runScoutExposure(view) {
+  Sound.resume();
+  setHint(view + ' scout · breathe in and hold…');
+  Sound.play('breathIn');
+  await sleep(Math.min(2500, (Sound.duration('breathIn') || 2) * 1000));
+  setHint(view + ' scout · scanning…');
+  Sound.startBuzz();
+  await animateTableSweep(2600);
+  Sound.stopBuzz();
+  setHint(view + ' scout · breathe normally.');
+  Sound.play('breathNormal');
+  await sleep(Math.min(2200, (Sound.duration('breathNormal') || 1.8) * 1000));
+}
+
+// Move the couch (bed + patient) through the gantry along z during the exposure.
+function animateTableSweep(dur) {
+  return new Promise(res => {
+    const three = ctx.three;
+    const bedZ0 = bed.position.z, handZ0 = three.handGroup.position.z;
+    const travel = Math.min(ctx.S.ct.scanLen, 24);   // visual cm of table travel
+    const t0 = performance.now();
+    let done = false;
+    const finish = () => { if (done) return; done = true;
+      bed.position.z = bedZ0; three.handGroup.position.z = handZ0; res(); };
+    (function step() {
+      if (done) return;
+      const t = Math.min(1, (performance.now() - t0) / dur);
+      const dz = travel * (0.5 - t);                  // +travel/2 -> -travel/2 through the bore
+      bed.position.z = bedZ0 + dz;
+      three.handGroup.position.z = handZ0 + dz;
+      if (t < 1) requestAnimationFrame(step); else finish();
+    })();
+    setTimeout(finish, dur + 500);                    // completes even if rAF is paused (hidden tab)
+  });
+}
+
+// One scout: a distortion-free topogram. The tube stays at a fixed gantry
+// position and the table translates, i.e. each row (z) is imaged with the source
+// directly over that row -> parallel along the scan axis (no z divergence), fan
+// only across the width. Computed synchronously (fast) so it's ready pre-animation.
+function scoutProjection(view) {
   const { S } = ctx;
   const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
-  const spectrum = Spectrum.make(S.kv);
+  const bins = Spectrum.make(S.kv).bins;
+  const muSoft = bins.map(b => Materials.mu('soft', b.E));
+  const muBone = bins.map(b => Materials.mu('bone', b.E));
+  const muMarr = bins.map(b => Materials.mu('marrow', b.E));
   const I0 = S.mas * Math.pow(S.kv / 70, 2);
   const scanLen = S.ct.scanLen;                     // cm, shared vertical (z) axis
-  const nz = 320, nw = 128;                         // rows (length) x cols (width/thickness)
+  const nz = 320, nw = 128;
   const pxV = scanLen / nz;
-  let source, detCenter, detU, detV, pxU;
-  if (view === 'AP') {
-    const W = 26; pxU = W / nw;
-    source = [0, 100, 0];
-    detCenter = [0, 0, 0]; detU = [1, 0, 0]; detV = [0, 0, 1];   // x width vs z length
-  } else {
-    const T = 14, yc = 3; pxU = T / nw;
-    source = [100, yc, 0];
-    detCenter = [-8, yc, 0]; detU = [0, 1, 0]; detV = [0, 0, 1];  // y thickness vs z length
+  let sx, sy, dcx, dcy, ux, uy, pxU;
+  if (view === 'AP') { const W = 26; pxU = W / nw; sx = 0; sy = 100; dcx = 0; dcy = 0; ux = 1; uy = 0; }
+  else { const T = 14, yc = 3; pxU = T / nw; sx = 100; sy = yc; dcx = -8; dcy = yc; ux = 0; uy = 1; }
+  const refDist2 = (sx - dcx) * (sx - dcx) + (sy - dcy) * (sy - dcy);
+  const halfU = (nw - 1) / 2;
+  const dose = new Float32Array(nw * nz);
+  for (let j = 0; j < nz; j++) {
+    // the scan runs FROM the isocentre (gantry z=0) for the scan length; row 0 is
+    // the isocentre, row nz-1 is scanLen away. Orientation only flips the display.
+    const z = -(j / (nz - 1)) * scanLen;
+    const src = [sx, sy, z];
+    for (let i = 0; i < nw; i++) {
+      const u = (i - halfU) * pxU;
+      let dx = dcx + ux * u - sx, dy = dcy + uy * u - sy, dz = 0;   // cell z == src z -> dz 0
+      const dist = Math.hypot(dx, dy, dz); dx /= dist; dy /= dist; dz /= dist;
+      const { bone, soft, marrow } = phantom.trace(src, [dx, dy, dz], dist);
+      let T = 0;
+      for (let b = 0; b < bins.length; b++) T += bins[b].w * Math.exp(-(muSoft[b] * soft + muBone[b] * bone + muMarr[b] * marrow));
+      dose[j * nw + i] = I0 * (refDist2 / (dist * dist)) * T;
+    }
   }
-  const refDist = Math.hypot(source[0] - detCenter[0], source[1] - detCenter[1], source[2] - detCenter[2]);
-  const dose = await AttenuationEngine.project({
-    phantom, source, detCenter, detU, detV, nx: nw, ny: nz, pxU, pxV, spectrum, I0, refDist,
-  });
   return { dose, nw, nz };
 }
 
-// Grayscale topogram: attenuated (bone) -> bright, open field -> dark. Flipped so
-// the distal end (+z) reads at the top of the image.
-function drawScout(cv, { dose, nw, nz }) {
+// Grayscale topogram: attenuated (bone) -> bright, open field -> dark. Row 0 of the
+// dose is the isocentre; orientation places it at the top (feet-first) or bottom
+// (head-first) of the displayed image.
+function drawScout(cv, data) {
+  const { dose, nw, nz } = data;
   cv.width = nw; cv.height = nz;
   const g = cv.getContext('2d');
   const img = g.createImageData(nw, nz);
+  const feet = ctx.S.ct.orientation === 'feet';    // isocentre at top when feet-first
   let mn = Infinity, mx = -Infinity;
   for (let k = 0; k < dose.length; k++) { const d = dose[k]; if (d < mn) mn = d; if (d > mx) mx = d; }
   const rng = (mx - mn) || 1;
@@ -290,8 +362,16 @@ function drawScout(cv, { dose, nw, nz }) {
     const t = (dose[k] - mn) / rng;                 // 0 = most attenuated, 1 = open field
     const v = Math.round(255 * Math.pow(1 - t, 0.7));
     const j = (k / nw) | 0, i = k % nw;
-    const o = ((nz - 1 - j) * nw + i) * 4;          // flip vertically
+    const imgRow = feet ? j : (nz - 1 - j);         // isocentre (row 0) top or bottom
+    const o = (imgRow * nw + i) * 4;
     img.data[o] = img.data[o + 1] = img.data[o + 2] = v; img.data[o + 3] = 255;
   }
   g.putImageData(img, 0, 0);
+}
+
+// keep the last scout data so orientation flips can redraw without re-scanning
+let lastAP = null, lastLAT = null;
+function redrawScouts() {
+  if (lastAP) drawScout(ctx.$('scoutAP'), lastAP);
+  if (lastLAT) drawScout(ctx.$('scoutLAT'), lastLAT);
 }
