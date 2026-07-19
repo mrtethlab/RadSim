@@ -14,36 +14,125 @@
   <div class="bay">
     <canvas id="view"></canvas>
     <canvas id="bigFilm"></canvas>
+    <div class="modebar" id="modeBar">
+      <button data-mode="xray" class="on">X-RAY</button>
+      <button data-mode="ct">CT</button>
+    </div>
+    <div class="ctscouts" id="ctScouts">
+      <div class="scoutrow">
+        <div class="scoutcol">
+          <div class="scouthdr">AP SCOUT</div>
+          <div class="scoutwrap" id="wrapAP"><canvas id="scoutAP"></canvas></div>
+        </div>
+        <div class="scoutcol">
+          <div class="scouthdr">LATERAL SCOUT</div>
+          <div class="scoutwrap" id="wrapLAT"><canvas id="scoutLAT"></canvas></div>
+        </div>
+      </div>
+      <div class="scangroups" id="ctScanGroups"></div>
+    </div>
+    <!-- CT cross-sectional (transverse) viewer: reconstructed slice stack -->
+    <div class="ctslices" id="ctSlices">
+      <div class="slhdr">
+        <div class="sltitle">CROSS-SECTIONAL VIEWER · TRANSVERSE</div>
+        <select id="ctScanSel" class="slsel" title="Stored scan"></select>
+      </div>
+      <div class="slmain">
+        <div class="slcanvaswrap">
+          <canvas id="ctSliceCanvas" width="128" height="128"></canvas>
+          <div class="slinfo" id="ctSliceInfo"></div>
+        </div>
+      </div>
+      <div class="slctrls">
+        <div class="slrow">
+          <span class="sllab">Slice</span>
+          <input type="range" id="ctSliceSlider" min="0" max="0" value="0">
+          <span class="slhint">scroll / drag</span>
+        </div>
+        <div class="slrow">
+          <span class="sllab">Level</span><input type="range" id="ctWL" min="-1000" max="2000" value="60">
+          <span class="sllab">Window</span><input type="range" id="ctWW" min="1" max="4000" value="800">
+          <div class="segmini" id="ctWLPresets">
+            <button data-wl="60" data-ww="400">Soft</button>
+            <button data-wl="500" data-ww="2000">Bone</button>
+            <button data-wl="-600" data-ww="1500">Lung</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <!-- CT reconstruction: linked 2x2 multiplanar workstation -->
+    <div class="ctrecons" id="ctRecons">
+      <div class="mpr-grid" id="ctMprGrid">
+        <div class="mpr-pane" id="mprPane_coronal" data-pane="coronal"><canvas id="mprCanvas_coronal"></canvas><div class="mpr-lbl"></div></div>
+        <div class="mpr-pane" id="mprPane_sagittal" data-pane="sagittal"><canvas id="mprCanvas_sagittal"></canvas><div class="mpr-lbl"></div></div>
+        <div class="mpr-pane" id="mprPane_axial" data-pane="axial"><canvas id="mprCanvas_axial"></canvas><div class="mpr-lbl"></div></div>
+        <div class="mpr-pane" id="mprPane_oblique" data-pane="oblique"><canvas id="mprCanvas_oblique"></canvas><div class="mpr-lbl"></div></div>
+        <div class="mpr-empty" id="ctMprEmpty">No scans stored — run a scan first, then plan reconstructions here.</div>
+      </div>
+      <div class="mpr-bar">
+        <select id="ctReconScanSel" class="slsel" title="Stored scan"></select>
+        <span class="sllab">Algo</span>
+        <select id="ctMprAlgo" class="slsel">
+          <option value="standard">Average</option><option value="edge">Edge</option><option value="blur">Blur</option><option value="mip">MIP</option><option value="minip">MinIP</option>
+        </select>
+        <span class="sllab">Thk</span><input id="ctMprThk" class="mpr-num" type="text" value="5"><span class="sllab" style="min-width:0">mm</span>
+        <button id="ctMprMar" class="mpr-tgl" type="button">MAR OFF</button>
+        <span class="sllab">Level</span><input type="range" id="ctReconWL" min="-1000" max="2000" value="60">
+        <span class="sllab">Window</span><input type="range" id="ctReconWW" min="1" max="4000" value="800">
+        <div class="segmini" id="ctReconWLPresets">
+          <button data-wl="43" data-ww="80">Brain</button>
+          <button data-wl="60" data-ww="400">Soft</button>
+          <button data-wl="500" data-ww="2000">Bone</button>
+        </div>
+      </div>
+    </div>
+    <div class="ctpop" id="ctPop"><div class="ctpop-inner" id="ctPopInner"></div></div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
-    <div class="bayctl">
-      <div>
-        <div class="cl">View</div>
-        <div class="segmini" id="contentSeg">
-          <button data-c="3d" class="on">3D</button>
-          <button data-c="image">Image</button>
+    <div class="bayctl" id="bayCtl">
+      <button class="baymenu-btn" id="bayMenuBtn" type="button" aria-expanded="false" aria-controls="bayMenu">
+        <span class="gear" aria-hidden="true">⚙</span> VIEW OPTIONS <span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <div class="baymenu" id="bayMenu" role="menu">
+        <div>
+          <div class="cl">View</div>
+          <div class="segmini" id="contentSeg">
+            <button data-c="3d" class="on">3D</button>
+            <button data-c="image" id="contentImageBtn">Image</button>
+            <button data-c="slices" class="ct-only">Slices</button>
+            <button data-c="recons" class="ct-only">Recons</button>
+          </div>
         </div>
-      </div>
-      <div>
-        <div class="cl">Camera</div>
-        <div class="segmini" id="camSeg">
-          <button data-cam="orbit" class="on">Orbit</button>
-          <button data-cam="tube">Tube POV</button>
+        <div>
+          <div class="cl">Camera</div>
+          <div class="xray-only">
+            <div class="segmini" id="camSeg">
+              <button data-cam="orbit" class="on">Orbit</button>
+              <button data-cam="tube">Tube POV</button>
+            </div>
+          </div>
+          <div class="ct-only">
+            <div class="segmini" id="camSegCt">
+              <button data-cam="ap" class="on">AP-PoV</button>
+              <button data-cam="lat">Lat-PoV</button>
+              <button data-cam="orbit">Orbit</button>
+            </div>
+          </div>
         </div>
-      </div>
-      <div>
-        <div class="cl">Render</div>
-        <div class="segmini" id="renderSeg">
-          <button data-hv="soft" class="on">Anatomy</button>
-          <button data-hv="bone">Skeleton</button>
+        <div>
+          <div class="cl">Render</div>
+          <div class="segmini" id="renderSeg">
+            <button data-hv="soft" class="on">Anatomy</button>
+            <button data-hv="bone">Skeleton</button>
+          </div>
         </div>
-      </div>
-      <div>
-        <div class="cl">Model <span id="computeDot" title="compute backend">○</span></div>
-        <div class="segmini">
-          <button id="loadModelBtn" type="button">Load .glb</button>
-          <button id="clearModelBtn" type="button">Clear</button>
+        <div>
+          <div class="cl">Model <span id="computeDot" title="compute backend">○</span></div>
+          <div class="segmini">
+            <button id="loadModelBtn" type="button">Load .glb</button>
+            <button id="clearModelBtn" type="button">Clear</button>
+          </div>
+          <input id="loadModelInput" type="file" accept=".glb,.gltf" style="display:none"/>
         </div>
-        <input id="loadModelInput" type="file" accept=".glb,.gltf" style="display:none"/>
       </div>
     </div>
     <div class="baytag">
@@ -73,7 +162,56 @@
         </div>
       </div>
 
-      <div class="grp">
+      <div class="grp ct-only" id="ctSettings">
+        <div class="lab">Scout planning</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Start location <small>from iso</small></div>
+            <div class="valchip" id="ctScoutStartV">0.0 mm</div></div>
+          <div class="row" style="margin-top:8px"><div class="rl">End location</div>
+            <div class="valchip" id="ctScoutEndV">I300.0 mm</div></div>
+          <div class="row" style="margin-top:10px"><div class="rl">Scan length</div>
+            <div class="valchip" id="ctScanLenV">300 mm</div></div>
+          <input type="range" id="ctScanLen" min="50" max="600" step="10" value="300">
+          <div class="row" style="margin-top:12px"><div class="rl">kV <small>scout technique</small></div>
+            <div class="stepper"><button data-ctstep="scoutKv" data-d="-1">−</button>
+              <div class="sv" id="ctScoutKvV">80</div><button data-ctstep="scoutKv" data-d="1">+</button></div></div>
+          <div class="row" style="margin-top:10px"><div class="rl">mA</div>
+            <div class="stepper"><button data-ctstep="scoutMa" data-d="-1">−</button>
+              <div class="sv" id="ctScoutMaV">20</div><button data-ctstep="scoutMa" data-d="1">+</button></div></div>
+          <div class="row" style="margin-top:12px"><div class="rl">Est. scan time</div>
+            <div class="valchip green" id="ctExpTimeV">— s</div></div>
+          <div class="note" style="margin-top:6px">Scout (topogram) beam width 1.5 mm. The scout runs from the isocentre for the scan length; each scan group then plans its diagnostic acquisition + reconstructions.</div>
+        </div>
+      </div>
+
+      <div class="grp ct-only" id="ctTableGrp">
+        <div class="lab">Table</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Table position</div>
+            <div class="valchip cyanlit" id="ctTablePosV">0.0</div></div>
+          <div class="row" style="margin-top:10px"><div class="rl">Table height <small>iso align</small></div>
+            <div class="valchip" id="ctTableHV">0 mm</div></div>
+          <div class="row" style="margin-top:10px"><div class="rl">Scan start</div>
+            <div class="valchip" id="ctScanStartV">0.0 mm</div></div>
+          <div class="row" style="margin-top:8px"><div class="rl">Scan end</div>
+            <div class="valchip" id="ctScanEndV">I300.0 mm</div></div>
+          <div class="ctpos">
+            <button id="ctIsocentre" class="ctisobtn" title="Set isocentre (zero table)"></button>
+            <div class="dpad" id="ctDpad">
+              <button class="dp up" data-dir="up" title="Table in">▲</button>
+              <button class="dp left" data-dir="left" title="Move left">◀</button>
+              <button class="dp right" data-dir="right" title="Move right">▶</button>
+              <button class="dp down" data-dir="down" title="Table out">▼</button>
+            </div>
+            <div class="thpad" id="ctTablePad">
+              <button id="ctTableUp" class="thbtn" data-th="up" title="Table up (raise)"></button>
+              <button id="ctTableDown" class="thbtn" data-th="down" title="Table down (lower)"></button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grp xray-only">
         <div class="lab">Tube &amp; distance</div>
         <div class="bod">
           <div class="row">
@@ -108,7 +246,7 @@
         </div>
       </div>
 
-      <div class="grp">
+      <div class="grp xray-only">
         <div class="lab">Collimation</div>
         <div class="bod">
           <div class="row"><div class="rl">Field width</div>
@@ -129,7 +267,7 @@
         </div>
       </div>
 
-      <div class="grp">
+      <div class="grp xray-only">
         <div class="lab">Detector</div>
         <div class="bod">
           <div class="row"><div class="rl">Resolution</div>
@@ -176,7 +314,7 @@
     <div class="hdr"><div class="t"><b>GENERATOR</b> / A1</div><div class="u" id="clock">STANDBY</div></div>
     <div class="pad">
 
-      <div class="readout">
+      <div class="readout xray-only">
         <div class="ro"><div class="cap">kVp</div><div class="val" id="kvV">55</div></div>
         <div class="ro"><div class="cap">mA</div><div class="val" id="maV">100</div></div>
         <div class="ro"><div class="cap">mAs</div><div class="val" id="masV">2.0</div></div>
@@ -185,7 +323,7 @@
         <div class="ro"><div class="cap">FOCAL SPOT</div><div class="val" id="fsV" style="font-size:20px">0.6<small>mm</small></div></div>
       </div>
 
-      <div class="grp">
+      <div class="grp xray-only">
         <div class="lab">Technique</div>
         <div class="bod">
           <div class="row"><div class="rl">kVp <small>kilovoltage</small></div>
@@ -200,7 +338,7 @@
             <div class="stepper"><button data-step="mas" data-d="-1">−</button>
               <div class="sv" id="masSv">2.0</div><button data-step="mas" data-d="1">+</button></div></div>
           <input type="range" id="mas" min="0" max="24" value="7" step="1">
-          <div class="row" style="margin-top:6px"><div class="rl">Exposure time</div>
+          <div class="row xray-only" style="margin-top:6px"><div class="rl">Exposure time</div>
             <div style="font-family:var(--seg);color:var(--green);font-size:14px" id="timeInline">20 ms</div></div>
           <div class="mini" id="apr">
             <button data-part="hand-pa" data-kv="55" data-mas="2">HAND PA 55/2.0</button>
@@ -210,7 +348,7 @@
         </div>
       </div>
 
-      <div class="expose">
+      <div class="expose xray-only">
         <div class="warn" id="warn"><div class="lamp"></div><div class="wt" id="warnT">SYSTEM STANDBY</div></div>
         <div class="btns2">
           <button class="prep" id="rotor">ROTOR</button>
@@ -218,12 +356,24 @@
         </div>
         <div class="note" style="margin-top:8px; text-align:center" id="exposeHint">Engage rotor, then <b>press&nbsp;and&nbsp;hold</b> EXPOSE for the exposure time</div>
       </div>
+
+      <div class="ctconsole ct-only" id="ctConsole">
+        <div class="warn" id="ctWarn"><div class="lamp"></div><div class="wt" id="ctWarnT">CT · STANDBY</div></div>
+        <div class="ctbtns">
+          <button class="ctbtn abort" id="ctAbort" title="Abort"></button>
+          <button class="ctbtn start" id="ctStart" title="Start scan"></button>
+          <button class="ctbtn table" id="ctTable" title="Move table"></button>
+        </div>
+        <div class="ctbtns-lab"><span>Abort</span><span>Start</span><span>Table</span></div>
+        <div class="note" style="margin-top:8px; text-align:center" id="ctHint">Set the isocentre, then acquire scouts to plan the scan</div>
+      </div>
     </div>
 
     <div class="hdr"><div class="t"><b>IMAGE</b> / VIEWER</div><div class="u">DR&nbsp;flat&nbsp;panel</div></div>
     <div class="monitor">
       <canvas id="film" width="330" height="440"></canvas>
       <div class="noexp" id="noexp">NO IMAGE ACQUIRED</div>
+      <div class="ctreminder" id="ctReminder"></div>
       <div class="filmnote t" id="fnTL"></div>
       <div class="filmnote t r" id="fnTR"></div>
       <div class="filmnote" id="fnBL"></div>
@@ -247,6 +397,16 @@
     </div>
 
     <div class="pad">
+      <div class="grp ct-only" id="ctStorageGrp">
+        <div class="lab">Image storage</div>
+        <div class="bod">
+          <label class="cttoggle"><input type="checkbox" id="ctAutoDel" checked>
+            <span>Auto-delete oldest past <b id="ctCapV">4</b> scan groups</span></label>
+          <div class="note" style="margin-top:6px">Reconstructed scans (slices + image data) are held in memory. With this on, the oldest scan is discarded once a new one pushes the total over the limit — so stored data can't grow without bound.</div>
+          <div class="ctstorelist" id="ctStorageList"></div>
+          <button class="ctstoreclear" id="ctStorageClear" type="button">Clear all stored scans</button>
+        </div>
+      </div>
       <div class="grp">
         <div class="lab">Display · window / level</div>
         <div class="bod">

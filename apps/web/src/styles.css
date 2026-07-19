@@ -155,14 +155,29 @@
   .lfbtn.on .bulb{fill:rgba(255,178,62,.35)}
 
   /* bay overlays: camera + content toggles, big saved-image view */
-  .bayctl{position:absolute; top:12px; right:12px; z-index:9; display:flex; flex-direction:column; gap:9px; align-items:flex-end}
-  .bayctl .cl{font-family:var(--seg); font-size:9px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase; margin-bottom:2px; text-align:right}
+  .bayctl{position:absolute; top:12px; right:12px; z-index:9; display:flex; flex-direction:column; gap:8px; align-items:flex-end}
+  /* dropdown trigger */
+  .baymenu-btn{display:inline-flex; align-items:center; gap:7px; background:rgba(10,13,16,.86);
+     border:1px solid var(--edge2); border-radius:3px; color:var(--muted); cursor:pointer;
+     padding:7px 11px; font-family:var(--disp); font-size:12px; letter-spacing:1.4px; text-transform:uppercase}
+  .baymenu-btn:hover{color:var(--txt); border-color:var(--edge)}
+  .baymenu-btn .gear{font-size:13px; line-height:1}
+  .baymenu-btn .caret{font-size:10px; transition:transform .15s}
+  .bayctl.open .baymenu-btn{color:#eafcff; border-color:var(--cyan-dim)}
+  .bayctl.open .baymenu-btn .caret{transform:rotate(180deg)}
+  /* dropdown panel */
+  .baymenu{display:none; flex-direction:column; gap:11px; padding:12px 13px; margin-top:2px;
+     background:rgba(9,12,15,.96); border:1px solid var(--edge2); border-radius:4px;
+     box-shadow:0 10px 30px rgba(0,0,0,.55); backdrop-filter:blur(3px)}
+  .bayctl.open .baymenu{display:flex}
+  .bayctl .cl{font-family:var(--seg); font-size:9px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase; margin-bottom:4px; text-align:left}
   .segmini{display:flex; border:1px solid var(--edge2); border-radius:3px; overflow:hidden; background:rgba(10,13,16,.82)}
   .segmini button{background:transparent; color:var(--muted); border:none; border-right:1px solid var(--edge);
      padding:6px 11px; font-family:var(--disp); font-size:12px; letter-spacing:1px; text-transform:uppercase; cursor:pointer}
   .segmini button:last-child{border-right:none}
   .segmini button.on{background:var(--cyan-dim); color:#eafcff}
-  .segmini button:hover:not(.on){color:var(--txt)}
+  .segmini button:hover:not(.on):not(:disabled){color:var(--txt)}
+  .segmini button:disabled{opacity:.32; cursor:not-allowed}
   #bigFilm{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#000; display:none; z-index:8}
   .bignote{position:absolute; inset:0; z-index:8; display:none; align-items:center; justify-content:center;
      background:#000; color:var(--muted2); font-family:var(--seg); letter-spacing:3px; font-size:13px}
@@ -175,3 +190,286 @@
   .imgtools button.on{background:var(--cyan-dim); color:#eafcff}
   .imgtools .tlabel{font-family:var(--seg); font-size:9.5px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase; margin-right:2px}
   .imgtools button.txt{font-size:10px; letter-spacing:1px; text-transform:uppercase; color:var(--muted)}
+
+/* ============================================================================
+   CT MODE  (mode toggle, mode-scoped visibility, CT console)
+   ============================================================================ */
+/* prominent X-RAY / CT selector, centred at the top of the bay */
+.modebar{position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:10;
+  display:flex; gap:3px; background:#0b0e12; border:1px solid var(--edge2); border-radius:9px;
+  padding:3px; box-shadow:0 5px 20px rgba(0,0,0,.55)}
+.modebar button{font-family:var(--disp); font-weight:700; letter-spacing:3px; font-size:15px;
+  color:var(--muted); background:transparent; border:0; padding:8px 28px; border-radius:6px;
+  cursor:pointer; text-transform:uppercase; transition:.15s}
+.modebar button:hover{color:var(--txt)}
+.modebar button[data-mode="xray"].on{color:#06121a; background:var(--cyan); box-shadow:0 0 14px rgba(53,198,214,.55)}
+.modebar button[data-mode="ct"].on{color:#1a1204; background:var(--amber); box-shadow:0 0 14px rgba(255,178,62,.55)}
+
+/* mode-scoped visibility (body class set by ct.js applyMode) */
+.ct-only{display:none}
+body.mode-ct .ct-only{display:block}
+body.mode-ct .xray-only{display:none}
+
+/* CT generator console */
+.ctconsole{margin-top:4px}
+.ctbtns{display:grid; grid-template-columns:1fr 1.3fr 1fr; gap:14px; align-items:center;
+  justify-items:center; margin-top:8px}
+.ctbtn{border-radius:50%; border:2px solid currentColor; background:#0c0f13; cursor:pointer;
+  display:flex; align-items:center; justify-content:center; transition:transform .06s, box-shadow .15s}
+.ctbtn svg{width:58%; height:58%}
+.ctbtn .stroke{fill:none; stroke:currentColor; stroke-width:2; stroke-linejoin:round; stroke-linecap:round}
+.ctbtn.start{width:84px; height:84px; color:var(--green)}
+.ctbtn.abort{width:66px; height:66px; color:var(--red)}
+.ctbtn.table{width:66px; height:66px; color:var(--amber)}
+.ctbtn:hover{box-shadow:0 0 18px currentColor}
+.ctbtn:active{transform:scale(.94)}
+.ctbtn:disabled{opacity:.32; cursor:not-allowed; box-shadow:none}
+.ctbtn.flash{animation:ctflash 1s ease-in-out infinite}
+@keyframes ctflash{0%,100%{box-shadow:0 0 5px currentColor}50%{box-shadow:0 0 22px currentColor,0 0 36px currentColor}}
+.ctbtns-lab{display:grid; grid-template-columns:1fr 1.3fr 1fr; gap:14px; justify-items:center; margin-top:6px;
+  font-family:var(--seg); font-size:9.5px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase}
+
+/* CT patient-position row: physical isocentre button + direction pad */
+.ctpos{display:flex; align-items:center; justify-content:center; gap:18px; margin-top:12px}
+.ctisobtn{width:58px; height:58px; border-radius:50%; padding:0; cursor:pointer;
+  border:2px solid #17181a; color:#26282b;
+  background:radial-gradient(circle at 50% 38%, #f2eee2, #d9d3c4);
+  box-shadow:0 2px 6px rgba(0,0,0,.5), inset 0 1px 2px rgba(255,255,255,.7);
+  display:flex; align-items:center; justify-content:center}
+.ctisobtn svg{width:62%; height:62%}
+.ctisobtn:hover{filter:brightness(1.06)}
+.ctisobtn:active{transform:translateY(1px); box-shadow:0 1px 2px rgba(0,0,0,.45), inset 0 1px 3px rgba(0,0,0,.3)}
+.dpad{display:grid; grid-template-columns:repeat(3,26px); grid-template-rows:repeat(3,26px); gap:3px}
+.dpad .dp{background:var(--panel2); border:1px solid var(--edge2); color:var(--amber);
+  border-radius:5px; cursor:pointer; font-size:11px; line-height:1; padding:0;
+  display:flex; align-items:center; justify-content:center}
+.dpad .dp:hover{border-color:var(--amber); color:#fff}
+.dpad .dp:active{background:var(--amber); color:#1a1204}
+.dpad .up{grid-column:2; grid-row:1}
+.dpad .left{grid-column:1; grid-row:2}
+.dpad .right{grid-column:3; grid-row:2}
+.dpad .down{grid-column:2; grid-row:3}
+/* table height: two glossy blue buttons (raise / lower) beside the direction pad */
+.thpad{display:flex; flex-direction:column; gap:9px}
+.thbtn{width:38px; height:38px; border-radius:11px; padding:0; cursor:pointer; color:#eaf4ff;
+  border:1px solid #0b1016;
+  background:radial-gradient(circle at 50% 30%, #5b93d4 0%, #2b5f9c 55%, #1a3f6c 100%);
+  box-shadow:0 2px 5px rgba(0,0,0,.5), inset 0 1.5px 2px rgba(255,255,255,.4), inset 0 -2px 5px rgba(0,0,0,.4);
+  display:flex; align-items:center; justify-content:center}
+.thbtn svg{width:80%; height:80%}
+.thbtn .stroke{fill:none; stroke:currentColor; stroke-width:1.5; stroke-linejoin:round; stroke-linecap:round}
+.thbtn:hover{filter:brightness(1.08)}
+.thbtn:active{transform:translateY(1px); box-shadow:0 1px 2px rgba(0,0,0,.5), inset 0 1px 3px rgba(0,0,0,.45)}
+
+/* CT mode has no radiograph: keep the DR monitor's x-ray corner annotations hidden
+   so the viewer panel is fully isolated from the x-ray image. */
+body.mode-ct .monitor .filmnote{display:none}
+/* CT has no radiograph: the orient tools + exposure-index panel don't apply */
+body.mode-ct .imgtools{display:none}
+body.mode-ct .di{display:none}
+
+/* Helical-scan params (images/rotation, pitch, rotation speed) greyed while a scout
+   owns the workflow — a scout has no gantry rotation so they don't apply. */
+.ctHelical.off{opacity:.35; pointer-events:none; filter:grayscale(1)}
+.ctHelical.off::after{content:'not used for scout'; display:block; margin-top:4px;
+  font-family:var(--seg); font-size:8.5px; letter-spacing:1px; color:var(--muted); text-transform:uppercase}
+
+/* CT scout images — shown side by side over the positioning bay for scan planning.
+   The two canvases are sized by layoutScouts() at one shared mm->px scale and
+   top-aligned so a horizontal line hits the same table position on both. */
+.ctscouts{display:none; position:absolute; inset:0; z-index:7; background:#050607;
+  padding:40px 16px 12px; flex-direction:column; gap:12px}
+.ctscouts.show{display:flex}
+.scoutrow{display:flex; gap:16px; align-items:flex-start; justify-content:center; flex:1 1 50%; min-height:0}
+.scoutcol{display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0}
+.scouthdr{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:var(--cyan);
+  text-transform:uppercase}
+.scoutcol canvas{background:#000; border:1px solid var(--edge2); image-rendering:auto;
+  display:block}
+/* scan-planning box: a wrapper shrink-wraps the canvas so boxes can be placed in
+   % (== normalized scout coords). Boxes are nearly transparent to read the scout;
+   colour = scan group. Generated one per enabled group per scout in JS. */
+.scoutwrap{position:relative; display:inline-block; line-height:0}
+.scanbox{position:absolute; box-sizing:border-box; display:none; touch-action:none;
+  border:1.5px solid var(--gc); background:var(--gcbg); cursor:move; box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+#ctScouts.planning .scanbox.shown{display:block}
+.scanbox.active{border-width:2px; box-shadow:0 0 0 1px rgba(0,0,0,.6), 0 0 10px var(--gc)}
+.scanbox .slices{position:absolute; inset:0; pointer-events:none}   /* dotted per-slice lines */
+.scanbox .xh{position:absolute; pointer-events:none}
+.scanbox .xh-h{left:0; right:0; top:50%; border-top:1px dashed var(--gc)}
+.scanbox .xh-v{top:0; bottom:0; left:50%; border-left:1px dashed var(--gc)}
+.scanbox .glbl{position:absolute; top:-2px; left:2px; transform:translateY(-100%); font-family:var(--seg);
+  font-size:9px; letter-spacing:1px; color:var(--gc); text-shadow:0 0 3px #000; pointer-events:none; white-space:nowrap}
+.scanbox .eh{position:absolute; width:11px; height:11px; background:var(--gc); border:1px solid #08131c;
+  border-radius:2px; box-shadow:0 1px 2px rgba(0,0,0,.5)}
+.scanbox .eh-t{top:0; left:50%; transform:translate(-50%,-50%); cursor:ns-resize}
+.scanbox .eh-b{top:100%; left:50%; transform:translate(-50%,-50%); cursor:ns-resize}
+.scanbox .eh-l{left:0; top:50%; transform:translate(-50%,-50%); cursor:ew-resize}
+.scanbox .eh-r{left:100%; top:50%; transform:translate(-50%,-50%); cursor:ew-resize}
+/* group colours (blue / orange / green / pink) — set on each box + table row via --gc */
+.gc0{--gc:rgba(120,225,255,.98); --gcbg:rgba(90,190,255,.10)}
+.gc1{--gc:rgba(255,168,70,.98);  --gcbg:rgba(255,150,40,.12)}
+.gc2{--gc:rgba(90,230,140,.98);  --gcbg:rgba(70,220,120,.12)}
+.gc3{--gc:rgba(255,120,200,.98); --gcbg:rgba(255,110,195,.12)}
+
+/* ---- scan-group table (bottom half of the bay, horizontal scroll) ---- */
+.scangroups{flex:1 1 50%; min-height:0; overflow:auto; border:1px solid var(--edge2);
+  background:rgba(8,11,14,.9); border-radius:4px}
+.sg-table{border-collapse:collapse; width:100%; font-family:var(--disp); font-size:13px; white-space:nowrap}
+.sg-table th{position:sticky; top:0; z-index:1; background:#0c1218; color:var(--muted);
+  font-family:var(--seg); font-size:10px; letter-spacing:.6px; font-weight:400; text-transform:uppercase;
+  padding:8px 11px; border-bottom:1px solid var(--edge2); text-align:center}
+.sg-table td{padding:8px 11px; border-bottom:1px solid rgba(255,255,255,.05); text-align:center; color:var(--txt)}
+.sg-row{border-left:5px solid var(--gc); cursor:pointer}
+.sg-row.active td{background:rgba(255,255,255,.06)}
+.sg-edit{cursor:pointer; border-bottom:1px dotted var(--gc); padding-bottom:1px}   /* click to type */
+.sg-edit:hover{color:#fff; background:rgba(255,255,255,.06)}
+.sg-station{cursor:pointer; border-bottom:1px dashed rgba(255,255,255,.25)}
+.sg-station:hover{color:#fff; background:rgba(255,255,255,.06)}
+.sg-calc{color:var(--muted2); font-style:italic}
+.sg-num{position:relative; width:26px; height:26px; border-radius:5px; background:var(--gc); color:#04121c;
+  font-family:var(--seg); font-size:12px; display:inline-flex; align-items:center; justify-content:center; font-weight:700}
+.sg-num.del{cursor:pointer}
+.sg-num.del .lbl{display:inline}
+.sg-num.del .trash{display:none}
+.sg-num.del:hover{background:var(--red)}
+.sg-num.del:hover .lbl{display:none}
+.sg-num.del:hover .trash{display:inline-flex; align-items:center; justify-content:center}
+.sg-eye{cursor:pointer; display:inline-flex; color:var(--gc)}
+.sg-eye.off{color:var(--muted2)}
+.sg-add{margin:8px auto; display:block; background:var(--panel2); border:1px dashed var(--edge2); color:var(--cyan);
+  font-family:var(--disp); font-size:12px; letter-spacing:1px; padding:7px 16px; border-radius:4px; cursor:pointer; text-transform:uppercase}
+.sg-add:hover{border-color:var(--cyan); color:#fff}
+
+/* ---- field-edit popup (modal; typed value or station picker) ---- */
+.ctpop{position:fixed; inset:0; z-index:20; display:none; align-items:center; justify-content:center;
+  background:rgba(2,4,6,.55); backdrop-filter:blur(5px)}
+.ctpop.show{display:flex}
+.ctpop-inner{background:#0d141b; border:1px solid var(--edge); border-radius:7px; padding:20px 22px;
+  box-shadow:0 16px 50px rgba(0,0,0,.7); min-width:260px}
+.ctpop-inner .plt{font-family:var(--seg); font-size:9.5px; letter-spacing:1.5px; color:var(--cyan);
+  text-transform:uppercase; margin-bottom:10px}
+.ctpop-inner .pl{font-family:var(--disp); font-size:13px; color:var(--txt); margin-bottom:8px}
+.ctpop-inner input{width:100%; box-sizing:border-box; background:#060a0d; border:1px solid var(--edge2);
+  color:#eafcff; font-family:var(--disp); font-size:20px; padding:10px 12px; border-radius:4px; text-align:center;
+  caret-color:var(--cyan); outline:none}
+.ctpop-inner input:focus{border-color:var(--cyan)}
+.ctpop-inner .phint{margin-top:12px; font-family:var(--seg); font-size:10px; letter-spacing:1px; color:var(--muted); text-align:center}
+.ctpop-inner .phint b{color:var(--cyan); font-weight:400}
+.ctpop-stations{display:flex; flex-wrap:wrap; gap:8px; max-width:280px}
+.ctpop-stations button{background:var(--panel2); border:1px solid var(--edge2); color:var(--txt);
+  font-family:var(--disp); font-size:14px; padding:9px 14px; border-radius:4px; cursor:pointer; min-width:56px}
+.ctpop-stations button:hover{border-color:var(--cyan); color:#fff}
+.ctpop-stations button.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
+/* ---- acquisition "Select the desired Image Thickness" dialog (reference-styled) ---- */
+.acq-pop{background:#d7dade; color:#1a2028; border:1px solid #9aa3ad; border-radius:4px;
+  min-width:520px; max-width:92vw; box-shadow:0 18px 60px rgba(0,0,0,.6); font-family:'Barlow Condensed',sans-serif}
+.acq-title{font-size:16px; font-weight:600; text-align:center; padding:9px; border-bottom:1px solid #b3bbc4;
+  background:#c7ccd2; border-radius:4px 4px 0 0; letter-spacing:.3px}
+.acq-grid{display:flex; gap:18px; padding:16px 18px}
+.acq-left{flex:1 1 auto; min-width:0}
+.acq-right{flex:0 0 170px; padding-top:4px}
+.acq-sec{margin-bottom:12px}
+.acq-lab{font-size:14px; font-weight:600; margin-bottom:6px; color:#242b33}
+.acq-btns{display:flex; flex-wrap:wrap; gap:8px}
+.acq-btns button{min-width:58px; padding:8px 12px; font-family:'Barlow Condensed',sans-serif; font-size:14px;
+  color:#1a2028; background:#eef1f4; border:1px solid #8b95a0; border-radius:3px; cursor:pointer;
+  box-shadow:inset 0 1px 0 #fff, 0 1px 1px rgba(0,0,0,.15)}
+.acq-btns button:hover{border-color:#3a6ea5}
+.acq-btns button.alt{background:#9fb2c9; color:#0e1a28; border-color:#5c7791}   /* darker blue: changes collimation only */
+.acq-btns button.on{background:#f6f0b0; border-color:#c9a227; box-shadow:inset 0 0 0 1px #e6d97a}  /* selected (yellow) */
+.acq-btns button.dis{opacity:.4; cursor:not-allowed; background:#dfe3e7}
+.acq-info{margin-bottom:14px}
+.acq-ilab{font-size:14px; font-weight:600; color:#242b33}
+.acq-ival{font-size:15px; color:#0e1a28; margin-top:2px}
+.acq-actions{display:flex; justify-content:center; gap:40px; padding:10px 0 16px}
+.acq-actions button{min-width:96px; padding:8px 14px; font-family:'Barlow Condensed',sans-serif; font-size:15px;
+  background:#eef1f4; color:#1a2028; border:1px solid #8b95a0; border-radius:3px; cursor:pointer;
+  box-shadow:inset 0 1px 0 #fff, 0 1px 2px rgba(0,0,0,.2)}
+.acq-actions .acq-ok:hover{background:#cfe6cf; border-color:#3a7d3a}
+.acq-actions .acq-cancel:hover{background:#eccfcf; border-color:#a44}
+
+/* table-reposition reminder in the DR monitor */
+.ctreminder{position:absolute; inset:auto 10px 10px 10px; z-index:5; display:none;
+  align-items:center; justify-content:center; text-align:center; padding:10px 12px;
+  background:rgba(46,28,4,.92); border:1px solid var(--amber); border-radius:4px;
+  color:var(--amber); font-family:var(--seg); font-size:11px; letter-spacing:.6px; line-height:1.5}
+.ctreminder.moving{background:rgba(60,10,10,.92); border-color:var(--red); color:#ff9a90;
+  letter-spacing:2px; animation:ctflash 0.7s ease-in-out infinite}
+
+/* ---- CT cross-sectional (transverse) viewer over the bay ---- */
+.ctslices{display:none; position:absolute; inset:0; z-index:7; background:#050607;
+  padding:40px 16px 14px; flex-direction:column; gap:10px}
+.ctslices.show{display:flex}
+.slhdr{display:flex; align-items:center; justify-content:space-between; gap:12px}
+.slhdr .sltitle{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:var(--cyan); text-transform:uppercase}
+.slsel{background:#0b1116; color:var(--txt); border:1px solid var(--edge2); border-radius:4px;
+  font-family:var(--disp); font-size:13px; padding:5px 10px; min-width:150px}
+.slsel:disabled{color:var(--muted2)}
+.slmain{flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center}
+.slcanvaswrap{position:relative; height:100%; aspect-ratio:1/1; max-width:100%; display:flex; align-items:center; justify-content:center}
+#ctSliceCanvas{height:100%; width:auto; max-width:100%; aspect-ratio:1/1; background:#000;
+  border:1px solid var(--edge2); image-rendering:auto; display:block}
+.slinfo{position:absolute; inset:0; pointer-events:none; padding:8px 10px;
+  font-family:var(--seg); font-size:10.5px; letter-spacing:.5px; color:rgba(180,236,255,.85); text-shadow:0 0 4px #000}
+.slinfo span{position:absolute; display:block}
+.slinfo span:nth-child(1){top:8px; left:10px}
+.slinfo span:nth-child(2){top:8px; right:10px; color:var(--amber)}
+.slinfo span:nth-child(3){bottom:8px; left:10px}
+.slinfo span:nth-child(4){bottom:8px; right:10px}
+.slctrls{display:flex; flex-direction:column; gap:9px}
+.slrow{display:flex; align-items:center; gap:10px; flex-wrap:wrap}
+.slrow .sllab{font-family:var(--seg); font-size:9.5px; letter-spacing:1.4px; color:var(--muted); text-transform:uppercase; min-width:44px}
+.slrow input[type=range]{flex:1 1 120px; min-width:90px}
+.slrow .slhint{font-family:var(--seg); font-size:9px; letter-spacing:1px; color:var(--muted2)}
+#ctWLPresets{flex:0 0 auto}
+#ctWLPresets button{font-size:11px}
+
+/* ---- CT reconstruction planning / multiplanar viewer over the bay ---- */
+.ctrecons{display:none; position:absolute; inset:0; z-index:7; background:#000;
+  padding:8px 8px 6px; flex-direction:column; gap:6px}
+.ctrecons.show{display:flex}
+/* stray bay label bleeds over the full-screen CT viewers — hide it there */
+.bay:has(#ctRecons.show) .baytag, .bay:has(#ctRecons.show) .hint,
+.bay:has(#ctSlices.show) .baytag, .bay:has(#ctSlices.show) .hint{display:none}
+.mpr-grid{position:relative; flex:1 1 auto; min-height:0; display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:4px}
+.mpr-pane{position:relative; background:#000; border:1px solid #10161c; overflow:hidden; min-height:0; min-width:0}
+.mpr-pane.sel{border-color:var(--cyan)}
+.mpr-pane canvas{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none; cursor:crosshair}
+.mpr-lbl{position:absolute; left:8px; bottom:6px; z-index:2; pointer-events:none;
+  font-family:var(--seg); font-size:10px; letter-spacing:.4px; color:rgba(190,240,255,.85); text-shadow:0 0 4px #000}
+.mpr-empty{position:absolute; inset:0; display:none; align-items:center; justify-content:center;
+  color:var(--muted2); font-family:var(--seg); font-size:12px; letter-spacing:1px}
+.mpr-bar{flex:0 0 auto; display:flex; align-items:center; gap:8px 10px; flex-wrap:wrap; padding:4px 4px 2px}
+.mpr-bar .slsel{min-width:auto}
+.mpr-bar .sllab{font-family:var(--seg); font-size:9.5px; letter-spacing:1.2px; color:var(--muted); text-transform:uppercase; min-width:auto}
+.mpr-bar input[type=range]{flex:0 1 110px; min-width:70px}
+.mpr-num{width:52px; background:#060a0d; border:1px solid var(--edge2); color:#eafcff;
+  font-family:var(--disp); font-size:13px; padding:5px 6px; border-radius:3px; text-align:center; outline:none}
+.mpr-num:focus{border-color:var(--cyan)}
+.mpr-tgl{background:var(--panel2); border:1px solid var(--edge2); color:var(--muted); font-family:var(--seg);
+  font-size:10px; letter-spacing:.5px; padding:6px 10px; border-radius:3px; cursor:pointer}
+.mpr-tgl.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
+
+/* ---- CT image-storage panel (right column) ---- */
+.cttoggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13.5px; color:var(--txt)}
+.cttoggle input{width:16px; height:16px; accent-color:var(--cyan); cursor:pointer}
+.cttoggle b{color:var(--cyan)}
+.ctstorelist{margin-top:10px; display:flex; flex-direction:column; gap:5px; max-height:230px; overflow-y:auto}
+.ctstore-empty{font-family:var(--seg); font-size:11px; letter-spacing:.5px; color:var(--muted2); padding:6px 2px}
+.ctstore-row{display:flex; align-items:center; gap:8px; background:#0b1116; border:1px solid var(--edge2);
+  border-left:4px solid var(--cyan-dim); border-radius:4px; padding:6px 8px}
+.ctstore-row.active{border-left-color:var(--cyan); background:rgba(53,198,214,.08)}
+.ctstore-row .cs-open{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; cursor:pointer}
+.ctstore-row .cs-open b{color:var(--txt); font-size:13.5px}
+.ctstore-row .cs-open small{color:var(--muted); font-family:var(--seg); font-size:9.5px; letter-spacing:.4px}
+.ctstore-row .cs-open:hover b{color:#fff}
+.ctstore-row .cs-del{background:none; border:none; color:var(--muted2); font-size:14px; cursor:pointer; padding:2px 5px; line-height:1}
+.ctstore-row .cs-del:hover{color:var(--red)}
+.ctstoreclear{margin-top:10px; width:100%; background:var(--panel2); border:1px solid var(--edge2); color:var(--muted);
+  font-family:var(--disp); font-size:12px; letter-spacing:1px; padding:7px; border-radius:4px; cursor:pointer; text-transform:uppercase}
+.ctstoreclear:hover{border-color:var(--red); color:#ff9a90}
+
+/* ---- controls greyed out while a scan is executing ---- */
+body.ct-busy #ctSettings, body.ct-busy #ctTableGrp, body.ct-busy #ctStorageGrp,
+body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:none; filter:saturate(.4)}

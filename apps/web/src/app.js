@@ -10,6 +10,7 @@ import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
 import { loadModelFile } from './model/loader.js';
 import { ComputeClient } from './compute/client.js';
+import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -34,7 +35,8 @@ function initScene(){
   const det=new THREE.Mesh(new THREE.BoxGeometry(24,1.2,30),
     new THREE.MeshStandardMaterial({color:0x11161b,metalness:0,roughness:1}));
   det.position.y=-0.6; det.receiveShadow=true; scene.add(det);
-  // white L-shaped corner markers outlining the 24x30 receptor area
+  // white L-shaped corner markers outlining the 24x30 receptor area (x-ray only)
+  const detMarks=new THREE.Group(); scene.add(detMarks);
   (function cornerMarkers(){
     const markMat=new THREE.MeshBasicMaterial({color:0xffffff});
     const hx=12, hz=15, arm=3.2, th=0.35, yy=0.07;
@@ -43,7 +45,7 @@ function initScene(){
       a.position.set(x+dx*arm/2, yy, z);
       const b=new THREE.Mesh(new THREE.BoxGeometry(th,0.08,arm),markMat);
       b.position.set(x, yy, z+dz*arm/2);
-      scene.add(a,b);
+      detMarks.add(a,b);
     }
     bracket( hx, hz,-1,-1); bracket(-hx, hz, 1,-1);
     bracket( hx,-hz,-1, 1); bracket(-hx,-hz, 1, 1);
@@ -89,14 +91,28 @@ function initScene(){
   const beam=new THREE.Group(); scene.add(beam);         // retired (unused)
   const handGroup=new THREE.Group(); scene.add(handGroup);
 
-  three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,
+  three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,
          amb,key,lamp,cookieCanvas,cookieTex,lampAngle};
   buildHandMeshes();
 
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
+  const ctFixedPov = () => S.mode==='ct' && (S.ct.pov==='ap' || S.ct.pov==='lat');
   function updateCamera(){
-    if(S.viewMode==='tube'){
+    if(ctFixedPov()){
+      // Two fixed CT PoVs — both perpendicular into the bore, inside the inner rim
+      // so the ring never overhangs the patient, same distance from the isocentre
+      // (10.5) and same (very wide) FOV. Lat is the AP view rotated 90° about the
+      // bore axis (z). They never track the patient: only the couch + table move.
+      if(cam.fov!==132){ cam.fov=132; cam.updateProjectionMatrix(); }  // extreme wide (distortion ok) for the full bore + gaps
+      cam.up.set(0,0,1);                        // +z (un-scanned anatomy) toward top of frame
+      if(S.ct.pov==='lat') cam.position.set(10.5, 6, 0);   // +x rim, looking toward -x (lateral)
+      else                 cam.position.set(0, 16.5, 0);   // top rim, looking straight down (AP)
+      cam.lookAt(0, 6, 0);
+      return;
+    }
+    if(cam.fov!==42){ cam.fov=42; cam.updateProjectionMatrix(); }
+    if(S.mode!=='ct' && S.viewMode==='tube'){
       // look from the tube along the central ray, framed to the hand (bird's eye)
       const s=sourcePos(), t=[S.tubeX,0,S.tubeZ];
       let dx=s[0]-t[0], dy=s[1]-t[1], dz=s[2]-t[2];
@@ -112,14 +128,17 @@ function initScene(){
     }
   }
   let drag=false,lx=0,ly=0;
+  // orbit is draggable when active: x-ray orbit, or CT with the Orbit perspective
+  const orbitActive = () => S.mode==='ct' ? S.ct.pov==='orbit' : S.viewMode==='orbit';
   canvas.addEventListener('pointerdown',e=>{ if(S.bayContent!=='3d')return;
-    if(S.viewMode!=='orbit') setCameraView('orbit');
+    if(S.mode==='ct'){ if(S.ct.pov!=='orbit') return; }   // CT: only the Orbit view drags (AP/Lat are fixed)
+    else if(S.viewMode!=='orbit') setCameraView('orbit');
     drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
   canvas.addEventListener('pointermove',e=>{ if(!drag)return;
     az+=(e.clientX-lx)*0.008; el+=(e.clientY-ly)*0.006;
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
   canvas.addEventListener('pointerup',()=>drag=false);
-  canvas.addEventListener('wheel',e=>{ if(S.viewMode!=='orbit')return;
+  canvas.addEventListener('wheel',e=>{ if(!orbitActive())return;
     e.preventDefault();rad=Math.max(55,Math.min(240,rad+e.deltaY*0.09));},{passive:false});
 
   let prevW=0, prevH=0;
@@ -130,7 +149,29 @@ function initScene(){
       renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix();
     }
   }
-  (function loop(){resize();updateCamera();renderer.render(scene,cam);requestAnimationFrame(loop);})();
+  // mirror the #view drawing buffer into the small DR monitor (#film). Must run in
+  // the same tick as render() to read the WebGL buffer.
+  const blitToFilm=()=>{
+    const film=document.getElementById('film'); if(!film) return;
+    if(film.width!==canvas.width || film.height!==canvas.height){ film.width=canvas.width; film.height=canvas.height; }
+    film.getContext('2d').drawImage(canvas,0,0);
+  };
+  const povCam=new THREE.PerspectiveCamera(132,1,1,1000);   // dedicated CT PoV camera for the monitor
+  (function loop(){
+    resize(); updateCamera(); renderer.render(scene,cam);
+    if(S.mode==='ct' && S.ct.liveView){
+      blitToFilm();                    // scout build: mirror whatever CT PoV is active
+    } else if(S.mode==='ct' && S.ct.moveBlit){
+      // table move: mirror the axis' PoV into the monitor, independent of the bay
+      // camera (so the bay can be watched in orbit at the same time).
+      povCam.aspect=cam.aspect; povCam.fov=132; povCam.up.set(0,0,1);
+      if(S.ct.moveBlit==='lat') povCam.position.set(10.5,6,0); else povCam.position.set(0,16.5,0);
+      povCam.lookAt(0,6,0); povCam.updateProjectionMatrix();
+      renderer.render(scene,povCam); blitToFilm();
+      renderer.render(scene,cam);      // restore the bay view for display
+    }
+    requestAnimationFrame(loop);
+  })();
 }
 
 /* ---- DETAILED HAND ANATOMY (single source of truth) ----------------------
@@ -195,6 +236,54 @@ const S = {
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
+  // ---- CT mode ----
+  mode:'xray',                 // 'xray' | 'ct'
+  ct:{
+    sliceThk:5,                // mm (station selector over discrete values)
+    imgPerRotation:1,          // images reconstructed per gantry rotation
+    pitch:1.0,                 // table travel per rotation / total collimation
+    rotSpeed:0.5,              // seconds per gantry rotation
+    scanLen:300,               // mm scout/scan length (from isocentre)
+    scoutKv:80,                // scout topogram technique (kV)
+    scoutMa:20,                // scout topogram technique (mA)
+    tablePos:0,                // mm; signed: +I (inferior) / -S (superior); isocentre zeroes it
+    isoZ:0,                    // patient z recorded when the isocentre was set
+    isocentred:false,
+    phase:'idle',              // idle | scout | planning | moving | scanning | done
+    patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
+    tableY:0,                  // table height (mm); 0 = patient centred at the isocentre
+    patientY:6,                // patient world-y for the current table height (set by ct.js)
+    pov:'ap',                  // CT camera perspective: 'ap' (top) | 'lat' (90° around the bore)
+    liveView:false,            // true while a scout build mirrors tube-POV into #film
+    scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
+    // ---- Phase 4: scan groups (up to 4 planned scans). Each has its own box
+    // (normalized scout coords; per-group top/bot AP↔LAT cylinder lock) + params.
+    // Canonical acquisition fields per group: detRows, beamColl (= rows × detector
+    // element), pitch, sliceThk (reconstructed helical thickness). Table speed and the
+    // detector element are derived (see ct.js). Defaults: 16 × 0.625 = 10 mm collimation.
+    groups:[
+      { on:true,  vis:true, box:{ top:0.10, bot:0.90, apL:0.28, apR:0.72, latL:0.28, latR:0.72 }, kv:120, ma:295, sliceThk:5,    detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:5,    tilt:0, delay:0 },
+      { on:false, vis:true, box:{ top:0.14, bot:0.50, apL:0.36, apR:0.64, latL:0.36, latR:0.64 }, kv:120, ma:295, sliceThk:2.5,  detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:2.5,  tilt:0, delay:0 },
+      { on:false, vis:true, box:{ top:0.55, bot:0.86, apL:0.36, apR:0.64, latL:0.36, latR:0.64 }, kv:120, ma:295, sliceThk:1.25, detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:1.25, tilt:0, delay:0 },
+      { on:false, vis:true, box:{ top:0.30, bot:0.70, apL:0.40, apR:0.60, latL:0.40, latR:0.60 }, kv:120, ma:295, sliceThk:5,    detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:5,    tilt:0, delay:0 },
+    ],
+    activeGroup:0,             // the group currently being edited (drives the reposition plan)
+    plan:{ targetX:0, targetY:0, committedX:0, committedY:0 },   // required vs applied table move (mm)
+    moveBlit:null,             // 'ap'|'lat'|null: mirror this PoV into the monitor during a table move
+    // ---- Phase 5/6: scan execution, reconstruction + image storage ----
+    storage:[],                // stored reconstructed scans (oldest first); each = {id,label,ts,params,gridN,fovMM,muWater,slices:[{d,mu}]}
+    autoDelete:true,           // auto-delete oldest scans past the cap so memory doesn't grow without bound
+    storeCap:4,                // keep at most this many scan groups' worth of data when autoDelete is on
+    nextScanId:1,              // running id for stored scans
+    viewer:{ scanId:null, slice:0, wl:60, ww:800 },   // cross-sectional (axial) viewer state (HU window/level)
+    // linked 2x2 MPR workstation: one cross-reference position drives all four panes
+    mpr:{ scanId:null, cur:null, wl:60, ww:800, sel:'axial', thk:5, interval:5, algo:'standard', mar:false,
+          // oblique plane: a localizer line anchored to one ortho view (view), rotated by
+          // ang within that view, centred at (cu,cv) in that view's in-plane mm; the plane
+          // extends along the axis perpendicular to that view → a true oblique. fov = DFOV.
+          ob:{ view:'axial', ang:0, cu:0, cv:0, fov:60 } },
+    busy:false,                // true during scan execution (controls greyed out)
+  },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
 // the palmar soft tissue between bone and detector is only ~1-1.5 cm.
@@ -234,10 +323,15 @@ function buildPhantom(){
   const rot=poseRot();
   const cosR=Math.cos(rot), sinR=Math.sin(rot);
   const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-  const liftY=baseLift(skin,bone,rot)+S.oid;   // rest on receptor (pose-aware) + OID
-  function xf(p){                // rotate about long (z) axis, then lift
+  // x-ray: rest on the receptor (pose-aware) + OID. CT: sit at the table height
+  // (patientY), so the 3D model and the traced phantom share one vertical position.
+  const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,rot)+S.oid;
+  // in CT the patient is offset from the gantry isocentre by the direction pad
+  const cx = S.mode==='ct' ? S.ct.patient.x : 0;
+  const cz = S.mode==='ct' ? S.ct.patient.z : 0;
+  function xf(p){                // rotate about long (z) axis, then lift, then CT offset
     const x=p[0], y=p[1], z=p[2];
-    return [x*cosR - y*sinR, x*sinR + y*cosR + liftY, z];
+    return [x*cosR - y*sinR + cx, x*sinR + y*cosR + liftY, z + cz];
   }
   for(const c of skin){
     if(c.r1!==undefined) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,'soft');
@@ -275,6 +369,7 @@ function syncScene(){
   three.key.intensity = on ? 0.5 : 0.9;
   three.cr.visible = !on;                       // crosshair now comes from the lamp
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
+  ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
 }
 
 /* Redraw the collimator cookie: bright rectangular aperture sized to the field
@@ -361,14 +456,60 @@ function setCameraView(m){
   S.viewMode=m;
   const seg=$('camSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.cam===m));
 }
+/* CT camera perspective: 'ap' (top) | 'lat' (90° around the bore). */
+function setCTPov(p){
+  S.ct.pov=p;
+  const seg=$('camSegCt'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.cam===p));
+}
+/* Show the right thing in the small DR monitor for the current mode. X-ray shows
+   its radiograph; CT has no radiograph (its scouts live in the bay, and the
+   reconstruction viewer comes later), so the monitor is cleared — the two modes'
+   images stay isolated, never bleeding a stale x-ray into CT. */
+function refreshFilmViewer(){
+  const f=$('film'), noexp=$('noexp');
+  if(S.mode!=='ct' && S.hasImage){
+    drawFilm();
+    if(noexp) noexp.style.display='none';
+  } else {
+    if(f) f.getContext('2d').clearRect(0,0,f.width,f.height);
+    if(noexp) noexp.style.display='';
+  }
+}
+/* CT scout build: mirror the tube's-eye 3D into the small DR monitor. Forces the
+   tube camera while active (saving the user's choice) and hides the NO IMAGE note;
+   restores the camera + monitor on the way out. The per-frame blit lives in the
+   render loop, gated by S.ct.liveView. */
+function ctLiveView(on){
+  const noexp=$('noexp');
+  if(on){ if(noexp) noexp.style.display='none'; S.ct.liveView=true; }
+  else { S.ct.liveView=false; refreshFilmViewer(); }   // CT -> cleared; x-ray -> its radiograph
+}
 function setContent(c){
   S.bayContent=c;
   const seg=$('contentSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.c===c));
   const img=(c==='image');
-  $('bigFilm').style.display=(img && S.hasImage)?'block':'none';
-  $('bignote').style.display=(img && !S.hasImage)?'flex':'none';
-  $('view').style.visibility=img?'hidden':'visible';
-  if(img && S.hasImage) renderRadiograph($('bigFilm'));
+  const slices=(c==='slices');   // CT cross-sectional viewer (reconstructed transverse slices)
+  const recons=(c==='recons');   // CT reconstruction planning / multiplanar viewer
+  // switching the bay to 3D in CT defaults to Orbit (whole-scene view), not a fixed PoV
+  if(!img && !slices && !recons && S.mode==='ct') setCTPov('orbit');
+  // In CT with scouts acquired, the Image (Scout) view IS the scout window (AP+LAT
+  // topograms for scan planning); it replaces the radiograph/bignote.
+  const scouts=(S.mode==='ct' && S.ct.scoutsReady && img);
+  const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
+  const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
+  const rcv=$('ctRecons'); if(rcv) rcv.classList.toggle('show', recons);
+  $('bigFilm').style.display=(img && S.hasImage && !scouts)?'block':'none';
+  $('bignote').style.display=(img && !S.hasImage && !scouts)?'flex':'none';
+  $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
+  if(img && S.hasImage && !scouts) renderRadiograph($('bigFilm'));
+  if(slices) ctRenderViewer();
+  if(recons) ctRenderRecons();
+}
+/* Enable/disable the bay "3D" view button (greyed out while the scout window owns
+   the bay for scan planning). */
+function setBay3DEnabled(on){
+  const b=document.querySelector('#contentSeg button[data-c="3d"]');
+  if(b) b.disabled=!on;
 }
 
 /* ---- Controls wiring ---- */
@@ -434,10 +575,22 @@ function bind(){
   // display
   $('level').addEventListener('input',e=>{S.lev=parseInt(e.target.value); if(S.hasImage) drawFilm();});
   $('windo').addEventListener('input',e=>{S.win=parseInt(e.target.value); if(S.hasImage) drawFilm();});
+  // bay options dropdown (top-right): toggle open, close on outside click / Esc
+  const bayCtl=$('bayCtl'), bayBtn=$('bayMenuBtn');
+  if(bayBtn){
+    bayBtn.addEventListener('click',e=>{ e.stopPropagation();
+      const open=bayCtl.classList.toggle('open'); bayBtn.setAttribute('aria-expanded', open?'true':'false'); });
+    document.addEventListener('click',e=>{ if(bayCtl.classList.contains('open') && !bayCtl.contains(e.target)){
+      bayCtl.classList.remove('open'); bayBtn.setAttribute('aria-expanded','false'); }});
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape' && bayCtl.classList.contains('open')){
+      bayCtl.classList.remove('open'); bayBtn.setAttribute('aria-expanded','false'); }});
+  }
   // bay content: 3D positioning  <->  large saved image
-  $('contentSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setContent(b.dataset.c);});
-  // camera: free orbit  <->  tube POV bird's-eye
+  $('contentSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b || b.disabled)return; setContent(b.dataset.c);});
+  // camera: free orbit  <->  tube POV bird's-eye (x-ray)
   $('camSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCameraView(b.dataset.cam);});
+  // CT camera: AP-PoV  <->  Lat-PoV
+  $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
   // render mode: soft-tissue anatomy  <->  skeleton (display only)
   $('renderSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setHandView(b.dataset.hv);});
   // collimator light on/off
@@ -742,4 +895,9 @@ function initExtras(){
 window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); syncScene();
   Sound.init(); initExtras();
+  // CT mode lives in its own module; give it the handles it needs from the app glue.
+  initCT({ THREE, S, $, three, Sound,
+           syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
+           poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
+           refreshFilmViewer });
 });

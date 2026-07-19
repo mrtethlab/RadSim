@@ -7,8 +7,14 @@
 // (mesh voxelisation / signed-distance sampling) is the next step toward custom
 // phantoms and CT — see phantom/hand.js for the analytic contract to match.
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 
 const loader = new GLTFLoader();
+// Many exported models (incl. the bundled overview-skeleton.glb) are Draco-
+// compressed; wire a DRACOLoader so those decode. Decoder served from public/draco.
+const draco = new DRACOLoader();
+draco.setDecoderPath('/draco/');
+loader.setDRACOLoader(draco);
 
 // Load a File (from an <input type=file>) -> resolves to a THREE.Group (gltf.scene).
 export function loadModelFile(file) {
