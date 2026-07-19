@@ -735,7 +735,7 @@ function updatePlanReady() {
   const noexp = ctx.$('noexp');
   if (needMove) { if (noexp) noexp.style.display = 'none'; }   // the PoV blit fills the monitor
   else { ctx.refreshFilmViewer(); }                            // clear the PoV frame + restore NO IMAGE
-  showTableReminder(needMove, tableHeld);
+  showTableReminder(needMove, tableV > 0.05);                  // "moving" only while the motor is actually turning
 }
 function showTableReminder(on, moving) {
   const el = ctx.$('ctReminder'); if (!el) return;
@@ -746,41 +746,64 @@ function showTableReminder(on, moving) {
     : 'TABLE REPOSITION REQUIRED — press and HOLD the orange TABLE button to move the couch into position before scanning.';
 }
 
-// ---- TABLE hold-to-move: lateral first, then height; constant speed; pause on release ----
+// ---- TABLE hold-to-move ----
+// One axis per press: mediolateral first, then (after RELEASING and pressing again)
+// table height. Each move has a 0.5 s accel/decel ramp (motor momentum) and a motor
+// sound, pitch-shifted per axis. Releasing mid-move decelerates to a pause; the next
+// axis never starts automatically while held.
+const RAMP = 0.5;                       // s to reach full speed
+const ACCEL = TABLE_SPEED / RAMP;       // mm/s^2
 let tableHeld = false, tableRAF = null, tableLastT = 0;
+let tableV = 0, moveAxis = null, awaitRelease = false;
+
+function nextMoveAxis() {
+  const c = ctx.S.ct;
+  if (Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH) return 'x';   // mediolateral first
+  if (Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH) return 'y';   // then height
+  return null;
+}
 function startTableMove() {
   const c = ctx.S.ct;
-  if (c.phase !== 'planning' || tableHeld) return;
-  if (Math.abs(c.plan.targetX - c.plan.committedX) <= MOVE_THRESH
-   && Math.abs(c.plan.targetY - c.plan.committedY) <= MOVE_THRESH) return;   // nothing to do
-  tableHeld = true; tableLastT = performance.now();
-  updatePlanReady();                    // switch the monitor message to "TABLE IS MOVING"
-  (function step() {
-    if (!tableHeld) return;
-    const now = performance.now(), dt = Math.min(0.05, (now - tableLastT) / 1000); tableLastT = now;
-    stepTableMove(dt);
-    tableRAF = requestAnimationFrame(step);
-  })();
+  if (c.phase !== 'planning' || awaitRelease) return;   // must release before the next segment
+  tableHeld = true;
+  if (!moveAxis) { moveAxis = nextMoveAxis(); if (!moveAxis) { tableHeld = false; return; } tableV = 0; }
+  Sound.resume();
+  Sound.startTableSound(moveAxis === 'x' ? 1.0 : 0.72);   // pitch differs per motor (x vs y)
+  if (!tableRAF) { tableLastT = performance.now(); tableRAF = requestAnimationFrame(tableStep); }
+  updatePlanReady();
 }
 function stopTableMove() {
-  const was = tableHeld;
-  tableHeld = false; if (tableRAF) cancelAnimationFrame(tableRAF); tableRAF = null;
-  if (was && ctx.S.ct.phase === 'planning') updatePlanReady();   // back to "REPOSITION REQUIRED" if still pending
+  tableHeld = false;
+  if (awaitRelease) { awaitRelease = false; moveAxis = null; }   // segment done -> ready for the next
+  // if mid-move, the loop keeps decelerating and stops the sound when it halts
+  if (ctx.S.ct.phase === 'planning') updatePlanReady();
 }
-function stepTableMove(dt) {
-  const c = ctx.S.ct, d = TABLE_SPEED * dt;
-  const remX = c.plan.targetX - c.plan.committedX, remY = c.plan.targetY - c.plan.committedY;
-  if (Math.abs(remX) > MOVE_THRESH) {                 // 1) mediolateral
-    c.plan.committedX += Math.sign(remX) * Math.min(Math.abs(remX), d);
-    setHint('Table moving — mediolateral (lateral)…');
-  } else if (Math.abs(remY) > MOVE_THRESH) {          // 2) then table height
-    c.plan.committedY += Math.sign(remY) * Math.min(Math.abs(remY), d);
-    setHint('Table moving — anteroposterior (height)…');
-  } else {
-    stopTableMove(); setHint('Table in position — press START to scan.');
+function tableStep() {
+  const now = performance.now(), dt = Math.min(0.05, (now - tableLastT) / 1000); tableLastT = now;
+  advanceTable(dt);
+  if (tableV > 0.05 || (tableHeld && moveAxis && !awaitRelease)) {
+    tableRAF = requestAnimationFrame(tableStep);
+  } else { tableRAF = null; Sound.stopTableSound(); }
+}
+function advanceTable(dt) {
+  const c = ctx.S.ct;
+  if (!moveAxis) { tableV = 0; return; }
+  const key = moveAxis === 'x' ? 'committedX' : 'committedY';
+  const target = moveAxis === 'x' ? c.plan.targetX : c.plan.targetY;
+  const remaining = target - c.plan[key], dist = Math.abs(remaining);
+  if (dist <= MOVE_THRESH) {                          // segment complete
+    c.plan[key] = target; tableV = 0; awaitRelease = true;
+    Sound.stopTableSound();
+    applyTableCommit(); updatePlanReady();
+    setHint('Axis in position — release, then hold TABLE again for the next axis.');
+    return;
   }
-  applyTableCommit();
-  updatePlanReady();
+  const decelDist = (tableV * tableV) / (2 * ACCEL);  // distance needed to brake from current speed
+  if (tableHeld && !awaitRelease && dist > decelDist) tableV = Math.min(TABLE_SPEED, tableV + ACCEL * dt);   // ramp up / cruise
+  else tableV = Math.max(0, tableV - ACCEL * dt);                                                            // ramp down (near target or released)
+  c.plan[key] += Math.sign(remaining) * Math.min(tableV * dt, dist);
+  setHint(moveAxis === 'x' ? 'Table moving — mediolateral…' : 'Table moving — height (anteroposterior)…');
+  applyTableCommit(); updatePlanReady();
 }
 // Apply the committed lateral/height offset to the 3D couch + patient.
 function applyTableCommit() {
