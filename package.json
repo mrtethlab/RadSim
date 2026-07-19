@@ -1,0 +1,17 @@
+{
+  "name": "radsim",
+  "version": "0.1.0",
+  "private": true,
+  "description": "RadSim — physics-based x-ray / (future) CT simulator. Three.js web frontend + Python compute backend.",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @radsim/web",
+    "build": "npm run build --workspace @radsim/web",
+    "preview": "npm run preview --workspace @radsim/web"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
