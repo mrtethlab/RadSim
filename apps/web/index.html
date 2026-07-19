@@ -145,28 +145,24 @@
       </div>
 
       <div class="grp ct-only" id="ctSettings">
-        <div class="lab">CT acquisition</div>
+        <div class="lab">Scout planning</div>
         <div class="bod">
-          <div class="row"><div class="rl">Slice thickness</div>
-            <div class="stepper"><button data-ctstep="sliceThk" data-d="-1">−</button>
-              <div class="sv" id="ctSliceThkV">5 mm</div><button data-ctstep="sliceThk" data-d="1">+</button></div></div>
-          <!-- helical-only params: not applicable to a scout (gantry does not rotate) -->
-          <div class="ctHelical">
-            <div class="row" style="margin-top:12px"><div class="rl">Images / rotation</div>
-              <div class="stepper"><button data-ctstep="imgPerRotation" data-d="-1">−</button>
-                <div class="sv" id="ctImgV">1</div><button data-ctstep="imgPerRotation" data-d="1">+</button></div></div>
-            <div class="row" style="margin-top:12px"><div class="rl">Pitch</div>
-              <div class="valchip" id="ctPitchV">1</div></div>
-            <input type="range" id="ctPitch" min="0.5" max="1.5" step="0.125" value="1">
-            <div class="row" style="margin-top:12px"><div class="rl">Rotation speed <small>s / rot</small></div>
-              <div class="valchip" id="ctRotSpeedV">0.5 s</div></div>
-            <input type="range" id="ctRotSpeed" min="0.25" max="2" step="0.05" value="0.5">
-          </div>
-          <div class="row" style="margin-top:12px"><div class="rl">Scan length</div>
+          <div class="row"><div class="rl">Start location <small>from iso</small></div>
+            <div class="valchip" id="ctScoutStartV">0.0 mm</div></div>
+          <div class="row" style="margin-top:8px"><div class="rl">End location</div>
+            <div class="valchip" id="ctScoutEndV">I300.0 mm</div></div>
+          <div class="row" style="margin-top:10px"><div class="rl">Scan length</div>
             <div class="valchip" id="ctScanLenV">300 mm</div></div>
           <input type="range" id="ctScanLen" min="50" max="600" step="10" value="300">
-          <div class="row" style="margin-top:12px"><div class="rl">Est. exposure time</div>
+          <div class="row" style="margin-top:12px"><div class="rl">kV <small>scout technique</small></div>
+            <div class="stepper"><button data-ctstep="scoutKv" data-d="-1">−</button>
+              <div class="sv" id="ctScoutKvV">80</div><button data-ctstep="scoutKv" data-d="1">+</button></div></div>
+          <div class="row" style="margin-top:10px"><div class="rl">mA</div>
+            <div class="stepper"><button data-ctstep="scoutMa" data-d="-1">−</button>
+              <div class="sv" id="ctScoutMaV">20</div><button data-ctstep="scoutMa" data-d="1">+</button></div></div>
+          <div class="row" style="margin-top:12px"><div class="rl">Est. scan time</div>
             <div class="valchip green" id="ctExpTimeV">— s</div></div>
+          <div class="note" style="margin-top:6px">Scout (topogram) beam width 1.5 mm. The scout runs from the isocentre for the scan length; each scan group then plans its diagnostic acquisition + reconstructions.</div>
         </div>
       </div>
 

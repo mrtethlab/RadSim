@@ -285,23 +285,16 @@ function applyMode(mode) {
 
 function wireCTSettings() {
   const { S, $ } = ctx;
-  // slice thickness = station selector; images/rotation = counter (both steppers)
+  // scout technique steppers (kV / mA). The scout beam width is fixed at 1.5 mm.
   $('ctSettings')?.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-ctstep]'); if (!b) return;
     const key = b.dataset.ctstep, d = parseInt(b.dataset.d, 10);
-    if (key === 'sliceThk') {
-      let i = SLICE_MM.indexOf(S.ct.sliceThk); if (i < 0) i = 3;
-      S.ct.sliceThk = SLICE_MM[Math.max(0, Math.min(SLICE_MM.length - 1, i + d))];
-    } else if (key === 'imgPerRotation') {
-      S.ct.imgPerRotation = Math.max(1, Math.min(16, S.ct.imgPerRotation + d));
-    }
+    if (key === 'scoutKv') S.ct.scoutKv = Math.max(70, Math.min(140, S.ct.scoutKv + d));
+    else if (key === 'scoutMa') S.ct.scoutMa = Math.max(5, Math.min(200, S.ct.scoutMa + d));
     updateCTReadouts();
   });
-  // pitch + scan length (ranges). Changing scan length does NOT live-update a
-  // scout: like a real CT, re-scouting means ABORT then START (rescan) — but it
-  // does not require re-setting the isocentre (table zero persists).
-  $('ctPitch')?.addEventListener('input', (e) => { S.ct.pitch = parseFloat(e.target.value); updateCTReadouts(); });
-  $('ctRotSpeed')?.addEventListener('input', (e) => { S.ct.rotSpeed = parseFloat(e.target.value); updateCTReadouts(); });
+  // scan length (range). Changing it does NOT live-update a scout: like a real CT,
+  // re-scouting means ABORT then START (rescan) — table zero / isocentre persist.
   $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
   // table height — raise / lower by 1 mm per press; hold to auto-repeat
   wireHoldRepeat($('ctTablePad'), 'button[data-th]', (b) => {
@@ -339,10 +332,10 @@ function scoutScanTime() { return ctx.S.ct.scanLen / SCOUT_SPEED_MMPS; }   // se
 function updateCTReadouts() {
   const { S, $ } = ctx;
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-  set('ctSliceThkV', S.ct.sliceThk + ' mm');
-  set('ctImgV', S.ct.imgPerRotation);
-  set('ctPitchV', S.ct.pitch.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
-  set('ctRotSpeedV', S.ct.rotSpeed.toFixed(2) + ' s');
+  set('ctScoutStartV', fmtTablePos(0) + ' mm');            // scout runs from the isocentre
+  set('ctScoutEndV', fmtTablePos(S.ct.scanLen) + ' mm');
+  set('ctScoutKvV', S.ct.scoutKv);
+  set('ctScoutMaV', S.ct.scoutMa);
   set('ctScanLenV', S.ct.scanLen + ' mm');
   const et = scoutScanTime();
   set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
@@ -575,12 +568,12 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
 function scoutProjection(view) {
   const { S } = ctx;
   const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
-  const bins = Spectrum.make(S.kv).bins;
+  const bins = Spectrum.make(S.ct.scoutKv).bins;    // scout uses its own technique
   const muSoft = bins.map(b => Materials.mu('soft', b.E));
   const muBone = bins.map(b => Materials.mu('bone', b.E));
   const muMarr = bins.map(b => Materials.mu('marrow', b.E));
-  const I0 = S.mas * Math.pow(S.kv / 70, 2);
-  const PXMM = 1.5;                                  // mm per (square) pixel — undistorted
+  const I0 = S.ct.scoutMa * Math.pow(S.ct.scoutKv / 70, 2);
+  const PXMM = 1.5;                                  // mm per (square) pixel — undistorted (scout beam width)
   const lenU = scanLenU();                           // scan length in world units (z axis)
   const widthMM = SCOUT_WIDTH_MM[view];              // width (AP) / thickness (LAT) field
   const nz = Math.max(2, Math.round(S.ct.scanLen / PXMM));

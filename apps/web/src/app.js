@@ -244,6 +244,8 @@ const S = {
     pitch:1.0,                 // table travel per rotation / total collimation
     rotSpeed:0.5,              // seconds per gantry rotation
     scanLen:300,               // mm scout/scan length (from isocentre)
+    scoutKv:80,                // scout topogram technique (kV)
+    scoutMa:20,                // scout topogram technique (mA)
     tablePos:0,                // mm; signed: +I (inferior) / -S (superior); isocentre zeroes it
     isoZ:0,                    // patient z recorded when the isocentre was set
     isocentred:false,
