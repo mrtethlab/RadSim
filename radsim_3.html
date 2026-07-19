@@ -146,12 +146,16 @@
   /* image monitor */
   .monitor{position:relative; background:#000; border:1px solid var(--edge); margin:12px;
      aspect-ratio:3/4; display:flex; align-items:center; justify-content:center; overflow:hidden}
-  #film{image-rendering:auto; max-width:100%; max-height:100%; display:block}
+  /* film fills the whole monitor window; the bitmap is letterboxed (black bars)
+     so it's always scaled up to fit yet never clipped when resizing or rotating */
+  #film{image-rendering:auto; position:absolute; inset:0; width:100%; height:100%;
+     object-fit:contain; display:block}
   .filmnote{position:absolute; bottom:6px; left:8px; font-family:var(--seg); font-size:10px;
      color:#6de0ff; letter-spacing:1px; text-shadow:0 0 4px #000; z-index:3}
   .filmnote.r{left:auto; right:8px; text-align:right}
   .filmnote.t{bottom:auto; top:6px}
-  .noexp{color:var(--muted2); font-family:var(--seg); letter-spacing:3px; font-size:12px; text-align:center}
+  .noexp{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; z-index:2;
+     color:var(--muted2); font-family:var(--seg); letter-spacing:3px; font-size:12px; text-align:center}
   .prog{position:absolute; inset:auto 0 0 0; height:3px; background:var(--red); width:0%; transition:width .05s; z-index:4}
 
   .di{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 12px 12px}
@@ -264,6 +268,14 @@
               <button data-step="sid" data-d="5">+</button>
             </div>
           </div>
+          <div class="row">
+            <div class="rl">OID <small>object→image</small></div>
+            <div class="stepper">
+              <button data-step="oid" data-d="-1">−</button>
+              <div class="sv" id="oidV">0 cm</div>
+              <button data-step="oid" data-d="1">+</button>
+            </div>
+          </div>
           <div class="row"><div class="rl">Centre · long</div>
             <input type="range" id="tubeZ" min="-9" max="9" value="0" step="0.5" style="max-width:150px"></div>
           <div class="row"><div class="rl">Centre · cross</div>
@@ -298,6 +310,45 @@
               </svg>
             </button></div>
           <div class="note" style="margin-top:6px">Collimated-out anatomy is cut from the image, and only the light field contributes to the exposure index.</div>
+        </div>
+      </div>
+
+      <div class="grp">
+        <div class="lab">Detector</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Resolution</div>
+            <div class="valchip" id="resV">320×400</div></div>
+          <div class="seg" id="resSeg">
+            <button data-res="low">Low</button>
+            <button data-res="std" class="on">Std</button>
+            <button data-res="high">High</button>
+          </div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">Anti-scatter grid</div>
+            <div class="valchip" id="gridStateV">OUT</div></div>
+          <div class="seg" id="gridSeg">
+            <button data-grid="off" class="on">Out</button>
+            <button data-grid="on">In</button>
+          </div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">Grid ratio</div>
+            <div class="valchip" id="gridRatioV">10:1</div></div>
+          <div class="seg" id="gridRatioSeg">
+            <button data-ratio="6">6:1</button>
+            <button data-ratio="8">8:1</button>
+            <button data-ratio="10" class="on">10:1</button>
+            <button data-ratio="12">12:1</button>
+          </div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">Grid focal length</div>
+            <div class="valchip" id="gridFocusV">100 cm</div></div>
+          <div class="seg" id="gridFocusSeg">
+            <button data-focus="100" class="on">100</button>
+            <button data-focus="150">150</button>
+            <button data-focus="180">180</button>
+          </div>
+
+          <div class="note" style="margin-top:6px">A focused grid cleans up scatter but cuts primary when SID ≠ focal length, off-centre, or angled across the strips — raising the dose needed for target EI.</div>
         </div>
       </div>
 
@@ -673,11 +724,26 @@ function initScene(){
   const key=new THREE.DirectionalLight(0xbfe9ff,0.9); key.position.set(40,90,60); scene.add(key);
   const rim=new THREE.DirectionalLight(0x35c6d6,0.35); rim.position.set(-50,20,-40); scene.add(rim);
 
-  // detector (bucky) at y=0 — receives the collimator light + hand shadow
+  // detector (bucky) at y=0 — receives the collimator light + hand shadow.
+  // Matte, non-reflective top (no sheen, no grid) so the projected light field
+  // and hand shadow read cleanly; the exposure area is marked by corner brackets.
   const det=new THREE.Mesh(new THREE.BoxGeometry(24,1.2,30),
-    new THREE.MeshStandardMaterial({color:0x11161b,metalness:.4,roughness:.5}));
+    new THREE.MeshStandardMaterial({color:0x11161b,metalness:0,roughness:1}));
   det.position.y=-0.6; det.receiveShadow=true; scene.add(det);
-  const grid=new THREE.GridHelper(30,15,0x223038,0x1a2228); grid.position.y=0.02; scene.add(grid);
+  // white L-shaped corner markers outlining the 24x30 receptor area
+  (function cornerMarkers(){
+    const markMat=new THREE.MeshBasicMaterial({color:0xffffff});
+    const hx=12, hz=15, arm=3.2, th=0.35, yy=0.07;
+    function bracket(x,z,dx,dz){
+      const a=new THREE.Mesh(new THREE.BoxGeometry(arm,0.08,th),markMat);
+      a.position.set(x+dx*arm/2, yy, z);
+      const b=new THREE.Mesh(new THREE.BoxGeometry(th,0.08,arm),markMat);
+      b.position.set(x, yy, z+dz*arm/2);
+      scene.add(a,b);
+    }
+    bracket( hx, hz,-1,-1); bracket(-hx, hz, 1,-1);
+    bracket( hx,-hz,-1, 1); bracket(-hx,-hz, 1, 1);
+  })();
 
   // ---- COLLIMATOR LAMP -------------------------------------------------
   // A shadow-casting spotlight at the focal spot projects a "cookie" texture
@@ -858,11 +924,16 @@ function buildHandMeshes(){
    STATE + WIRING
    ============================================================================ */
 const S = {
-  pose:'PA', spread:0.45, sid:100, tubeZ:0, tubeX:0, angLM:0, angCC:0,
+  pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
+  resolution:'std', gridOn:false, gridRatio:10, gridFocus:100,
 };
+// detector base lift (cm): hand thickness centre resting on the receptor -> OID 0
+const REST_LIFT=3.4;
+// detector pixel matrices per resolution tier (4:5, matches 24x30 cm receptor)
+const RES_MAP={ low:[176,220], std:[320,400], high:[480,600] };
 const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125];
 const maSteps=[25,50,100,150,200,250,300,400,500,630,800];
 function exposureTimeSec(){ return S.mas / S.ma; }              // t = mAs / mA
@@ -882,7 +953,7 @@ function buildPhantom(){
   const ph=new Phantom();
   const rot=poseRot();
   const cosR=Math.cos(rot), sinR=Math.sin(rot);
-  const liftY=3.4;               // hand thickness centre above detector -> OID/mag
+  const liftY=REST_LIFT+S.oid;   // hand thickness centre above detector -> OID/mag
   function xf(p){                // rotate about long (z) axis, then lift
     const x=p[0], y=p[1], z=p[2];
     return [x*cosR - y*sinR, x*sinR + y*cosR + liftY, z];
@@ -896,9 +967,9 @@ function buildPhantom(){
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
-  // hand pose
+  // hand pose (lifted by OID above the receptor)
   three.handGroup.rotation.z = poseRot();
-  three.handGroup.position.y = 3.4;
+  three.handGroup.position.y = REST_LIFT+S.oid;
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
   const src=sourcePos();
@@ -913,7 +984,7 @@ function syncScene(){
   three.lamp.position.set(src[0],src[1],src[2]);
   three.lamp.target.position.set(aim[0],aim[1],aim[2]); three.lamp.target.updateMatrixWorld();
   updateCookie();
-  three.lamp.intensity = on ? 3.6 : 0;
+  three.lamp.intensity = on ? 7.2 : 0;
   three.lamp.castShadow = on;
   // dim the room when the light is on so the projected field reads clearly
   three.amb.intensity = on ? 0.5 : 0.9;
@@ -1042,8 +1113,9 @@ function bind(){
   document.querySelectorAll('[data-step]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       const kind=btn.dataset.step, d=parseFloat(btn.dataset.d);
-      if(kind==='sid'){ S.sid=Math.max(60,Math.min(180,S.sid+d)); $('sidV').textContent=S.sid+' cm';
+      if(kind==='sid'){ S.sid=Math.max(20,Math.min(180,S.sid+d)); $('sidV').textContent=S.sid+' cm';
         $('sidRo').innerHTML=S.sid+'<small>cm</small>'; syncScene(); }
+      if(kind==='oid'){ S.oid=Math.max(0,Math.min(20,S.oid+d)); $('oidV').textContent=S.oid+' cm'; syncScene(); }
       if(kind==='kv'){ S.kv=Math.max(40,Math.min(120,S.kv+d)); $('kv').value=S.kv; }
       if(kind==='mas'){ let i=nearestMasIdx(); i=Math.max(0,Math.min(masSteps.length-1,i+d)); S.mas=masSteps[i]; $('mas').value=i; }
       if(kind==='ma'){ let i=nearestMaIdx(); i=Math.max(0,Math.min(maSteps.length-1,i+d)); S.ma=maSteps[i]; $('ma').value=i; }
@@ -1085,6 +1157,19 @@ function bind(){
   $('lfBtn').addEventListener('click',()=>{ S.lfOn=!S.lfOn;
     $('lfBtn').classList.toggle('on',S.lfOn); $('lfBtn').setAttribute('aria-pressed',S.lfOn);
     syncScene(); });
+  // detector: resolution / anti-scatter grid settings (single-select seg groups)
+  const segPick=(id,fn)=>$(id).addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b)return;
+    [...$(id).children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); fn(b);
+  });
+  segPick('resSeg', b=>{ S.resolution=b.dataset.res;
+    const [nx,ny]=RES_MAP[S.resolution]; $('resV').textContent=nx+'×'+ny; });
+  segPick('gridSeg', b=>{ S.gridOn=(b.dataset.grid==='on');
+    $('gridStateV').textContent=S.gridOn?'IN':'OUT'; });
+  segPick('gridRatioSeg', b=>{ S.gridRatio=parseInt(b.dataset.ratio);
+    $('gridRatioV').textContent=S.gridRatio+':1'; });
+  segPick('gridFocusSeg', b=>{ S.gridFocus=parseInt(b.dataset.focus);
+    $('gridFocusV').textContent=S.gridFocus+' cm'; });
   // image orientation
   $('rotL').addEventListener('click',()=>{ if(!S.hasImage)return; S.imgRot=(S.imgRot+270)%360; drawFilm();});
   $('rotR').addEventListener('click',()=>{ if(!S.hasImage)return; S.imgRot=(S.imgRot+90)%360; drawFilm();});
@@ -1184,13 +1269,16 @@ async function computeRadiograph(){
   // detector matches the 3D image receptor (24 x 30 cm) so open collimation
   // captures the whole plate, with empty field between the model and the edges.
   const detW=24, detH=30;          // cm
-  const nx=320, ny=400;            // pixels (4:5)
+  const [nx,ny]=RES_MAP[S.resolution]||RES_MAP.std;   // pixel matrix (4:5)
   const pxU=detW/nx, pxV=detH/ny;
   const detCenter=[0,0,0];
   const detU=[1,0,0], detV=[0,0,1];
 
   const I0 = S.mas * Math.pow(S.kv/70,2);   // dose ∝ mAs·kVp^2
-  const photonScale = 90;
+  // quanta per pixel scale with pixel AREA: finer matrices collect fewer photons
+  // per element -> more quantum mottle (the resolution/noise trade-off).
+  const STD_PX=(detW/320)*(detH/400);
+  const photonScale = 90 * (pxU*pxV)/STD_PX;
 
   // collimation mask: which detector cells fall inside the beam cone.
   // Tested in the tube frame so the exposed field keystones with CR angle,
@@ -1214,6 +1302,26 @@ async function computeRadiograph(){
     spectrum, I0, refDist:100,
     onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
   });
+
+  // ---- anti-scatter grid ----
+  // A focused linear grid (strips running along the long z axis) passes a fixed
+  // fraction of primary and cuts more as the incident ray angle in the x (across-
+  // strip) plane departs from the strip tilt. Strips converge at height gridFocus
+  // above the receptor centre, so mismatched SID, lateral decentering, or LM
+  // angulation all produce position-dependent cutoff. CC angulation (along the
+  // strips) is unaffected — exactly like a real grid.
+  if(S.gridOn){
+    const r=S.gridRatio, f0=S.gridFocus, base=0.68;
+    const sx=fsrc[0], sy=fsrc[1];
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+      const k=j*nx+i; if(!mask[k]) continue;
+      const px=(i-halfU)*pxU;                         // detector x (world, detU=[1,0,0])
+      const rayAng=Math.atan2(px-sx, sy);             // incident ray tilt in x-plane
+      const stripAng=Math.atan2(px, f0);              // focused strip tilt at this x
+      const t=Math.max(0, 1 - r*Math.abs(Math.tan(rayAng-stripAng)));
+      dose[k]*= base*t;
+    }
+  }
 
   const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask);
   S.lastSignal=signal; S.nx=nx; S.ny=ny; S.mask=mask; S.hasImage=true;
@@ -1315,8 +1423,8 @@ function updateDI(EI){
 function annotate(spec){
   $('fnTL').textContent='HAND · '+S.pose;
   $('fnTR').textContent=S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs';
-  $('fnBL').textContent='SID '+S.sid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV';
-  $('fnBR').textContent='DR · '+S.collX+'×'+S.collZ+'cm';
+  $('fnBL').textContent='SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV';
+  $('fnBR').textContent='DR '+S.nx+'×'+S.ny+'  '+S.collX+'×'+S.collZ+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');
 }
 
 /* ---- boot ---- */
