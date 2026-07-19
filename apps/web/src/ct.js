@@ -106,12 +106,15 @@ export function ctSyncScene() {
   const { three, S } = ctx;
   const isCT = S.mode === 'ct';
   bed.visible = isCT;
+  bed.position.z = 0;            // base position (the scan animation drives it directly)
   laser.visible = isCT;
   if (three.det) three.det.visible = !isCT;          // hide the flat-panel detector in CT
   if (three.detMarks) three.detMarks.visible = !isCT; // and its corner brackets
   // patient/couch offset (from the direction pad) — only in CT
   three.handGroup.position.x = isCT ? S.ct.patient.x : 0;
   three.handGroup.position.z = isCT ? S.ct.patient.z : 0;
+  // feet-first turns the patient 180° so the other end enters the gantry bore
+  three.handGroup.rotation.y = (isCT && S.ct.orientation === 'feet') ? Math.PI : 0;
   if (isCT) {
     // no collimator light field in CT — only the laser
     three.lamp.intensity = 0; three.lamp.castShadow = false;
@@ -161,6 +164,7 @@ function wireCTSettings() {
   // scout: like a real CT, re-scouting means ABORT then START (rescan) — but it
   // does not require re-setting the isocentre (table zero persists).
   $('ctPitch')?.addEventListener('input', (e) => { S.ct.pitch = parseFloat(e.target.value); updateCTReadouts(); });
+  $('ctRotSpeed')?.addEventListener('input', (e) => { S.ct.rotSpeed = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
   // scan orientation (head-first / feet-first) — flips where the isocentre sits
   $('ctOrientSeg')?.addEventListener('click', (e) => {
@@ -168,11 +172,12 @@ function wireCTSettings() {
     S.ct.orientation = b.dataset.orient;
     [...b.parentNode.children].forEach(x => x.classList.toggle('on', x === b));
     updateCTReadouts();
-    if (S.ct.phase === 'planning') redrawScouts();   // display flip only, no rescan
+    ctx.syncScene();                                 // flip the 3D model to head/feet-first
+    if (S.ct.phase === 'planning') redrawScouts();   // and the scout display
   });
   // isocentre confirm — zero the table position reading (patient stays put)
   $('ctIsocentre')?.addEventListener('click', () => {
-    S.ct.tablePos = 0; S.ct.isocentred = true;
+    S.ct.tablePos = 0; S.ct.isoZ = S.ct.patient.z; S.ct.isocentred = true;
     setHint('Isocentre set. Acquire scouts to begin planning.');
     updateCTReadouts();
   });
@@ -193,13 +198,28 @@ function wireCTSettings() {
   });
 }
 
+// Exposure (scan) time from the acquisition parameters:
+//   beam width       = images/rotation x slice thickness
+//   table feed/rot   = pitch x beam width
+//   rotations        = scan length / table feed per rotation
+//   exposure time    = rotations x rotation time (s)
+function ctExposureTime() {
+  const c = ctx.S.ct;
+  const beamWidth = c.imgPerRotation * (c.sliceThk / 10);     // cm
+  const feedPerRot = Math.max(c.pitch * beamWidth, 1e-3);     // cm / rotation
+  return (c.scanLen / feedPerRot) * c.rotSpeed;               // seconds
+}
+
 function updateCTReadouts() {
   const { S, $ } = ctx;
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
   set('ctSliceThkV', S.ct.sliceThk + ' mm');
   set('ctImgV', S.ct.imgPerRotation);
   set('ctPitchV', S.ct.pitch.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
+  set('ctRotSpeedV', S.ct.rotSpeed.toFixed(2) + ' s');
   set('ctScanLenV', S.ct.scanLen + ' cm');
+  const et = ctExposureTime();
+  set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
   set('ctTablePosV', (S.ct.tablePos >= 0 ? '+' : '') + S.ct.tablePos.toFixed(1) + ' cm');
   set('ctOrientV', S.ct.orientation === 'feet' ? 'FEET FIRST' : 'HEAD FIRST');
 }
@@ -238,6 +258,7 @@ function showScouts(on) { ctx.$('ctScouts')?.classList.toggle('show', on); }
 function abortCT() {
   showScouts(false);
   setPhase('idle');
+  ctx.syncScene();   // restore the model/bed after any scan animation
   setHint('Set the isocentre, then acquire scouts to plan the scan.');
 }
 
@@ -270,41 +291,59 @@ async function acquireScouts() {
   setConsoleEnabled(true);
 }
 
-// One animated acquisition: breathe-in, exposure (buzz + table sweep), breathe-out.
+// Put the patient/couch back at the isocentre (table 0) before an acquisition.
+function resetToIsocentre() {
+  const { S } = ctx;
+  S.ct.patient.z = S.ct.isoZ;   // model back to where it was when the isocentre was set
+  S.ct.tablePos = 0;
+  ctx.syncScene();               // applies patient.z + orientation, resets the bed
+  updateCTReadouts();
+}
+
+// One animated acquisition: breathe-in, 1s hold, exposure (buzz + table travel),
+// breathe-out. The exposure sound + table travel run for the calculated exposure time.
 async function runScoutExposure(view) {
   Sound.resume();
+  resetToIsocentre();
   setHint(view + ' scout · breathe in and hold…');
   Sound.play('breathIn');
   await sleep((Sound.duration('breathIn') || 2) * 1000);   // let the breathe-in finish
   await sleep(1000);                                        // 1 s hold before the exposure
   setHint(view + ' scout · scanning…');
   Sound.startBuzz();
-  await animateTableSweep(2600);
+  await animateTableTravel(ctExposureTime() * 1000);
   Sound.stopBuzz();
   setHint(view + ' scout · breathe normally.');
   Sound.play('breathNormal');
   await sleep(Math.min(2200, (Sound.duration('breathNormal') || 1.8) * 1000));
 }
 
-// Move the couch (bed + patient) through the gantry along z during the exposure.
-function animateTableSweep(dur) {
+// Move the couch (bed + patient) the scan length into the gantry over the exposure
+// time, updating the table position readout in real time. Ends at table pos =
+// +scanLen (feet-first) or -scanLen (head-first).
+function animateTableTravel(dur) {
   return new Promise(res => {
-    const three = ctx.three;
-    const bedZ0 = bed.position.z, handZ0 = three.handGroup.position.z;
-    const travel = Math.min(ctx.S.ct.scanLen, 24);   // visual cm of table travel
+    const three = ctx.three, S = ctx.S;
+    const scanLen = S.ct.scanLen;
+    const startHandZ = three.handGroup.position.z, startBedZ = bed.position.z;
+    const tpSign = S.ct.orientation === 'feet' ? 1 : -1;
     const t0 = performance.now();
     let done = false;
-    const finish = () => { if (done) return; done = true;
-      bed.position.z = bedZ0; three.handGroup.position.z = handZ0; res(); };
+    const apply = (t) => {
+      const dz = -scanLen * t;                         // travel into the bore (-z)
+      three.handGroup.position.z = startHandZ + dz;
+      bed.position.z = startBedZ + dz;
+      S.ct.tablePos = tpSign * scanLen * t;            // live table position
+      updateCTReadouts();
+    };
+    const finish = () => { if (done) return; done = true; apply(1); res(); };
     (function step() {
       if (done) return;
       const t = Math.min(1, (performance.now() - t0) / dur);
-      const dz = travel * (0.5 - t);                  // +travel/2 -> -travel/2 through the bore
-      bed.position.z = bedZ0 + dz;
-      three.handGroup.position.z = handZ0 + dz;
+      apply(t);
       if (t < 1) requestAnimationFrame(step); else finish();
     })();
-    setTimeout(finish, dur + 500);                    // completes even if rAF is paused (hidden tab)
+    setTimeout(finish, dur + 500);                     // completes even if rAF is paused (hidden tab)
   });
 }
 

@@ -99,9 +99,14 @@
           <div class="row" style="margin-top:12px"><div class="rl">Pitch</div>
             <div class="valchip" id="ctPitchV">1</div></div>
           <input type="range" id="ctPitch" min="0.5" max="1.5" step="0.125" value="1">
+          <div class="row" style="margin-top:12px"><div class="rl">Rotation speed <small>s / rot</small></div>
+            <div class="valchip" id="ctRotSpeedV">0.5 s</div></div>
+          <input type="range" id="ctRotSpeed" min="0.25" max="2" step="0.05" value="0.5">
           <div class="row" style="margin-top:12px"><div class="rl">Scan length</div>
             <div class="valchip" id="ctScanLenV">30 cm</div></div>
           <input type="range" id="ctScanLen" min="5" max="60" step="1" value="30">
+          <div class="row" style="margin-top:12px"><div class="rl">Est. exposure time</div>
+            <div class="valchip green" id="ctExpTimeV">— s</div></div>
           <div class="row" style="margin-top:12px"><div class="rl">Table position</div>
             <div class="valchip cyanlit" id="ctTablePosV">+0.0 cm</div></div>
           <div class="ctpos">
@@ -119,7 +124,6 @@
             <button data-orient="head" class="on">Head first</button>
             <button data-orient="feet">Feet first</button>
           </div>
-          <div class="note" style="margin-top:6px">The scan runs from the isocentre (table 0) for the scan length. Head-first puts the isocentre at the bottom of the image, feet-first at the top. Re-scout = ABORT then START.</div>
         </div>
       </div>
 

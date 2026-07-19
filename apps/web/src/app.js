@@ -203,12 +203,14 @@ const S = {
     sliceThk:5,                // mm (station selector over discrete values)
     imgPerRotation:1,          // images reconstructed per gantry rotation
     pitch:1.0,                 // table travel per rotation / total collimation
-    scanLen:30,                // cm scout/scan length (top=0 -> bottom=scanLen)
+    rotSpeed:0.5,              // seconds per gantry rotation
+    scanLen:30,                // cm scout/scan length (from isocentre)
     tablePos:0,                // cm; isocentring zeroes this, patient motion changes it
+    isoZ:0,                    // patient z recorded when the isocentre was set
     isocentred:false,
     phase:'idle',              // idle | scout | planning | moving | scanning | done
     patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
-    orientation:'head',        // 'head' | 'feet' — where the isocentre sits on the image
+    orientation:'head',        // 'head' | 'feet' — patient enters head- or feet-first
   },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
