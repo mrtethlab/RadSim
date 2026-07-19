@@ -397,6 +397,25 @@ body.mode-ct .di{display:none}
 #ctWLPresets{flex:0 0 auto}
 #ctWLPresets button{font-size:11px}
 
+/* ---- CT reconstruction planning / multiplanar viewer over the bay ---- */
+.ctrecons{display:none; position:absolute; inset:0; z-index:7; background:#050607;
+  padding:40px 16px 14px; flex-direction:column; gap:12px}
+.ctrecons.show{display:flex}
+.ctrecons-body{flex:1 1 auto; min-height:0; overflow-y:auto; display:flex; flex-direction:column; gap:12px}
+.rc-scan{font-family:var(--disp); font-size:14px; color:var(--txt); padding:8px 10px; background:#0b1116;
+  border:1px solid var(--edge2); border-radius:4px}
+.rc-scan b{color:var(--cyan)}
+.rc-list{display:flex; flex-direction:column; gap:6px}
+.rc-row{display:flex; align-items:center; gap:12px; background:#0b1116; border:1px solid var(--edge2);
+  border-left:4px solid var(--cyan-dim); border-radius:4px; padding:9px 12px}
+.rc-row.default{border-left-color:var(--cyan)}
+.rc-plane{font-family:var(--seg); font-size:12px; letter-spacing:1.5px; color:var(--cyan); min-width:74px}
+.rc-meta{flex:1 1 auto; font-family:var(--disp); font-size:13px; color:var(--txt)}
+.rc-tag{font-family:var(--seg); font-size:9px; letter-spacing:1px; color:var(--muted2); text-transform:uppercase;
+  border:1px solid var(--edge2); border-radius:3px; padding:2px 6px}
+.rc-note{font-family:var(--disp); font-size:12.5px; color:var(--muted); line-height:1.5;
+  border:1px dashed var(--edge2); border-radius:4px; padding:10px 12px}
+
 /* ---- CT image-storage panel (right column) ---- */
 .cttoggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13.5px; color:var(--txt)}
 .cttoggle input{width:16px; height:16px; accent-color:var(--cyan); cursor:pointer}

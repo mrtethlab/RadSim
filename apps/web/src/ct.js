@@ -264,6 +264,8 @@ function applyMode(mode) {
   if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition' : 'Digit · Hand phantom';
+  const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Scout window in CT
+  if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Scout' : 'Image';
   // A mode switch is a clean slate: tear down the CT scout workflow and any carried
   // view state so nothing from the other mode lingers (stale image, scout overlay,
   // tube-POV camera, Image view). Acquisition params + technique are user setup and
@@ -1013,11 +1015,16 @@ function applyTableCommit() {
 const RECON_N = 128;              // reconstruction grid (N x N pixels)
 const RECON_ANGLES = 128;         // projection angles over 180° (parallel beam)
 const RECON_DET = 128;            // detector samples across the FOV
-const MAX_SLICES = 60;            // cap slices per scan (memory + compute time)
-const RECON_FOV_MM = SCOUT_FOV_MM;             // reconstruction field of view (mm) = the scan FOV
-const RECON_R = (RECON_FOV_MM / MM_PER_UNIT) / 2;   // FOV radius in world units (cm)
-const RECON_DS = (RECON_FOV_MM / MM_PER_UNIT) / RECON_DET;  // detector sample spacing (cm)
+const MAX_SLICES = 1024;          // safety cap only (the slice count follows the planned image count)
 const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slice/rot noise model)
+
+// Reconstruction display field of view for a group = the scan box diameter (the box
+// represents a cylinder). The mediolateral width on the AP scout is the cylinder
+// diameter — the direction in which neighbouring fingers are separated — so a box
+// drawn around a single finger reconstructs a small FOV that excludes the others.
+function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * SCOUT_FOV_MM); }
+// Per-reconstruction geometry: world-unit FOV radius, detector spacing, and centre.
+function reconGeo(fovMM, cx, cy) { const R = (fovMM / MM_PER_UNIT) / 2; return { fovMM, R, ds: (R * 2) / RECON_DET, cx, cy }; }
 
 let scanToken = 0;                // invalidates an in-flight scan on abort / mode switch
 function cancelScan() { scanToken++; }
@@ -1183,9 +1190,9 @@ function gaussian() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-// Discrete Ram-Lak kernel, indexed n = -(N-1)..(N-1) at spacing RECON_DS.
-function buildRamLak() {
-  const N = RECON_DET, ds = RECON_DS, h = new Float32Array(2 * N - 1);
+// Discrete Ram-Lak kernel, indexed n = -(N-1)..(N-1) at detector spacing ds.
+function buildRamLak(ds) {
+  const N = RECON_DET, h = new Float32Array(2 * N - 1);
   for (let n = -(N - 1); n <= N - 1; n++) {
     let v;
     if (n === 0) v = 1 / (4 * ds * ds);
@@ -1197,8 +1204,8 @@ function buildRamLak() {
 }
 
 // Forward-project one slice at world plane z = z0 → sinogram [angle][detector].
-function projectSlice(phantom, z0, mu, photons0) {
-  const cx = 0, cy = ISO_Y, R = RECON_R, ds = RECON_DS, halfDet = (RECON_DET - 1) / 2;
+function projectSlice(phantom, z0, mu, photons0, geo) {
+  const cx = geo.cx, cy = geo.cy, R = geo.R, ds = geo.ds, halfDet = (RECON_DET - 1) / 2;
   const sino = new Float32Array(RECON_ANGLES * RECON_DET);
   for (let a = 0; a < RECON_ANGLES; a++) {
     const th = a * Math.PI / RECON_ANGLES, ct = Math.cos(th), st = Math.sin(th);
@@ -1222,8 +1229,8 @@ function projectSlice(phantom, z0, mu, photons0) {
 }
 
 // Convolve each projection view with the ramp filter.
-function filterSino(sino, h) {
-  const N = RECON_DET, ds = RECON_DS, out = new Float32Array(RECON_ANGLES * RECON_DET);
+function filterSino(sino, h, ds) {
+  const N = RECON_DET, out = new Float32Array(RECON_ANGLES * RECON_DET);
   for (let a = 0; a < RECON_ANGLES; a++) {
     const base = a * N;
     for (let k = 0; k < N; k++) {
@@ -1236,8 +1243,8 @@ function filterSino(sino, h) {
 }
 
 // Back-project the filtered sinogram into the reconstruction grid (μ map, cm^-1).
-function backproject(q) {
-  const N = RECON_N, R = RECON_R, ds = RECON_DS, halfDet = (RECON_DET - 1) / 2;
+function backproject(q, geo) {
+  const N = RECON_N, R = geo.R, ds = geo.ds, halfDet = (RECON_DET - 1) / 2;
   const img = new Float32Array(N * N);
   const px2world = (i) => (-R + (i + 0.5) * (2 * R / N));   // pixel centre → world offset from FOV centre
   const R2 = R * R;
@@ -1266,23 +1273,25 @@ async function reconstructSlices(g, alive, onProgress) {
   const mu = { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
   const muW = mu.soft;                           // reference "water" (soft tissue) for HU
   const phantom = ctx.buildPhantom();            // built at the committed table position (patient.z = isoZ)
-  const h = buildRamLak();
-  const startMM = g.box.top * ctx.S.ct.scanLen, endMM = g.box.bot * ctx.S.ct.scanLen;
-  const step = Math.max(g.interval, 0.1);
+  const fovMM = groupDFOV(g);                     // DFOV = scan box diameter (box centre reposed to isocentre)
+  const geo = reconGeo(fovMM, 0, ISO_Y);
+  const h = buildRamLak(geo.ds);
+  const startMM = g.box.top * ctx.S.ct.scanLen, endMM = g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
+  const count = Math.max(1, Math.min(MAX_SLICES, groupImages(g)));   // one slice per planned image
   const positions = [];
-  for (let d = startMM; d <= endMM + 1e-6 && positions.length < MAX_SLICES; d += step) positions.push(d);
+  for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
   const photons0 = PHOTON_BASE * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5);
   const slices = [];
   for (let si = 0; si < positions.length; si++) {
     if (!alive()) return null;
     const z0 = positions[si] / MM_PER_UNIT;      // world plane for this slice (see scoutProjection geometry)
-    const sino = projectSlice(phantom, z0, mu, photons0);
-    const q = filterSino(sino, h);
-    slices.push({ d: positions[si], mu: backproject(q) });
+    const sino = projectSlice(phantom, z0, mu, photons0, geo);
+    const q = filterSino(sino, h, geo.ds);
+    slices.push({ d: positions[si], mu: backproject(q, geo) });
     if (onProgress) onProgress((si + 1) / positions.length);
     await sleep(0);                              // yield to keep the UI alive
   }
-  return { slices, gridN: RECON_N, fovMM: RECON_FOV_MM, muWater: muW, effE };
+  return { slices, gridN: RECON_N, fovMM, muWater: muW, effE };
 }
 
 // ---- image storage ----
@@ -1368,7 +1377,7 @@ function updateViewerInfo(scan, sl) {
   el.innerHTML =
     '<span>SLICE ' + (v.slice + 1) + ' / ' + scan.slices.length + '</span>' +
     '<span>' + fmtTablePos(sl.d) + ' mm</span>' +
-    '<span>' + scan.params.sliceThk + ' mm · ' + scan.params.kv + ' kV</span>' +
+    '<span>DFOV ' + Math.round(scan.fovMM) + ' mm · ' + scan.params.sliceThk + ' mm · ' + scan.params.kv + ' kV</span>' +
     '<span>WL ' + Math.round(v.wl) + ' / WW ' + Math.round(v.ww) + ' HU</span>';
 }
 
@@ -1398,6 +1407,31 @@ export function ctRenderViewer() {
 }
 // Light redraw (slice/window changed but not the scan list) — same as full render here.
 function refreshViewer() { ctRenderViewer(); }
+
+// Reconstruction planning / multiplanar viewer. Full planner (per-plane recons with
+// localizers, algorithms, MAR) arrives in a later phase; for now it lists the stored
+// scans and their default transverse reconstruction so the tab is functional.
+export function ctRenderRecons() {
+  if (!ctx) return;
+  const body = ctx.$('ctReconsBody'), sel = ctx.$('ctReconScanSel'); if (!body) return;
+  const S = ctx.S, scans = S.ct.storage;
+  if (sel) {
+    const cur = currentScan();
+    sel.innerHTML = scans.map(s => '<option value="' + s.id + '"' + (cur && s.id === cur.id ? ' selected' : '') + '>' + s.label + '</option>').join('');
+    sel.disabled = !scans.length;
+  }
+  if (!scans.length) { body.innerHTML = '<div class="ctstore-empty">No scans stored — run a scan first, then plan reconstructions here.</div>'; return; }
+  const scan = currentScan();
+  body.innerHTML =
+    '<div class="rc-scan"><b>' + scan.label + '</b> · ' + scan.slices.length + ' images · ' +
+    scan.params.sliceThk + ' mm acq · DFOV ' + Math.round(scan.fovMM) + ' mm</div>' +
+    '<div class="rc-list">' +
+    '<div class="rc-row default"><span class="rc-plane">AXIAL</span>' +
+    '<span class="rc-meta">Transverse · ' + scan.params.sliceThk + ' mm / ' + fmtNum(scan.params.interval) + ' mm · DFOV ' + Math.round(scan.fovMM) + ' mm</span>' +
+    '<span class="rc-tag">default</span></div>' +
+    '</div>' +
+    '<div class="rc-note">Multiplanar reconstruction planning (coronal / sagittal, localizers, processing algorithms, metal-artifact reduction) is being built in the next phase.</div>';
+}
 
 // ---- busy state (grey controls during a scan) ----
 function setBusy(on) {
@@ -1457,5 +1491,8 @@ function wireSliceViewer() {
   });
   ctx.$('ctScanSel')?.addEventListener('change', (e) => {
     ctx.S.ct.viewer.scanId = +e.target.value; ctx.S.ct.viewer.slice = 0; renderStorage(); refreshViewer();
+  });
+  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => {
+    ctx.S.ct.viewer.scanId = +e.target.value; ctRenderRecons();
   });
 }

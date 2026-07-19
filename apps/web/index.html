@@ -60,6 +60,14 @@
         </div>
       </div>
     </div>
+    <!-- CT reconstruction planning + multiplanar viewer (Phase 4) -->
+    <div class="ctrecons" id="ctRecons">
+      <div class="slhdr">
+        <div class="sltitle">RECONSTRUCTIONS</div>
+        <select id="ctReconScanSel" class="slsel" title="Scan group"></select>
+      </div>
+      <div class="ctrecons-body" id="ctReconsBody"></div>
+    </div>
     <div class="ctpop" id="ctPop"><div class="ctpop-inner" id="ctPopInner"></div></div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
     <div class="bayctl" id="bayCtl">
@@ -71,8 +79,9 @@
           <div class="cl">View</div>
           <div class="segmini" id="contentSeg">
             <button data-c="3d" class="on">3D</button>
-            <button data-c="image">Image</button>
+            <button data-c="image" id="contentImageBtn">Image</button>
             <button data-c="slices" class="ct-only">Slices</button>
+            <button data-c="recons" class="ct-only">Recons</button>
           </div>
         </div>
         <div>

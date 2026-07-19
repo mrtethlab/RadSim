@@ -10,7 +10,7 @@ import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
 import { loadModelFile } from './model/loader.js';
 import { ComputeClient } from './compute/client.js';
-import { initCT, ctSyncScene, ctRenderViewer } from './ct.js';
+import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -478,18 +478,21 @@ function setContent(c){
   const seg=$('contentSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.c===c));
   const img=(c==='image');
   const slices=(c==='slices');   // CT cross-sectional viewer (reconstructed transverse slices)
+  const recons=(c==='recons');   // CT reconstruction planning / multiplanar viewer
   // switching the bay to 3D in CT defaults to Orbit (whole-scene view), not a fixed PoV
-  if(!img && !slices && S.mode==='ct') setCTPov('orbit');
-  // In CT with scouts acquired, the Image view IS the scout window (AP+LAT topograms
-  // for scan planning); it replaces the radiograph/bignote.
+  if(!img && !slices && !recons && S.mode==='ct') setCTPov('orbit');
+  // In CT with scouts acquired, the Image (Scout) view IS the scout window (AP+LAT
+  // topograms for scan planning); it replaces the radiograph/bignote.
   const scouts=(S.mode==='ct' && S.ct.scoutsReady && img);
   const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
   const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
+  const rcv=$('ctRecons'); if(rcv) rcv.classList.toggle('show', recons);
   $('bigFilm').style.display=(img && S.hasImage && !scouts)?'block':'none';
   $('bignote').style.display=(img && !S.hasImage && !scouts)?'flex':'none';
-  $('view').style.visibility=(img||slices)?'hidden':'visible';
+  $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
   if(img && S.hasImage && !scouts) renderRadiograph($('bigFilm'));
   if(slices) ctRenderViewer();
+  if(recons) ctRenderRecons();
 }
 /* Enable/disable the bay "3D" view button (greyed out while the scout window owns
    the bay for scan planning). */
