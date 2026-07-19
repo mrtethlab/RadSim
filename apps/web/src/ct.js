@@ -632,18 +632,17 @@ function drawScout(cv, data, rowLimit) {
 // long scans read portrait.
 function layoutScouts() {
   const box = ctx.$('ctScouts');
+  const row = box && box.querySelector('.scoutrow');
   const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
-  if (!box || !ap || !lat) return;
+  if (!box || !row || !ap || !lat) return;
   const len = ctx.S.ct.scanLen;                        // mm along the scan axis (both)
   const wAP = SCOUT_WIDTH_MM.AP, wLAT = SCOUT_WIDTH_MM.LAT;
-  const cs = getComputedStyle(box);
-  const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
-  const padY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+  const cs = getComputedStyle(row);
   const colGap = parseFloat(cs.columnGap || cs.gap) || 16;
   const hdr = box.querySelector('.scouthdr');
   const hdrH = (hdr ? hdr.offsetHeight : 18) + 6;      // header + column inner gap
-  const availW = Math.max(40, box.clientWidth - padX - colGap);
-  const availH = Math.max(40, box.clientHeight - padY - hdrH);
+  const availW = Math.max(40, row.clientWidth - colGap);
+  const availH = Math.max(40, row.clientHeight - hdrH); // the scoutrow's own height (table sits below)
   const scale = Math.min(availW / (wAP + wLAT), availH / len);   // shared px per mm
   const set = (cv, wmm) => { cv.style.width = (wmm * scale) + 'px'; cv.style.height = (len * scale) + 'px'; };
   set(ap, wAP); set(lat, wLAT);
@@ -656,51 +655,102 @@ let lastAP = null, lastLAT = null;
 let scoutToken = 0;
 function cancelScout() { scoutToken++; }
 
-// ============================ Phase 3: interactive scan box ============================
-// A single scan box is drawn over both scouts. Its vertical (scan-axis) extent is
-// SHARED between AP and LAT so the planned volume is a cylinder; the horizontal
-// extent is independent per view (AP = mediolateral width, LAT = anteroposterior
-// depth). Boxes are DOM overlays in normalized (0..1) scout coords.
+// ==================== Phase 4: scan groups (up to 4 planned scans) ====================
+// Each scan group has its own coloured box on both scouts (per-group AP↔LAT cylinder
+// lock) and its own parameters, shown as a colour-coded row in the scan-group table.
 const BOX_MIN = 0.05;                 // smallest box extent (normalized)
 const MOVE_THRESH = 0.5;              // mm: below this, no table move is needed
 const TABLE_SPEED = 45;              // mm/s couch reposition speed
+const N_GROUPS = 4;
+const PITCH_STATIONS = [0.5, 0.625, 0.75, 0.875, 1.0, 1.125, 1.25, 1.375, 1.5];
+const ROT_STATIONS = [0.25, 0.4, 0.5, 0.75, 1.0, 1.5, 2.0];   // s / rotation
+const DET_ROWS = 16;                  // detector rows (for the exposure-time model)
+
+const grp = (i) => ctx.S.ct.groups[i];
+const activeGrp = () => grp(ctx.S.ct.activeGroup);
+const clampV = (v, a, b) => Math.max(a, Math.min(b, v));
+function fmtNum(x) { return (Math.round(x * 1000) / 1000).toString(); }
+function sanitizeNum(s, fallback) { const n = parseFloat(String(s).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : fallback; }
+
+// calculated fields
+function groupScanLenMM(g) { return Math.abs(g.box.bot - g.box.top) * ctx.S.ct.scanLen; }
+function groupImages(g) { return Math.max(1, Math.round(groupScanLenMM(g) / Math.max(g.interval, 0.1))); }
+function groupExpTime(g) { const feed = Math.max(g.pitch * g.sliceThk * DET_ROWS, 1e-3); return (groupScanLenMM(g) / feed) * g.rotSpeed; }
+
+function defaultGroups() {
+  return [
+    { on: true,  vis: true, box: { top: 0.10, bot: 0.90, apL: 0.28, apR: 0.72, latL: 0.28, latR: 0.72 }, kv: 120, ma: 295, sliceThk: 5,    pitch: 1.0, rotSpeed: 0.5, interval: 5,    tilt: 0, delay: 0 },
+    { on: false, vis: true, box: { top: 0.14, bot: 0.50, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 2.5,  pitch: 1.0, rotSpeed: 0.5, interval: 2.5,  tilt: 0, delay: 0 },
+    { on: false, vis: true, box: { top: 0.55, bot: 0.86, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 1.25, pitch: 1.0, rotSpeed: 0.5, interval: 1.25, tilt: 0, delay: 0 },
+    { on: false, vis: true, box: { top: 0.30, bot: 0.70, apL: 0.40, apR: 0.60, latL: 0.40, latR: 0.60 }, kv: 120, ma: 295, sliceThk: 5,    pitch: 1.0, rotSpeed: 0.5, interval: 5,    tilt: 0, delay: 0 },
+  ];
+}
 
 function initScanBoxes() {
-  wireScanBox('boxAP', 'ap');
-  wireScanBox('boxLAT', 'lat');
+  buildGroupBoxes('wrapAP', 'ap');
+  buildGroupBoxes('wrapLAT', 'lat');
+  wireScanGroupTable();
 }
-// The boxes only show in the planning phase.
+// one DOM box per group per scout (shown/positioned per group in renderScanBoxes)
+function buildGroupBoxes(wrapId, view) {
+  const wrap = ctx.$(wrapId); if (!wrap) return;
+  for (let gi = 0; gi < N_GROUPS; gi++) {
+    const box = document.createElement('div');
+    box.className = 'scanbox gc' + gi; box.dataset.group = gi; box.dataset.view = view;
+    box.innerHTML = '<div class="slices"></div><div class="glbl"></div>' +
+      '<div class="xh xh-h"></div><div class="xh xh-v"></div>' +
+      '<div class="eh eh-t" data-edge="t"></div><div class="eh eh-b" data-edge="b"></div>' +
+      '<div class="eh eh-l" data-edge="l"></div><div class="eh eh-r" data-edge="r"></div>';
+    wrap.appendChild(box);
+    wireScanBox(box, gi, view);
+  }
+}
+// The boxes + table only show in the planning phase.
 function showScanBoxes(on) { ctx.$('ctScouts')?.classList.toggle('planning', on); }
-// Centred default box + cleared committed table move.
+// Reset all groups to defaults + clear the committed table move.
 function resetScanBox() {
   const c = ctx.S.ct;
-  c.box = { top: 0.10, bot: 0.90, apL: 0.30, apR: 0.70, latL: 0.30, latR: 0.70 };
+  c.groups = defaultGroups(); c.activeGroup = 0;
   c.plan.targetX = c.plan.targetY = c.plan.committedX = c.plan.committedY = 0;
 }
-function placeBox(id, l, t, r, b) {
-  const el = ctx.$(id); if (!el) return;
-  el.style.left = (l * 100) + '%'; el.style.top = (t * 100) + '%';
-  el.style.width = ((r - l) * 100) + '%'; el.style.height = ((b - t) * 100) + '%';
-}
+// Position + style every group box on both scouts, with per-slice dotted lines.
 function renderScanBoxes() {
-  const b = ctx.S.ct.box;
-  placeBox('boxAP', b.apL, b.top, b.apR, b.bot);
-  placeBox('boxLAT', b.latL, b.top, b.latR, b.bot);
+  const c = ctx.S.ct;
+  document.querySelectorAll('#ctScouts .scanbox').forEach((el) => {
+    const gi = +el.dataset.group, view = el.dataset.view, g = grp(gi);
+    const shown = g.on && g.vis;
+    el.classList.toggle('shown', shown);
+    el.classList.toggle('active', gi === c.activeGroup);
+    if (!shown) return;
+    const L = view === 'ap' ? g.box.apL : g.box.latL, R = view === 'ap' ? g.box.apR : g.box.latR;
+    el.style.left = (L * 100) + '%'; el.style.top = (g.box.top * 100) + '%';
+    el.style.width = ((R - L) * 100) + '%'; el.style.height = ((g.box.bot - g.box.top) * 100) + '%';
+    // per-slice dotted lines (spacing = interval), thickness in the label
+    const sl = el.querySelector('.slices'), lenMM = groupScanLenMM(g);
+    const period = lenMM > 0 ? (g.interval / lenMM) * 100 : 100;
+    if (period >= 0.7 && g.interval > 0) {
+      sl.style.backgroundImage = 'repeating-linear-gradient(to bottom, var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
+      sl.style.opacity = '0.55';
+    } else { sl.style.backgroundImage = 'none'; }
+    el.querySelector('.glbl').textContent = 'G' + (gi + 1) + ' · ' + fmtNum(g.sliceThk) + ' mm';
+  });
 }
 
-// Drag the box body (move) or an edge handle (resize). Vertical (top/bot) is shared
-// between the two boxes (cylinder lock); boxes stay axis-aligned rectangles.
-function wireScanBox(id, which) {
-  const box = ctx.$(id); if (!box) return;
+// Drag a group's box (move) or an edge handle (resize); selecting it makes the group
+// active (drives the reposition plan). Per-group top/bot are AP↔LAT locked (cylinder);
+// boxes stay axis-aligned rectangles.
+function wireScanBox(box, gi, view) {
   box.addEventListener('pointerdown', (e) => {
-    if (ctx.S.ct.phase !== 'planning') return;
+    if (ctx.S.ct.phase !== 'planning' || !grp(gi).on || !grp(gi).vis) return;
+    ctx.S.ct.activeGroup = gi;
     const rect = box.parentElement.getBoundingClientRect();
-    const edge = e.target.classList.contains('eh') ? e.target.dataset.edge : null;   // t|b|l|r or null (move)
-    const s = { x: e.clientX, y: e.clientY, box: { ...ctx.S.ct.box } };
+    const edge = e.target.classList.contains('eh') ? e.target.dataset.edge : null;
+    const s = { x: e.clientX, y: e.clientY, box: { ...grp(gi).box } };
     try { box.setPointerCapture(e.pointerId); } catch (_) {}
     e.preventDefault(); e.stopPropagation();
+    renderScanBoxes(); updatePlan();
     const onMove = (ev) => {
-      applyBoxDrag(which, edge, s.box, (ev.clientX - s.x) / rect.width, (ev.clientY - s.y) / rect.height);
+      applyBoxDrag(gi, view, edge, s.box, (ev.clientX - s.x) / rect.width, (ev.clientY - s.y) / rect.height);
       renderScanBoxes(); updatePlan();
     };
     const onUp = () => {
@@ -712,29 +762,114 @@ function wireScanBox(id, which) {
     box.addEventListener('pointerup', onUp); box.addEventListener('pointercancel', onUp);
   });
 }
-function applyBoxDrag(which, edge, s0, du, dv) {
-  const b = ctx.S.ct.box, clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  const L = which === 'ap' ? 'apL' : 'latL', R = which === 'ap' ? 'apR' : 'latR';
-  if (!edge) {                                          // move the whole box
-    const w = s0[R] - s0[L], nl = clamp(s0[L] + du, 0, 1 - w); b[L] = nl; b[R] = nl + w;
-    const h = s0.bot - s0.top, nt = clamp(s0.top + dv, 0, 1 - h); b.top = nt; b.bot = nt + h;   // vertical is shared
-  } else if (edge === 't') { b.top = clamp(s0.top + dv, 0, s0.bot - BOX_MIN); }
-  else if (edge === 'b') { b.bot = clamp(s0.bot + dv, s0.top + BOX_MIN, 1); }
-  else if (edge === 'l') { b[L] = clamp(s0[L] + du, 0, s0[R] - BOX_MIN); }
-  else if (edge === 'r') { b[R] = clamp(s0[R] + du, s0[L] + BOX_MIN, 1); }
+function applyBoxDrag(gi, view, edge, s0, du, dv) {
+  const b = grp(gi).box, L = view === 'ap' ? 'apL' : 'latL', R = view === 'ap' ? 'apR' : 'latR';
+  if (!edge) {
+    const w = s0[R] - s0[L], nl = clampV(s0[L] + du, 0, 1 - w); b[L] = nl; b[R] = nl + w;
+    const h = s0.bot - s0.top, nt = clampV(s0.top + dv, 0, 1 - h); b.top = nt; b.bot = nt + h;
+  } else if (edge === 't') b.top = clampV(s0.top + dv, 0, s0.bot - BOX_MIN);
+  else if (edge === 'b') b.bot = clampV(s0.bot + dv, s0.top + BOX_MIN, 1);
+  else if (edge === 'l') b[L] = clampV(s0[L] + du, 0, s0[R] - BOX_MIN);
+  else if (edge === 'r') b[R] = clampV(s0[R] + du, s0[L] + BOX_MIN, 1);
 }
 
-// Scan start/end come from the AP box top/bottom; the required table moves come from
-// the box centres (AP centre -> lateral / mediolateral; LAT centre -> height /
-// anteroposterior). Then refresh which console button flashes.
+// Table-window start/end + reposition plan come from the ACTIVE group's box.
 function updatePlan() {
-  const c = ctx.S.ct, b = c.box, len = c.scanLen;
+  const c = ctx.S.ct, g = activeGrp(), len = c.scanLen;
   const set = (id, v) => { const el = ctx.$(id); if (el) el.textContent = v; };
-  set('ctScanStartV', fmtTablePos(b.top * len) + ' mm');        // top of AP box = start
-  set('ctScanEndV', fmtTablePos(b.bot * len) + ' mm');          // bottom of AP box = end
-  c.plan.targetX = ((b.apL + b.apR) / 2 - 0.5) * SCOUT_FOV_MM;   // mediolateral offset (mm)
-  c.plan.targetY = ((b.latL + b.latR) / 2 - 0.5) * SCOUT_FOV_MM; // anteroposterior offset (mm)
+  set('ctScanStartV', fmtTablePos(g.box.top * len) + ' mm');
+  set('ctScanEndV', fmtTablePos(g.box.bot * len) + ' mm');
+  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * SCOUT_FOV_MM;   // mediolateral offset (mm)
+  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * SCOUT_FOV_MM; // anteroposterior offset (mm)
   updatePlanReady();
+  renderScanGroups();
+}
+
+// ---- scan-group table ----
+function wireScanGroupTable() {
+  const cont = ctx.$('ctScanGroups'); if (!cont) return;
+  cont.addEventListener('click', (e) => {
+    if (e.target.closest('.sg-add')) { addGroup(); return; }
+    const tog = e.target.closest('.sg-tog');
+    if (tog) { const gi = +tog.closest('tr').dataset.group; grp(gi).vis = !grp(gi).vis; renderScanBoxes(); renderScanGroups(); return; }
+    const rem = e.target.closest('.sg-remove');
+    if (rem) { const gi = +rem.closest('tr').dataset.group; if (gi > 0) { grp(gi).on = false; if (ctx.S.ct.activeGroup === gi) ctx.S.ct.activeGroup = 0; renderScanBoxes(); updatePlan(); } return; }
+    const row = e.target.closest('tr[data-group]');
+    if (row) { ctx.S.ct.activeGroup = +row.dataset.group; renderScanBoxes(); updatePlan(); }
+  });
+  cont.addEventListener('dblclick', (e) => {
+    const el = e.target.closest('[data-act]'); if (!el) return;
+    const gi = +el.closest('tr').dataset.group, g = grp(gi), act = el.dataset.act, len = ctx.S.ct.scanLen;
+    const done = () => { ctx.S.ct.activeGroup = gi; renderScanBoxes(); updatePlan(); };
+    const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
+    const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
+    if (act === 'start') type('Start location (mm)', Math.round(g.box.top * len), (v) => { g.box.top = clampV(v / len, 0, g.box.bot - BOX_MIN); });
+    else if (act === 'end') type('End location (mm)', Math.round(g.box.bot * len), (v) => { g.box.bot = clampV(v / len, g.box.top + BOX_MIN, 1); });
+    else if (act === 'interval') type('Slice interval (mm)', g.interval, (v) => { g.interval = clampV(v, 0.1, 50); });
+    else if (act === 'tilt') type('Gantry tilt (°)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
+    else if (act === 'kv') type('kV', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
+    else if (act === 'ma') type('mA', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
+    else if (act === 'delay') type('Scan delay (s)', g.delay, (v) => { g.delay = clampV(Math.round(v), 0, 600); });
+    else if (act === 'sliceThk') station('Slice thickness (mm)', SLICE_MM, g.sliceThk, (x) => fmtNum(x), (v) => { g.sliceThk = v; });
+    else if (act === 'pitch') station('Pitch', PITCH_STATIONS, g.pitch, (x) => fmtNum(x), (v) => { g.pitch = v; });
+    else if (act === 'rot') station('Rotation time (s / rot)', ROT_STATIONS, g.rotSpeed, (x) => x.toFixed(2) + 's', (v) => { g.rotSpeed = v; });
+  });
+}
+function addGroup() {
+  const gs = ctx.S.ct.groups;
+  for (let i = 1; i < N_GROUPS; i++) if (!gs[i].on) { gs[i].on = true; ctx.S.ct.activeGroup = i; break; }
+  renderScanBoxes(); updatePlan();
+}
+function renderScanGroups() {
+  const cont = ctx.$('ctScanGroups'); if (!cont) return;
+  const c = ctx.S.ct;
+  const cell = (cls, act, txt) => '<td><span class="' + cls + '"' + (act ? ' data-act="' + act + '"' : '') + '>' + txt + '</span></td>';
+  let rows = '';
+  for (let gi = 0; gi < N_GROUPS; gi++) {
+    const g = grp(gi); if (!g.on) continue;
+    rows += '<tr class="sg-row gc' + gi + (gi === c.activeGroup ? ' active' : '') + '" data-group="' + gi + '">'
+      + '<td><span class="sg-num">' + (gi + 1) + '</span>' + (gi > 0 ? ' <span class="sg-remove" title="Remove scan group">×</span>' : '') + '</td>'
+      + '<td><span class="sg-tog' + (g.vis ? ' on' : '') + '" title="Toggle box on scout">◉</span></td>'
+      + cell('sg-edit', 'start', fmtTablePos(g.box.top * c.scanLen))
+      + cell('sg-edit', 'end', fmtTablePos(g.box.bot * c.scanLen))
+      + cell('sg-calc', '', groupImages(g))
+      + cell('sg-station', 'sliceThk', fmtNum(g.sliceThk))
+      + cell('sg-station', 'pitch', fmtNum(g.pitch))
+      + cell('sg-station', 'rot', g.rotSpeed.toFixed(2))
+      + cell('sg-edit', 'interval', fmtNum(g.interval))
+      + cell('sg-edit', 'tilt', g.tilt + '°')
+      + cell('sg-edit', 'kv', g.kv)
+      + cell('sg-edit', 'ma', g.ma)
+      + cell('sg-calc', '', groupExpTime(g).toFixed(1))
+      + cell('sg-edit', 'delay', g.delay + 's')
+      + '</tr>';
+  }
+  const anyOff = c.groups.some((g) => !g.on);
+  cont.innerHTML = '<table class="sg-table"><thead><tr>'
+    + '<th>#</th><th>Box</th><th>Start</th><th>End</th><th>Img</th><th>Thk</th><th>Pitch</th><th>Rot</th><th>Intvl</th><th>Tilt</th><th>kV</th><th>mA</th><th>Exp&nbsp;s</th><th>Delay</th>'
+    + '</tr></thead><tbody>' + rows + '</tbody></table>'
+    + (anyOff ? '<button class="sg-add">+ Add scan group</button>' : '');
+}
+
+// Field-edit popup: typed value (Enter to confirm, Esc/outside to cancel).
+function openTypedPopup(label, val, onOk) {
+  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
+  inner.innerHTML = '<div class="pl">' + label + '</div><input type="text">';
+  const inp = inner.querySelector('input'); inp.value = val;
+  const close = () => { pop.classList.remove('show'); pop.onmousedown = null; };
+  pop.classList.add('show'); inp.focus(); inp.select();
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { onOk(inp.value); close(); } else if (e.key === 'Escape') close(); });
+  pop.onmousedown = (e) => { if (e.target === pop) close(); };
+}
+// Station picker popup: pick one of several preset values.
+function openStationPopup(label, list, cur, fmt, onSel) {
+  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
+  inner.innerHTML = '<div class="pl">' + label + '</div><div class="ctpop-stations">'
+    + list.map((s) => '<button data-v="' + s + '"' + (s === cur ? ' class="on"' : '') + '>' + fmt(s) + '</button>').join('') + '</div>';
+  const close = () => { pop.classList.remove('show'); pop.onmousedown = null; };
+  pop.classList.add('show');
+  inner.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { onSel(parseFloat(b.dataset.v)); close(); }));
+  pop.onmousedown = (e) => { if (e.target === pop) close(); };
 }
 // Flash TABLE (orange) while the couch still needs to move; else flash START (green).
 // While a move is pending the DR monitor mirrors the axis' PoV — AP-PoV for the

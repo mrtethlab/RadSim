@@ -19,29 +19,19 @@
       <button data-mode="ct">CT</button>
     </div>
     <div class="ctscouts" id="ctScouts">
-      <div class="scoutcol">
-        <div class="scouthdr">AP SCOUT</div>
-        <div class="scoutwrap">
-          <canvas id="scoutAP"></canvas>
-          <div class="scanbox" id="boxAP">
-            <div class="xh xh-h"></div><div class="xh xh-v"></div>
-            <div class="eh eh-t" data-edge="t"></div><div class="eh eh-b" data-edge="b"></div>
-            <div class="eh eh-l" data-edge="l"></div><div class="eh eh-r" data-edge="r"></div>
-          </div>
+      <div class="scoutrow">
+        <div class="scoutcol">
+          <div class="scouthdr">AP SCOUT</div>
+          <div class="scoutwrap" id="wrapAP"><canvas id="scoutAP"></canvas></div>
+        </div>
+        <div class="scoutcol">
+          <div class="scouthdr">LATERAL SCOUT</div>
+          <div class="scoutwrap" id="wrapLAT"><canvas id="scoutLAT"></canvas></div>
         </div>
       </div>
-      <div class="scoutcol">
-        <div class="scouthdr">LATERAL SCOUT</div>
-        <div class="scoutwrap">
-          <canvas id="scoutLAT"></canvas>
-          <div class="scanbox" id="boxLAT">
-            <div class="xh xh-h"></div><div class="xh xh-v"></div>
-            <div class="eh eh-t" data-edge="t"></div><div class="eh eh-b" data-edge="b"></div>
-            <div class="eh eh-l" data-edge="l"></div><div class="eh eh-r" data-edge="r"></div>
-          </div>
-        </div>
-      </div>
+      <div class="scangroups" id="ctScanGroups"></div>
     </div>
+    <div class="ctpop" id="ctPop"><div class="ctpop-inner" id="ctPopInner"></div></div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
     <div class="bayctl" id="bayCtl">
       <button class="baymenu-btn" id="bayMenuBtn" type="button" aria-expanded="false" aria-controls="bayMenu">
@@ -271,7 +261,7 @@
     <div class="hdr"><div class="t"><b>GENERATOR</b> / A1</div><div class="u" id="clock">STANDBY</div></div>
     <div class="pad">
 
-      <div class="readout">
+      <div class="readout xray-only">
         <div class="ro"><div class="cap">kVp</div><div class="val" id="kvV">55</div></div>
         <div class="ro"><div class="cap">mA</div><div class="val" id="maV">100</div></div>
         <div class="ro"><div class="cap">mAs</div><div class="val" id="masV">2.0</div></div>
@@ -280,7 +270,7 @@
         <div class="ro"><div class="cap">FOCAL SPOT</div><div class="val" id="fsV" style="font-size:20px">0.6<small>mm</small></div></div>
       </div>
 
-      <div class="grp">
+      <div class="grp xray-only">
         <div class="lab">Technique</div>
         <div class="bod">
           <div class="row"><div class="rl">kVp <small>kilovoltage</small></div>
