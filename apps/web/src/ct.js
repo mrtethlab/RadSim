@@ -31,8 +31,9 @@ function ctPatientY() { return ISO_Y + ctx.S.ct.tableY / MM_PER_UNIT; }
 const scanLenU = () => ctx.S.ct.scanLen / MM_PER_UNIT;             // scan length in world units
 // Head-first is the only orientation: the couch always feeds the patient INTO the
 // gantry (world -z), advancing the table position in the inferior (+I) direction.
-// table position -> "I###.#" (inferior), "S###.#" (superior), or "0.0" (all mm)
-function fmtTablePos(mm) { return mm > 0.05 ? 'I' + mm.toFixed(1) : mm < -0.05 ? 'S' + (-mm).toFixed(1) : '0.0'; }
+// table position -> "I###.0" (inferior), "S###.0" (superior), or "0.0" (mm, rounded
+// to the nearest mm so only a .0 decimal is ever shown)
+function fmtTablePos(mm) { const r = Math.round(mm); return r > 0 ? 'I' + r.toFixed(1) : r < 0 ? 'S' + (-r).toFixed(1) : '0.0'; }
 
 // Button glyphs, drawn exactly to spec.
 const SYM = {
@@ -340,7 +341,8 @@ function updateCTReadouts() {
     set('ctScanStartV', fmtTablePos(0) + ' mm');
     set('ctScanEndV', fmtTablePos(S.ct.scanLen) + ' mm');
   }
-  set('ctTableHV', (S.ct.tableY > 0 ? '+' : '') + S.ct.tableY + ' mm' + (S.ct.tableY === 0 ? ' · centred' : ''));
+  const th = Math.round(S.ct.tableY);   // nearest mm, no decimals
+  set('ctTableHV', (th > 0 ? '+' : '') + th + ' mm' + (th === 0 ? ' · centred' : ''));
 }
 
 function setHint(t) { const el = ctx.$('ctHint'); if (el) el.textContent = t; }
@@ -380,12 +382,12 @@ function setPhase(p) {
   S.ct.phase = p;
   // planning decides the flashing button from the plan; other phases flash nothing
   if (p === 'planning') { updatePlanReady(); }
-  else { $('ctStart')?.classList.remove('flash'); $('ctTable')?.classList.remove('flash'); showTableReminder(false); }
+  else { $('ctStart')?.classList.remove('flash'); $('ctTable')?.classList.remove('flash'); S.ct.moveBlit = null; showTableReminder(false); }
   const labels = { idle: 'CT · STANDBY', scout: 'CT · SCOUT', planning: 'CT · PLAN SCAN',
                    moving: 'CT · TABLE MOVE', scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
   const wt = $('ctWarnT'); if (wt) wt.textContent = labels[p] || 'CT';
-  // while the scout window owns the bay for planning, the 3D view is greyed out
-  ctx.setBay3DEnabled(!(p === 'scout' || p === 'planning'));
+  // 3D <-> Image can be swapped freely through the whole scout/plan workflow
+  ctx.setBay3DEnabled(true);
 }
 
 function setConsoleEnabled(on) {
@@ -720,18 +722,28 @@ function updatePlan() {
   updatePlanReady();
 }
 // Flash TABLE (orange) while the couch still needs to move; else flash START (green).
+// While a move is pending the DR monitor mirrors the axis' PoV — AP-PoV for the
+// mediolateral move, Lat-PoV for the anteroposterior (height) move.
 function updatePlanReady() {
   const c = ctx.S.ct;
-  const needMove = Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH
-                || Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH;
+  const needX = Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH;
+  const needY = Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH;
+  const needMove = needX || needY;
   ctx.$('ctStart')?.classList.toggle('flash', !needMove);
   ctx.$('ctTable')?.classList.toggle('flash', needMove);
-  showTableReminder(needMove);
+  c.moveBlit = needMove ? (needX ? 'ap' : 'lat') : null;   // which PoV to mirror into the monitor
+  const noexp = ctx.$('noexp');
+  if (needMove) { if (noexp) noexp.style.display = 'none'; }   // the PoV blit fills the monitor
+  else { ctx.refreshFilmViewer(); }                            // clear the PoV frame + restore NO IMAGE
+  showTableReminder(needMove, tableHeld);
 }
-function showTableReminder(on) {
+function showTableReminder(on, moving) {
   const el = ctx.$('ctReminder'); if (!el) return;
   el.style.display = on ? 'flex' : 'none';
-  if (on) el.textContent = 'TABLE REPOSITION REQUIRED — press and HOLD the orange TABLE button to move the couch into position before scanning.';
+  el.classList.toggle('moving', !!(on && moving));
+  if (on) el.textContent = moving
+    ? '⚠  TABLE IS MOVING  ⚠'
+    : 'TABLE REPOSITION REQUIRED — press and HOLD the orange TABLE button to move the couch into position before scanning.';
 }
 
 // ---- TABLE hold-to-move: lateral first, then height; constant speed; pause on release ----
@@ -742,6 +754,7 @@ function startTableMove() {
   if (Math.abs(c.plan.targetX - c.plan.committedX) <= MOVE_THRESH
    && Math.abs(c.plan.targetY - c.plan.committedY) <= MOVE_THRESH) return;   // nothing to do
   tableHeld = true; tableLastT = performance.now();
+  updatePlanReady();                    // switch the monitor message to "TABLE IS MOVING"
   (function step() {
     if (!tableHeld) return;
     const now = performance.now(), dt = Math.min(0.05, (now - tableLastT) / 1000); tableLastT = now;
@@ -749,7 +762,11 @@ function startTableMove() {
     tableRAF = requestAnimationFrame(step);
   })();
 }
-function stopTableMove() { tableHeld = false; if (tableRAF) cancelAnimationFrame(tableRAF); tableRAF = null; }
+function stopTableMove() {
+  const was = tableHeld;
+  tableHeld = false; if (tableRAF) cancelAnimationFrame(tableRAF); tableRAF = null;
+  if (was && ctx.S.ct.phase === 'planning') updatePlanReady();   // back to "REPOSITION REQUIRED" if still pending
+}
 function stepTableMove(dt) {
   const c = ctx.S.ct, d = TABLE_SPEED * dt;
   const remX = c.plan.targetX - c.plan.committedX, remY = c.plan.targetY - c.plan.committedY;

@@ -149,17 +149,26 @@ function initScene(){
       renderer.setSize(w,h,false); cam.aspect=w/h; cam.updateProjectionMatrix();
     }
   }
+  // mirror the #view drawing buffer into the small DR monitor (#film). Must run in
+  // the same tick as render() to read the WebGL buffer.
+  const blitToFilm=()=>{
+    const film=document.getElementById('film'); if(!film) return;
+    if(film.width!==canvas.width || film.height!==canvas.height){ film.width=canvas.width; film.height=canvas.height; }
+    film.getContext('2d').drawImage(canvas,0,0);
+  };
+  const povCam=new THREE.PerspectiveCamera(132,1,1,1000);   // dedicated CT PoV camera for the monitor
   (function loop(){
     resize(); updateCamera(); renderer.render(scene,cam);
-    // CT scout build: mirror the tube's-eye 3D into the small DR monitor so the
-    // scan can be watched there while the scouts stitch in over the bay. The blit
-    // must happen in the same tick as render() to read the WebGL drawing buffer.
     if(S.mode==='ct' && S.ct.liveView){
-      const film=document.getElementById('film');
-      if(film){
-        if(film.width!==canvas.width || film.height!==canvas.height){ film.width=canvas.width; film.height=canvas.height; }
-        film.getContext('2d').drawImage(canvas,0,0);
-      }
+      blitToFilm();                    // scout build: mirror whatever CT PoV is active
+    } else if(S.mode==='ct' && S.ct.moveBlit){
+      // table move: mirror the axis' PoV into the monitor, independent of the bay
+      // camera (so the bay can be watched in orbit at the same time).
+      povCam.aspect=cam.aspect; povCam.fov=132; povCam.up.set(0,0,1);
+      if(S.ct.moveBlit==='lat') povCam.position.set(10.5,6,0); else povCam.position.set(0,16.5,0);
+      povCam.lookAt(0,6,0); povCam.updateProjectionMatrix();
+      renderer.render(scene,povCam); blitToFilm();
+      renderer.render(scene,cam);      // restore the bay view for display
     }
     requestAnimationFrame(loop);
   })();
@@ -248,6 +257,7 @@ const S = {
     // ---- Phase 3: scan box (normalized scout coords; top/bot shared = cylinder lock) ----
     box:{ top:0.10, bot:0.90, apL:0.30, apR:0.70, latL:0.30, latR:0.70 },
     plan:{ targetX:0, targetY:0, committedX:0, committedY:0 },   // required vs applied table move (mm)
+    moveBlit:null,             // 'ap'|'lat'|null: mirror this PoV into the monitor during a table move
   },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so

@@ -306,3 +306,5 @@ body.mode-ct .di{display:none}
   align-items:center; justify-content:center; text-align:center; padding:10px 12px;
   background:rgba(46,28,4,.92); border:1px solid var(--amber); border-radius:4px;
   color:var(--amber); font-family:var(--seg); font-size:11px; letter-spacing:.6px; line-height:1.5}
+.ctreminder.moving{background:rgba(60,10,10,.92); border-color:var(--red); color:#ff9a90;
+  letter-spacing:2px; animation:ctflash 0.7s ease-in-out infinite}
