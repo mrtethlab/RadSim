@@ -11,6 +11,9 @@
 let ctx = null;
 let bed = null, laser = null;   // CT-only 3D objects (created once, shown by mode)
 
+const SLICE_MM = [0.625, 1.25, 2.5, 5, 10];   // slice-thickness stations
+const SFOV_R = 9;                             // scan field-of-view radius (cm)
+
 // Button glyphs, drawn exactly to spec.
 const SYM = {
   // START: an equilateral diamond with a centre vertical line touching top & bottom vertices
@@ -26,6 +29,11 @@ const SYM = {
          'M12 2.5 L12 21.5 M2.5 12 L21.5 12 ' +
          'M12 2.5 L9.2 5.3 M12 2.5 L14.8 5.3 M12 21.5 L9.2 18.7 M12 21.5 L14.8 18.7 ' +
          'M2.5 12 L5.3 9.2 M2.5 12 L5.3 14.8 M21.5 12 L18.7 9.2 M21.5 12 L18.7 14.8"/></svg>',
+  // ISOCENTRE: a patient/figure alignment glyph (blue on the tan console button)
+  iso: '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+       '<circle cx="12" cy="5.6" r="3.3" fill="currentColor"/>' +
+       '<path d="M6.4 21 C6.4 13.6 9 12 12 12 C15 12 17.6 13.6 17.6 21 Z" fill="currentColor"/>' +
+       '</svg>',
 };
 
 export function initCT(context) {
@@ -57,12 +65,17 @@ function buildCTScene() {
   ringIn.position.set(0, 6, -14.6); bed.add(ringIn);
   bed.visible = false; three.scene.add(bed);
 
-  // single alignment laser: a thin bright plane marking the axial isocentre position
-  laser = new THREE.Mesh(
-    new THREE.PlaneGeometry(34, 24),
-    new THREE.MeshBasicMaterial({ color: 0xff2f2f, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false })
-  );
-  laser.position.set(0, 8, 0);   // gantry isocentre (z = 0); normal is +z (an axial sheet)
+  // alignment lasers: a thin axial line projected across the patient at the scan
+  // plane, plus two vertical lasers at +/- SFOV_R marking the scan field width.
+  const lmat = () => new THREE.MeshBasicMaterial({ color: 0xff1e1e, depthTest: false });
+  laser = new THREE.Group();
+  const axial = new THREE.Mesh(new THREE.BoxGeometry(SFOV_R * 2, 0.05, 0.05), lmat());
+  axial.position.set(0, 3.1, 0);            // sits on the patient top at z = 0 (isocentre)
+  axial.renderOrder = 12; laser.add(axial);
+  for (const sx of [-SFOV_R, SFOV_R]) {
+    const v = new THREE.Mesh(new THREE.BoxGeometry(0.05, 9.5, 0.05), lmat());
+    v.position.set(sx, 4, 0); v.renderOrder = 12; laser.add(v);
+  }
   laser.visible = false; three.scene.add(laser);
 }
 
@@ -71,6 +84,7 @@ function injectSymbols() {
   set('ctStart', SYM.start);
   set('ctAbort', SYM.abort);
   set('ctTable', SYM.table);
+  set('ctIsocentre', SYM.iso);
 }
 
 // Called by app.js at the end of syncScene(): show the CT rig or the x-ray rig.
@@ -82,12 +96,15 @@ export function ctSyncScene() {
   laser.visible = isCT;
   if (three.det) three.det.visible = !isCT;          // hide the flat-panel detector in CT
   if (three.detMarks) three.detMarks.visible = !isCT; // and its corner brackets
+  // patient/couch offset (from the direction pad) — only in CT
+  three.handGroup.position.x = isCT ? S.ct.patient.x : 0;
+  three.handGroup.position.z = isCT ? S.ct.patient.z : 0;
   if (isCT) {
     // no collimator light field in CT — only the laser
     three.lamp.intensity = 0; three.lamp.castShadow = false;
     three.cr.visible = false;
     three.amb.intensity = 0.9; three.key.intensity = 0.9;
-    laser.position.z = 0;                      // Phase 1: laser fixed at gantry isocentre
+    laser.position.set(0, 0, 0);               // lasers fixed at the gantry isocentre
   }
 }
 
@@ -114,27 +131,40 @@ function applyMode(mode) {
 
 function wireCTSettings() {
   const { S, $ } = ctx;
-  // slice thickness (segmented mm values)
-  const stSeg = $('ctSliceThkSeg');
-  stSeg?.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return;
-    [...stSeg.children].forEach(x => x.classList.toggle('on', x === b));
-    S.ct.sliceThk = parseFloat(b.dataset.v); updateCTReadouts();
-  });
-  // images per slice (stepper)
+  // slice thickness = station selector; images/rotation = counter (both steppers)
   $('ctSettings')?.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-ctstep]'); if (!b) return;
-    const d = parseInt(b.dataset.d, 10);
-    S.ct.imgPerSlice = Math.max(1, Math.min(8, S.ct.imgPerSlice + d));
+    const key = b.dataset.ctstep, d = parseInt(b.dataset.d, 10);
+    if (key === 'sliceThk') {
+      let i = SLICE_MM.indexOf(S.ct.sliceThk); if (i < 0) i = 3;
+      S.ct.sliceThk = SLICE_MM[Math.max(0, Math.min(SLICE_MM.length - 1, i + d))];
+    } else if (key === 'imgPerRotation') {
+      S.ct.imgPerRotation = Math.max(1, Math.min(16, S.ct.imgPerRotation + d));
+    }
     updateCTReadouts();
   });
   // pitch + scan length (ranges)
   $('ctPitch')?.addEventListener('input', (e) => { S.ct.pitch = parseFloat(e.target.value); updateCTReadouts(); });
   $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
-  // isocentre confirm — zero the table position
+  // isocentre confirm — zero the table position reading (patient stays put)
   $('ctIsocentre')?.addEventListener('click', () => {
     S.ct.tablePos = 0; S.ct.isocentred = true;
     setHint('Isocentre set. Acquire scouts to begin planning.');
+    updateCTReadouts();
+  });
+  // direction pad — nudge the patient/couch; longitudinal travel shows as table position
+  const STEP = 1;   // cm per press
+  $('ctDpad')?.addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-dir]'); if (!b) return;
+    const p = S.ct.patient;
+    switch (b.dataset.dir) {
+      case 'up':    p.z -= STEP; S.ct.tablePos -= STEP; break;   // table into the gantry
+      case 'down':  p.z += STEP; S.ct.tablePos += STEP; break;   // table out
+      case 'left':  p.x -= STEP; break;
+      case 'right': p.x += STEP; break;
+    }
+    S.ct.isocentred = false;
+    ctx.syncScene();          // ctSyncScene re-applies the patient offset
     updateCTReadouts();
   });
 }
@@ -143,7 +173,7 @@ function updateCTReadouts() {
   const { S, $ } = ctx;
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
   set('ctSliceThkV', S.ct.sliceThk + ' mm');
-  set('ctImgV', S.ct.imgPerSlice);
+  set('ctImgV', S.ct.imgPerRotation);
   set('ctPitchV', S.ct.pitch.toFixed(3).replace(/0+$/, '').replace(/\.$/, ''));
   set('ctScanLenV', S.ct.scanLen + ' cm');
   set('ctTablePosV', (S.ct.tablePos >= 0 ? '+' : '') + S.ct.tablePos.toFixed(1) + ' cm');

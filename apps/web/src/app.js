@@ -200,13 +200,14 @@ const S = {
   // ---- CT mode ----
   mode:'xray',                 // 'xray' | 'ct'
   ct:{
-    sliceThk:5,                // mm
-    imgPerSlice:1,             // images reconstructed per slice location
+    sliceThk:5,                // mm (station selector over discrete values)
+    imgPerRotation:1,          // images reconstructed per gantry rotation
     pitch:1.0,                 // table travel per rotation / total collimation
     scanLen:30,                // cm scout/scan length (top=0 -> bottom=scanLen)
     tablePos:0,                // cm; isocentring zeroes this, patient motion changes it
     isocentred:false,
     phase:'idle',              // idle | scout | planning | moving | scanning | done
+    patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
   },
 };
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so

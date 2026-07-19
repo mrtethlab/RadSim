@@ -213,3 +213,24 @@ body.mode-ct .xray-only{display:none}
 @keyframes ctflash{0%,100%{box-shadow:0 0 5px currentColor}50%{box-shadow:0 0 22px currentColor,0 0 36px currentColor}}
 .ctbtns-lab{display:grid; grid-template-columns:1fr 1.3fr 1fr; gap:14px; justify-items:center; margin-top:6px;
   font-family:var(--seg); font-size:9.5px; letter-spacing:1.5px; color:var(--muted); text-transform:uppercase}
+
+/* CT patient-position row: physical isocentre button + direction pad */
+.ctpos{display:flex; align-items:center; justify-content:center; gap:18px; margin-top:12px}
+.ctisobtn{width:58px; height:58px; border-radius:12px; padding:0; cursor:pointer;
+  border:1px solid #b3a790; color:#3d78c4;
+  background:linear-gradient(180deg,#e6dccb,#cebfa6);
+  box-shadow:0 2px 5px rgba(0,0,0,.45), inset 0 1px 1px rgba(255,255,255,.6);
+  display:flex; align-items:center; justify-content:center}
+.ctisobtn svg{width:66%; height:66%}
+.ctisobtn:hover{filter:brightness(1.06)}
+.ctisobtn:active{transform:translateY(1px); box-shadow:0 1px 2px rgba(0,0,0,.45), inset 0 1px 3px rgba(0,0,0,.3)}
+.dpad{display:grid; grid-template-columns:repeat(3,26px); grid-template-rows:repeat(3,26px); gap:3px}
+.dpad .dp{background:var(--panel2); border:1px solid var(--edge2); color:var(--amber);
+  border-radius:5px; cursor:pointer; font-size:11px; line-height:1; padding:0;
+  display:flex; align-items:center; justify-content:center}
+.dpad .dp:hover{border-color:var(--amber); color:#fff}
+.dpad .dp:active{background:var(--amber); color:#1a1204}
+.dpad .up{grid-column:2; grid-row:1}
+.dpad .left{grid-column:1; grid-row:2}
+.dpad .right{grid-column:3; grid-row:2}
+.dpad .down{grid-column:2; grid-row:3}

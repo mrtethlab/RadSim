@@ -81,17 +81,11 @@
         <div class="lab">CT acquisition</div>
         <div class="bod">
           <div class="row"><div class="rl">Slice thickness</div>
-            <div class="valchip" id="ctSliceThkV">5 mm</div></div>
-          <div class="seg" id="ctSliceThkSeg">
-            <button data-v="0.625">0.6</button>
-            <button data-v="1.25">1.25</button>
-            <button data-v="2.5">2.5</button>
-            <button data-v="5" class="on">5</button>
-            <button data-v="10">10</button>
-          </div>
-          <div class="row" style="margin-top:12px"><div class="rl">Images / slice</div>
-            <div class="stepper"><button data-ctstep="imgPerSlice" data-d="-1">−</button>
-              <div class="sv" id="ctImgV">1</div><button data-ctstep="imgPerSlice" data-d="1">+</button></div></div>
+            <div class="stepper"><button data-ctstep="sliceThk" data-d="-1">−</button>
+              <div class="sv" id="ctSliceThkV">5 mm</div><button data-ctstep="sliceThk" data-d="1">+</button></div></div>
+          <div class="row" style="margin-top:12px"><div class="rl">Images / rotation</div>
+            <div class="stepper"><button data-ctstep="imgPerRotation" data-d="-1">−</button>
+              <div class="sv" id="ctImgV">1</div><button data-ctstep="imgPerRotation" data-d="1">+</button></div></div>
           <div class="row" style="margin-top:12px"><div class="rl">Pitch</div>
             <div class="valchip" id="ctPitchV">1</div></div>
           <input type="range" id="ctPitch" min="0.5" max="1.5" step="0.125" value="1">
@@ -100,8 +94,16 @@
           <input type="range" id="ctScanLen" min="5" max="60" step="1" value="30">
           <div class="row" style="margin-top:12px"><div class="rl">Table position</div>
             <div class="valchip cyanlit" id="ctTablePosV">+0.0 cm</div></div>
-          <div class="mini"><button id="ctIsocentre">◎ set isocentre (zero table)</button></div>
-          <div class="note" style="margin-top:6px">Transverse (axial) images only. Scan length sets the scout extent: top = 0, bottom = scan length.</div>
+          <div class="ctpos">
+            <button id="ctIsocentre" class="ctisobtn" title="Set isocentre (zero table)"></button>
+            <div class="dpad" id="ctDpad">
+              <button class="dp up" data-dir="up" title="Table in">▲</button>
+              <button class="dp left" data-dir="left" title="Move left">◀</button>
+              <button class="dp right" data-dir="right" title="Move right">▶</button>
+              <button class="dp down" data-dir="down" title="Table out">▼</button>
+            </div>
+          </div>
+          <div class="note" style="margin-top:6px">Transverse (axial) images only. Move the patient onto the laser, then set the isocentre to zero the table.</div>
         </div>
       </div>
 
