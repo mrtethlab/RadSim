@@ -361,6 +361,34 @@ body.mode-ct .di{display:none}
   font-family:var(--disp); font-size:14px; padding:9px 14px; border-radius:4px; cursor:pointer; min-width:56px}
 .ctpop-stations button:hover{border-color:var(--cyan); color:#fff}
 .ctpop-stations button.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
+/* ---- acquisition "Select the desired Image Thickness" dialog (reference-styled) ---- */
+.acq-pop{background:#d7dade; color:#1a2028; border:1px solid #9aa3ad; border-radius:4px;
+  min-width:520px; max-width:92vw; box-shadow:0 18px 60px rgba(0,0,0,.6); font-family:'Barlow Condensed',sans-serif}
+.acq-title{font-size:16px; font-weight:600; text-align:center; padding:9px; border-bottom:1px solid #b3bbc4;
+  background:#c7ccd2; border-radius:4px 4px 0 0; letter-spacing:.3px}
+.acq-grid{display:flex; gap:18px; padding:16px 18px}
+.acq-left{flex:1 1 auto; min-width:0}
+.acq-right{flex:0 0 170px; padding-top:4px}
+.acq-sec{margin-bottom:12px}
+.acq-lab{font-size:14px; font-weight:600; margin-bottom:6px; color:#242b33}
+.acq-btns{display:flex; flex-wrap:wrap; gap:8px}
+.acq-btns button{min-width:58px; padding:8px 12px; font-family:'Barlow Condensed',sans-serif; font-size:14px;
+  color:#1a2028; background:#eef1f4; border:1px solid #8b95a0; border-radius:3px; cursor:pointer;
+  box-shadow:inset 0 1px 0 #fff, 0 1px 1px rgba(0,0,0,.15)}
+.acq-btns button:hover{border-color:#3a6ea5}
+.acq-btns button.alt{background:#9fb2c9; color:#0e1a28; border-color:#5c7791}   /* darker blue: changes collimation only */
+.acq-btns button.on{background:#f6f0b0; border-color:#c9a227; box-shadow:inset 0 0 0 1px #e6d97a}  /* selected (yellow) */
+.acq-btns button.dis{opacity:.4; cursor:not-allowed; background:#dfe3e7}
+.acq-info{margin-bottom:14px}
+.acq-ilab{font-size:14px; font-weight:600; color:#242b33}
+.acq-ival{font-size:15px; color:#0e1a28; margin-top:2px}
+.acq-actions{display:flex; justify-content:center; gap:40px; padding:10px 0 16px}
+.acq-actions button{min-width:96px; padding:8px 14px; font-family:'Barlow Condensed',sans-serif; font-size:15px;
+  background:#eef1f4; color:#1a2028; border:1px solid #8b95a0; border-radius:3px; cursor:pointer;
+  box-shadow:inset 0 1px 0 #fff, 0 1px 2px rgba(0,0,0,.2)}
+.acq-actions .acq-ok:hover{background:#cfe6cf; border-color:#3a7d3a}
+.acq-actions .acq-cancel:hover{background:#eccfcf; border-color:#a44}
+
 /* table-reposition reminder in the DR monitor */
 .ctreminder{position:absolute; inset:auto 10px 10px 10px; z-index:5; display:none;
   align-items:center; justify-content:center; text-align:center; padding:10px 12px;

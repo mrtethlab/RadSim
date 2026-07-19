@@ -256,11 +256,14 @@ const S = {
     scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
     // ---- Phase 4: scan groups (up to 4 planned scans). Each has its own box
     // (normalized scout coords; per-group top/bot AP↔LAT cylinder lock) + params.
+    // Canonical acquisition fields per group: detRows, beamColl (= rows × detector
+    // element), pitch, sliceThk (reconstructed helical thickness). Table speed and the
+    // detector element are derived (see ct.js). Defaults: 16 × 0.625 = 10 mm collimation.
     groups:[
-      { on:true,  vis:true, box:{ top:0.10, bot:0.90, apL:0.28, apR:0.72, latL:0.28, latR:0.72 }, kv:120, ma:295, sliceThk:5,    pitch:1.0, rotSpeed:0.5, interval:5,    tilt:0, delay:0 },
-      { on:false, vis:true, box:{ top:0.14, bot:0.50, apL:0.36, apR:0.64, latL:0.36, latR:0.64 }, kv:120, ma:295, sliceThk:2.5,  pitch:1.0, rotSpeed:0.5, interval:2.5,  tilt:0, delay:0 },
-      { on:false, vis:true, box:{ top:0.55, bot:0.86, apL:0.36, apR:0.64, latL:0.36, latR:0.64 }, kv:120, ma:295, sliceThk:1.25, pitch:1.0, rotSpeed:0.5, interval:1.25, tilt:0, delay:0 },
-      { on:false, vis:true, box:{ top:0.30, bot:0.70, apL:0.40, apR:0.60, latL:0.40, latR:0.60 }, kv:120, ma:295, sliceThk:5,    pitch:1.0, rotSpeed:0.5, interval:5,    tilt:0, delay:0 },
+      { on:true,  vis:true, box:{ top:0.10, bot:0.90, apL:0.28, apR:0.72, latL:0.28, latR:0.72 }, kv:120, ma:295, sliceThk:5,    detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:5,    tilt:0, delay:0 },
+      { on:false, vis:true, box:{ top:0.14, bot:0.50, apL:0.36, apR:0.64, latL:0.36, latR:0.64 }, kv:120, ma:295, sliceThk:2.5,  detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:2.5,  tilt:0, delay:0 },
+      { on:false, vis:true, box:{ top:0.55, bot:0.86, apL:0.36, apR:0.64, latL:0.36, latR:0.64 }, kv:120, ma:295, sliceThk:1.25, detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:1.25, tilt:0, delay:0 },
+      { on:false, vis:true, box:{ top:0.30, bot:0.70, apL:0.40, apR:0.60, latL:0.40, latR:0.60 }, kv:120, ma:295, sliceThk:5,    detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:5,    tilt:0, delay:0 },
     ],
     activeGroup:0,             // the group currently being edited (drives the reposition plan)
     plan:{ targetX:0, targetY:0, committedX:0, committedY:0 },   // required vs applied table move (mm)

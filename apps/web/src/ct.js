@@ -679,11 +679,23 @@ function cancelScout() { scoutToken++; }
 // lock) and its own parameters, shown as a colour-coded row in the scan-group table.
 const BOX_MIN = 0.05;                 // smallest box extent (normalized)
 const MOVE_THRESH = 0.5;              // mm: below this, no table move is needed
-const TABLE_SPEED = 45;              // mm/s couch reposition speed
+const TABLE_SPEED = 45;              // mm/s couch reposition speed (NOT the acquisition table speed)
 const N_GROUPS = 4;
-const PITCH_STATIONS = [0.5, 0.625, 0.75, 0.875, 1.0, 1.125, 1.25, 1.375, 1.5];
+// ---- acquisition geometry stations (reference GE "Image Thickness" dialog) ----
+const DET_ROW_OPTS = [8, 16];                     // detector rows
+const ELEMENTS = [0.625, 1.25];                   // detector element sizes → beam collimation = rows × element
+const ACQ_THK = [0.625, 1.25, 2.5, 3.75, 5, 7.5, 10];  // reconstructed helical-thickness stations
+const PITCH_ACQ = [0.562, 0.938, 1.375, 1.75];    // pitch stations
 const ROT_STATIONS = [0.25, 0.4, 0.5, 0.75, 1.0, 1.5, 2.0];   // s / rotation
-const DET_ROWS = 16;                  // detector rows (for the exposure-time model)
+// Derived acquisition values. Canonical stored fields: detRows, beamColl, pitch,
+// sliceThk (= reconstructed helical thickness). Beam collimation = rows × detector
+// element, so element (min recon thickness) = beamColl / rows; table speed (mm/rot)
+// = pitch × beam collimation (⇒ pitch = table speed / beam collimation).
+const acqThkOf = (g) => g.beamColl / g.detRows;             // detector element = min recon thickness (mm)
+const tableSpeedOf = (g) => g.pitch * g.beamColl;           // table travel per rotation (mm/rot)
+const validColls = (rows) => ELEMENTS.map((e) => rows * e); // beam-collimation stations for a row count
+const detConfig = (g) => g.detRows + ' × ' + fmtNum(acqThkOf(g));
+const nearestIn = (list, v) => list.reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a, list[0]);
 
 const grp = (i) => ctx.S.ct.groups[i];
 const activeGrp = () => grp(ctx.S.ct.activeGroup);
@@ -694,14 +706,17 @@ function sanitizeNum(s, fallback) { const n = parseFloat(String(s).replace(/[^0-
 // calculated fields
 function groupScanLenMM(g) { return Math.abs(g.box.bot - g.box.top) * ctx.S.ct.scanLen; }
 function groupImages(g) { return Math.max(1, Math.round(groupScanLenMM(g) / Math.max(g.interval, 0.1))); }
-function groupExpTime(g) { const feed = Math.max(g.pitch * g.sliceThk * DET_ROWS, 1e-3); return (groupScanLenMM(g) / feed) * g.rotSpeed; }
+// scan time = scan length / (table feed per second); feed/s = tableSpeed(mm/rot) / rotSpeed(s/rot)
+function groupExpTime(g) { const feed = Math.max(tableSpeedOf(g), 1e-3); return (groupScanLenMM(g) / feed) * g.rotSpeed; }
 
 function defaultGroups() {
+  // detRows 16 × element 0.625 = 10 mm beam collimation; pitch 0.938 → 9.38 mm/rot.
+  const base = { detRows: 16, beamColl: 10, pitch: 0.938, rotSpeed: 0.5 };
   return [
-    { on: true,  vis: true, box: { top: 0.10, bot: 0.90, apL: 0.28, apR: 0.72, latL: 0.28, latR: 0.72 }, kv: 120, ma: 295, sliceThk: 5,    pitch: 1.0, rotSpeed: 0.5, interval: 5,    tilt: 0, delay: 0 },
-    { on: false, vis: true, box: { top: 0.14, bot: 0.50, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 2.5,  pitch: 1.0, rotSpeed: 0.5, interval: 2.5,  tilt: 0, delay: 0 },
-    { on: false, vis: true, box: { top: 0.55, bot: 0.86, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 1.25, pitch: 1.0, rotSpeed: 0.5, interval: 1.25, tilt: 0, delay: 0 },
-    { on: false, vis: true, box: { top: 0.30, bot: 0.70, apL: 0.40, apR: 0.60, latL: 0.40, latR: 0.60 }, kv: 120, ma: 295, sliceThk: 5,    pitch: 1.0, rotSpeed: 0.5, interval: 5,    tilt: 0, delay: 0 },
+    { on: true,  vis: true, box: { top: 0.10, bot: 0.90, apL: 0.28, apR: 0.72, latL: 0.28, latR: 0.72 }, kv: 120, ma: 295, sliceThk: 5,    ...base, interval: 5,    tilt: 0, delay: 0 },
+    { on: false, vis: true, box: { top: 0.14, bot: 0.50, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 2.5,  ...base, interval: 2.5,  tilt: 0, delay: 0 },
+    { on: false, vis: true, box: { top: 0.55, bot: 0.86, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 1.25, ...base, interval: 1.25, tilt: 0, delay: 0 },
+    { on: false, vis: true, box: { top: 0.30, bot: 0.70, apL: 0.40, apR: 0.60, latL: 0.40, latR: 0.60 }, kv: 120, ma: 295, sliceThk: 5,    ...base, interval: 5,    tilt: 0, delay: 0 },
   ];
 }
 
@@ -833,8 +848,7 @@ function openFieldEditor(gi, act) {
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
   else if (act === 'ma') type('Tube current (mA)', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
   else if (act === 'delay') type('Scan delay (seconds)', g.delay, (v) => { g.delay = clampV(Math.round(v), 0, 600); });
-  else if (act === 'sliceThk') station('Slice thickness (mm)', SLICE_MM, g.sliceThk, (x) => fmtNum(x) + ' mm', (v) => { g.sliceThk = v; });
-  else if (act === 'pitch') station('Pitch', PITCH_STATIONS, g.pitch, (x) => fmtNum(x), (v) => { g.pitch = v; });
+  else if (act === 'acq') openAcqPopup(gi);   // reference-style image-thickness dialog
   else if (act === 'rot') station('Rotation time (s / rot)', ROT_STATIONS, g.rotSpeed, (x) => x.toFixed(2) + ' s', (v) => { g.rotSpeed = v; });
   else { done(); }
 }
@@ -846,8 +860,9 @@ function addGroup() {
 const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>';
 const EYE_CLOSED = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M3 10c2.2 2.9 5.6 4.6 9 4.6S18.8 12.9 21 10"/><path stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6 13.3l-1.6 2M12 15.1v2.4M18 13.3l1.6 2"/></svg>';
 const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff" d="M9 3l-1 1H4v2h16V4h-4l-1-1H9zM6 8l1.2 12.2c.1.9.9 1.8 1.9 1.8h5.8c1 0 1.8-.9 1.9-1.8L18 8H6zm4 2h1v9h-1v-9zm3 0h1v9h-1v-9z"/></svg>';
-const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'Total Images', 'Slice Thickness',
-  'Pitch', 'Rotation Time', 'Slice Interval', 'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
+const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'Total Images', 'Detector Config',
+  'Helical Thickness', 'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time', 'Slice Interval',
+  'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
 
 function renderScanGroups() {
   const cont = ctx.$('ctScanGroups'); if (!cont) return;
@@ -865,8 +880,11 @@ function renderScanGroups() {
       + cell('sg-edit', 'start', fmtTablePos(g.box.top * c.scanLen))
       + cell('sg-edit', 'end', fmtTablePos(g.box.bot * c.scanLen))
       + cell('sg-calc', '', groupImages(g))
-      + cell('sg-station', 'sliceThk', fmtNum(g.sliceThk) + ' mm')
-      + cell('sg-station', 'pitch', fmtNum(g.pitch))
+      + cell('sg-station', 'acq', detConfig(g))
+      + cell('sg-station', 'acq', fmtNum(g.sliceThk) + ' mm')
+      + cell('sg-station', 'acq', fmtNum(g.beamColl) + ' mm')
+      + cell('sg-station', 'acq', fmtNum(g.pitch) + ':1')
+      + cell('sg-station', 'acq', fmtNum(tableSpeedOf(g)) + ' mm/rot')
       + cell('sg-station', 'rot', g.rotSpeed.toFixed(2) + ' s')
       + cell('sg-edit', 'interval', fmtNum(g.interval) + ' mm')
       + cell('sg-edit', 'tilt', g.tilt + '°')
@@ -911,6 +929,73 @@ function openStationPopup(label, list, cur, fmt, onSel) {
   inner.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { onSel(parseFloat(b.dataset.v)); close(); }));
   document.addEventListener('keydown', onKey, true);
 }
+// Reference-style acquisition ("Select the desired Image Thickness") dialog. Edits a
+// working copy of the group's acquisition geometry and applies it on OK. Relationships:
+//   beam collimation = detector rows × detector element   (element = min recon thickness)
+//   table speed (mm/rot) = pitch × beam collimation  ⇒  pitch = table speed / collimation
+// Selecting a Speed keeps the current pitch and changes the collimation when that speed
+// maps to another valid collimation (shown darker blue); otherwise it keeps the
+// collimation and changes the pitch (lighter). Helical (reconstructed) thickness is
+// independent but can't be thinner than the detector element.
+function openAcqPopup(gi) {
+  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
+  const g = grp(gi);
+  const w = { detRows: g.detRows, beamColl: g.beamColl, pitch: g.pitch, sliceThk: g.sliceThk };
+  const speedGrid = () => {
+    const colls = validColls(w.detRows), set = new Set();
+    PITCH_ACQ.forEach(p => colls.forEach(c => set.add(+(p * c).toFixed(2))));
+    return [...set].sort((a, b) => a - b);
+  };
+  const classifySpeed = (s) => {
+    const cur = +(w.pitch * w.beamColl).toFixed(2);
+    if (Math.abs(s - cur) < 0.01) return 'on';
+    if (validColls(w.detRows).some(c => Math.abs(c - s / w.pitch) < 0.01)) return 'alt';  // changes collimation only
+    return '';                                                                            // changes pitch
+  };
+  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  function render() {
+    const el = w.beamColl / w.detRows;
+    const btns = (list, val, fmt, k, disBelowEl) => list.map(v =>
+      '<button data-k="' + k + '" data-v="' + v + '" class="' +
+      (Math.abs(v - val) < 1e-6 ? 'on' : (disBelowEl && v < el - 1e-6 ? 'dis' : '')) + '">' + fmt(v) + '</button>').join('');
+    inner.innerHTML =
+      '<div class="acq-pop"><div class="acq-title">Select the desired Image Thickness</div><div class="acq-grid"><div class="acq-left">'
+      + '<div class="acq-sec"><div class="acq-lab">Detector Rows</div><div class="acq-btns">' + btns(DET_ROW_OPTS, w.detRows, x => x, 'rows', false) + '</div></div>'
+      + '<div class="acq-sec"><div class="acq-lab">Helical Thickness (mm)</div><div class="acq-btns">' + btns(ACQ_THK, w.sliceThk, fmtNum, 'thk', true) + '</div></div>'
+      + '<div class="acq-sec"><div class="acq-lab">Pitch</div><div class="acq-btns">' + btns(PITCH_ACQ, w.pitch, x => fmtNum(x) + ':1', 'pitch', false) + '</div></div>'
+      + '<div class="acq-sec"><div class="acq-lab">Speed (mm/rot)</div><div class="acq-btns">' + speedGrid().map(s => '<button data-k="speed" data-v="' + s + '" class="' + classifySpeed(s) + '">' + s.toFixed(2) + '</button>').join('') + '</div></div>'
+      + '</div><div class="acq-right">'
+      + '<div class="acq-info"><div class="acq-ilab">Detector Configuration:</div><div class="acq-ival">' + w.detRows + ' × ' + fmtNum(el) + '</div></div>'
+      + '<div class="acq-info"><div class="acq-ilab">Beam Collimation:</div><div class="acq-ival">' + fmtNum(w.beamColl) + ' mm</div></div>'
+      + '<div class="acq-info"><div class="acq-ilab">Table Speed:</div><div class="acq-ival">' + fmtNum(w.pitch * w.beamColl) + ' mm/rot</div></div>'
+      + '</div></div><div class="acq-actions"><button class="acq-ok">OK</button><button class="acq-cancel">Cancel</button></div></div>';
+    inner.querySelectorAll('.acq-btns button').forEach(b => b.addEventListener('click', () => {
+      if (b.classList.contains('dis')) return;
+      const k = b.dataset.k, v = parseFloat(b.dataset.v);
+      if (k === 'rows') { w.detRows = v; if (!validColls(v).some(c => Math.abs(c - w.beamColl) < 0.01)) w.beamColl = nearestIn(validColls(v), w.beamColl); }
+      else if (k === 'thk') w.sliceThk = v;
+      else if (k === 'pitch') w.pitch = v;
+      else if (k === 'speed') {
+        const collForPitch = v / w.pitch;
+        if (validColls(w.detRows).some(c => Math.abs(c - collForPitch) < 0.01)) w.beamColl = +collForPitch.toFixed(3);   // keep pitch
+        else w.pitch = nearestIn(PITCH_ACQ, v / w.beamColl);                                                             // keep collimation
+      }
+      const el2 = w.beamColl / w.detRows;                       // recon thickness can't be thinner than the element
+      if (w.sliceThk < el2 - 1e-6) { const ge = ACQ_THK.filter(t => t >= el2 - 1e-6); w.sliceThk = ge.length ? ge[0] : el2; }
+      render();
+    }));
+    inner.querySelector('.acq-ok').addEventListener('click', () => {
+      g.detRows = w.detRows; g.beamColl = w.beamColl; g.pitch = w.pitch; g.sliceThk = w.sliceThk;
+      close(); renderScanBoxes(); updatePlan();
+    });
+    inner.querySelector('.acq-cancel').addEventListener('click', close);
+  }
+  pop.classList.add('show');
+  document.addEventListener('keydown', onKey, true);
+  render();
+}
+
 // Flash TABLE (orange) while the couch still needs to move; else flash START (green).
 // While a move is pending the DR monitor mirrors the axis' PoV — AP-PoV for the
 // mediolateral move, Lat-PoV for the anteroposterior (height) move.
