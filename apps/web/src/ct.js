@@ -275,7 +275,8 @@ async function runScoutExposure(view) {
   Sound.resume();
   setHint(view + ' scout · breathe in and hold…');
   Sound.play('breathIn');
-  await sleep(Math.min(2500, (Sound.duration('breathIn') || 2) * 1000));
+  await sleep((Sound.duration('breathIn') || 2) * 1000);   // let the breathe-in finish
+  await sleep(1000);                                        // 1 s hold before the exposure
   setHint(view + ' scout · scanning…');
   Sound.startBuzz();
   await animateTableSweep(2600);
