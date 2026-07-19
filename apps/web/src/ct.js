@@ -8,6 +8,9 @@
 // its own 3D objects (bed, laser) and overrides scene visibility in ctSyncScene(),
 // which app.js calls at the end of syncScene().
 
+import { AttenuationEngine } from './core/engine.js';
+import { Spectrum } from './core/spectrum.js';
+
 let ctx = null;
 let bed = null, laser = null;   // CT-only 3D objects (created once, shown by mode)
 
@@ -134,6 +137,7 @@ function applyMode(mode) {
   if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition' : 'Digit · Hand phantom';
+  if (mode !== 'ct') showScouts(false);   // scouts are a CT-only overlay
   ctx.syncScene();
   updateCTReadouts();
 }
@@ -190,11 +194,104 @@ function updateCTReadouts() {
 
 function setHint(t) { const el = ctx.$('ctHint'); if (el) el.textContent = t; }
 
-// Phase-1 placeholder console wiring; the full acquisition state machine (scouts,
-// scan box, table motion, scan + reconstruction) is built in later phases.
+// Console + acquisition state machine. Phase 2 implements idle -> scout ->
+// planning; scan-box confirm, table motion, scan + reconstruction come next.
 function wireCTConsole() {
-  const { $ } = ctx;
-  $('ctStart')?.addEventListener('click', () => setHint('Scout acquisition arrives in the next phase.'));
-  $('ctAbort')?.addEventListener('click', () => setHint('Idle — nothing to abort.'));
+  const { $, S } = ctx;
+  $('ctStart')?.addEventListener('click', () => {
+    if (S.ct.phase === 'idle') acquireScouts();
+    else if (S.ct.phase === 'planning') setHint('Scan-box confirmation + scan execution arrive in later phases.');
+  });
+  $('ctAbort')?.addEventListener('click', abortCT);
   $('ctTable')?.addEventListener('click', () => setHint('Table motion arrives with scan planning.'));
+  setPhase('idle');
+}
+
+function setPhase(p) {
+  const { S, $ } = ctx;
+  S.ct.phase = p;
+  const start = $('ctStart');
+  if (start) start.classList.toggle('flash', p === 'planning');
+  const labels = { idle: 'CT · STANDBY', scout: 'CT · SCOUT', planning: 'CT · PLAN SCAN',
+                   moving: 'CT · TABLE MOVE', scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
+  const wt = $('ctWarnT'); if (wt) wt.textContent = labels[p] || 'CT';
+}
+
+function setConsoleEnabled(on) {
+  ['ctStart', 'ctAbort', 'ctTable'].forEach(id => { const b = ctx.$(id); if (b) b.disabled = !on; });
+}
+
+function showScouts(on) { ctx.$('ctScouts')?.classList.toggle('show', on); }
+
+function abortCT() {
+  showScouts(false);
+  setPhase('idle');
+  setHint('Set the isocentre, then acquire scouts to plan the scan.');
+}
+
+// ---- Phase 2: scout acquisition (AP + Lateral topograms over the scan length) ----
+async function acquireScouts() {
+  const { $ } = ctx;
+  setPhase('scout');
+  setConsoleEnabled(false);
+  setHint('Acquiring scout images…');
+  try {
+    drawScout($('scoutAP'),  await scoutProjection('AP'));
+    drawScout($('scoutLAT'), await scoutProjection('LAT'));
+    showScouts(true);
+    setPhase('planning');
+    setHint('Scouts acquired — scan-box planning is next. (Press START to continue in a later phase.)');
+  } catch (err) {
+    console.error('scout acquisition failed', err);
+    setHint('Scout acquisition failed: ' + err.message);
+    setPhase('idle');
+  } finally {
+    setConsoleEnabled(true);
+  }
+}
+
+// One scout (topogram): a single AP or Lateral projection over the scan length.
+// Both share the z (scan-length) axis so a scan box can span them consistently.
+async function scoutProjection(view) {
+  const { S } = ctx;
+  const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
+  const spectrum = Spectrum.make(S.kv);
+  const I0 = S.mas * Math.pow(S.kv / 70, 2);
+  const scanLen = S.ct.scanLen;                     // cm, shared vertical (z) axis
+  const nz = 320, nw = 128;                         // rows (length) x cols (width/thickness)
+  const pxV = scanLen / nz;
+  let source, detCenter, detU, detV, pxU;
+  if (view === 'AP') {
+    const W = 26; pxU = W / nw;
+    source = [0, 100, 0];
+    detCenter = [0, 0, 0]; detU = [1, 0, 0]; detV = [0, 0, 1];   // x width vs z length
+  } else {
+    const T = 14, yc = 3; pxU = T / nw;
+    source = [100, yc, 0];
+    detCenter = [-8, yc, 0]; detU = [0, 1, 0]; detV = [0, 0, 1];  // y thickness vs z length
+  }
+  const refDist = Math.hypot(source[0] - detCenter[0], source[1] - detCenter[1], source[2] - detCenter[2]);
+  const dose = await AttenuationEngine.project({
+    phantom, source, detCenter, detU, detV, nx: nw, ny: nz, pxU, pxV, spectrum, I0, refDist,
+  });
+  return { dose, nw, nz };
+}
+
+// Grayscale topogram: attenuated (bone) -> bright, open field -> dark. Flipped so
+// the distal end (+z) reads at the top of the image.
+function drawScout(cv, { dose, nw, nz }) {
+  cv.width = nw; cv.height = nz;
+  const g = cv.getContext('2d');
+  const img = g.createImageData(nw, nz);
+  let mn = Infinity, mx = -Infinity;
+  for (let k = 0; k < dose.length; k++) { const d = dose[k]; if (d < mn) mn = d; if (d > mx) mx = d; }
+  const rng = (mx - mn) || 1;
+  for (let k = 0; k < dose.length; k++) {
+    const t = (dose[k] - mn) / rng;                 // 0 = most attenuated, 1 = open field
+    const v = Math.round(255 * Math.pow(1 - t, 0.7));
+    const j = (k / nw) | 0, i = k % nw;
+    const o = ((nz - 1 - j) * nw + i) * 4;          // flip vertically
+    img.data[o] = img.data[o + 1] = img.data[o + 2] = v; img.data[o + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
 }

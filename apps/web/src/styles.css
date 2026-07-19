@@ -234,3 +234,14 @@ body.mode-ct .xray-only{display:none}
 .dpad .left{grid-column:1; grid-row:2}
 .dpad .right{grid-column:3; grid-row:2}
 .dpad .down{grid-column:2; grid-row:3}
+
+/* CT scout images — shown side by side over the positioning bay for scan planning */
+.ctscouts{display:none; position:absolute; inset:0; z-index:7; background:#050607;
+  padding:44px 18px 18px; gap:16px; align-items:stretch; justify-content:center}
+.ctscouts.show{display:flex}
+.scoutcol{display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0; flex:1; max-width:360px}
+.scouthdr{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:var(--cyan);
+  text-transform:uppercase}
+.scoutcol canvas{flex:1; min-height:0; width:auto; max-width:100%; height:100%;
+  object-fit:contain; background:#000; border:1px solid var(--edge2); image-rendering:auto;
+  display:block; margin:0 auto}

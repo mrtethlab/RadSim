@@ -249,9 +249,12 @@ function buildPhantom(){
   const cosR=Math.cos(rot), sinR=Math.sin(rot);
   const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
   const liftY=baseLift(skin,bone,rot)+S.oid;   // rest on receptor (pose-aware) + OID
-  function xf(p){                // rotate about long (z) axis, then lift
+  // in CT the patient is offset from the gantry isocentre by the direction pad
+  const cx = S.mode==='ct' ? S.ct.patient.x : 0;
+  const cz = S.mode==='ct' ? S.ct.patient.z : 0;
+  function xf(p){                // rotate about long (z) axis, then lift, then CT offset
     const x=p[0], y=p[1], z=p[2];
-    return [x*cosR - y*sinR, x*sinR + y*cosR + liftY, z];
+    return [x*cosR - y*sinR + cx, x*sinR + y*cosR + liftY, z + cz];
   }
   for(const c of skin){
     if(c.r1!==undefined) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,'soft');
