@@ -403,6 +403,9 @@ body.mode-ct .di{display:none}
 .ctslices.show{display:flex}
 .slhdr{display:flex; align-items:center; justify-content:space-between; gap:12px}
 .slhdr .sltitle{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:var(--cyan); text-transform:uppercase}
+.histcanvas{display:block; width:100%; max-width:260px; height:auto; margin:2px 0 10px;
+  background:#0a0f14; border:1px solid var(--edge2); border-radius:4px}
+body.hist-off .histcanvas{display:none}
 .subjectsel{width:100%; max-width:190px; background:#0b1116; color:var(--txt);
   border:1px solid var(--edge2); border-radius:4px; font-family:var(--disp);
   font-size:12px; padding:4px 8px; margin-top:2px; cursor:pointer}

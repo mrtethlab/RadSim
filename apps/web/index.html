@@ -50,6 +50,9 @@
           <span class="slhint">scroll / drag</span>
         </div>
         <div class="slrow">
+          <canvas id="ctHist" class="histcanvas" width="248" height="56" title="Slice HU histogram + window/level response curve"></canvas>
+        </div>
+        <div class="slrow">
           <span class="sllab">Level</span><input type="range" id="ctWL" min="-1000" max="2000" value="60">
           <span class="sllab">Window</span><input type="range" id="ctWW" min="1" max="4000" value="800">
           <div class="segmini" id="ctWLPresets">
@@ -477,6 +480,7 @@
       <div class="grp">
         <div class="lab">Display · window / level</div>
         <div class="bod">
+          <canvas id="xrayHist" class="histcanvas xray-only" width="248" height="62" title="Pixel histogram + brightness/contrast response curve"></canvas>
           <div class="row"><div class="rl">Brightness</div>
             <input type="range" id="level" min="-60" max="60" value="0"></div>
           <div class="row"><div class="rl">Contrast</div>

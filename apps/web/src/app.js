@@ -379,7 +379,7 @@ function setDetOrient(o){ S.detOrient=o; applyDet(); }
 const S = {
   pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
-  lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
+  lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
@@ -768,6 +768,11 @@ function bind(){
   // display
   $('level').addEventListener('input',e=>{S.lev=parseInt(e.target.value); if(S.hasImage) drawFilm();});
   $('windo').addEventListener('input',e=>{S.win=parseInt(e.target.value); if(S.hasImage) drawFilm();});
+  // display histogram toggle (Simulation group) — controls both the x-ray + CT charts
+  const histTgl=$('histToggle');
+  if(histTgl){ histTgl.addEventListener('change',()=>{ S.showHist=histTgl.checked;
+    document.body.classList.toggle('hist-off', !S.showHist);
+    updateXrayHistogram(); ctRenderViewer?.(); }); }
   // bay options dropdown (top-right): toggle open, close on outside click / Esc
   const bayCtl=$('bayCtl'), bayBtn=$('bayMenuBtn');
   if(bayBtn){
@@ -1082,6 +1087,45 @@ function renderRadiograph(target){
 function drawFilm(){
   renderRadiograph($('film'));
   if(S.bayContent==='image' && S.hasImage) renderRadiograph($('bigFilm'));
+  updateXrayHistogram();
+}
+
+/* ---- display histogram + brightness/contrast response curve ----
+   Draws a 256-bin histogram of the image's base (pre window/level) grey values with
+   the current brightness/contrast response curve overlaid, so the user sees how the
+   window maps input tones to output. Shared drawer; x-ray + CT feed it their own data. */
+export function drawHistogram(canvas, hist, curveFn){
+  if(!canvas) return;
+  const g=canvas.getContext('2d'), W=canvas.width, H=canvas.height;
+  g.clearRect(0,0,W,H);
+  let hmax=1; for(const v of hist) if(v>hmax) hmax=v;
+  const logmax=Math.log(1+hmax)||1, n=hist.length;
+  g.fillStyle='#243441';
+  for(let x=0;x<n;x++){ const h=Math.log(1+hist[x])/logmax*(H-2);
+    g.fillRect(x/n*W, H-h, W/n+0.6, h); }
+  // response curve (input tone -> output tone), left→right = dark→bright input
+  g.strokeStyle='#35c6d6'; g.lineWidth=1.5; g.beginPath();
+  for(let x=0;x<=n;x++){ const out=Math.max(0,Math.min(1,curveFn(x/n)));
+    const px=x/n*W, py=H-1-out*(H-2); if(x===0) g.moveTo(px,py); else g.lineTo(px,py); }
+  g.stroke();
+}
+/* 256-bin histogram of the inverted log signal (the base tone before window/level),
+   over the exposed field only — matches the mapping in renderRadiograph. */
+function xrayHistData(){
+  const {lastSignal:sig,mask}=S; if(!sig||!mask) return null;
+  let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
+  const a=40, denom=Math.log(1+a), hist=new Uint32Array(256);
+  for(let k=0;k<sig.length;k++){ if(!mask[k]) continue;
+    let t=sig[k]/mx; t=Math.log(1+a*t)/denom; let b=Math.round((1-t)*255);
+    hist[b<0?0:b>255?255:b]++; }
+  return hist;
+}
+function updateXrayHistogram(){
+  const canvas=$('xrayHist'); if(!canvas) return;
+  if(!S.showHist || !S.hasImage){ canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); return; }
+  const hist=xrayHistData(); if(!hist) return;
+  const contrast=S.win/100, bright=S.lev/100;
+  drawHistogram(canvas, hist, v0=>(v0-0.5)*contrast+0.5+bright);
 }
 
 function updateDI(EI){
@@ -1200,5 +1244,5 @@ window.addEventListener('load',()=>{
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
-           refreshFilmViewer, compute });
+           refreshFilmViewer, compute, drawHistogram });
 });

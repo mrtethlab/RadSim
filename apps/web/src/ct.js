@@ -1671,8 +1671,25 @@ export function ctRenderViewer() {
   v.slice = Math.max(0, Math.min(scan.slices.length - 1, v.slice));
   const sl = scan.slices[v.slice];
   drawSliceToCanvas(cv, scan, sl, v.wl, v.ww);
+  updateCtHistogram(scan, sl, v.wl, v.ww);
   if (slider) { slider.max = scan.slices.length - 1; slider.value = v.slice; slider.disabled = scan.slices.length < 2; }
   updateViewerInfo(scan, sl);
+}
+
+// Slice HU histogram (fixed −1000…2000 axis, matching the sliders) with the current
+// window/level ramp overlaid, so the operator sees where the window sits on the data.
+function updateCtHistogram(scan, sl, wl, ww) {
+  const cv = ctx.$('ctHist'); if (!cv || !ctx.drawHistogram) return;
+  if (!ctx.S.showHist || !scan || !sl) { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); return; }
+  const N = scan.gridN, muW = scan.muWater, c = N / 2, R2 = c * c;
+  const HLO = -1000, HHI = 2000, span = HHI - HLO, hist = new Uint32Array(256);
+  for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+    const dx = ix - c + 0.5, dy = iy - c + 0.5; if (dx * dx + dy * dy > R2) continue;
+    const hu = 1000 * (sl.mu[iy * N + ix] - muW) / muW;
+    let b = Math.round((hu - HLO) / span * 255); hist[b < 0 ? 0 : b > 255 ? 255 : b]++;
+  }
+  const lo = wl - ww / 2;
+  ctx.drawHistogram(cv, hist, t => { const hu = HLO + t * span; return (hu - lo) / ww; });
 }
 // Light redraw (slice/window changed but not the scan list) — same as full render here.
 function refreshViewer() { ctRenderViewer(); }
