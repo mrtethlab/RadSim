@@ -1,0 +1,24 @@
+# Extra dependencies for building voxel phantoms from real segmented CT data
+# (services/compute/app/build_chest.py). Heavy — install into the same venv:
+#
+#   ./.venv/Scripts/python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
+#   ./.venv/Scripts/python.exe -m pip install -r requirements-models.txt
+#
+# Then build the bundled human-chest phantom from the 3D Slicer CTChest sample:
+#   # 1. download the sample CT
+#   curl -L -o data/chest/CT-chest.nrrd \
+#     https://github.com/Slicer/SlicerTestingData/releases/download/SHA256/4507b664690840abb6cb9af2d919377ffc4ef75b167cb6fd0f747befdb12e38e
+#   # 2. convert + segment every organ (TotalSegmentator; --fast ~3mm, drop it for full res)
+#   ./.venv/Scripts/python.exe -c "import SimpleITK as s; s.WriteImage(s.ReadImage('data/chest/CT-chest.nrrd'),'data/chest/ct.nii.gz')"
+#   ./.venv/Scripts/TotalSegmentator.exe -i data/chest/ct.nii.gz -o data/chest/seg.nii --ml --fast
+#   # 3. build the material-map voxel volume + display mesh
+#   ./.venv/Scripts/python.exe -m app.build_chest --ct data/chest/ct.nii.gz --seg data/chest/seg.nii \
+#     --out ../../apps/web/public/models/chest --spacing 1.0
+#
+# torch is installed separately (CPU wheel above) to avoid the CUDA build.
+SimpleITK>=2.3
+nibabel>=5.2
+scipy>=1.11
+scikit-image>=0.22
+trimesh>=4.0
+TotalSegmentator>=2.4
