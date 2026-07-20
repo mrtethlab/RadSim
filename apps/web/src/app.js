@@ -1174,15 +1174,23 @@ function drawFilm(){
    regardless of over/under-exposure (the exposure index still reports the true dose).
    Here: robust 1st–99th percentile window of the exposed-field base tones. */
 function computeRescale(sig,mask){
+  const _t=(typeof window!=='undefined'&&window.__tune)||{};
   let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
+  // EXCLUDE the directly-exposed raw beam from the VOI window. The unattenuated beam sits
+  // at the dark end of the tone scale; if it is left in, its pixels pin the window's low
+  // end and the whole anatomy is crammed into a bright, flat band (washed-out chest). By
+  // dropping pixels brighter than `cut`, the window locks onto the anatomy so the well-
+  // penetrated lung fields stretch to dark and the mediastinum/spine to bright.
+  const cut=mx*(_t.rcut??0.72);
   const a=40, denom=Math.log(1+a), NB=1024, hist=new Uint32Array(NB); let total=0;
-  for(let k=0;k<sig.length;k++){ if(!mask[k]) continue;
+  for(let k=0;k<sig.length;k++){ if(!mask[k]||sig[k]>=cut) continue;   // skip direct exposure
     let t=Math.log(1+a*sig[k]/mx)/denom, b=Math.round((1-t)*(NB-1));
     hist[b<0?0:b>NB-1?NB-1:b]++; total++; }
   if(!total) return null;
+  const pl=_t.rlo??0.05, ph=_t.rhi??0.01;   // clip darkest pl and brightest ph of the anatomy
   let lo=0, hi=NB-1, acc=0;
-  for(let b=0;b<NB;b++){ acc+=hist[b]; if(acc>=total*0.01){ lo=b; break; } }
-  acc=0; for(let b=NB-1;b>=0;b--){ acc+=hist[b]; if(acc>=total*0.01){ hi=b; break; } }
+  for(let b=0;b<NB;b++){ acc+=hist[b]; if(acc>=total*pl){ lo=b; break; } }
+  acc=0; for(let b=NB-1;b>=0;b--){ acc+=hist[b]; if(acc>=total*ph){ hi=b; break; } }
   return { lo: lo/(NB-1), hi: Math.max((lo+1)/(NB-1), hi/(NB-1)) };
 }
 /* Apply auto-rescale (VOI stretch) to a base tone, using the given window. */
@@ -1286,11 +1294,12 @@ function applyProtocol(p,part){
   const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
   S.gridOn=!!p.grid; setGridUI();
   S.lut=lutData.luts[p.lut]||lutData.luts.linear;
-  // per-exam target EI (real APR): a chest is a low-dose exam (thin lungs, 180 cm,
-  // grid) and reads a lower detector dose than an extremity — so the deviation index
-  // is judged against the exam's own target, not a single number.
-  const EI_REGION_TARGET={ 'Chest':45, 'Abdomen / Pelvis':120, 'Spine':140, 'Head':160 };
-  S.eiTarget = p.targetEI ?? EI_REGION_TARGET[part] ?? 250;
+  // per-exam target EI (real APR): the deviation index is judged against the exam's own
+  // target EiT, not a single number. Calibrated so a well-exposed exam reads DI≈0 with
+  // the IEC 62494-1 scale (EI 100 = 1 µGy). A well-exposed PA chest at 120 kVp / 2.5 mAs /
+  // grid / 180 cm reads ~300; higher-dose body/spine exams sit a little above that.
+  const EI_REGION_TARGET={ 'Chest':300, 'Abdomen / Pelvis':350, 'Spine':350, 'Head':250 };
+  S.eiTarget = p.targetEI ?? EI_REGION_TARGET[part] ?? 300;
   // SID + focused-grid focal length (a focused grid is used at its focal distance)
   if(p.sid){ S.sid=Math.max(20,Math.min(200,p.sid));
     const sv=$('sidV'); if(sv) sv.textContent=S.sid+' cm';

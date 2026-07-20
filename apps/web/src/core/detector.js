@@ -18,14 +18,26 @@ export const Detector = (()=>{
       if(mask[k]) inField.push(s);
     }
     // EI proportional to detector air kerma over the values-of-interest (IEC 62494).
-    // Use an upper percentile rather than the whole-field median so the EI reflects the
-    // well-penetrated diagnostic region (e.g. the lung fields on a chest) instead of
-    // being dragged down by the darkest anatomy (mediastinum/spine).
+    // Two segmentation steps mirror what a real DR EI algorithm does:
+    //  1) EXCLUDE the directly-exposed raw beam (unattenuated background outside/around
+    //     the body). Otherwise, when the field is larger than the body part (e.g. a hand
+    //     on a big receptor), the EI reads the raw beam and is wildly over-stated.
+    //  2) take an upper percentile of the remaining ANATOMY, so the EI reflects the
+    //     well-penetrated diagnostic region (lung fields on a chest) — not the darkest
+    //     tissue (mediastinum/spine).
     inField.sort((a,b)=>a-b);
     const _t=(typeof globalThis!=='undefined'&&globalThis.__tune)||{};
-    const P=_t.P??0.62;                            // values-of-interest percentile (well-penetrated region)
-    const voi = inField.length? inField[Math.min(inField.length-1, Math.floor(inField.length*P))] : 0;
-    const EI = Math.round(voi * (_t.K??200));       // calibration -> ~260 at hand 55/2.0/100
+    const n=inField.length;
+    let EI=0;
+    if(n){
+      const directLvl=inField[Math.floor(n*0.98)]||inField[n-1];   // ~unattenuated (direct) level
+      const cut=directLvl*0.82;                                     // anything brighter is direct exposure
+      let hi=n; while(hi>0 && inField[hi-1]>=cut) hi--;             // hi = count of attenuated (anatomy) pixels
+      const anat=hi>16? hi : n;                                     // fall back to the whole field if all direct
+      const P=_t.P??0.90;                                           // upper percentile of the anatomy
+      const voi=inField[Math.min(anat-1, Math.floor(anat*P))];
+      EI=Math.round(voi*(_t.K??900));                              // detector-dose calibration (EI 100 = 1 µGy, IEC 62494-1)
+    }
     return {signal, EI};
   }
   return {capture};

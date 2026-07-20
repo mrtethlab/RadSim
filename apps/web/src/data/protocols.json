@@ -45,7 +45,7 @@
       { "region": "Chest", "projections": [
         { "proj": "PA chest",        "kv": 120, "mas": 2.5, "grid": true,  "lut": "chest", "sid": 180, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" },
         { "proj": "Lateral chest",   "kv": 120, "mas": 6.4, "grid": true,  "lut": "chest", "sid": 180, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" },
-        { "proj": "AP chest (portable)", "kv": 90, "mas": 3.2, "grid": false, "lut": "chest", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest", "targetEI": 130 } ] } ] },
+        { "proj": "AP chest (portable)", "kv": 90, "mas": 3.2, "grid": false, "lut": "chest", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" } ] } ] },
     { "part": "Abdomen / Pelvis", "regions": [
       { "region": "Abdomen", "projections": [
         { "proj": "AP abdomen (KUB)", "kv": 80, "mas": 32.0, "grid": true, "lut": "abdomen", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait" },
