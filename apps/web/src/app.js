@@ -286,8 +286,21 @@ function applyVoxelMeshTransform(grp){
   grp.position.set(0,0,0); grp.rotation.set(0,0,0);
 }
 
-/* X-ray detector receptor size. The 3D receptor + corner markers were modelled at
-   24x30 cm, so scale them to the selected size; computeRadiograph reads S.detW/detH. */
+/* X-ray detector receptor size + orientation. The 3D receptor (modelled 24x30) scales
+   to the effective W×H; computeRadiograph reads S.detW/detH + the native matrix. */
+function applyDet(){
+  const port=S.detOrient==='portrait';
+  S.detW = port?S.detBaseW:S.detBaseH;
+  S.detH = port?S.detBaseH:S.detBaseW;
+  let [nx,ny]=RES_MAP[S.resolution]||RES_MAP.std;
+  let [cnx,cny]=COMPUTE_MAP[S.resolution]||COMPUTE_MAP.std;
+  if(!port){ let t=nx; nx=ny; ny=t; t=cnx; cnx=cny; cny=t; }
+  S.detNx=nx; S.detNy=ny; S.cnx=cnx; S.cny=cny;
+  const dv=$('detSizeV'); if(dv) dv.textContent=S.detW+'×'+S.detH+' cm';
+  const rv=$('resV'); if(rv) rv.textContent=nx+'×'+ny;
+  const os=$('detOrientSeg'); if(os)[...os.children].forEach(b=>b.classList.toggle('on',b.dataset.orient===S.detOrient));
+  updateDetector();
+}
 function updateDetector(){
   if(!three.det) return;
   const sx=S.detW/24, sz=S.detH/30;
@@ -295,11 +308,11 @@ function updateDetector(){
   if(three.detMarks) three.detMarks.scale.set(sx,1,sz);
 }
 function setDetSize(w,h){
-  S.detW=w; S.detH=h;
+  S.detBaseW=Math.min(w,h); S.detBaseH=Math.max(w,h);
   const seg=$('detSizeSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on', +b.dataset.w===w));
-  const el=$('detSizeV'); if(el) el.textContent=w+'×'+h+' cm';
-  updateDetector();
+  applyDet();
 }
+function setDetOrient(o){ S.detOrient=o; applyDet(); }
 
 /* ============================================================================
    STATE + WIRING
@@ -310,7 +323,11 @@ const S = {
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
-  detW:35, detH:43,            // x-ray detector receptor size (cm): 25x30 small / 35x43 large
+  detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
+  detOrient:'portrait',        // portrait (long axis vertical) / landscape
+  detW:35, detH:43,            // effective receptor W×H (derived from size + orientation)
+  detNx:2500, detNy:3070,      // detector native pixel matrix (for the resolution label/pitch)
+  cnx:480, cny:589,            // physics compute matrix (feasible; presented at native pitch)
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
   voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
@@ -367,7 +384,12 @@ const S = {
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
 // the palmar soft tissue between bone and detector is only ~1-1.5 cm.
 // detector pixel matrices per resolution tier (4:5, matches 24x30 cm receptor)
-const RES_MAP={ low:[176,220], std:[320,400], high:[480,600] };
+// modern digital-radiography detector matrices (portrait, long axis vertical) — the
+// native pixel count shown to the user (resolution label + pixel pitch).
+const RES_MAP={ low:[2000,2450], std:[2500,3070], high:[3500,4300] };
+// physics is ray-cast at a feasible matrix per tier (full-native would be minutes for
+// a voxel body) and presented at the native pitch; higher tiers are sharper but slower.
+const COMPUTE_MAP={ low:[360,441], std:[480,589], high:[640,785] };
 const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125];
 const maSteps=[25,50,100,150,200,250,300,400,500,630,800];
 function exposureTimeSec(){ return S.mas / S.ma; }              // t = mAs / mA
@@ -711,11 +733,11 @@ function bind(){
     const b=e.target.closest('button'); if(!b)return;
     [...$(id).children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); fn(b);
   });
-  segPick('resSeg', b=>{ S.resolution=b.dataset.res;
-    const [nx,ny]=RES_MAP[S.resolution]; $('resV').textContent=nx+'×'+ny; });
+  segPick('resSeg', b=>{ S.resolution=b.dataset.res; applyDet(); });
   $('detSizeSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
     [...$('detSizeSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
     setDetSize(parseInt(b.dataset.w),parseInt(b.dataset.h));});
+  $('detOrientSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setDetOrient(b.dataset.orient);});
   segPick('gridSeg', b=>{ S.gridOn=(b.dataset.grid==='on');
     $('gridStateV').textContent=S.gridOn?'IN':'OUT'; });
   segPick('gridRatioSeg', b=>{ S.gridRatio=parseInt(b.dataset.ratio);
@@ -820,8 +842,10 @@ async function computeRadiograph(){
 
   // detector matches the 3D image receptor (selectable size) so open collimation
   // captures the whole plate, with empty field between the model and the edges.
-  const detW=S.detW, detH=S.detH;  // cm (25x30 small / 35x43 large)
-  const [nx,ny]=RES_MAP[S.resolution]||RES_MAP.std;   // pixel matrix (4:5)
+  const detW=S.detW, detH=S.detH;  // cm (effective, size + orientation)
+  // detector native matrix (modern DR); physics is ray-cast at a capped resolution
+  // and shown at the native pitch (full-res compute would be minutes for a voxel body).
+  const nx=S.cnx, ny=S.cny;                      // physics matrix (native shown via S.detNx/detNy)
   const pxU=detW/nx, pxV=detH/ny;
   const detCenter=[0,0,0];
   const detU=[1,0,0], detV=[0,0,1];
@@ -829,8 +853,8 @@ async function computeRadiograph(){
   const I0 = S.mas * Math.pow(S.kv/70,2);   // dose ∝ mAs·kVp^2
   // quanta per pixel scale with pixel AREA: finer matrices collect fewer photons
   // per element -> more quantum mottle (the resolution/noise trade-off).
-  const STD_PX=(detW/320)*(detH/400);
-  const photonScale = 260 * (pxU*pxV)/STD_PX;   // higher quanta -> lower mottle (clean DR look)
+  const STD_PX=0.048*0.048;                     // reference detector pixel area (~0.48 mm) for the noise model
+  const photonScale = 340 * (pxU*pxV)/STD_PX;   // higher quanta -> lower mottle (clean DR look)
 
   // collimation mask: which detector cells fall inside the beam cone.
   // Tested in the tube frame so the exposed field keystones with CR angle,
@@ -976,7 +1000,7 @@ function annotate(spec){
   $('fnTL').textContent='HAND · '+S.pose;
   $('fnTR').textContent=S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs';
   $('fnBL').textContent='SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV';
-  $('fnBR').textContent='DR '+S.nx+'×'+S.ny+'  '+S.collX+'×'+S.collZ+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');
+  $('fnBR').textContent='DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');
 }
 
 /* ---- custom model import (.glb) + compute-backend status ---- */
@@ -1005,7 +1029,7 @@ function initExtras(){
 
 /* ---- boot ---- */
 window.addEventListener('load',()=>{
-  initScene(); bind(); refreshReadouts(); updateGeomReadouts(); syncScene();
+  initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
   Sound.init(); initExtras();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
