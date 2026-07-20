@@ -213,6 +213,7 @@ export function ctSyncScene() {
   laserTop.intensity = laserSide.intensity = showLaser ? 7 : 0;
   if (three.det) three.det.visible = !isCT;           // hide the flat-panel detector in CT
   if (three.detMarks) three.detMarks.visible = !isCT; // and its corner brackets
+  if (three.detArrow) three.detArrow.visible = !isCT; // and the hang-direction arrow
   three.handGroup.rotation.y = 0;      // head-first only — no patient flip
   if (isCT) {
     const py = ctPatientY();
@@ -310,6 +311,13 @@ function applyMode(mode) {
   // tube-POV camera, Image view). Acquisition params + technique are user setup and
   // deliberately persist.
   resetCTSession();
+  // the chest arrives pre-isocentred at its superior end so START sweeps the whole
+  // chest (the reset above wiped the defaults setSubject applied in the other mode);
+  // the hand still requires setting the isocentre manually.
+  if (mode === 'ct' && ctx.S.subject === 'chest' && ctx.S.voxelModel) {
+    ctx.S.ct.isoZ = (ctx.S.voxelModel.extentMM[2] / 2) / 10;
+    ctx.S.ct.isocentred = true;
+  }
   if (mode === 'ct') ctx.setCTPov('ap');   // CT starts on the AP perspective
   else ctx.setCameraView('orbit');         // x-ray returns to free orbit
   ctx.setContent('3d');           // always land in the positioning view, never a stale image
@@ -324,7 +332,7 @@ function applyMode(mode) {
 
 function wireCTSettings() {
   const { S, $ } = ctx;
-  // scout technique steppers (kV / mA). The scout beam width is fixed at 1.5 mm.
+  // scout technique steppers (kV / mA). The scout beam width is fixed at 1.0 mm.
   $('ctSettings')?.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-ctstep]'); if (!b) return;
     const key = b.dataset.ctstep, d = parseInt(b.dataset.d, 10);
@@ -615,7 +623,9 @@ function scoutProjection(view) {
   const muBone = voxel ? null : bins.map(b => Materials.mu('bone', b.E));
   const muMarr = voxel ? null : bins.map(b => Materials.mu('marrow', b.E));
   const I0 = S.ct.scoutMa * Math.pow(S.ct.scoutKv / 70, 2);
-  const PXMM = 1.5;                                  // mm per (square) pixel — undistorted (scout beam width)
+  // CT detector element (DEL) pitch ~1 mm — the scout's square pixel. Independent of
+  // the x-ray DR detector resolution (~100 µm), which never applies to CT.
+  const PXMM = 1.0;
   const lenU = scanLenU();                           // scan length in world units (z axis)
   const widthMM = scoutFov();              // width (AP) / thickness (LAT) field
   const nz = Math.max(2, Math.round(S.ct.scanLen / PXMM));
@@ -653,7 +663,16 @@ function scoutProjection(view) {
       if (d < mn) mn = d; if (d > mx) mx = d;
     }
   }
-  return { dose, nw, nz, mn, mx };                   // mn/mx: fixed window for stable stitching
+  // Display window for the log (line-integral) mapping: p = ln(open/dose). Normalise
+  // to a high PERCENTILE of p, not the absolute densest ray, so a handful of extreme
+  // paths (e.g. laterally through both shoulders) saturate to white instead of
+  // compressing the whole gray scale. Computed once here so stitching stays stable.
+  const floor = Math.max(mn, mx * 1e-12) || 1e-12;
+  const ps = new Float32Array(nw * nz);
+  for (let k = 0; k < ps.length; k++) ps[k] = Math.log(mx / Math.max(dose[k], floor));
+  const sorted = Float32Array.from(ps).sort();
+  const pmax = Math.max(sorted[Math.min(ps.length - 1, Math.floor(ps.length * 0.997))], 1e-3);
+  return { dose, nw, nz, mn, mx, pmax };             // fixed window for stable stitching
 }
 
 // Paint the topogram: attenuated (bone) -> bright, open field -> dark. Row 0 of the
@@ -671,12 +690,20 @@ function drawScout(cv, data, rowLimit) {
   const img = g.createImageData(nw, nz);
   const d8 = img.data;
   for (let k = 0; k < d8.length; k += 4) { d8[k] = d8[k + 1] = d8[k + 2] = 0; d8[k + 3] = 255; } // unscanned = black
-  const rng = (mx - mn) || 1;
+  // Log (line-integral) display, like a real scout/DR system: gray ∝ ln(open/dose).
+  // A body spans many DECADES of transmission (lungs ~e^-1, shoulders ~e^-12); a
+  // linear dose window crushes everything but the densest ray to white — the classic
+  // "underexposed" all-white scout. The log spreads those decades across the gray
+  // scale: air black, lungs dark gray, mediastinum/spine mid-gray with detail, the
+  // densest path white. Window fixed from the scan's mn/mx so stitching is stable.
+  const floor = Math.max(mn, mx * 1e-12) || 1e-12;
+  const pmax = data.pmax || Math.log(mx / floor) || 1;   // percentile window from scoutProjection
+  const GAMMA = 1.4;                                  // film-like response: lungs dark, soft tissue mid-gray
   for (let j = 0; j < lim; j++) {
     const imgRow = j;                                // isocentre (row 0) at the top (= start)
     for (let i = 0; i < nw; i++) {
-      const t = (dose[j * nw + i] - mn) / rng;        // 0 = most attenuated, 1 = open field
-      const v = Math.round(255 * Math.pow(1 - t, 0.7));
+      const p = Math.min(1, Math.log(mx / Math.max(dose[j * nw + i], floor)) / pmax);   // 0 open … 1 dense (clip white)
+      const v = Math.round(255 * Math.pow(p, GAMMA));
       const o = (imgRow * nw + i) * 4;
       d8[o] = d8[o + 1] = d8[o + 2] = v;
     }

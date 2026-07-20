@@ -52,6 +52,17 @@ function initScene(){
     bracket( hx, hz,-1,-1); bracket(-hx, hz, 1,-1);
     bracket( hx,-hz,-1, 1); bracket(-hx,-hz, 1, 1);
   })();
+  // hang-direction arrow: a small white arrow printed on the plate pointing +z
+  // (toward the fingertips) — the end the processed image is hung from.
+  const detArrow=new THREE.Group();
+  (function hangArrow(){
+    const m=new THREE.MeshBasicMaterial({color:0xffffff});
+    const shaft=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.06,1.7),m);
+    shaft.position.set(0,0.07,-0.85); detArrow.add(shaft);
+    const head=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.1,12),m);
+    head.rotation.x=Math.PI/2; head.position.set(0,0.07,0.55); detArrow.add(head);
+  })();
+  scene.add(detArrow);
 
   // ---- COLLIMATOR LAMP -------------------------------------------------
   // A shadow-casting spotlight at the focal spot projects a "cookie" texture
@@ -93,7 +104,7 @@ function initScene(){
   const beam=new THREE.Group(); scene.add(beam);         // retired (unused)
   const handGroup=new THREE.Group(); scene.add(handGroup);
 
-  three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,
+  three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
          amb,key,lamp,cookieCanvas,cookieTex,lampAngle};
   buildHandMeshes();
 
@@ -246,6 +257,15 @@ async function setSubject(sub){
         S.voxelModel=await loadVoxelModel('/models/chest','chest');
         if(S.voxelModel.meshUrl){
           const grp=await loadModelUrl(S.voxelModel.meshUrl);
+          // the exported GLB carries PBR defaults (metalness 1), no shadow flags and NO
+          // normals (GLTFLoader falls back to flat shading, which breaks the spot-light
+          // cookie projection — the light field floods the whole mesh unmasked). Compute
+          // real vertex normals and make it matte + shadow-aware so the collimator light
+          // projects onto it and it throws its own shadow, exactly like the hand.
+          grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
+            if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+            const ms=Array.isArray(o.material)?o.material:[o.material];
+            for(const m of ms){ if(m){ m.metalness=0; m.roughness=0.95; m.flatShading=false; m.needsUpdate=true; } } } });
           applyVoxelMeshTransform(grp);
           three.handGroup.add(grp); three.chestGroup=grp;
         }
@@ -310,6 +330,8 @@ function updateDetector(){
   const sx=S.detW/24, sz=S.detH/30;
   three.det.scale.set(sx,1,sz);
   if(three.detMarks) three.detMarks.scale.set(sx,1,sz);
+  // hang arrow rides the +z edge of the receptor (unscaled, so it stays an arrow)
+  if(three.detArrow) three.detArrow.position.set(-9*sx, 0, 12.6*sz);
 }
 function setDetSize(w,h){
   S.detBaseW=Math.min(w,h); S.detBaseH=Math.max(w,h);
@@ -390,7 +412,10 @@ const S = {
 // modern digital-radiography detector matrices (portrait, long axis vertical). The
 // projection is ray-cast at this true resolution (no downscaling); the heavy voxel-body
 // case is offloaded to the Python compute backend when it is running.
-const RES_MAP={ low:[2000,2450], std:[2500,3070], high:[3500,4300] };
+// 'quick' is a fast draft preview at the sim's original coarse matrix (~1 mm
+// pixels — not a real DR resolution) so a voxel-body exposure returns in well
+// under a second; low/std/high are true modern DR matrices (~100 µm pixels).
+const RES_MAP={ quick:[320,400], low:[2000,2450], std:[2500,3070], high:[3500,4300] };
 const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125];
 const maSteps=[25,50,100,150,200,250,300,400,500,630,800];
 function exposureTimeSec(){ return S.mas / S.ma; }              // t = mAs / mA
@@ -968,8 +993,15 @@ function renderRadiograph(target){
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
   cctx.putImageData(img,0,0);
-  // orient (rotate + flip) into the target, sizing target to the exposed crop
-  const rot=((S.imgRot%360)+360)%360, rot90=(rot===90||rot===270);
+  // orient (rotate + flip) into the target, sizing target to the exposed crop.
+  // A per-subject hanging default is applied first, then the user's adjustments:
+  //  - hand: fingertips (+z, the plate arrow) up -> 180° rotation. A rotation, NOT a
+  //    vertical mirror, so left/right chirality is preserved.
+  //  - chest: shoulders (-z) are already up as recorded; mirror horizontally because
+  //    a PA projection is displayed as if facing the patient (L marker on the right).
+  const baseRot = S.subject==='chest' ? 0 : 180;
+  const baseFlipH = S.subject==='chest';
+  const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
   const tctx=target.getContext('2d');
@@ -977,7 +1009,7 @@ function renderRadiograph(target){
   tctx.save();
   tctx.translate(target.width/2, target.height/2);
   tctx.rotate(rot*Math.PI/180);
-  tctx.scale(S.flipH?-1:1, S.flipV?-1:1);
+  tctx.scale((baseFlipH!==S.flipH)?-1:1, S.flipV?-1:1);
   tctx.drawImage(crop, -cw/2, -ch/2);
   tctx.restore();
 }
@@ -996,7 +1028,7 @@ function updateDI(EI){
 }
 
 function annotate(spec){
-  $('fnTL').textContent='HAND · '+S.pose;
+  $('fnTL').textContent=(S.subject==='chest'?'CHEST':'HAND')+' · '+S.pose;
   $('fnTR').textContent=S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs';
   $('fnBL').textContent='SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV';
   $('fnBR').textContent='DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');

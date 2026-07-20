@@ -188,7 +188,7 @@
               <div class="sv" id="ctScoutMaV">20</div><button data-ctstep="scoutMa" data-d="1">+</button></div></div>
           <div class="row" style="margin-top:12px"><div class="rl">Est. scan time</div>
             <div class="valchip green" id="ctExpTimeV">— s</div></div>
-          <div class="note" style="margin-top:6px">Scout (topogram) beam width 1.5 mm. The scout runs from the isocentre for the scan length; each scan group then plans its diagnostic acquisition + reconstructions.</div>
+          <div class="note" style="margin-top:6px">Scout (topogram) beam width 1.0 mm (CT DEL pitch). The scout runs from the isocentre for the scan length; each scan group then plans its diagnostic acquisition + reconstructions.</div>
         </div>
       </div>
 
@@ -291,10 +291,12 @@
           <div class="row" style="margin-top:12px"><div class="rl">Resolution</div>
             <div class="valchip" id="resV">320×400</div></div>
           <div class="seg" id="resSeg">
+            <button data-res="quick">Quick</button>
             <button data-res="low">Low</button>
             <button data-res="std" class="on">Std</button>
             <button data-res="high">High</button>
           </div>
+          <div class="note" style="margin-top:4px">Quick = coarse draft preview (~1 mm px, fast compute). Low/Std/High = true DR matrices ray-cast at native resolution.</div>
 
           <div class="row" style="margin-top:12px"><div class="rl">Anti-scatter grid</div>
             <div class="valchip" id="gridStateV">OUT</div></div>
