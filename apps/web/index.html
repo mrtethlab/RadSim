@@ -203,13 +203,6 @@
           </div>
           <div class="note" style="margin-top:4px">Quick = 128-channel preview detector (pitch follows the recon FOV). Realistic = fixed 0.625&nbsp;mm DEL pitch across a 500&nbsp;mm scan FOV — 800 channels × 720 views, 512² matrix. Heavy: pair it with the Python GPU engine.</div>
 
-          <div class="row" style="margin-top:12px"><div class="rl">Compute engine</div>
-            <div class="valchip" id="backendStatusCT">checking…</div></div>
-          <div class="seg" id="backendSegCT">
-            <button data-be="local" class="on">Browser</button>
-            <button data-be="python" disabled>Python GPU</button>
-          </div>
-
           <div class="note" style="margin-top:6px">Scout (topogram) beam width 1.0 mm (CT DEL pitch). The scout runs from the isocentre for the scan length; each scan group then plans its diagnostic acquisition + reconstructions.</div>
         </div>
       </div>
@@ -319,16 +312,13 @@
             <button data-res="high">High</button>
           </div>
           <div class="note" style="margin-top:4px">Quick = coarse draft preview (~1 mm px, fast compute). Low/Std/High = true DR matrices ray-cast at native resolution.</div>
+        </div>
+      </div>
 
-          <div class="row" style="margin-top:12px"><div class="rl">Compute engine</div>
-            <div class="valchip" id="backendStatusX">checking…</div></div>
-          <div class="seg" id="backendSegX">
-            <button data-be="local" class="on">Browser</button>
-            <button data-be="python" disabled>Python GPU</button>
-          </div>
-          <div class="note" style="margin-top:4px">Python GPU offloads voxel-model (chest) ray-casting to the compute backend. The analytic hand always computes in-browser. Start it with: <b>uvicorn app.main:app --port 8000</b> in services/compute.</div>
-
-          <div class="row" style="margin-top:12px"><div class="rl">Anti-scatter grid</div>
+      <div class="grp xray-only">
+        <div class="lab">Anti-scatter grid</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Grid</div>
             <div class="valchip" id="gridStateV">OUT</div></div>
           <div class="seg" id="gridSeg">
             <button data-grid="off" class="on">Out</button>
@@ -353,6 +343,33 @@
           </div>
 
           <div class="note" style="margin-top:6px">A focused grid cleans up scatter but cuts primary when SID ≠ focal length, off-centre, or angled across the strips — raising the dose needed for target EI.</div>
+        </div>
+      </div>
+
+      <!-- SIMULATION: compute engine + display options (both modes) -->
+      <div class="grp" id="simGrp">
+        <div class="lab">Simulation</div>
+        <div class="bod">
+          <div class="xray-only">
+            <div class="row"><div class="rl">Compute engine</div>
+              <div class="valchip" id="backendStatusX">checking…</div></div>
+            <div class="seg" id="backendSegX">
+              <button data-be="local" class="on">Browser</button>
+              <button data-be="python" disabled>Python GPU</button>
+            </div>
+            <div class="note" style="margin-top:4px">Python GPU offloads voxel-model ray-casting to the compute backend. The analytic hand always computes in-browser. Start it with: <b>uvicorn app.main:app --port 8000</b> in services/compute.</div>
+          </div>
+          <div class="ct-only">
+            <div class="row"><div class="rl">Compute engine</div>
+              <div class="valchip" id="backendStatusCT">checking…</div></div>
+            <div class="seg" id="backendSegCT">
+              <button data-be="local" class="on">Browser</button>
+              <button data-be="python" disabled>Python GPU</button>
+            </div>
+            <div class="note" style="margin-top:4px">Python GPU offloads voxel-model scout + reconstruction to the compute backend.</div>
+          </div>
+          <label class="cttoggle" style="margin-top:12px"><input type="checkbox" id="histToggle" checked>
+            <span>Show display histogram</span></label>
         </div>
       </div>
 

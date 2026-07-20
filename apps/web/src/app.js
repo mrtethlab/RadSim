@@ -1061,10 +1061,12 @@ function renderRadiograph(target){
   // A per-subject hanging default is applied first, then the user's adjustments:
   //  - hand: fingertips (+z, the plate arrow) up -> 180° rotation. A rotation, NOT a
   //    vertical mirror, so left/right chirality is preserved.
-  //  - chest: shoulders (-z) are already up as recorded; mirror horizontally because
-  //    a PA projection is displayed as if facing the patient (L marker on the right).
+  //  - voxel body (chest, etc.): the superior end is world +z, which the raw detector
+  //    mapping lands at the image BOTTOM, so flip vertically to hang it head-up; mirror
+  //    horizontally too because a PA projection is displayed as if facing the patient.
   const baseRot = S.subject!=='hand' ? 0 : 180;
   const baseFlipH = S.subject!=='hand';
+  const baseFlipV = S.subject!=='hand';
   const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
@@ -1073,7 +1075,7 @@ function renderRadiograph(target){
   tctx.save();
   tctx.translate(target.width/2, target.height/2);
   tctx.rotate(rot*Math.PI/180);
-  tctx.scale((baseFlipH!==S.flipH)?-1:1, S.flipV?-1:1);
+  tctx.scale((baseFlipH!==S.flipH)?-1:1, (baseFlipV!==S.flipV)?-1:1);
   tctx.drawImage(crop, -cw/2, -ch/2);
   tctx.restore();
 }
