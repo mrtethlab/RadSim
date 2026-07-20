@@ -115,45 +115,63 @@ def resample_iso(img: sitk.Image, spacing: float, is_label: bool) -> sitk.Image:
     return rs.Execute(img)
 
 
-# ---- region crops: cranio-caudal (z) window in mm, optionally landmark-anchored.
-# The z axis in the resampled array is index 0 (SimpleITK gives (z,y,x)); +z is
-# toward the patient SUPERIOR after we orient the CT (see build). A region is
-# (anchor_structure_substrings, above_mm, below_mm): the window spans from
-# above_mm superior to the anchor's top down to below_mm inferior to its bottom.
-# anchor None + fractions falls back to a fraction of the whole scan height.
+# ---- region crops.
+# 'z' regions: a cranio-caudal window anchored to segmented landmarks (crop only the
+#   z index range → keeps the full axial cross-section). Good for head/neck, CAP,
+#   thighs (below the pelvis a z-slab already contains only the legs).
+# 'bbox3d' regions: crop to the 3D bounding box of an anchor structure, picking the
+#   lateral side with the most voxels — needed for the upper limb, whose humerus lies
+#   ALONGSIDE the thorax so a z-slab would still include the chest. Isolates one arm.
+# margin is in mm. anchor entries are matched as name substrings.
 REGIONS = {
-    "headneck":  dict(anchor=("skull", "vertebrae_c"), above=40, below=20, note="skull → lower cervical"),
-    "chestabdopelvis": dict(anchor=("vertebrae_t", "vertebrae_l", "hip", "sacrum"), above=30, below=20,
-                            note="lung apices → pelvic floor"),
-    "upperextremity": dict(anchor=("humerus", "scapula", "clavicula"), above=20, below=20,
-                           note="shoulder girdle → hand"),
-    "lowerextremity": dict(anchor=("femur", "tibia", "fibula", "patella"), above=20, below=20,
-                           note="hip → foot"),
+    "headneck":  dict(mode="z", anchor=("skull", "vertebrae_c"), margin=20, note="skull → lower cervical"),
+    "chestabdopelvis": dict(mode="z", anchor=("vertebrae_t", "vertebrae_l", "hip", "sacrum", "rib"),
+                            margin=15, note="lung apices → pelvic floor"),
+    "upperextremity": dict(mode="bbox3d", anchor=("humerus",), margin=25, lateral=True,
+                           note="shoulder → upper arm (one side)"),
+    "lowerextremity": dict(mode="bbox3d", anchor=("femur",), margin=25, lateral=False,
+                           note="hip → thigh"),
     "wholebody": None,       # no crop
-    "chest": dict(anchor=("rib", "sternum"), above=25, below=15, note="thoracic cage"),
+    "chest": dict(mode="z", anchor=("rib", "sternum"), margin=15, note="thoracic cage"),
 }
 
 
-def _region_zrange(region, lab, cmap, zsize, spacing):
-    """Return (z0, z1) index bounds for a region, or (0, zsize) for whole-body."""
+def _side_mask(mask):
+    """Keep only the largest lateral (x) half's worth of a structure: split at the
+    x-centroid, keep whichever side has more voxels. Isolates one arm/leg."""
+    xs = np.where(mask.any(axis=(0, 1)))[0]
+    if xs.size == 0:
+        return mask
+    xmid = int(round(mask.sum(axis=(0, 1)) @ np.arange(mask.shape[2]) / max(1, mask.sum())))
+    left = mask.copy(); left[:, :, xmid:] = False
+    right = mask.copy(); right[:, :, :xmid] = False
+    return right if right.sum() >= left.sum() else left
+
+
+def _region_bounds(region, lab, cmap, shape, spacing):
+    """Return (z0,z1,y0,y1,x0,x1) crop bounds; full volume for whole-body."""
+    zN, yN, xN = shape
+    full = (0, zN, 0, yN, 0, xN)
     if region is None or REGIONS.get(region) is None:
-        return 0, zsize
+        return full
     cfg = REGIONS[region]
     anchor_ids = [lid for lid, nm in cmap.items()
                   if any(a in nm.lower() for a in cfg["anchor"])]
     present = np.isin(lab, anchor_ids)
-    zs = np.where(present.any(axis=(1, 2)))[0]
-    if zs.size == 0:
+    if not present.any():
         print(f"      ! region '{region}' anchor not found — using whole scan")
-        return 0, zsize
-    ztop, zbot = int(zs.min()), int(zs.max())
-    # +z index is superior? our build orients so index increases inferiorly by
-    # default from SimpleITK; handle both by padding symmetrically in index space.
-    pad_top = int(round(cfg["above"] / spacing))
-    pad_bot = int(round(cfg["below"] / spacing))
-    z0 = max(0, ztop - pad_top)
-    z1 = min(zsize, zbot + pad_bot + 1)
-    return z0, z1
+        return full
+    mg = int(round(cfg.get("margin", 20) / spacing))
+    if cfg["mode"] == "bbox3d":
+        if cfg.get("lateral"):
+            present = _side_mask(present)
+        zs, ys, xs = np.where(present)
+        return (max(0, zs.min() - mg), min(zN, zs.max() + mg + 1),
+                max(0, ys.min() - mg), min(yN, ys.max() + mg + 1),
+                max(0, xs.min() - mg), min(xN, xs.max() + mg + 1))
+    # z-only
+    zs = np.where(present.any(axis=(1, 2)))[0]
+    return (max(0, zs.min() - mg), min(zN, zs.max() + mg + 1), 0, yN, 0, xN)
 
 
 def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source):
@@ -207,11 +225,12 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
         mat[bone_mask & (hu >= 350)] = CORTICAL
         mat[bone_mask & (hu < 350)] = TRABECULAR
 
-    # ---- region crop (cranio-caudal), then tight body bbox ----
-    z0r, z1r = _region_zrange(region, lab, cmap, hu.shape[0], spacing)
-    if (z0r, z1r) != (0, hu.shape[0]):
-        print(f"      region '{region}': z[{z0r}:{z1r}] ({(z1r-z0r)*spacing:.0f} mm)")
-    body = body[z0r:z1r]; mat = mat[z0r:z1r]; hu = hu[z0r:z1r]
+    # ---- region crop, then tight body bbox ----
+    z0r, z1r, y0r, y1r, x0r, x1r = _region_bounds(region, lab, cmap, hu.shape, spacing)
+    if (z0r, z1r, y0r, y1r, x0r, x1r) != (0, hu.shape[0], 0, hu.shape[1], 0, hu.shape[2]):
+        print(f"      region '{region}': z[{z0r}:{z1r}] y[{y0r}:{y1r}] x[{x0r}:{x1r}]")
+    sl = (slice(z0r, z1r), slice(y0r, y1r), slice(x0r, x1r))
+    body = body[sl]; mat = mat[sl]; hu = hu[sl]
 
     print("[4/5] cropping to body + writing volume …")
     zs, ys, xs = np.where(body)
