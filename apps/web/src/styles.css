@@ -407,9 +407,12 @@ body.mode-ct .di{display:none}
   font-family:var(--disp); font-size:13px; padding:5px 10px; min-width:150px}
 .slsel:disabled{color:var(--muted2)}
 .slmain{flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center}
-.slcanvaswrap{position:relative; height:100%; aspect-ratio:1/1; max-width:100%; display:flex; align-items:center; justify-content:center}
-#ctSliceCanvas{height:100%; width:auto; max-width:100%; aspect-ratio:1/1; background:#000;
-  border:1px solid var(--edge2); image-rendering:auto; display:block}
+/* the canvas bitmap is always square; object-fit keeps it square inside a bay of
+   any proportion (height:100% + max-width used to defeat aspect-ratio and stretch
+   the image vertically in a portrait bay) */
+.slcanvaswrap{position:relative; width:100%; height:100%; display:flex; align-items:center; justify-content:center}
+#ctSliceCanvas{width:100%; height:100%; object-fit:contain; background:transparent;
+  image-rendering:auto; display:block}
 .slinfo{position:absolute; inset:0; pointer-events:none; padding:8px 10px;
   font-family:var(--seg); font-size:10.5px; letter-spacing:.5px; color:rgba(180,236,255,.85); text-shadow:0 0 4px #000}
 .slinfo span{position:absolute; display:block}

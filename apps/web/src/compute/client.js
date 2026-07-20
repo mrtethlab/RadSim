@@ -7,7 +7,9 @@
 // path to "increased computation power".
 //
 // Backend URL is configurable at build time via VITE_COMPUTE_URL.
-const BASE = (import.meta.env && import.meta.env.VITE_COMPUTE_URL) || 'http://localhost:8000';
+// NB: 127.0.0.1, not localhost — on Windows, "localhost" tries IPv6 ::1 first and
+// stalls ~2 s per request when uvicorn is listening on IPv4 only.
+const BASE = (import.meta.env && import.meta.env.VITE_COMPUTE_URL) || 'http://127.0.0.1:8000';
 
 export class ComputeClient {
   constructor(base = BASE) { this.base = base; }
@@ -32,6 +34,22 @@ export class ComputeClient {
     if (!r.ok) throw new Error('compute /project failed: ' + r.status);
     return r.json();
   }
+
+  // POST JSON, receive a raw little-endian float32 array (X-Shape header = dims).
+  async _binary(path, payload) {
+    const r = await fetch(this.base + path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error('compute ' + path + ' failed: ' + r.status + ' ' + (await r.text()).slice(0, 300));
+    return new Float32Array(await r.arrayBuffer());
+  }
+
+  // GPU x-ray projection of a voxel phantom -> Float32Array dose map (ny*nx, row-major).
+  projectVoxel(payload) { return this._binary('/project/voxel', payload); }
+
+  // GPU CT reconstruction of transverse slices -> Float32Array (nz*N*N).
+  ctSlices(payload) { return this._binary('/ct/slices', payload); }
 
   // Convert an uploaded .blend to .glb (requires Blender on the backend PATH).
   async convertBlendToGlb(file) {

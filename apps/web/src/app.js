@@ -10,6 +10,7 @@ import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
 import { loadModelFile, loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
+import { muOverBins } from './core/voxelPhantom.js';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
@@ -253,6 +254,7 @@ async function setSubject(sub){
   if(sub==='chest'){
     if(!S.voxelModel){
       if(hint) hint.textContent='Loading chest model…';
+      S.subjectLoading=true;   // guards CT START/exposure until the swap completes
       try{
         S.voxelModel=await loadVoxelModel('/models/chest','chest');
         if(S.voxelModel.meshUrl){
@@ -272,6 +274,7 @@ async function setSubject(sub){
         if(hint) hint.textContent=S.voxelModel.header.name+' · '+S.voxelModel.dims.join('×')+' @ '+S.voxelModel.spacingMM[0]+'mm';
       }catch(err){ console.error('chest load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
         [...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.sub==='hand')); return; }
+      finally{ S.subjectLoading=false; }
     }
     S.subject='chest';
     const ext=S.voxelModel.extentMM;
@@ -356,6 +359,9 @@ const S = {
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
   voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
+  // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
+  xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
+  computeInfo:null,            // /health result when the Python backend is reachable
   // ---- CT mode ----
   mode:'xray',                 // 'xray' | 'ct'
   ct:{
@@ -397,6 +403,8 @@ const S = {
     storeCap:4,                // keep at most this many scan groups' worth of data when autoDelete is on
     nextScanId:1,              // running id for stored scans
     viewer:{ scanId:null, slice:0, wl:60, ww:800 },   // cross-sectional (axial) viewer state (HU window/level)
+    backend:'local',           // 'local' | 'python' — CT reconstruction engine
+    detMode:'quick',           // 'quick' (128-ch preview) | 'realistic' (fixed 0.625mm DEL, 512² recon)
     // linked 2x2 MPR workstation: one cross-reference position drives all four panes
     mpr:{ scanId:null, cur:null, wl:60, ww:800, sel:'axial', thk:5, interval:5, algo:'standard', mar:false,
           // oblique plane: a localizer line anchored to one ortho view (view), rotated by
@@ -897,11 +905,31 @@ async function computeRadiograph(){
   }
 
   const spectrum=Spectrum.make(S.kv);
-  const dose=await AttenuationEngine.project({
-    phantom, source, detCenter, detU, detV, nx, ny, pxU, pxV,
-    spectrum, I0, refDist:100,
-    onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
-  });
+  // ---- Python GPU engine (voxel subjects): same physics, integrated server-side.
+  // The browser stays the source of truth for the spectrum + per-material mu tables
+  // and sends them along; on any failure we fall back to the in-browser engine.
+  let dose=null;
+  if(S.xrayBackend==='python' && phantom.voxel && S.computeInfo){
+    try{
+      $('prog').style.width='30%';
+      dose=await compute.projectVoxel({
+        model:S.subject, flips:Array.from(phantom.flip,Boolean),
+        center:[(phantom.min[0]+phantom.max[0])/2,(phantom.min[1]+phantom.max[1])/2,(phantom.min[2]+phantom.max[2])/2],
+        source, detCenter, detU, detV, nx, ny, pxU, pxV,
+        binsW:spectrum.bins.map(b=>b.w),
+        muMat:muOverBins(spectrum.bins).map(r=>Array.from(r)),
+        I0, refDist:100,
+        coneD:fd, coneW:wAxis, coneL:lAxis, coneTw:tw, coneTl:tl,
+      });
+    }catch(err){ console.warn('GPU backend projection failed — falling back to the browser engine', err); dose=null; }
+  }
+  if(!dose){
+    dose=await AttenuationEngine.project({
+      phantom, source, detCenter, detU, detV, nx, ny, pxU, pxV,
+      spectrum, I0, refDist:100,
+      onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
+    });
+  }
 
   // ---- anti-scatter grid ----
   // A focused linear grid (strips running along the long z axis) passes a fixed
@@ -1034,7 +1062,62 @@ function annotate(spec){
   $('fnBR').textContent='DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');
 }
 
-/* ---- custom model import (.glb) + compute-backend status ---- */
+/* ---- compute backend (Python GPU) ---- */
+const compute=new ComputeClient();
+/* Ping the backend; update the status chips + enable/disable the Python buttons in
+   both modes. Called at boot and whenever a toggle is pressed. */
+async function refreshComputeStatus(){
+  S.computeInfo=await compute.health();
+  const on=!!S.computeInfo, dev=on?(S.computeInfo.compute||{}):null;
+  const label=on ? ((dev.device==='cuda'?(dev.name||'GPU'):'CPU')) : 'offline';
+  for(const id of ['backendStatusX','backendStatusCT']){
+    const el=$(id); if(!el) continue;
+    el.textContent=label;
+    el.classList.toggle('green', on);
+  }
+  for(const segId of ['backendSegX','backendSegCT']){
+    const b=document.querySelector('#'+segId+' button[data-be="python"]');
+    if(b) b.disabled=!on;
+  }
+  // if the backend vanished while selected, drop back to the browser engine
+  if(!on){
+    if(S.xrayBackend==='python') setBackend('xray','local');
+    if(S.ct.backend==='python') setBackend('ct','local');
+  }
+  const dot=$('computeDot');
+  if(dot){
+    dot.textContent=on?'●':'○';
+    dot.style.color=on?'var(--green)':'var(--muted2)';
+    dot.title=on?('compute backend online — '+label):'compute backend offline (optional)';
+  }
+  return on;
+}
+function setBackend(mode,val){
+  if(mode==='xray') S.xrayBackend=val; else S.ct.backend=val;
+  const seg=$(mode==='xray'?'backendSegX':'backendSegCT');
+  if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.be===val));
+}
+function wireBackendToggles(){
+  for(const [segId,mode] of [['backendSegX','xray'],['backendSegCT','ct']]){
+    $(segId)?.addEventListener('click',async e=>{
+      const b=e.target.closest('button'); if(!b||b.disabled) return;
+      if(b.dataset.be==='python' && !S.computeInfo){
+        const ok=await refreshComputeStatus();
+        if(!ok) return;   // still offline — stay on the browser engine
+      }
+      setBackend(mode,b.dataset.be);
+    });
+  }
+  // CT detector design: quick preview vs realistic fixed-pitch MDCT
+  $('ctDetModeSeg')?.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    S.ct.detMode=b.dataset.dm;
+    [...$('ctDetModeSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.dm===S.ct.detMode));
+    const v=$('ctDetModeV'); if(v) v.textContent=S.ct.detMode==='realistic'?'800 ch · 0.625 mm':'128 ch · preview';
+  });
+}
+
+/* ---- custom model import (.glb) ---- */
 let modelGroup=null;
 function initExtras(){
   const inp=$('loadModelInput');
@@ -1049,13 +1132,8 @@ function initExtras(){
     inp.value='';
   });
   $('clearModelBtn')?.addEventListener('click',()=>{ if(modelGroup){ three.scene.remove(modelGroup); modelGroup=null; } });
-  // ping the Python compute backend; light the status dot if it is reachable
-  const dot=$('computeDot');
-  new ComputeClient().health().then(h=>{ if(!dot)return;
-    dot.textContent = h ? '●' : '○';
-    dot.style.color = h ? 'var(--green)' : 'var(--muted2)';
-    dot.title = h ? ('compute backend online — '+(h.service||'ok')) : 'compute backend offline (optional)';
-  });
+  wireBackendToggles();
+  refreshComputeStatus();
 }
 
 /* ---- boot ---- */
@@ -1066,5 +1144,5 @@ window.addEventListener('load',()=>{
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
-           refreshFilmViewer });
+           refreshFilmViewer, compute });
 });

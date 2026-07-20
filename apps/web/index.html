@@ -188,6 +188,22 @@
               <div class="sv" id="ctScoutMaV">20</div><button data-ctstep="scoutMa" data-d="1">+</button></div></div>
           <div class="row" style="margin-top:12px"><div class="rl">Est. scan time</div>
             <div class="valchip green" id="ctExpTimeV">— s</div></div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">CT detector</div>
+            <div class="valchip" id="ctDetModeV">128 ch · preview</div></div>
+          <div class="seg" id="ctDetModeSeg">
+            <button data-dm="quick" class="on">Quick</button>
+            <button data-dm="realistic">Realistic</button>
+          </div>
+          <div class="note" style="margin-top:4px">Quick = 128-channel preview detector (pitch follows the recon FOV). Realistic = fixed 0.625&nbsp;mm DEL pitch across a 500&nbsp;mm scan FOV — 800 channels × 720 views, 512² matrix. Heavy: pair it with the Python GPU engine.</div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">Compute engine</div>
+            <div class="valchip" id="backendStatusCT">checking…</div></div>
+          <div class="seg" id="backendSegCT">
+            <button data-be="local" class="on">Browser</button>
+            <button data-be="python" disabled>Python GPU</button>
+          </div>
+
           <div class="note" style="margin-top:6px">Scout (topogram) beam width 1.0 mm (CT DEL pitch). The scout runs from the isocentre for the scan length; each scan group then plans its diagnostic acquisition + reconstructions.</div>
         </div>
       </div>
@@ -297,6 +313,14 @@
             <button data-res="high">High</button>
           </div>
           <div class="note" style="margin-top:4px">Quick = coarse draft preview (~1 mm px, fast compute). Low/Std/High = true DR matrices ray-cast at native resolution.</div>
+
+          <div class="row" style="margin-top:12px"><div class="rl">Compute engine</div>
+            <div class="valchip" id="backendStatusX">checking…</div></div>
+          <div class="seg" id="backendSegX">
+            <button data-be="local" class="on">Browser</button>
+            <button data-be="python" disabled>Python GPU</button>
+          </div>
+          <div class="note" style="margin-top:4px">Python GPU offloads voxel-model (chest) ray-casting to the compute backend. The analytic hand always computes in-browser. Start it with: <b>uvicorn app.main:app --port 8000</b> in services/compute.</div>
 
           <div class="row" style="margin-top:12px"><div class="rl">Anti-scatter grid</div>
             <div class="valchip" id="gridStateV">OUT</div></div>

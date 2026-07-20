@@ -431,6 +431,9 @@ function greyHelical(on) {
 function wireCTConsole() {
   const { $, S } = ctx;
   $('ctStart')?.addEventListener('click', () => {
+    // a subject swap is still streaming its voxel model in — starting a scout now
+    // would acquire with half-swapped geometry (wrong FOV/isocentre)
+    if (S.subjectLoading) { setHint('Subject model still loading — try again in a moment.'); return; }
     if (S.ct.phase === 'idle') acquireScouts();
     else if (S.ct.phase === 'planning') {
       if (ctx.$('ctStart').classList.contains('flash')) runScan();
@@ -750,7 +753,7 @@ const MOVE_THRESH = 0.5;              // mm: below this, no table move is needed
 const TABLE_SPEED = 45;              // mm/s couch reposition speed (NOT the acquisition table speed)
 const N_GROUPS = 4;
 // ---- acquisition geometry stations (reference GE "Image Thickness" dialog) ----
-const DET_ROW_OPTS = [8, 16];                     // detector rows
+const DET_ROW_OPTS = [8, 16, 32, 64, 128];        // detector rows (MDCT generations)
 const ELEMENTS = [0.625, 1.25];                   // detector element sizes → beam collimation = rows × element
 const ACQ_THK = [0.625, 1.25, 2.5, 3.75, 5, 7.5, 10];  // reconstructed helical-thickness stations
 const PITCH_ACQ = [0.562, 0.938, 1.375, 1.75];    // pitch stations
@@ -1165,9 +1168,22 @@ function applyTableCommit() {
 // transverse slices -> store the reconstructed volume. The slices are then shown in
 // the cross-sectional viewer; old scans auto-delete past a cap so memory stays bounded.
 
-const RECON_N = 128;              // reconstruction grid (N x N pixels)
-const RECON_ANGLES = 128;         // projection angles over 180° (parallel beam)
-const RECON_DET = 128;            // detector samples across the FOV
+// ---- in-plane detector designs ----
+// quick: the original preview detector — 128 channels spanning the display FOV
+//   (channel pitch scales with DFOV), 128 views, 128² grid. Fast in the browser.
+// realistic: a fixed-geometry MDCT detector — 0.625 mm channel pitch at the
+//   isocentre across a 500 mm scan FOV (800 channels), 720 views/rotation, 512²
+//   recon matrix. The display FOV only selects the back-projected region, like a
+//   real scanner (no projection truncation). Heavy — meant for the Python GPU
+//   engine; the browser fallback works but crawls.
+const DET_MODES = {
+  quick:     { nDet: 128, nAngles: 128, gridN: 128, fixedPitch: false },
+  // photonBase: detected photons per channel per view at the reference technique —
+  // clinical scale (~10^6-10^7), so the 512² image lands at a clinical ~10-15 HU noise;
+  // the quick preview keeps the old (much lower) base tuned for its coarse grid.
+  realistic: { nDet: 800, nAngles: 720, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 500, photonBase: 8e6 },
+};
+const detMode = () => DET_MODES[ctx && ctx.S.ct.detMode] || DET_MODES.quick;
 const MAX_SLICES = 1024;          // safety cap only (the slice count follows the planned image count)
 const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slice/rot noise model)
 
@@ -1176,8 +1192,14 @@ const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slic
 // diameter — the direction in which neighbouring fingers are separated — so a box
 // drawn around a single finger reconstructs a small FOV that excludes the others.
 function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * scoutFov()); }
-// Per-reconstruction geometry: world-unit FOV radius, detector spacing, and centre.
-function reconGeo(fovMM, cx, cy) { const R = (fovMM / MM_PER_UNIT) / 2; return { fovMM, R, ds: (R * 2) / RECON_DET, cx, cy }; }
+// Per-reconstruction geometry: display-FOV radius R (the back-projected region),
+// channel spacing ds, ray half-length rayR (how far the integration must reach —
+// the full scan FOV for the fixed-pitch detector), and the detector mode m.
+function reconGeo(fovMM, cx, cy) {
+  const m = detMode(), R = (fovMM / MM_PER_UNIT) / 2;
+  if (m.fixedPitch) return { fovMM, R, rayR: (m.sfovMM / MM_PER_UNIT) / 2, ds: m.chanMM / MM_PER_UNIT, cx, cy, m };
+  return { fovMM, R, rayR: R, ds: (R * 2) / m.nDet, cx, cy, m };
+}
 
 let scanToken = 0;                // invalidates an in-flight scan on abort / mode switch
 function cancelScan() { scanToken++; }
@@ -1345,12 +1367,16 @@ function gaussian() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-// Discrete Ram-Lak kernel, indexed n = -(N-1)..(N-1) at detector spacing ds.
-function buildRamLak(ds) {
-  const N = RECON_DET, h = new Float32Array(2 * N - 1);
+// Discrete reconstruction kernel, indexed n = -(N-1)..(N-1) at channel spacing ds.
+// Ram-Lak (pure ramp) for the quick preview detector; Shepp-Logan (apodized ramp,
+// the clinical "standard" algorithm) for the realistic detector, where a pure ramp
+// at 0.625 mm pitch would amplify quantum noise into salt-and-pepper.
+function buildKernel(ds, N, shepp) {
+  const h = new Float32Array(2 * N - 1);
   for (let n = -(N - 1); n <= N - 1; n++) {
     let v;
-    if (n === 0) v = 1 / (4 * ds * ds);
+    if (shepp) v = -2 / (Math.PI * Math.PI * ds * ds * (4 * n * n - 1));
+    else if (n === 0) v = 1 / (4 * ds * ds);
     else if (n % 2 === 0) v = 0;
     else v = -1 / (Math.PI * Math.PI * n * n * ds * ds);
     h[n + (N - 1)] = v;
@@ -1360,19 +1386,20 @@ function buildRamLak(ds) {
 
 // Forward-project one slice at world plane z = z0 → sinogram [angle][detector].
 function projectSlice(phantom, z0, mu, photons0, geo) {
-  const cx = geo.cx, cy = geo.cy, R = geo.R, ds = geo.ds, halfDet = (RECON_DET - 1) / 2;
-  const sino = new Float32Array(RECON_ANGLES * RECON_DET);
-  for (let a = 0; a < RECON_ANGLES; a++) {
-    const th = a * Math.PI / RECON_ANGLES, ct = Math.cos(th), st = Math.sin(th);
-    const base = a * RECON_DET;
-    for (let k = 0; k < RECON_DET; k++) {
+  const cx = geo.cx, cy = geo.cy, RR = geo.rayR, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
+  const halfDet = (nDet - 1) / 2;
+  const sino = new Float32Array(nAng * nDet);
+  for (let a = 0; a < nAng; a++) {
+    const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th);
+    const base = a * nDet;
+    for (let k = 0; k < nDet; k++) {
       const r = (k - halfDet) * ds;
-      // ray: origin at t = -R along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
-      const o = [cx + r * ct + R * st, cy + r * st - R * ct, z0];
+      // ray: origin at t = -rayR along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
+      const o = [cx + r * ct + RR * st, cy + r * st - RR * ct, z0];
       const d = [-st, ct, 0];
       let p;
-      if (mu.voxel) { const L = phantom.trace(o, d, 2 * R), arr = mu.arr; p = 0; for (let m = 1; m < arr.length; m++) { const lm = L[m]; if (lm) p += arr[m] * lm; } }
-      else { const { bone, soft, marrow } = phantom.trace(o, d, 2 * R); p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow; }
+      if (mu.voxel) { const L = phantom.trace(o, d, 2 * RR), arr = mu.arr; p = 0; for (let m = 1; m < arr.length; m++) { const lm = L[m]; if (lm) p += arr[m] * lm; } }
+      else { const { bone, soft, marrow } = phantom.trace(o, d, 2 * RR); p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow; }
       if (photons0 > 0) {                       // quantum noise from finite detected photons
         const Nd = Math.max(1, photons0 * Math.exp(-p));
         p += gaussian() / Math.sqrt(Nd);
@@ -1385,9 +1412,9 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
 }
 
 // Convolve each projection view with the ramp filter.
-function filterSino(sino, h, ds) {
-  const N = RECON_DET, out = new Float32Array(RECON_ANGLES * RECON_DET);
-  for (let a = 0; a < RECON_ANGLES; a++) {
+function filterSino(sino, h, ds, m) {
+  const N = m.nDet, out = new Float32Array(m.nAngles * N);
+  for (let a = 0; a < m.nAngles; a++) {
     const base = a * N;
     for (let k = 0; k < N; k++) {
       let acc = 0;
@@ -1400,12 +1427,13 @@ function filterSino(sino, h, ds) {
 
 // Back-project the filtered sinogram into the reconstruction grid (μ map, cm^-1).
 function backproject(q, geo) {
-  const N = RECON_N, R = geo.R, ds = geo.ds, halfDet = (RECON_DET - 1) / 2;
+  const N = geo.m.gridN, R = geo.R, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
+  const halfDet = (nDet - 1) / 2;
   const img = new Float32Array(N * N);
   const px2world = (i) => (-R + (i + 0.5) * (2 * R / N));   // pixel centre → world offset from FOV centre
   const R2 = R * R;
-  for (let a = 0; a < RECON_ANGLES; a++) {
-    const th = a * Math.PI / RECON_ANGLES, ct = Math.cos(th), st = Math.sin(th), base = a * RECON_DET;
+  for (let a = 0; a < nAng; a++) {
+    const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th), base = a * nDet;
     for (let iy = 0; iy < N; iy++) {
       const wy = px2world(iy), rowo = iy * N;
       for (let ix = 0; ix < N; ix++) {
@@ -1413,13 +1441,13 @@ function backproject(q, geo) {
         if (wx * wx + wy * wy > R2) continue;
         const kf = (wx * ct + wy * st) / ds + halfDet;
         const k0 = Math.floor(kf);
-        if (k0 < 0 || k0 >= RECON_DET - 1) continue;
+        if (k0 < 0 || k0 >= nDet - 1) continue;
         const f = kf - k0;
         img[rowo + ix] += q[base + k0] * (1 - f) + q[base + k0 + 1] * f;
       }
     }
   }
-  const scale = Math.PI / RECON_ANGLES;
+  const scale = Math.PI / nAng;
   for (let i = 0; i < img.length; i++) img[i] *= scale;
   return img;
 }
@@ -1433,28 +1461,66 @@ async function reconstructSlices(g, alive, onProgress, onSlice) {
   const muW = voxel ? BodyMaterials.muWater(effE) : mu.soft;   // HU reference (water for voxel, soft for hand)
   const fovMM = groupDFOV(g);                     // DFOV = scan box diameter (box centre reposed to isocentre)
   const geo = reconGeo(fovMM, 0, ISO_Y);
-  const h = buildRamLak(geo.ds);
   const startMM = g.box.top * ctx.S.ct.scanLen, endMM = g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
   const count = Math.max(1, Math.min(MAX_SLICES, groupImages(g)));   // one slice per planned image
   const positions = [];
   for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
-  const photons0 = PHOTON_BASE * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5);
+  // Detected photons per sinogram sample. The quick detector is the noise reference;
+  // more views split the same tube output into smaller buckets (total output per
+  // rotation is set by the technique, not the view count). The realistic detector's
+  // finer channels pair with its apodized (Shepp-Logan) kernel — like a clinical
+  // "standard" algorithm — so its noise stays comparable at the same technique.
+  const photons0 = (geo.m.photonBase || PHOTON_BASE) * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5)
+    * (DET_MODES.quick.nAngles / geo.m.nAngles);
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
   // slice is emitted via onSlice as it completes so the scan shows the images coming
   // up live (the couch advances to that slice's position as it appears).
-  const N = RECON_N, nz = positions.length, vol = new Float32Array(nz * N * N);
+  const N = geo.m.gridN, nz = positions.length, vol = new Float32Array(nz * N * N);
   const meta = { gridN: N, fovMM, muWater: muW };
-  for (let si = 0; si < nz; si++) {
-    if (!alive()) return null;
-    const zw = positions[si] / MM_PER_UNIT;      // world plane for this slice (see scoutProjection geometry)
-    const sino = projectSlice(phantom, zw, mu, photons0, geo);
-    const q = filterSino(sino, h, geo.ds);
-    const img = backproject(q, geo);
-    vol.set(img, si * N * N);
-    if (onSlice) onSlice(si, nz, positions[si], img, meta);
-    if (onProgress) onProgress((si + 1) / nz);
-    await sleep(0);                              // yield so the couch + preview repaint between slices
+  // ---- Python GPU engine (voxel subjects): reconstruct in slice batches ----
+  let done = false;
+  if (voxel && ctx.S.ct.backend === 'python' && ctx.S.computeInfo && ctx.compute) {
+    try {
+      const center = [(phantom.min[0] + phantom.max[0]) / 2, (phantom.min[1] + phantom.max[1]) / 2,
+                      (phantom.min[2] + phantom.max[2]) / 2];
+      const base = { model: ctx.S.subject, flips: Array.from(phantom.flip, Boolean), center,
+                     cx: geo.cx, cy: geo.cy, nDet: geo.m.nDet, nAngles: geo.m.nAngles, gridN: N,
+                     ds: geo.ds, rayR: geo.rayR, dfovR: geo.R,
+                     kernel: geo.m.fixedPitch ? 'shepp' : 'ramlak',
+                     muArr: Array.from(mu.arr), photons0 };
+      const BATCH = 4;
+      for (let s0 = 0; s0 < nz; s0 += BATCH) {
+        if (!alive()) return null;
+        const zs = positions.slice(s0, s0 + BATCH).map(d => d / MM_PER_UNIT);
+        const batch = await ctx.compute.ctSlices({ ...base, z0List: zs });
+        for (let b = 0; b < zs.length; b++) {
+          const si = s0 + b;
+          vol.set(batch.subarray(b * N * N, (b + 1) * N * N), si * N * N);
+          if (onSlice) onSlice(si, nz, positions[si], vol.subarray(si * N * N, (si + 1) * N * N), meta);
+          if (onProgress) onProgress((si + 1) / nz);
+          await sleep(0);
+        }
+      }
+      done = true;
+    } catch (err) {
+      console.warn('GPU backend reconstruction failed — falling back to the browser engine', err);
+      setHint('Python backend unavailable — reconstructing in the browser…');
+    }
+  }
+  if (!done) {
+    const h = buildKernel(geo.ds, geo.m.nDet, geo.m.fixedPitch);
+    for (let si = 0; si < nz; si++) {
+      if (!alive()) return null;
+      const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
+      const sino = projectSlice(phantom, zw, mu, photons0, geo);
+      const q = filterSino(sino, h, geo.ds, geo.m);
+      const img = backproject(q, geo);
+      vol.set(img, si * N * N);
+      if (onSlice) onSlice(si, nz, positions[si], img, meta);
+      if (onProgress) onProgress((si + 1) / nz);
+      await sleep(0);                            // yield so the couch + preview repaint between slices
+    }
   }
   const slices = positions.map((d, i) => ({ d, mu: vol.subarray(i * N * N, (i + 1) * N * N) }));
   const dz = nz > 1 ? (positions[nz - 1] - positions[0]) / (nz - 1) : Math.max(g.interval, 0.1);
@@ -1564,7 +1630,7 @@ export function ctRenderViewer() {
   const scan = currentScan();
   const slider = ctx.$('ctSliceSlider');
   if (!scan || !scan.slices.length) {
-    cv.width = RECON_N; cv.height = RECON_N;
+    cv.width = 128; cv.height = 128;   // placeholder tile ("NO RECONSTRUCTION")
     const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
     g.fillStyle = '#3a4653'; g.font = '11px "Share Tech Mono",monospace'; g.textAlign = 'center';
     g.fillText('NO RECONSTRUCTION', cv.width / 2, cv.height / 2);
