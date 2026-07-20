@@ -1017,6 +1017,35 @@ async function computeRadiograph(){
     });
   }
 
+  // ---- scatter radiation reaching the detector ----
+  // X-rays scattered in the patient add a diffuse fog to the receptor. The scatter-to-
+  // primary ratio (SPR) grows with the irradiated field area and the patient's
+  // attenuation — a large, thick body part (chest, abdomen) scatters a lot — and an
+  // anti-scatter grid strips most of it out (its whole purpose). Without scatter, a
+  // primary-only model reads big/thick body parts as underexposed. Scatter is generated
+  // in the patient BEFORE the grid, so compute it from the pre-grid primary, then let
+  // the grid attenuate it below.
+  const _t=(typeof window!=='undefined'&&window.__tune)||{};
+  // Physically-scaled scatter: SCAT_SPR_MAX ≈ max scatter-to-primary ratio for a big,
+  // thick field (no grid); SCAT_AREA0 = field half-saturation area (cm²); GRID_SCATTER =
+  // fraction of scatter a grid still passes (~15%). Kept modest so it adds realistic
+  // veiling glare (lowering contrast for large no-grid fields — the reason grids exist)
+  // WITHOUT washing the image out.
+  const SCAT_SPR_MAX=_t.spr??4.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
+  let scatterFog=0;
+  {
+    const distC=Math.hypot(source[0],source[1],source[2])||100, invSqC=(100*100)/(distC*distC);
+    let sumP=0, nF=0; for(let k=0;k<dose.length;k++){ if(mask[k]){ sumP+=dose[k]; nF++; } }
+    if(nF){
+      const meanP=sumP/nF, meanIncident=I0*invSqC;
+      const atten=Math.max(0,Math.min(1,1-meanP/(meanIncident||1)));     // 0 = air, ~1 = heavily attenuated
+      const areaCm2=S.collX*S.collZ, areaF=areaCm2/(areaCm2+SCAT_AREA0);  // saturates with field size
+      let spr=SCAT_SPR_MAX*areaF*atten;
+      if(S.gridOn) spr*=GRID_SCATTER;                                      // grid removes most scatter
+      scatterFog=spr*meanP;                                                // diffuse fog, added uniformly below
+    }
+  }
+
   // ---- anti-scatter grid ----
   // A focused linear grid (strips running along the long z axis) passes a fixed
   // fraction of primary and cuts more as the incident ray angle in the x (across-
@@ -1036,9 +1065,10 @@ async function computeRadiograph(){
       dose[k]*= base*t;
     }
   }
+  // add the diffuse scatter fog (already grid-attenuated) onto the primary
+  if(scatterFog>0) for(let k=0;k<dose.length;k++) if(mask[k]) dose[k]+=scatterFog;
 
   const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask);
-  S.eiTarget=250;
   pushImage(signal,nx,ny,mask,buildMeta(spectrum));   // -> active image + drawFilm + meta + strip
   updateDI(EI);
   if(S.bayContent==='image') setContent('image');
@@ -1245,6 +1275,10 @@ function findProtocol(part,proj){
   for(const rg of gr.regions){ const p=rg.projections.find(x=>x.proj===proj); if(p) return p; }
   return null;
 }
+function setGridFocusUI(){
+  const v=$('gridFocusV'); if(v) v.textContent=S.gridFocus+' cm';
+  const seg=$('gridFocusSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',+b.dataset.focus===S.gridFocus));
+}
 function applyProtocol(p,part){
   S.protocol={proj:p.proj, part};
   S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas;
@@ -1252,6 +1286,23 @@ function applyProtocol(p,part){
   const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
   S.gridOn=!!p.grid; setGridUI();
   S.lut=lutData.luts[p.lut]||lutData.luts.linear;
+  // per-exam target EI (real APR): a chest is a low-dose exam (thin lungs, 180 cm,
+  // grid) and reads a lower detector dose than an extremity — so the deviation index
+  // is judged against the exam's own target, not a single number.
+  const EI_REGION_TARGET={ 'Chest':45, 'Abdomen / Pelvis':120, 'Spine':140, 'Head':160 };
+  S.eiTarget = p.targetEI ?? EI_REGION_TARGET[part] ?? 250;
+  // SID + focused-grid focal length (a focused grid is used at its focal distance)
+  if(p.sid){ S.sid=Math.max(20,Math.min(200,p.sid));
+    const sv=$('sidV'); if(sv) sv.textContent=S.sid+' cm';
+    const sr=$('sidRo'); if(sr) sr.innerHTML=S.sid+'<small>cm</small>';
+    S.gridFocus=S.sid; setGridFocusUI(); }
+  // receptor size + orientation FIRST (this re-caps the collimation sliders) …
+  if(p.det) setDetSize(p.det[0], p.det[1]);
+  if(p.orient) setDetOrient(p.orient);
+  // … then the collimated field (clamped to the receptor)
+  if(p.coll){ S.collX=Math.min(p.coll[0], S.detW); S.collZ=Math.min(p.coll[1], S.detH);
+    const cx=$('collX'), cz=$('collZ'); if(cx) cx.value=S.collX; if(cz) cz.value=S.collZ; }
+  updateGeomReadouts();
   const pv=$('protocolV'); if(pv) pv.textContent=p.proj;
   refreshReadouts();
   // switch the subject model when the protocol targets one we have

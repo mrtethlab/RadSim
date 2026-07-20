@@ -17,10 +17,15 @@ export const Detector = (()=>{
       signal[k]=s;
       if(mask[k]) inField.push(s);
     }
-    // EI proportional to median detector air kerma in the field (IEC 62494)
+    // EI proportional to detector air kerma over the values-of-interest (IEC 62494).
+    // Use an upper percentile rather than the whole-field median so the EI reflects the
+    // well-penetrated diagnostic region (e.g. the lung fields on a chest) instead of
+    // being dragged down by the darkest anatomy (mediastinum/spine).
     inField.sort((a,b)=>a-b);
-    const med = inField.length? inField[inField.length>>1] : 0;
-    const EI = Math.round(med * 234);              // calibration -> ~250 at 55/2.0/100
+    const _t=(typeof globalThis!=='undefined'&&globalThis.__tune)||{};
+    const P=_t.P??0.62;                            // values-of-interest percentile (well-penetrated region)
+    const voi = inField.length? inField[Math.min(inField.length-1, Math.floor(inField.length*P))] : 0;
+    const EI = Math.round(voi * (_t.K??200));       // calibration -> ~260 at hand 55/2.0/100
     return {signal, EI};
   }
   return {capture};
