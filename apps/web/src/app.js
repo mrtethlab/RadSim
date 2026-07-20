@@ -380,6 +380,7 @@ const S = {
   pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
+  imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
@@ -691,10 +692,12 @@ function setContent(c){
   const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
   const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
   const rcv=$('ctRecons'); if(rcv) rcv.classList.toggle('show', recons);
-  $('bigFilm').style.display=(img && S.hasImage && !scouts)?'block':'none';
+  const xrayImg=(img && S.hasImage && !scouts);
+  $('bigFilm').style.display=xrayImg?'block':'none';
   $('bignote').style.display=(img && !S.hasImage && !scouts)?'flex':'none';
   $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
-  if(img && S.hasImage && !scouts) renderRadiograph($('bigFilm'));
+  const ui=$('imgViewUI'); if(ui) ui.classList.toggle('show', xrayImg);   // meta + history strip (image view only)
+  if(xrayImg){ renderRadiograph($('bigFilm')); updateImageMeta(); renderImageStrip(); }
   if(slices) ctRenderViewer();
   if(recons) ctRenderRecons();
 }
@@ -820,6 +823,17 @@ function bind(){
   $('flipV').addEventListener('click',()=>{ if(!S.hasImage)return; S.flipV=!S.flipV; $('flipV').classList.toggle('on',S.flipV); drawFilm();});
   $('imgReset').addEventListener('click',()=>{ S.imgRot=0;S.flipH=false;S.flipV=false;
     $('flipH').classList.remove('on');$('flipV').classList.remove('on'); if(S.hasImage) drawFilm();});
+  // image history: scroll the wheel over the Image view (or its strip) to step through
+  // the last 10 exposures; arrow keys work too when the image view is up.
+  const histWheel=(e)=>{ if(S.bayContent!=='image'||S.mode==='ct'||S.imgHistory.length<2) return;
+    e.preventDefault(); setActiveImage(S.histIdx + (e.deltaY>0?1:-1)); };
+  $('bigFilm')?.addEventListener('wheel',histWheel,{passive:false});
+  $('imgStrip')?.addEventListener('wheel',histWheel,{passive:false});
+  document.addEventListener('keydown',e=>{
+    if(S.bayContent!=='image'||S.mode==='ct'||S.imgHistory.length<2) return;
+    if(e.key==='ArrowLeft'){ e.preventDefault(); setActiveImage(S.histIdx-1); }
+    else if(e.key==='ArrowRight'){ e.preventDefault(); setActiveImage(S.histIdx+1); }
+  });
 }
 function nearestMasIdx(){ let bi=0,bd=1e9; masSteps.forEach((v,i)=>{const d=Math.abs(v-S.mas); if(d<bd){bd=d;bi=i;}}); return bi; }
 function nearestMaIdx(){ let bi=0,bd=1e9; maSteps.forEach((v,i)=>{const d=Math.abs(v-S.ma); if(d<bd){bd=d;bi=i;}}); return bi; }
@@ -993,12 +1007,9 @@ async function computeRadiograph(){
   }
 
   const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask);
-  S.lastSignal=signal; S.nx=nx; S.ny=ny; S.mask=mask; S.hasImage=true;
-
   S.eiTarget=250;
-  drawFilm();
+  pushImage(signal,nx,ny,mask,buildMeta(spectrum));   // -> active image + drawFilm + meta + strip
   updateDI(EI);
-  annotate(spectrum);
   if(S.bayContent==='image') setContent('image');
 
   $('prog').style.width='100%';
@@ -1033,8 +1044,7 @@ function drawError(cv){
 
 /* ---- render stored signal: crop to exposed field, window/level, invert,
         then apply rotation + flips. Renders to any target canvas. ---- */
-function computeCrop(){
-  const {nx,ny,mask}=S;
+function computeCrop(nx,ny,mask){
   let i0=nx,i1=-1,j0=ny,j1=-1;
   for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
     if(mask[j*nx+i]){ if(i<i0)i0=i; if(i>i1)i1=i; if(j<j0)j0=j; if(j>j1)j1=j; }
@@ -1042,9 +1052,16 @@ function computeCrop(){
   if(i1<i0){ i0=0;i1=nx-1;j0=0;j1=ny-1; }   // fallback: whole detector
   return {i0,i1,j0,j1};
 }
-function renderRadiograph(target){
-  const {lastSignal:sig,nx,mask}=S; if(!sig||!target) return;
-  const {i0,i1,j0,j1}=computeCrop();
+/* Render a radiograph to `target`. With no `entry` it draws the active image (S.last*);
+   pass a history entry to render that one (used for the review-strip thumbnails). */
+function renderRadiograph(target,entry){
+  const sig = entry? entry.sig : S.lastSignal;
+  const nx  = entry? entry.nx  : S.nx;
+  const ny  = entry? entry.ny  : S.ny;
+  const mask= entry? entry.mask: S.mask;
+  const subject = entry? entry.subject : S.activeSubject;
+  if(!sig||!target) return;
+  const {i0,i1,j0,j1}=computeCrop(nx,ny,mask);
   const cw=i1-i0+1, ch=j1-j0+1;
   // open-field normalization for log display
   let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
@@ -1069,9 +1086,9 @@ function renderRadiograph(target){
   //  - voxel body (chest, etc.): the superior end is world +z, which the raw detector
   //    mapping lands at the image BOTTOM, so flip vertically to hang it head-up; mirror
   //    horizontally too because a PA projection is displayed as if facing the patient.
-  const baseRot = S.subject!=='hand' ? 0 : 180;
-  const baseFlipH = S.subject!=='hand';
-  const baseFlipV = S.subject!=='hand';
+  const baseRot = subject!=='hand' ? 0 : 180;
+  const baseFlipH = subject!=='hand';
+  const baseFlipV = subject!=='hand';
   const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
@@ -1137,12 +1154,59 @@ function updateDI(EI){
   $('eiV').className='v '+(Math.abs(DI)<=1?'ok':'');
 }
 
-function annotate(spec){
+/* Build the 4-corner image metadata for the CURRENT technique (shown on the big
+   Image view, not the small live monitor). */
+function buildMeta(spec){
   const subjName=(S.subject==='hand'?'HAND':(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase());
-  $('fnTL').textContent=subjName+' · '+S.pose;
-  $('fnTR').textContent=S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs';
-  $('fnBL').textContent='SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV';
-  $('fnBR').textContent='DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');
+  return {
+    tl: subjName+' · '+S.pose,
+    tr: S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs',
+    bl: 'SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV',
+    br: 'DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID'),
+  };
+}
+
+/* ---- image history: keep the last 10 exposures, reviewable on the Image view ---- */
+const IMG_HISTORY_MAX=10;
+function pushImage(signal,nx,ny,mask,meta){
+  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta});
+  while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
+  setActiveImage(S.imgHistory.length-1);
+}
+/* Point the render state at history[idx] and refresh the view + strip + meta. */
+function setActiveImage(idx){
+  if(!S.imgHistory.length){ S.histIdx=-1; S.hasImage=false; return; }
+  idx=Math.max(0,Math.min(S.imgHistory.length-1,idx));
+  const e=S.imgHistory[idx];
+  S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
+  S.activeSubject=e.subject; S.imgMeta=e.meta; S.hasImage=true;
+  drawFilm();
+  updateImageMeta(); renderImageStrip();
+}
+/* Write the active image's metadata into the big Image-view corner overlays. */
+function updateImageMeta(){
+  const m=S.imgMeta||{};
+  const set=(id,v)=>{ const el=$(id); if(el) el.textContent=v||''; };
+  set('ivTL',m.tl); set('ivTR',m.tr); set('ivBL',m.bl); set('ivBR',m.br);
+}
+/* Render the thumbnail strip for the image history (x-ray Image view only). */
+function renderImageStrip(){
+  const strip=$('imgStrip'); if(!strip) return;
+  strip.innerHTML='';
+  S.imgHistory.forEach((e,i)=>{
+    const b=document.createElement('button');
+    b.className='imgthumb'+(i===S.histIdx?' on':'');
+    b.title=(e.meta?.tl||'')+'  ·  '+(e.meta?.tr||'');
+    const c=document.createElement('canvas'); renderRadiograph(c,e); // full oriented render
+    const t=document.createElement('canvas'); t.width=64; t.height=80;
+    const tg=t.getContext('2d'); tg.fillStyle='#000'; tg.fillRect(0,0,64,80);
+    const s=Math.min(64/c.width,80/c.height), w=c.width*s, h=c.height*s;
+    tg.drawImage(c,(64-w)/2,(80-h)/2,w,h);
+    b.appendChild(t);
+    const n=document.createElement('span'); n.className='imgthumb-n'; n.textContent=i+1; b.appendChild(n);
+    b.addEventListener('click',()=>setActiveImage(i));
+    strip.appendChild(b);
+  });
 }
 
 /* ---- compute backend (Python GPU) ---- */

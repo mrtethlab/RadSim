@@ -403,6 +403,22 @@ body.mode-ct .di{display:none}
 .ctslices.show{display:flex}
 .slhdr{display:flex; align-items:center; justify-content:space-between; gap:12px}
 .slhdr .sltitle{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:var(--cyan); text-transform:uppercase}
+/* Image-view overlay: 4-corner metadata + last-10 review strip (x-ray) */
+.imgview-ui{position:absolute; inset:0; z-index:9; pointer-events:none; display:none}
+.imgview-ui.show{display:block}
+.ivnote{position:absolute; font-family:var(--seg); font-size:11px; letter-spacing:.5px;
+  color:rgba(180,236,255,.9); text-shadow:0 0 5px #000,0 0 2px #000; padding:2px 4px; max-width:46%}
+.ivnote.t{top:12px} .ivnote.b{bottom:78px}
+.ivnote.l{left:14px} .ivnote.r{right:14px; text-align:right}
+.ivnote.t.r{color:var(--amber)}
+.imgstrip{position:absolute; left:0; right:0; bottom:8px; height:62px; display:flex; gap:6px;
+  justify-content:center; align-items:center; pointer-events:auto; overflow-x:auto; padding:0 12px}
+.imgthumb{position:relative; padding:0; border:1px solid var(--edge2); border-radius:3px;
+  background:#000; cursor:pointer; line-height:0; flex:0 0 auto}
+.imgthumb.on{border-color:var(--cyan); box-shadow:0 0 6px rgba(53,198,214,.6)}
+.imgthumb canvas{display:block; border-radius:2px}
+.imgthumb-n{position:absolute; top:1px; left:2px; font-family:var(--seg); font-size:8px;
+  color:rgba(180,236,255,.9); text-shadow:0 0 3px #000}
 .histcanvas{display:block; width:100%; max-width:260px; height:auto; margin:2px 0 10px;
   background:#0a0f14; border:1px solid var(--edge2); border-radius:4px}
 body.hist-off .histcanvas{display:none}
