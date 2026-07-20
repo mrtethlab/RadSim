@@ -610,6 +610,7 @@ function scoutProjection(view) {
   const bins = Spectrum.make(S.ct.scoutKv).bins, nb = bins.length;   // scout uses its own technique
   const voxel = !!phantom.voxel;                    // chest (voxel) vs hand (analytic) attenuation
   const muMat = voxel ? muOverBins(bins) : null, nmat = voxel ? muMat.length : 0;
+  const hitId = voxel ? new Int32Array(nmat) : null, hitLen = voxel ? new Float64Array(nmat) : null;
   const muSoft = voxel ? null : bins.map(b => Materials.mu('soft', b.E));
   const muBone = voxel ? null : bins.map(b => Materials.mu('bone', b.E));
   const muMarr = voxel ? null : bins.map(b => Materials.mu('marrow', b.E));
@@ -641,7 +642,8 @@ function scoutProjection(view) {
       let T = 0;
       if (voxel) {
         const L = phantom.trace(src, [dx, dy, dz], dist);
-        for (let b = 0; b < nb; b++) { let e = 0; for (let m = 1; m < nmat; m++) { const lm = L[m]; if (lm) e += muMat[m][b] * lm; } T += bins[b].w * Math.exp(-e); }
+        let nh = 0; for (let m = 1; m < nmat; m++) { const lm = L[m]; if (lm) { hitId[nh] = m; hitLen[nh] = lm; nh++; } }
+        for (let b = 0; b < nb; b++) { let e = 0; for (let k = 0; k < nh; k++) e += muMat[hitId[k]][b] * hitLen[k]; T += bins[b].w * Math.exp(-e); }
       } else {
         const { bone, soft, marrow } = phantom.trace(src, [dx, dy, dz], dist);
         for (let b = 0; b < nb; b++) T += bins[b].w * Math.exp(-(muSoft[b] * soft + muBone[b] * bone + muMarr[b] * marrow));
