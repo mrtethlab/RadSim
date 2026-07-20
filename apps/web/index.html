@@ -369,10 +369,12 @@
             </div>
             <div class="note" style="margin-top:4px">Python GPU offloads voxel-model scout + reconstruction to the compute backend.</div>
           </div>
-          <label class="cttoggle" style="margin-top:12px"><input type="checkbox" id="histToggle" checked>
+          <label class="cttoggle xray-only" style="margin-top:12px"><input type="checkbox" id="rescaleToggle" checked>
+            <span>Automatic rescaling <small style="color:var(--muted)">(DR auto-ranging)</small></span></label>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="histToggle" checked>
             <span>Show display histogram</span></label>
-          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="lutToggle" checked>
-            <span>Apply display LUT (sigmoid gradation)</span></label>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="curveToggle" checked>
+            <span>Show LUT / response curve</span></label>
         </div>
       </div>
 

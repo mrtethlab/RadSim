@@ -385,7 +385,8 @@ const S = {
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
-  lutOn:true, lut:lutData.luts.linear, protocol:null,   // display LUT (sigmoid) + selected APR protocol
+  lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
+  showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
@@ -792,8 +793,11 @@ function bind(){
   if(histTgl){ histTgl.addEventListener('change',()=>{ S.showHist=histTgl.checked;
     document.body.classList.toggle('hist-off', !S.showHist);
     updateXrayHistogram(); ctRenderViewer?.(); }); }
-  // display LUT (sigmoid) toggle
-  $('lutToggle')?.addEventListener('change',e=>{ S.lutOn=e.target.checked;
+  // LUT/response-curve visibility (does NOT change the LUT shape — image is unaffected)
+  $('curveToggle')?.addEventListener('change',e=>{ S.showCurve=e.target.checked;
+    updateXrayHistogram(); ctRenderViewer?.(); });
+  // automatic rescaling (DR auto-ranging) — normalizes the VOI to the display range
+  $('rescaleToggle')?.addEventListener('change',e=>{ S.autoRescale=e.target.checked;
     if(S.hasImage) drawFilm(); else updateXrayHistogram(); });
   // APR protocol picker
   $('protocolBtn')?.addEventListener('click',openProtocolPopup);
@@ -1087,6 +1091,7 @@ function renderRadiograph(target,entry){
   const ny  = entry? entry.ny  : S.ny;
   const mask= entry? entry.mask: S.mask;
   const subject = entry? entry.subject : S.activeSubject;
+  const rescale = entry? entry.rescale : S.rescale;   // auto-rescale VOI window for this image
   if(!sig||!target) return;
   const {i0,i1,j0,j1}=computeCrop(nx,ny,mask);
   const cw=i1-i0+1, ch=j1-j0+1;
@@ -1100,7 +1105,7 @@ function renderRadiograph(target,entry){
     const k=(j0+j)*nx+(i0+i);
     let v;
     if(!mask[k]) v=0;
-    else { let t=sig[k]/mx; t=Math.log(1+a*t)/denom; v=toneMap(1-t); }  // invert: bone->white, then LUT
+    else { let t=sig[k]/mx; t=Math.log(1+a*t)/denom; v=toneMap(rescaleTone(1-t, rescale)); }  // invert -> auto-rescale -> LUT
     const g=Math.round(v*255), o=(j*cw+i)*4;
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
@@ -1133,18 +1138,45 @@ function drawFilm(){
   updateXrayHistogram();
 }
 
+/* ---- automatic rescaling (digital-radiography auto-ranging) ----
+   Real DR analyses the image histogram, finds the anatomy's values-of-interest (VOI)
+   and rescales those to a standard display range, so the image looks optimally exposed
+   regardless of over/under-exposure (the exposure index still reports the true dose).
+   Here: robust 1st–99th percentile window of the exposed-field base tones. */
+function computeRescale(sig,mask){
+  let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
+  const a=40, denom=Math.log(1+a), NB=1024, hist=new Uint32Array(NB); let total=0;
+  for(let k=0;k<sig.length;k++){ if(!mask[k]) continue;
+    let t=Math.log(1+a*sig[k]/mx)/denom, b=Math.round((1-t)*(NB-1));
+    hist[b<0?0:b>NB-1?NB-1:b]++; total++; }
+  if(!total) return null;
+  let lo=0, hi=NB-1, acc=0;
+  for(let b=0;b<NB;b++){ acc+=hist[b]; if(acc>=total*0.01){ lo=b; break; } }
+  acc=0; for(let b=NB-1;b>=0;b--){ acc+=hist[b]; if(acc>=total*0.01){ hi=b; break; } }
+  return { lo: lo/(NB-1), hi: Math.max((lo+1)/(NB-1), hi/(NB-1)) };
+}
+/* Apply auto-rescale (VOI stretch) to a base tone, using the given window. */
+function rescaleTone(x,rs){
+  if(!S.autoRescale || !rs) return x;
+  let r=(x-rs.lo)/(rs.hi-rs.lo); return r<0?0:r>1?1:r;
+}
+
 /* ---- display look-up table (LUT) ----
-   Map a base display tone x∈[0,1] to output∈[0,1]. With the LUT on and a sigmoid LUT
-   selected, applies the DICOM SIGMOID VOI LUT (out = 1/(1+exp(-4(x-c)/w))); brightness
-   shifts the centre, contrast scales the width. Otherwise a linear window/level. */
+   Map a (rescaled) display tone x∈[0,1] to output∈[0,1] via the current LUT: a DICOM
+   SIGMOID VOI LUT (out = 1/(1+exp(-4(x-c)/w))) when the LUT is a sigmoid, else a linear
+   window/level. Brightness shifts the centre, contrast scales the width. The LUT always
+   applies (the toggle now only shows/hides the curve on the histogram). */
 function toneMap(x){
   const bright=S.lev/100, contrast=S.win/100;
-  if(S.lutOn && S.lut && S.lut.sigmoid){
+  if(S.lut && S.lut.sigmoid){
     const c=S.lut.center - bright, w=Math.max(0.05, S.lut.width/contrast);
     return 1/(1+Math.exp(-4*(x-c)/w));
   }
   const v=(x-0.5)*contrast+0.5+bright; return v<0?0:v>1?1:v;
 }
+/* Full display mapping for the histogram curve: rescale (VOI) then LUT. Uses the active
+   image's rescale window. */
+function displayCurve(x){ return toneMap(rescaleTone(x, S.rescale)); }
 
 /* ---- display histogram + LUT response curve ----
    Draws a proper histogram (blue bars, axis ticks) of the image's base grey values,
@@ -1164,14 +1196,15 @@ export function drawHistogram(canvas, hist, curveFn, xlabels){
   const n=hist.length, bw=pw/n;
   g.fillStyle='#5b83d6';
   for(let x=0;x<n;x++){ const h=hist[x]/hmax*ph; if(h>0) g.fillRect(padL+x*bw, padT+ph-h, Math.max(1,bw), h); }
-  // dashed identity diagonal (no-op reference)
-  g.strokeStyle='rgba(200,215,230,.35)'; g.setLineDash([3,3]); g.lineWidth=1;
-  g.beginPath(); g.moveTo(padL,padT+ph); g.lineTo(padL+pw,padT); g.stroke(); g.setLineDash([]);
-  // LUT / response curve
-  g.strokeStyle='#ffcf6b'; g.lineWidth=1.8; g.beginPath();
-  for(let x=0;x<=n;x++){ const out=Math.max(0,Math.min(1,curveFn(x/n)));
-    const px=padL+x/n*pw, py=padT+ph-out*ph; if(x===0) g.moveTo(px,py); else g.lineTo(px,py); }
-  g.stroke();
+  // response curve + identity diagonal — visibility toggled (shape is unchanged)
+  if(S.showCurve){
+    g.strokeStyle='rgba(200,215,230,.35)'; g.setLineDash([3,3]); g.lineWidth=1;
+    g.beginPath(); g.moveTo(padL,padT+ph); g.lineTo(padL+pw,padT); g.stroke(); g.setLineDash([]);
+    g.strokeStyle='#ffcf6b'; g.lineWidth=1.8; g.beginPath();
+    for(let x=0;x<=n;x++){ const out=Math.max(0,Math.min(1,curveFn(x/n)));
+      const px=padL+x/n*pw, py=padT+ph-out*ph; if(x===0) g.moveTo(px,py); else g.lineTo(px,py); }
+    g.stroke();
+  }
   // axis baseline + x ticks (0 · mid · max) — 8-bit display scale
   g.strokeStyle='rgba(150,175,195,.5)'; g.lineWidth=1;
   g.beginPath(); g.moveTo(padL,padT+ph+0.5); g.lineTo(padL+pw,padT+ph+0.5); g.stroke();
@@ -1196,7 +1229,7 @@ function updateXrayHistogram(){
   const canvas=$('xrayHist'); if(!canvas) return;
   if(!S.showHist || !S.hasImage){ canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); return; }
   const hist=xrayHistData(); if(!hist) return;
-  drawHistogram(canvas, hist, toneMap);   // curve is the actual applied LUT/window
+  drawHistogram(canvas, hist, displayCurve);   // curve = auto-rescale (VOI) then LUT
 }
 
 /* ---- APR protocol picker ---------------------------------------------------
@@ -1264,7 +1297,8 @@ function buildMeta(spec){
 /* ---- image history: keep the last 10 exposures, reviewable on the Image view ---- */
 const IMG_HISTORY_MAX=10;
 function pushImage(signal,nx,ny,mask,meta){
-  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta});
+  const rescale=computeRescale(signal,mask);   // auto-rescale VOI window, fixed at capture
+  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale});
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
 }
@@ -1274,7 +1308,7 @@ function setActiveImage(idx){
   idx=Math.max(0,Math.min(S.imgHistory.length-1,idx));
   const e=S.imgHistory[idx];
   S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
-  S.activeSubject=e.subject; S.imgMeta=e.meta; S.hasImage=true;
+  S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true;
   drawFilm();
   updateImageMeta(); renderImageStrip();
 }
