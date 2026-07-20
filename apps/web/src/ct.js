@@ -15,6 +15,7 @@ import { Sound } from './audio/sound.js';
 
 let ctx = null;
 let couch = null, gantry = null, gantrySpin = null;  // couch (moves) + gantry ring (static) + rotating tube/detector (scan only)
+let scanMarkers = null;               // usability aid: coloured lines at scan start/end + a direction arrow
 let laserTop = null, laserSide = null; // projected alignment lasers (SpotLights) + their cookies
 let laserTopTex = null, laserSideTex = null;
 
@@ -133,6 +134,19 @@ function buildCTScene() {
   gantrySpin.visible = false; gantry.add(gantrySpin);
   gantry.visible = false; three.scene.add(gantry);
 
+  // ---- scan-range markers (usability aid, not physical) ----
+  // green line = scan START (at the isocentre), red line = scan END, orange arrow = the
+  // direction the couch feeds during the scan. Positioned/sized in ctSyncScene.
+  scanMarkers = new THREE.Group();
+  const barGeo = new THREE.BoxGeometry(1, 0.25, 0.25);
+  const mkBar = (color) => new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+  const startBar = mkBar(0x39ff8a), endBar = mkBar(0xff5a5a);
+  startBar.name = 'start'; endBar.name = 'end';
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(1.4, 4, 16), new THREE.MeshBasicMaterial({ color: 0xffb23e }));
+  arrow.name = 'arrow'; arrow.rotation.x = Math.PI / 2;   // point along +z by default
+  scanMarkers.add(startBar, endBar, arrow);
+  scanMarkers.visible = false; three.scene.add(scanMarkers);
+
   // ---- projected alignment lasers ----
   // Red SpotLights whose cookie (map) is a laser pattern: the map is white only on
   // the laser lines, so the red light lands only there, projected onto whatever
@@ -227,6 +241,25 @@ export function ctSyncScene() {
     three.handGroup.position.x = 0;
     three.handGroup.position.z = 0;
   }
+  updateScanMarkers();
+}
+
+// Position the scan-range markers: green line at the scan start, red at the end, an
+// orange arrow between them in the couch-feed direction. The scan images world z 0→
+// lenU when the patient sits at isoZ, so at the current rest position the range is
+// offset by (patient.z − isoZ). Purely a usability aid (not physical).
+function updateScanMarkers() {
+  if (!scanMarkers) return;
+  const S = ctx.S, show = S.mode === 'ct';
+  scanMarkers.visible = show;
+  if (!show) return;
+  const lenU = S.ct.scanLen / MM_PER_UNIT, off = S.ct.patient.z - S.ct.isoZ;
+  const startZ = off, endZ = lenU + off, w = (scoutFov() / MM_PER_UNIT) * 1.1;
+  const start = scanMarkers.getObjectByName('start'), end = scanMarkers.getObjectByName('end'), arrow = scanMarkers.getObjectByName('arrow');
+  start.scale.set(w, 1, 1); start.position.set(0, ISO_Y, startZ);
+  end.scale.set(w, 1, 1); end.position.set(0, ISO_Y, endZ);
+  arrow.position.set(w / 2 + 3, ISO_Y, (startZ + endZ) / 2);
+  arrow.rotation.x = endZ >= startZ ? Math.PI / 2 : -Math.PI / 2;   // point toward the scan end
 }
 
 function wireModeToggle() {
@@ -301,7 +334,7 @@ function wireCTSettings() {
   });
   // scan length (range). Changing it does NOT live-update a scout: like a real CT,
   // re-scouting means ABORT then START (rescan) — table zero / isocentre persist.
-  $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
+  $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); updateScanMarkers(); });
   // table height — raise / lower by 1 mm per press; hold to auto-repeat
   wireHoldRepeat($('ctTablePad'), 'button[data-th]', (b) => {
     S.ct.tableY = Math.max(-80, Math.min(80, S.ct.tableY + (b.dataset.th === 'up' ? 1 : -1)));
