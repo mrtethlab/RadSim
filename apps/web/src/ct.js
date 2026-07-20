@@ -9,7 +9,8 @@
 // which app.js calls at the end of syncScene().
 
 import { Spectrum } from './core/spectrum.js';
-import { Materials } from './core/materials.js';
+import { Materials, BodyMaterials } from './core/materials.js';
+import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
 import { Sound } from './audio/sound.js';
 
 let ctx = null;
@@ -569,10 +570,12 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
 function scoutProjection(view) {
   const { S } = ctx;
   const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
-  const bins = Spectrum.make(S.ct.scoutKv).bins;    // scout uses its own technique
-  const muSoft = bins.map(b => Materials.mu('soft', b.E));
-  const muBone = bins.map(b => Materials.mu('bone', b.E));
-  const muMarr = bins.map(b => Materials.mu('marrow', b.E));
+  const bins = Spectrum.make(S.ct.scoutKv).bins, nb = bins.length;   // scout uses its own technique
+  const voxel = !!phantom.voxel;                    // chest (voxel) vs hand (analytic) attenuation
+  const muMat = voxel ? muOverBins(bins) : null, nmat = voxel ? muMat.length : 0;
+  const muSoft = voxel ? null : bins.map(b => Materials.mu('soft', b.E));
+  const muBone = voxel ? null : bins.map(b => Materials.mu('bone', b.E));
+  const muMarr = voxel ? null : bins.map(b => Materials.mu('marrow', b.E));
   const I0 = S.ct.scoutMa * Math.pow(S.ct.scoutKv / 70, 2);
   const PXMM = 1.5;                                  // mm per (square) pixel — undistorted (scout beam width)
   const lenU = scanLenU();                           // scan length in world units (z axis)
@@ -598,9 +601,14 @@ function scoutProjection(view) {
       const u = (i - halfU) * pxU;
       let dx = dcx + ux * u - sx, dy = dcy + uy * u - sy, dz = 0;   // cell z == src z -> dz 0
       const dist = Math.hypot(dx, dy, dz); dx /= dist; dy /= dist; dz /= dist;
-      const { bone, soft, marrow } = phantom.trace(src, [dx, dy, dz], dist);
       let T = 0;
-      for (let b = 0; b < bins.length; b++) T += bins[b].w * Math.exp(-(muSoft[b] * soft + muBone[b] * bone + muMarr[b] * marrow));
+      if (voxel) {
+        const L = phantom.trace(src, [dx, dy, dz], dist);
+        for (let b = 0; b < nb; b++) { let e = 0; for (let m = 1; m < nmat; m++) { const lm = L[m]; if (lm) e += muMat[m][b] * lm; } T += bins[b].w * Math.exp(-e); }
+      } else {
+        const { bone, soft, marrow } = phantom.trace(src, [dx, dy, dz], dist);
+        for (let b = 0; b < nb; b++) T += bins[b].w * Math.exp(-(muSoft[b] * soft + muBone[b] * bone + muMarr[b] * marrow));
+      }
       const d = I0 * (refDist2 / (dist * dist)) * T;
       dose[j * nw + i] = d;
       if (d < mn) mn = d; if (d > mx) mx = d;
@@ -1296,8 +1304,9 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
       // ray: origin at t = -R along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
       const o = [cx + r * ct + R * st, cy + r * st - R * ct, z0];
       const d = [-st, ct, 0];
-      const { bone, soft, marrow } = phantom.trace(o, d, 2 * R);
-      let p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow;
+      let p;
+      if (mu.voxel) { const L = phantom.trace(o, d, 2 * R), arr = mu.arr; p = 0; for (let m = 1; m < arr.length; m++) { const lm = L[m]; if (lm) p += arr[m] * lm; } }
+      else { const { bone, soft, marrow } = phantom.trace(o, d, 2 * R); p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow; }
       if (photons0 > 0) {                       // quantum noise from finite detected photons
         const Nd = Math.max(1, photons0 * Math.exp(-p));
         p += gaussian() / Math.sqrt(Nd);
@@ -1351,9 +1360,11 @@ function backproject(q, geo) {
 
 async function reconstructSlices(g, alive, onProgress, onSlice) {
   const spec = Spectrum.make(g.kv), effE = spec.meanE;
-  const mu = { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
-  const muW = mu.soft;                           // reference "water" (soft tissue) for HU
   const phantom = ctx.buildPhantom();            // built at the committed table position (patient.z = isoZ)
+  const voxel = !!phantom.voxel;                 // chest (voxel/BodyMaterials) vs hand (analytic)
+  const mu = voxel ? { voxel: true, arr: muAtEnergy(effE) }
+                   : { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
+  const muW = voxel ? BodyMaterials.muWater(effE) : mu.soft;   // HU reference (water for voxel, soft for hand)
   const fovMM = groupDFOV(g);                     // DFOV = scan box diameter (box centre reposed to isocentre)
   const geo = reconGeo(fovMM, 0, ISO_Y);
   const h = buildRamLak(geo.ds);
