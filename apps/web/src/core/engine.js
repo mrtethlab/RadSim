@@ -47,7 +47,7 @@ export const AttenuationEngine = (()=>{
         const invSq = (cfg.refDist*cfg.refDist)/(dist*dist);
         dose[j*nx+i] = I0 * invSq * T;
       }
-      if(onRow && (j&7)===0){ onRow(j/ny); await new Promise(r=>setTimeout(r,0)); }
+      if(onRow && (j&31)===0){ onRow(j/ny); await new Promise(r=>setTimeout(r,0)); }
     }
     return dose;
   }

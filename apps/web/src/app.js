@@ -293,12 +293,16 @@ function applyDet(){
   S.detW = port?S.detBaseW:S.detBaseH;
   S.detH = port?S.detBaseH:S.detBaseW;
   let [nx,ny]=RES_MAP[S.resolution]||RES_MAP.std;
-  let [cnx,cny]=COMPUTE_MAP[S.resolution]||COMPUTE_MAP.std;
-  if(!port){ let t=nx; nx=ny; ny=t; t=cnx; cnx=cny; cny=t; }
-  S.detNx=nx; S.detNy=ny; S.cnx=cnx; S.cny=cny;
+  if(!port){ const t=nx; nx=ny; ny=t; }
+  S.detNx=nx; S.detNy=ny;
   const dv=$('detSizeV'); if(dv) dv.textContent=S.detW+'×'+S.detH+' cm';
   const rv=$('resV'); if(rv) rv.textContent=nx+'×'+ny;
   const os=$('detOrientSeg'); if(os)[...os.children].forEach(b=>b.classList.toggle('on',b.dataset.orient===S.detOrient));
+  // the light field can open to the full detector: cap the collimation sliders at the receptor size
+  const cx=$('collX'), cz=$('collZ');
+  if(cx){ cx.max=S.detW; if(S.collX>S.detW){ S.collX=S.detW; cx.value=S.detW; } }
+  if(cz){ cz.max=S.detH; if(S.collZ>S.detH){ S.collZ=S.detH; cz.value=S.detH; } }
+  updateGeomReadouts?.();
   updateDetector();
 }
 function updateDetector(){
@@ -326,8 +330,7 @@ const S = {
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
   detW:35, detH:43,            // effective receptor W×H (derived from size + orientation)
-  detNx:2500, detNy:3070,      // detector native pixel matrix (for the resolution label/pitch)
-  cnx:480, cny:589,            // physics compute matrix (feasible; presented at native pitch)
+  detNx:2500, detNy:3070,      // detector native pixel matrix (true ray-cast resolution)
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
   voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
@@ -384,12 +387,10 @@ const S = {
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
 // the palmar soft tissue between bone and detector is only ~1-1.5 cm.
 // detector pixel matrices per resolution tier (4:5, matches 24x30 cm receptor)
-// modern digital-radiography detector matrices (portrait, long axis vertical) — the
-// native pixel count shown to the user (resolution label + pixel pitch).
+// modern digital-radiography detector matrices (portrait, long axis vertical). The
+// projection is ray-cast at this true resolution (no downscaling); the heavy voxel-body
+// case is offloaded to the Python compute backend when it is running.
 const RES_MAP={ low:[2000,2450], std:[2500,3070], high:[3500,4300] };
-// physics is ray-cast at a feasible matrix per tier (full-native would be minutes for
-// a voxel body) and presented at the native pitch; higher tiers are sharper but slower.
-const COMPUTE_MAP={ low:[360,441], std:[480,589], high:[640,785] };
 const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125];
 const maSteps=[25,50,100,150,200,250,300,400,500,630,800];
 function exposureTimeSec(){ return S.mas / S.ma; }              // t = mAs / mA
@@ -843,9 +844,7 @@ async function computeRadiograph(){
   // detector matches the 3D image receptor (selectable size) so open collimation
   // captures the whole plate, with empty field between the model and the edges.
   const detW=S.detW, detH=S.detH;  // cm (effective, size + orientation)
-  // detector native matrix (modern DR); physics is ray-cast at a capped resolution
-  // and shown at the native pitch (full-res compute would be minutes for a voxel body).
-  const nx=S.cnx, ny=S.cny;                      // physics matrix (native shown via S.detNx/detNy)
+  const nx=S.detNx, ny=S.detNy;    // full native detector matrix — ray-cast at the true resolution
   const pxU=detW/nx, pxV=detH/ny;
   const detCenter=[0,0,0];
   const detU=[1,0,0], detV=[0,0,1];
