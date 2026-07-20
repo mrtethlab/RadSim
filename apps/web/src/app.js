@@ -8,7 +8,10 @@ import { AttenuationEngine } from './core/engine.js';
 import { Detector } from './core/detector.js';
 import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
-import { loadModelFile } from './model/loader.js';
+import { loadModelFile, loadModelUrl } from './model/loader.js';
+import { loadVoxelModel } from './model/voxelLoader.js';
+import { muOverBins } from './core/voxelPhantom.js';
+import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
 
@@ -23,8 +26,8 @@ function initScene(){
   renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   const scene=new THREE.Scene();
   scene.background=new THREE.Color(0x0a0c0f);
-  scene.fog=new THREE.Fog(0x0a0c0f, 120, 320);
-  const cam=new THREE.PerspectiveCamera(42,1,1,1000);
+  scene.fog=new THREE.Fog(0x0a0c0f, 600, 2600);   // very light haze — the CT rig is large + far
+  const cam=new THREE.PerspectiveCamera(42,1,1,3200);
   const amb=new THREE.AmbientLight(0x6b7785,0.9); scene.add(amb);
   const key=new THREE.DirectionalLight(0xbfe9ff,0.9); key.position.set(40,90,60); scene.add(key);
   const rim=new THREE.DirectionalLight(0x35c6d6,0.35); rim.position.set(-50,20,-40); scene.add(rim);
@@ -50,6 +53,17 @@ function initScene(){
     bracket( hx, hz,-1,-1); bracket(-hx, hz, 1,-1);
     bracket( hx,-hz,-1, 1); bracket(-hx,-hz, 1, 1);
   })();
+  // hang-direction arrow: a small white arrow printed on the plate pointing +z
+  // (toward the fingertips) — the end the processed image is hung from.
+  const detArrow=new THREE.Group();
+  (function hangArrow(){
+    const m=new THREE.MeshBasicMaterial({color:0xffffff});
+    const shaft=new THREE.Mesh(new THREE.BoxGeometry(0.34,0.06,1.7),m);
+    shaft.position.set(0,0.07,-0.85); detArrow.add(shaft);
+    const head=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.1,12),m);
+    head.rotation.x=Math.PI/2; head.position.set(0,0.07,0.55); detArrow.add(head);
+  })();
+  scene.add(detArrow);
 
   // ---- COLLIMATOR LAMP -------------------------------------------------
   // A shadow-casting spotlight at the focal spot projects a "cookie" texture
@@ -91,12 +105,13 @@ function initScene(){
   const beam=new THREE.Group(); scene.add(beam);         // retired (unused)
   const handGroup=new THREE.Group(); scene.add(handGroup);
 
-  three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,
+  three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
          amb,key,lamp,cookieCanvas,cookieTex,lampAngle};
   buildHandMeshes();
 
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
+  three.setOrbitRad=(r)=>{ rad=r; };            // used to frame the large CT rig vs the small hand
   const ctFixedPov = () => S.mode==='ct' && (S.ct.pov==='ap' || S.ct.pov==='lat');
   function updateCamera(){
     if(ctFixedPov()){
@@ -104,10 +119,12 @@ function initScene(){
       // so the ring never overhangs the patient, same distance from the isocentre
       // (10.5) and same (very wide) FOV. Lat is the AP view rotated 90° about the
       // bore axis (z). They never track the patient: only the couch + table move.
-      if(cam.fov!==132){ cam.fov=132; cam.updateProjectionMatrix(); }  // extreme wide (distortion ok) for the full bore + gaps
+      // CT bore is centred at (0, ISO_Y=6) with hole radius BORE_R=35 (see ct.js). Sit
+      // just inside the inner rim so the ring frames the patient without overhanging.
+      if(cam.fov!==110){ cam.fov=110; cam.updateProjectionMatrix(); }  // wide (some distortion) for the full bore
       cam.up.set(0,0,1);                        // +z (un-scanned anatomy) toward top of frame
-      if(S.ct.pov==='lat') cam.position.set(10.5, 6, 0);   // +x rim, looking toward -x (lateral)
-      else                 cam.position.set(0, 16.5, 0);   // top rim, looking straight down (AP)
+      if(S.ct.pov==='lat') cam.position.set(33, 6, 0);    // +x rim, looking toward -x (lateral)
+      else                 cam.position.set(0, 39, 0);    // top rim, looking straight down (AP)
       cam.lookAt(0, 6, 0);
       return;
     }
@@ -139,7 +156,7 @@ function initScene(){
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
   canvas.addEventListener('pointerup',()=>drag=false);
   canvas.addEventListener('wheel',e=>{ if(!orbitActive())return;
-    e.preventDefault();rad=Math.max(55,Math.min(240,rad+e.deltaY*0.09));},{passive:false});
+    e.preventDefault();rad=Math.max(40,Math.min(700,rad+e.deltaY*0.25));},{passive:false});
 
   let prevW=0, prevH=0;
   function resize(){
@@ -164,8 +181,8 @@ function initScene(){
     } else if(S.mode==='ct' && S.ct.moveBlit){
       // table move: mirror the axis' PoV into the monitor, independent of the bay
       // camera (so the bay can be watched in orbit at the same time).
-      povCam.aspect=cam.aspect; povCam.fov=132; povCam.up.set(0,0,1);
-      if(S.ct.moveBlit==='lat') povCam.position.set(10.5,6,0); else povCam.position.set(0,16.5,0);
+      povCam.aspect=cam.aspect; povCam.fov=110; povCam.up.set(0,0,1);
+      if(S.ct.moveBlit==='lat') povCam.position.set(33,6,0); else povCam.position.set(0,39,0);
       povCam.lookAt(0,6,0); povCam.updateProjectionMatrix();
       renderer.render(scene,povCam); blitToFilm();
       renderer.render(scene,cam);      // restore the bay view for display
@@ -218,6 +235,7 @@ function buildHandMeshes(){
 /* Toggle which model is visible (display only). */
 function applyHandView(){
   if(!three.softGrp||!three.boneGrp) return;
+  if(S.subject!=='hand'){ three.softGrp.visible=false; three.boneGrp.visible=false; if(three.chestGroup) three.chestGroup.visible=true; return; }
   const boneOnly=(S.handView==='bone');
   three.softGrp.visible=!boneOnly; three.boneGrp.visible=boneOnly;
 }
@@ -226,6 +244,134 @@ function setHandView(v){
   const seg=$('renderSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.hv===v));
   applyHandView();
 }
+
+/* Voxel model registry: the analytic hand plus every folder in public/models/. The
+   `id` is BOTH the folder name and the file basename (…/<id>/<id>.model.json) and the
+   model name sent to the Python backend, so keep them in sync with the build output.
+   scoutKv/scoutMa are the default CT scout technique; xrayKv the default x-ray kV
+   (thin extremities need far less than a thick torso). */
+const VOXEL_MODELS = {
+  chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
+  headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
+  chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
+  upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
+  lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
+  wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
+  hires_shoulder:  { title:'Shoulder · 0.25 mm',    scoutKv:110, scoutMa:120, xrayKv:70  },
+};
+
+/* Prepare a freshly loaded display mesh so it lights + shadows like the hand: the
+   exported GLB carries PBR defaults (metalness 1), no shadow flags and NO normals
+   (GLTFLoader falls back to flat shading, which breaks the spot-light cookie
+   projection — the light field floods the whole mesh unmasked). */
+function prepVoxelMesh(grp){
+  grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
+    if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    const ms=Array.isArray(o.material)?o.material:[o.material];
+    for(const m of ms){ if(m){ m.metalness=0; m.roughness=0.95; m.flatShading=false; m.needsUpdate=true; } } } });
+}
+
+/* Switch the scan subject between the analytic hand and any voxel model. Models
+   (material volume + display mesh) are fetched on first use and cached; the meshes
+   all live in handGroup so the CT positioning offsets apply to them like the hand. */
+async function setSubject(sub){
+  const sel=$('subjectSel'); const hint=$('subjectHint');
+  S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
+  const showActive=(id)=>{ for(const k in three.voxelMeshes) three.voxelMeshes[k].visible=(k===id);
+                           three.chestGroup=three.voxelMeshes[id]||null; };
+  if(sub==='hand'){
+    S.subject='hand';
+    S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scoutKv=80; S.ct.scoutMa=20;
+    S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
+    applyBackendOnly(false);
+    showActive(null); applyHandView();
+    if(hint) hint.textContent='Analytic hand phantom';
+    if(sel) sel.value='hand';
+    const sl=$('ctScanLen'); if(sl) sl.value=S.ct.scanLen;
+    syncScene(); return;
+  }
+  const cfg=VOXEL_MODELS[sub];
+  if(!cfg){ console.warn('unknown subject',sub); return; }
+  let vm=S.voxelCache[sub];
+  if(!vm){
+    if(hint) hint.textContent='Loading '+cfg.title+'…';
+    S.subjectLoading=true;   // guards CT START/exposure until the swap completes
+    try{
+      vm=await loadVoxelModel('/models/'+sub, sub);
+      S.voxelCache[sub]=vm;
+      if(vm.meshUrl){
+        const grp=await loadModelUrl(vm.meshUrl);
+        prepVoxelMesh(grp);
+        grp.visible=false; three.handGroup.add(grp); three.voxelMeshes[sub]=grp;
+      }
+    }catch(err){ console.error(sub+' load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
+      if(sel) sel.value=S.subject; return; }
+    finally{ S.subjectLoading=false; }
+  }
+  S.voxelModel=vm; S.subject=sub;
+  const ext=vm.extentMM;
+  // scan field of view scales to the model (mediolateral × AP extent) so it fits
+  S.ct.scoutFovMM=Math.round(Math.max(ext[0], ext[1])+70);
+  // default the scan to cover the WHOLE anatomy, pre-isocentred at the superior end
+  // (scan runs superior→inferior). Tall models (whole body) need a longer scout.
+  S.ct.scanLen=Math.round(ext[2]);
+  const sl=$('ctScanLen'); if(sl){ sl.max=Math.max(600, S.ct.scanLen); sl.value=S.ct.scanLen; }
+  S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
+  S.ct.isocentred=true; S.ct.tablePos=0; S.ct.tableY=0;
+  S.ct.scoutKv=cfg.scoutKv; S.ct.scoutMa=cfg.scoutMa;
+  // default x-ray kV to the model (thin extremities need far less than a torso)
+  if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
+  // backend-only models (large, no volume in the browser) MUST use the Python engine
+  applyBackendOnly(!!vm.backendOnly);
+  showActive(sub);
+  if(three.softGrp) three.softGrp.visible=false;
+  if(three.boneGrp) three.boneGrp.visible=false;
+  if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
+  if(sel) sel.value=sub;
+  syncScene();
+}
+/* Position + orient the chest display mesh so it matches the VoxelPhantom (same axis
+   flips) and is scaled from mm to world units. The mesh is a child of handGroup, so
+   handGroup's translation (CT patient offset) then places it at the isocentre. */
+function applyVoxelMeshTransform(grp){
+  const f=voxelFlips(), s=0.1;   // mm -> world (1 unit = 10 mm)
+  grp.scale.set(s*(f[0]?-1:1), s*(f[1]?-1:1), s*(f[2]?-1:1));
+  grp.position.set(0,0,0); grp.rotation.set(0,0,0);
+}
+
+/* X-ray detector receptor size + orientation. The 3D receptor (modelled 24x30) scales
+   to the effective W×H; computeRadiograph reads S.detW/detH + the native matrix. */
+function applyDet(){
+  const port=S.detOrient==='portrait';
+  S.detW = port?S.detBaseW:S.detBaseH;
+  S.detH = port?S.detBaseH:S.detBaseW;
+  let [nx,ny]=RES_MAP[S.resolution]||RES_MAP.std;
+  if(!port){ const t=nx; nx=ny; ny=t; }
+  S.detNx=nx; S.detNy=ny;
+  const dv=$('detSizeV'); if(dv) dv.textContent=S.detW+'×'+S.detH+' cm';
+  const rv=$('resV'); if(rv) rv.textContent=nx+'×'+ny;
+  const os=$('detOrientSeg'); if(os)[...os.children].forEach(b=>b.classList.toggle('on',b.dataset.orient===S.detOrient));
+  // the light field can open to the full detector: cap the collimation sliders at the receptor size
+  const cx=$('collX'), cz=$('collZ');
+  if(cx){ cx.max=S.detW; if(S.collX>S.detW){ S.collX=S.detW; cx.value=S.detW; } }
+  if(cz){ cz.max=S.detH; if(S.collZ>S.detH){ S.collZ=S.detH; cz.value=S.detH; } }
+  updateGeomReadouts?.();
+  updateDetector();
+}
+function updateDetector(){
+  if(!three.det) return;
+  const sx=S.detW/24, sz=S.detH/30;
+  three.det.scale.set(sx,1,sz);
+  if(three.detMarks) three.detMarks.scale.set(sx,1,sz);
+  // hang arrow rides the +z edge of the receptor (unscaled, so it stays an arrow)
+  if(three.detArrow) three.detArrow.position.set(-9*sx, 0, 12.6*sz);
+}
+function setDetSize(w,h){
+  S.detBaseW=Math.min(w,h); S.detBaseH=Math.max(w,h);
+  const seg=$('detSizeSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on', +b.dataset.w===w));
+  applyDet();
+}
+function setDetOrient(o){ S.detOrient=o; applyDet(); }
 
 /* ============================================================================
    STATE + WIRING
@@ -236,6 +382,16 @@ const S = {
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
+  detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
+  detOrient:'portrait',        // portrait (long axis vertical) / landscape
+  detW:35, detH:43,            // effective receptor W×H (derived from size + orientation)
+  detNx:2500, detNy:3070,      // detector native pixel matrix (true ray-cast resolution)
+  // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
+  subject:'hand',              // 'hand' | 'chest'
+  voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
+  // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
+  xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
+  computeInfo:null,            // /health result when the Python backend is reachable
   // ---- CT mode ----
   mode:'xray',                 // 'xray' | 'ct'
   ct:{
@@ -244,6 +400,7 @@ const S = {
     pitch:1.0,                 // table travel per rotation / total collimation
     rotSpeed:0.5,              // seconds per gantry rotation
     scanLen:300,               // mm scout/scan length (from isocentre)
+    scoutFovMM:180,            // scout/scan field of view (mm) — adapts to the subject (hand 180 / chest ~460)
     scoutKv:80,                // scout topogram technique (kV)
     scoutMa:20,                // scout topogram technique (mA)
     tablePos:0,                // mm; signed: +I (inferior) / -S (superior); isocentre zeroes it
@@ -276,6 +433,8 @@ const S = {
     storeCap:4,                // keep at most this many scan groups' worth of data when autoDelete is on
     nextScanId:1,              // running id for stored scans
     viewer:{ scanId:null, slice:0, wl:60, ww:800 },   // cross-sectional (axial) viewer state (HU window/level)
+    backend:'local',           // 'local' | 'python' — CT reconstruction engine
+    detMode:'quick',           // 'quick' (128-ch preview) | 'realistic' (fixed 0.625mm DEL, 512² recon)
     // linked 2x2 MPR workstation: one cross-reference position drives all four panes
     mpr:{ scanId:null, cur:null, wl:60, ww:800, sel:'axial', thk:5, interval:5, algo:'standard', mar:false,
           // oblique plane: a localizer line anchored to one ortho view (view), rotated by
@@ -288,7 +447,13 @@ const S = {
 // detector base lift (cm) at OID 0: hand resting palm-down on the receptor, so
 // the palmar soft tissue between bone and detector is only ~1-1.5 cm.
 // detector pixel matrices per resolution tier (4:5, matches 24x30 cm receptor)
-const RES_MAP={ low:[176,220], std:[320,400], high:[480,600] };
+// modern digital-radiography detector matrices (portrait, long axis vertical). The
+// projection is ray-cast at this true resolution (no downscaling); the heavy voxel-body
+// case is offloaded to the Python compute backend when it is running.
+// 'quick' is a fast draft preview at the sim's original coarse matrix (~1 mm
+// pixels — not a real DR resolution) so a voxel-body exposure returns in well
+// under a second; low/std/high are true modern DR matrices (~100 µm pixels).
+const RES_MAP={ quick:[320,400], low:[2000,2450], std:[2500,3070], high:[3500,4300] };
 const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125];
 const maSteps=[25,50,100,150,200,250,300,400,500,630,800];
 function exposureTimeSec(){ return S.mas / S.ma; }              // t = mAs / mA
@@ -318,7 +483,24 @@ function baseLift(skin, bone, rot){
 /* Build the world-space physics phantom from current pose (bakes transform).
    Same skin+bone primitives shown in 3D, rotated by pose and lifted onto the
    detector so bone is nested inside soft tissue. */
+// Anatomical axis flips for the voxel chest (volume axes: x=Left, y=Posterior,
+// z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first (anterior
+// up, head toward −z into the bore). X-ray = PA upright feel (posterior up / anterior
+// toward the detector), long axis left→right on the plate.
+function voxelFlips(){
+  return S.mode==='ct' ? [false,true,true] : [false,false,false];
+}
 function buildPhantom(){
+  // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
+  // CT patient offset (couch position / table height) so scout + recon sweep the real
+  // anatomy. Uses the expanded BodyMaterials via its labelled volume.
+  if(S.subject!=='hand' && S.voxelModel){
+    const vm=S.voxelModel;
+    const cx = S.mode==='ct' ? S.ct.patient.x : 0;
+    const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
+    const cz = S.mode==='ct' ? S.ct.patient.z : 0;
+    return vm.makePhantom([cx,cy,cz], voxelFlips());
+  }
   const ph=new Phantom();
   const rot=poseRot();
   const cosR=Math.cos(rot), sinR=Math.sin(rot);
@@ -344,10 +526,19 @@ function buildPhantom(){
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
-  // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips)
-  three.handGroup.rotation.z = poseRot();
-  { const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-    three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid; }
+  // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips).
+  // The voxel chest is placed by ctSyncScene instead, so skip the hand transforms.
+  if(S.subject==='hand'){
+    three.handGroup.rotation.z = poseRot();
+    const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
+    three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid;
+  } else {
+    three.handGroup.rotation.z = 0;
+    if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);   // flips are mode-dependent
+    if(S.mode!=='ct' && S.voxelModel){                                // x-ray: rest the model on the detector
+      three.handGroup.position.set(0, (S.voxelModel.extentMM[1]/2)/10, 0);
+    }
+  }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
   const src=sourcePos();
@@ -369,6 +560,7 @@ function syncScene(){
   three.key.intensity = on ? 0.5 : 0.9;
   three.cr.visible = !on;                       // crosshair now comes from the lamp
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
+  updateDetector();                             // receptor size (25x30 / 35x43)
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
 }
 
@@ -490,6 +682,7 @@ function setContent(c){
   const img=(c==='image');
   const slices=(c==='slices');   // CT cross-sectional viewer (reconstructed transverse slices)
   const recons=(c==='recons');   // CT reconstruction planning / multiplanar viewer
+  if(c==='3d' && three.setOrbitRad) three.setOrbitRad(S.mode==='ct'?260:115);   // frame the large CT rig vs the hand
   // switching the bay to 3D in CT defaults to Orbit (whole-scene view), not a fixed PoV
   if(!img && !slices && !recons && S.mode==='ct') setCTPov('orbit');
   // In CT with scouts acquired, the Image (Scout) view IS the scout window (AP+LAT
@@ -593,6 +786,8 @@ function bind(){
   $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
   // render mode: soft-tissue anatomy  <->  skeleton (display only)
   $('renderSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setHandView(b.dataset.hv);});
+  // subject: analytic hand  <->  any voxel model
+  $('subjectSel')?.addEventListener('change',e=>setSubject(e.target.value));
   // collimator light on/off
   $('lfBtn').addEventListener('click',()=>{ S.lfOn=!S.lfOn;
     $('lfBtn').classList.toggle('on',S.lfOn); $('lfBtn').setAttribute('aria-pressed',S.lfOn);
@@ -602,8 +797,11 @@ function bind(){
     const b=e.target.closest('button'); if(!b)return;
     [...$(id).children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); fn(b);
   });
-  segPick('resSeg', b=>{ S.resolution=b.dataset.res;
-    const [nx,ny]=RES_MAP[S.resolution]; $('resV').textContent=nx+'×'+ny; });
+  segPick('resSeg', b=>{ S.resolution=b.dataset.res; applyDet(); });
+  $('detSizeSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
+    [...$('detSizeSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
+    setDetSize(parseInt(b.dataset.w),parseInt(b.dataset.h));});
+  $('detOrientSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setDetOrient(b.dataset.orient);});
   segPick('gridSeg', b=>{ S.gridOn=(b.dataset.grid==='on');
     $('gridStateV').textContent=S.gridOn?'IN':'OUT'; });
   segPick('gridRatioSeg', b=>{ S.gridRatio=parseInt(b.dataset.ratio);
@@ -706,10 +904,10 @@ async function computeRadiograph(){
   const phantom=buildPhantom();
   const source=sourcePos();
 
-  // detector matches the 3D image receptor (24 x 30 cm) so open collimation
+  // detector matches the 3D image receptor (selectable size) so open collimation
   // captures the whole plate, with empty field between the model and the edges.
-  const detW=24, detH=30;          // cm
-  const [nx,ny]=RES_MAP[S.resolution]||RES_MAP.std;   // pixel matrix (4:5)
+  const detW=S.detW, detH=S.detH;  // cm (effective, size + orientation)
+  const nx=S.detNx, ny=S.detNy;    // full native detector matrix — ray-cast at the true resolution
   const pxU=detW/nx, pxV=detH/ny;
   const detCenter=[0,0,0];
   const detU=[1,0,0], detV=[0,0,1];
@@ -717,8 +915,8 @@ async function computeRadiograph(){
   const I0 = S.mas * Math.pow(S.kv/70,2);   // dose ∝ mAs·kVp^2
   // quanta per pixel scale with pixel AREA: finer matrices collect fewer photons
   // per element -> more quantum mottle (the resolution/noise trade-off).
-  const STD_PX=(detW/320)*(detH/400);
-  const photonScale = 260 * (pxU*pxV)/STD_PX;   // higher quanta -> lower mottle (clean DR look)
+  const STD_PX=0.048*0.048;                     // reference detector pixel area (~0.48 mm) for the noise model
+  const photonScale = 340 * (pxU*pxV)/STD_PX;   // higher quanta -> lower mottle (clean DR look)
 
   // collimation mask: which detector cells fall inside the beam cone.
   // Tested in the tube frame so the exposed field keystones with CR angle,
@@ -737,11 +935,37 @@ async function computeRadiograph(){
   }
 
   const spectrum=Spectrum.make(S.kv);
-  const dose=await AttenuationEngine.project({
-    phantom, source, detCenter, detU, detV, nx, ny, pxU, pxV,
-    spectrum, I0, refDist:100,
-    onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
-  });
+  // ---- Python GPU engine (voxel subjects): same physics, integrated server-side.
+  // The browser stays the source of truth for the spectrum + per-material mu tables
+  // and sends them along; on any failure we fall back to the in-browser engine.
+  let dose=null;
+  if(S.xrayBackend==='python' && phantom.voxel && S.computeInfo){
+    try{
+      $('prog').style.width='30%';
+      dose=await compute.projectVoxel({
+        model:S.subject, flips:Array.from(phantom.flip,Boolean),
+        center:[(phantom.min[0]+phantom.max[0])/2,(phantom.min[1]+phantom.max[1])/2,(phantom.min[2]+phantom.max[2])/2],
+        source, detCenter, detU, detV, nx, ny, pxU, pxV,
+        binsW:spectrum.bins.map(b=>b.w),
+        muMat:muOverBins(spectrum.bins).map(r=>Array.from(r)),
+        I0, refDist:100,
+        coneD:fd, coneW:wAxis, coneL:lAxis, coneTw:tw, coneTl:tl,
+      });
+    }catch(err){
+      if(phantom.geometryOnly){   // no browser volume to fall back to
+        $('prog').style.width='0%';
+        throw new Error('This model requires the Python GPU backend, which is not reachable. '+err.message);
+      }
+      console.warn('GPU backend projection failed — falling back to the browser engine', err); dose=null;
+    }
+  }
+  if(!dose){
+    dose=await AttenuationEngine.project({
+      phantom, source, detCenter, detU, detV, nx, ny, pxU, pxV,
+      spectrum, I0, refDist:100,
+      onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
+    });
+  }
 
   // ---- anti-scatter grid ----
   // A focused linear grid (strips running along the long z axis) passes a fixed
@@ -833,8 +1057,15 @@ function renderRadiograph(target){
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
   cctx.putImageData(img,0,0);
-  // orient (rotate + flip) into the target, sizing target to the exposed crop
-  const rot=((S.imgRot%360)+360)%360, rot90=(rot===90||rot===270);
+  // orient (rotate + flip) into the target, sizing target to the exposed crop.
+  // A per-subject hanging default is applied first, then the user's adjustments:
+  //  - hand: fingertips (+z, the plate arrow) up -> 180° rotation. A rotation, NOT a
+  //    vertical mirror, so left/right chirality is preserved.
+  //  - chest: shoulders (-z) are already up as recorded; mirror horizontally because
+  //    a PA projection is displayed as if facing the patient (L marker on the right).
+  const baseRot = S.subject!=='hand' ? 0 : 180;
+  const baseFlipH = S.subject!=='hand';
+  const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
   const tctx=target.getContext('2d');
@@ -842,7 +1073,7 @@ function renderRadiograph(target){
   tctx.save();
   tctx.translate(target.width/2, target.height/2);
   tctx.rotate(rot*Math.PI/180);
-  tctx.scale(S.flipH?-1:1, S.flipV?-1:1);
+  tctx.scale((baseFlipH!==S.flipH)?-1:1, S.flipV?-1:1);
   tctx.drawImage(crop, -cw/2, -ch/2);
   tctx.restore();
 }
@@ -861,13 +1092,86 @@ function updateDI(EI){
 }
 
 function annotate(spec){
-  $('fnTL').textContent='HAND · '+S.pose;
+  const subjName=(S.subject==='hand'?'HAND':(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase());
+  $('fnTL').textContent=subjName+' · '+S.pose;
   $('fnTR').textContent=S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs';
   $('fnBL').textContent='SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV';
-  $('fnBR').textContent='DR '+S.nx+'×'+S.ny+'  '+S.collX+'×'+S.collZ+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');
+  $('fnBR').textContent='DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');
 }
 
-/* ---- custom model import (.glb) + compute-backend status ---- */
+/* ---- compute backend (Python GPU) ---- */
+const compute=new ComputeClient();
+/* Ping the backend; update the status chips + enable/disable the Python buttons in
+   both modes. Called at boot and whenever a toggle is pressed. */
+async function refreshComputeStatus(){
+  S.computeInfo=await compute.health();
+  const on=!!S.computeInfo, dev=on?(S.computeInfo.compute||{}):null;
+  const label=on ? ((dev.device==='cuda'?(dev.name||'GPU'):'CPU')) : 'offline';
+  for(const id of ['backendStatusX','backendStatusCT']){
+    const el=$(id); if(!el) continue;
+    el.textContent=label;
+    el.classList.toggle('green', on);
+  }
+  for(const segId of ['backendSegX','backendSegCT']){
+    const b=document.querySelector('#'+segId+' button[data-be="python"]');
+    if(b) b.disabled=!on;
+  }
+  // if the backend vanished while selected, drop back to the browser engine — unless
+  // a backend-only model is loaded (it has no browser volume, so local can't render it)
+  if(!on && !S.backendOnly){
+    if(S.xrayBackend==='python') setBackend('xray','local');
+    if(S.ct.backend==='python') setBackend('ct','local');
+  }
+  const dot=$('computeDot');
+  if(dot){
+    dot.textContent=on?'●':'○';
+    dot.style.color=on?'var(--green)':'var(--muted2)';
+    dot.title=on?('compute backend online — '+label):'compute backend offline (optional)';
+  }
+  return on;
+}
+function setBackend(mode,val){
+  if(mode==='xray') S.xrayBackend=val; else S.ct.backend=val;
+  const seg=$(mode==='xray'?'backendSegX':'backendSegCT');
+  if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.be===val));
+}
+/* A backend-only model has no volume in the browser, so it can ONLY render via the
+   Python GPU engine — force it in both modes and lock out the Browser toggle. */
+function applyBackendOnly(on){
+  S.backendOnly=on;
+  if(on){ setBackend('xray','python'); setBackend('ct','python'); }
+  for(const segId of ['backendSegX','backendSegCT']){
+    const seg=$(segId); if(!seg) continue;
+    const local=seg.querySelector('button[data-be="local"]');
+    const py=seg.querySelector('button[data-be="python"]');
+    if(local) local.disabled=on;                          // can't use the browser engine
+    if(on && py) py.disabled=!S.computeInfo;               // python still needs the backend up
+  }
+  if(on && !S.computeInfo){ refreshComputeStatus().then(ok=>{
+    if(!ok){ const h=$('subjectHint'); if(h) h.textContent='⚠ Start the Python backend — this model needs the GPU engine.'; }
+  }); }
+}
+function wireBackendToggles(){
+  for(const [segId,mode] of [['backendSegX','xray'],['backendSegCT','ct']]){
+    $(segId)?.addEventListener('click',async e=>{
+      const b=e.target.closest('button'); if(!b||b.disabled) return;
+      if(b.dataset.be==='python' && !S.computeInfo){
+        const ok=await refreshComputeStatus();
+        if(!ok) return;   // still offline — stay on the browser engine
+      }
+      setBackend(mode,b.dataset.be);
+    });
+  }
+  // CT detector design: quick preview vs realistic fixed-pitch MDCT
+  $('ctDetModeSeg')?.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    S.ct.detMode=b.dataset.dm;
+    [...$('ctDetModeSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.dm===S.ct.detMode));
+    const v=$('ctDetModeV'); if(v) v.textContent=S.ct.detMode==='realistic'?'800 ch · 0.625 mm':'128 ch · preview';
+  });
+}
+
+/* ---- custom model import (.glb) ---- */
 let modelGroup=null;
 function initExtras(){
   const inp=$('loadModelInput');
@@ -882,22 +1186,17 @@ function initExtras(){
     inp.value='';
   });
   $('clearModelBtn')?.addEventListener('click',()=>{ if(modelGroup){ three.scene.remove(modelGroup); modelGroup=null; } });
-  // ping the Python compute backend; light the status dot if it is reachable
-  const dot=$('computeDot');
-  new ComputeClient().health().then(h=>{ if(!dot)return;
-    dot.textContent = h ? '●' : '○';
-    dot.style.color = h ? 'var(--green)' : 'var(--muted2)';
-    dot.title = h ? ('compute backend online — '+(h.service||'ok')) : 'compute backend offline (optional)';
-  });
+  wireBackendToggles();
+  refreshComputeStatus();
 }
 
 /* ---- boot ---- */
 window.addEventListener('load',()=>{
-  initScene(); bind(); refreshReadouts(); updateGeomReadouts(); syncScene();
+  initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
   Sound.init(); initExtras();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
-           refreshFilmViewer });
+           refreshFilmViewer, compute });
 });

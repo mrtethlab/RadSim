@@ -25,3 +25,8 @@ Thumbs.db
 
 # local-only notes (not for the repo)
 SUMMARY.md
+
+# generated voxel-model assets (large, regenerable via services/compute/app/build_chest.py)
+services/compute/data/
+apps/web/public/models/**/*.mat.bin
+apps/web/public/models/**/*.glb

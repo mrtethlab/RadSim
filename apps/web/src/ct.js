@@ -9,21 +9,24 @@
 // which app.js calls at the end of syncScene().
 
 import { Spectrum } from './core/spectrum.js';
-import { Materials } from './core/materials.js';
+import { Materials, BodyMaterials } from './core/materials.js';
+import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
 import { Sound } from './audio/sound.js';
 
 let ctx = null;
 let couch = null, gantry = null, gantrySpin = null;  // couch (moves) + gantry ring (static) + rotating tube/detector (scan only)
+let scanMarkers = null;               // usability aid: coloured lines at scan start/end + a direction arrow
 let laserTop = null, laserSide = null; // projected alignment lasers (SpotLights) + their cookies
 let laserTopTex = null, laserSideTex = null;
 
 const SLICE_MM = [0.625, 1.25, 2.5, 5, 10];   // slice-thickness stations
 const MM_PER_UNIT = 10;                        // 1 world unit = 10 mm
 const ISO_Y = 6;                               // gantry vertical isocentre (bore centre, world units)
+const BORE_R = 35;                             // bore hole radius (world units) → 700 mm bore, real-CT scale
 // scout field of view (mm across the image). Equal for AP and LAT so the two
 // scouts share the SAME aspect ratio and the scan box is a circular FOV (cylinder).
-const SCOUT_FOV_MM = 180;
-const SCOUT_WIDTH_MM = { AP: SCOUT_FOV_MM, LAT: SCOUT_FOV_MM };
+const SCOUT_FOV_MM = 180;                       // default (hand); the chest widens it (see S.ct.scoutFovMM)
+const scoutFov = () => (ctx && ctx.S.ct.scoutFovMM) || SCOUT_FOV_MM;   // scan/scout FOV width (mm), subject-adaptive
 // CT patient vertical position (world units) for the current table height. Default
 // table height (0) centres the patient at the gantry isocentre.
 function ctPatientY() { return ISO_Y + ctx.S.ct.tableY / MM_PER_UNIT; }
@@ -102,34 +105,47 @@ export function initCT(context) {
 function buildCTScene() {
   const { THREE, three } = ctx;
 
-  // ---- couch (moving) ----
+  // ---- couch (moving) ---- real-CT scale: a long, wide pallet the patient lies on
   couch = new THREE.Group();
   const padMat = new THREE.MeshStandardMaterial({ color: 0x232a31, metalness: 0.2, roughness: 0.75 });
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(15, 1.2, 66), padMat);
-  pad.position.set(0, -0.6, 8); pad.receiveShadow = true; couch.add(pad);   // pad top at local y=0
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.5, 66), new THREE.MeshStandardMaterial({ color: 0x2f3a44, metalness: 0.4, roughness: 0.5 }));
-  rail.position.set(0, -1.15, 8); couch.add(rail);
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(46, 3, 220), padMat);
+  pad.position.set(0, -1.5, 8); pad.receiveShadow = true; couch.add(pad);    // pad top at local y=0
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(50, 2, 220), new THREE.MeshStandardMaterial({ color: 0x2f3a44, metalness: 0.4, roughness: 0.5 }));
+  rail.position.set(0, -4, 8); couch.add(rail);
   couch.visible = false; three.scene.add(couch);
 
-  // ---- gantry (static) ----
+  // ---- gantry (static) ---- ~700 mm bore so a real torso passes through cleanly
   gantry = new THREE.Group();
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(15, 3.4, 18, 44),
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 9, 9, 24, 72),
     new THREE.MeshStandardMaterial({ color: 0x3c4753, metalness: 0.55, roughness: 0.4, emissive: 0x141a20, emissiveIntensity: 1 }));
   ring.position.set(0, ISO_Y, 0); gantry.add(ring);                          // bore centred at the isocentre
-  const ringIn = new THREE.Mesh(new THREE.TorusGeometry(12, 0.7, 12, 44),
+  const ringIn = new THREE.Mesh(new THREE.TorusGeometry(BORE_R, 1.6, 12, 72),
     new THREE.MeshStandardMaterial({ color: 0x11161b, metalness: 0.3, roughness: 0.8 }));
-  ringIn.position.set(0, ISO_Y, 1.4); gantry.add(ringIn);
+  ringIn.position.set(0, ISO_Y, 3.5); gantry.add(ringIn);
   // rotating tube/detector assembly inside the bore — spins about the bore axis (z)
   // during a scan so the acquisition is visible. Static (parked) otherwise.
-  gantrySpin = new THREE.Group(); gantrySpin.position.set(0, ISO_Y, 0.6);
-  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.2, 1.6),
+  gantrySpin = new THREE.Group(); gantrySpin.position.set(0, ISO_Y, 3);
+  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(8, 5, 3.5),
     new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb733, emissiveIntensity: 0.9, metalness: 0.3, roughness: 0.4 }));
-  tubeBlk.position.set(0, 13, 0); gantrySpin.add(tubeBlk);                    // focal spot at top of the ring
-  const detArc = new THREE.Mesh(new THREE.TorusGeometry(12, 0.9, 8, 24, Math.PI * 0.9),
+  tubeBlk.position.set(0, BORE_R + 3, 0); gantrySpin.add(tubeBlk);           // focal spot at top of the ring
+  const detArc = new THREE.Mesh(new THREE.TorusGeometry(BORE_R, 2.5, 8, 40, Math.PI * 0.9),
     new THREE.MeshStandardMaterial({ color: 0x1a2833, emissive: 0x0a2230, emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.5 }));
   detArc.rotation.z = -Math.PI / 2 - Math.PI * 0.45; detArc.position.set(0, 0, 0); gantrySpin.add(detArc);   // opposing detector arc
   gantrySpin.visible = false; gantry.add(gantrySpin);
   gantry.visible = false; three.scene.add(gantry);
+
+  // ---- scan-range markers (usability aid, not physical) ----
+  // green line = scan START (at the isocentre), red line = scan END, orange arrow = the
+  // direction the couch feeds during the scan. Positioned/sized in ctSyncScene.
+  scanMarkers = new THREE.Group();
+  const barGeo = new THREE.BoxGeometry(1, 0.25, 0.25);
+  const mkBar = (color) => new THREE.Mesh(barGeo, new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }));
+  const startBar = mkBar(0x39ff8a), endBar = mkBar(0xff5a5a);
+  startBar.name = 'start'; endBar.name = 'end';
+  const arrow = new THREE.Mesh(new THREE.ConeGeometry(1.4, 4, 16), new THREE.MeshBasicMaterial({ color: 0xffb23e }));
+  arrow.name = 'arrow'; arrow.rotation.x = Math.PI / 2;   // point along +z by default
+  scanMarkers.add(startBar, endBar, arrow);
+  scanMarkers.visible = false; three.scene.add(scanMarkers);
 
   // ---- projected alignment lasers ----
   // Red SpotLights whose cookie (map) is a laser pattern: the map is white only on
@@ -197,6 +213,7 @@ export function ctSyncScene() {
   laserTop.intensity = laserSide.intensity = showLaser ? 7 : 0;
   if (three.det) three.det.visible = !isCT;           // hide the flat-panel detector in CT
   if (three.detMarks) three.detMarks.visible = !isCT; // and its corner brackets
+  if (three.detArrow) three.detArrow.visible = !isCT; // and the hang-direction arrow
   three.handGroup.rotation.y = 0;      // head-first only — no patient flip
   if (isCT) {
     const py = ctPatientY();
@@ -206,22 +223,44 @@ export function ctSyncScene() {
     three.handGroup.position.x = S.ct.patient.x;
     three.handGroup.position.y = py;
     three.handGroup.position.z = S.ct.patient.z;
-    couch.position.y = py - 0.4;                         // pad top just under the patient
+    // pad sits at the patient's posterior surface: just under the hand, or at the back
+    // of the chest (its lower AP extent) so the isocentre still runs through mid-body.
+    const backDrop = (S.subject === 'chest' && S.voxelModel) ? (S.voxelModel.extentMM[1] / 2) / MM_PER_UNIT : 0.4;
+    couch.position.y = py - backDrop;
     couch.position.z = 0;                               // base; animateTableTravel drives it
     // gantry + lasers stay fixed at the isocentre (only the couch + patient move)
     gantry.position.set(0, 0, 0);
-    laserTop.position.set(0, ISO_Y + 20, 0); laserTop.target.position.set(0, ISO_Y, 0);
+    laserTop.position.set(0, ISO_Y + BORE_R + 8, 0); laserTop.target.position.set(0, ISO_Y, 0);
     laserTop.target.updateMatrixWorld();
-    laserSide.position.set(22, ISO_Y, 0); laserSide.target.position.set(0, ISO_Y, 0);
+    laserSide.position.set(BORE_R + 8, ISO_Y, 0); laserSide.target.position.set(0, ISO_Y, 0);
     laserSide.target.updateMatrixWorld();
     // no collimator light field in CT — only the lasers
     three.lamp.intensity = 0; three.lamp.castShadow = false;
     three.cr.visible = false;
-    three.amb.intensity = 0.9; three.key.intensity = 0.9;
+    three.amb.intensity = 1.55; three.key.intensity = 1.35;   // brighter — the big rig read too dark
   } else {
     three.handGroup.position.x = 0;
     three.handGroup.position.z = 0;
   }
+  updateScanMarkers();
+}
+
+// Position the scan-range markers: green line at the scan start, red at the end, an
+// orange arrow between them in the couch-feed direction. The scan images world z 0→
+// lenU when the patient sits at isoZ, so at the current rest position the range is
+// offset by (patient.z − isoZ). Purely a usability aid (not physical).
+function updateScanMarkers() {
+  if (!scanMarkers) return;
+  const S = ctx.S, show = S.mode === 'ct';
+  scanMarkers.visible = show;
+  if (!show) return;
+  const lenU = S.ct.scanLen / MM_PER_UNIT, off = S.ct.patient.z - S.ct.isoZ;
+  const startZ = off, endZ = lenU + off, w = (scoutFov() / MM_PER_UNIT) * 1.1;
+  const start = scanMarkers.getObjectByName('start'), end = scanMarkers.getObjectByName('end'), arrow = scanMarkers.getObjectByName('arrow');
+  start.scale.set(w, 1, 1); start.position.set(0, ISO_Y, startZ);
+  end.scale.set(w, 1, 1); end.position.set(0, ISO_Y, endZ);
+  arrow.position.set(w / 2 + 3, ISO_Y, (startZ + endZ) / 2);
+  arrow.rotation.x = endZ >= startZ ? Math.PI / 2 : -Math.PI / 2;   // point toward the scan end
 }
 
 function wireModeToggle() {
@@ -272,6 +311,13 @@ function applyMode(mode) {
   // tube-POV camera, Image view). Acquisition params + technique are user setup and
   // deliberately persist.
   resetCTSession();
+  // the chest arrives pre-isocentred at its superior end so START sweeps the whole
+  // chest (the reset above wiped the defaults setSubject applied in the other mode);
+  // the hand still requires setting the isocentre manually.
+  if (mode === 'ct' && ctx.S.subject === 'chest' && ctx.S.voxelModel) {
+    ctx.S.ct.isoZ = (ctx.S.voxelModel.extentMM[2] / 2) / 10;
+    ctx.S.ct.isocentred = true;
+  }
   if (mode === 'ct') ctx.setCTPov('ap');   // CT starts on the AP perspective
   else ctx.setCameraView('orbit');         // x-ray returns to free orbit
   ctx.setContent('3d');           // always land in the positioning view, never a stale image
@@ -286,7 +332,7 @@ function applyMode(mode) {
 
 function wireCTSettings() {
   const { S, $ } = ctx;
-  // scout technique steppers (kV / mA). The scout beam width is fixed at 1.5 mm.
+  // scout technique steppers (kV / mA). The scout beam width is fixed at 1.0 mm.
   $('ctSettings')?.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-ctstep]'); if (!b) return;
     const key = b.dataset.ctstep, d = parseInt(b.dataset.d, 10);
@@ -296,7 +342,7 @@ function wireCTSettings() {
   });
   // scan length (range). Changing it does NOT live-update a scout: like a real CT,
   // re-scouting means ABORT then START (rescan) — table zero / isocentre persist.
-  $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); });
+  $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); updateScanMarkers(); });
   // table height — raise / lower by 1 mm per press; hold to auto-repeat
   wireHoldRepeat($('ctTablePad'), 'button[data-th]', (b) => {
     S.ct.tableY = Math.max(-80, Math.min(80, S.ct.tableY + (b.dataset.th === 'up' ? 1 : -1)));
@@ -385,6 +431,9 @@ function greyHelical(on) {
 function wireCTConsole() {
   const { $, S } = ctx;
   $('ctStart')?.addEventListener('click', () => {
+    // a subject swap is still streaming its voxel model in — starting a scout now
+    // would acquire with half-swapped geometry (wrong FOV/isocentre)
+    if (S.subjectLoading) { setHint('Subject model still loading — try again in a moment.'); return; }
     if (S.ct.phase === 'idle') acquireScouts();
     else if (S.ct.phase === 'planning') {
       if (ctx.$('ctStart').classList.contains('flash')) runScan();
@@ -457,8 +506,8 @@ async function acquireScouts() {
   resetToIsocentre();                 // compute the scouts from the isocentre position
   let ap, lat;
   try {
-    ap = scoutProjection('AP');
-    lat = scoutProjection('LAT');
+    ap = await scoutProjection('AP');
+    lat = await scoutProjection('LAT');
   } catch (err) {
     console.error('scout compute failed', err);
     setHint('Scout acquisition failed: ' + err.message);
@@ -566,17 +615,22 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
 // the bore, so the imaging plane sits over patient +z = +(j/(nz-1))*lenU. This is
 // the SAME +z region the table-travel animation sweeps, so the stitched image and
 // the on-screen motion always show the same anatomy.
-function scoutProjection(view) {
+async function scoutProjection(view) {
   const { S } = ctx;
   const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
-  const bins = Spectrum.make(S.ct.scoutKv).bins;    // scout uses its own technique
-  const muSoft = bins.map(b => Materials.mu('soft', b.E));
-  const muBone = bins.map(b => Materials.mu('bone', b.E));
-  const muMarr = bins.map(b => Materials.mu('marrow', b.E));
+  const bins = Spectrum.make(S.ct.scoutKv).bins, nb = bins.length;   // scout uses its own technique
+  const voxel = !!phantom.voxel;                    // chest (voxel) vs hand (analytic) attenuation
+  const muMat = voxel ? muOverBins(bins) : null, nmat = voxel ? muMat.length : 0;
+  const hitId = voxel ? new Int32Array(nmat) : null, hitLen = voxel ? new Float64Array(nmat) : null;
+  const muSoft = voxel ? null : bins.map(b => Materials.mu('soft', b.E));
+  const muBone = voxel ? null : bins.map(b => Materials.mu('bone', b.E));
+  const muMarr = voxel ? null : bins.map(b => Materials.mu('marrow', b.E));
   const I0 = S.ct.scoutMa * Math.pow(S.ct.scoutKv / 70, 2);
-  const PXMM = 1.5;                                  // mm per (square) pixel — undistorted (scout beam width)
+  // CT detector element (DEL) pitch ~1 mm — the scout's square pixel. Independent of
+  // the x-ray DR detector resolution (~100 µm), which never applies to CT.
+  const PXMM = 1.0;
   const lenU = scanLenU();                           // scan length in world units (z axis)
-  const widthMM = SCOUT_WIDTH_MM[view];              // width (AP) / thickness (LAT) field
+  const widthMM = scoutFov();              // width (AP) / thickness (LAT) field
   const nz = Math.max(2, Math.round(S.ct.scanLen / PXMM));
   const nw = Math.max(2, Math.round(widthMM / PXMM));
   const pxU = (widthMM / MM_PER_UNIT) / nw;          // == lenU/nz == PXMM/10 -> square pixels
@@ -590,6 +644,30 @@ function scoutProjection(view) {
   const halfU = (nw - 1) / 2;
   const dose = new Float32Array(nw * nz);
   let mn = Infinity, mx = -Infinity;
+  // ---- Python GPU scout (voxel subjects) ----
+  if (voxel && S.ct.backend === 'python' && S.computeInfo && ctx.compute) {
+    try {
+      const center = [(phantom.min[0] + phantom.max[0]) / 2, (phantom.min[1] + phantom.max[1]) / 2,
+                      (phantom.min[2] + phantom.max[2]) / 2];
+      const out = await ctx.compute.ctScout({
+        model: S.subject, flips: Array.from(phantom.flip, Boolean), center,
+        nw, nz, pxU, lenU, sx, sy, dcx, dcy, ux, uy,
+        binsW: bins.map(b => b.w), muMat: muMat.map(r => Array.from(r)), I0,
+      });
+      dose.set(out);
+      for (let k = 0; k < dose.length; k++) { const d = dose[k]; if (d < mn) mn = d; if (d > mx) mx = d; }
+      const floor = Math.max(mn, mx * 1e-12) || 1e-12;
+      const ps = new Float32Array(dose.length);
+      for (let k = 0; k < ps.length; k++) ps[k] = Math.log(mx / Math.max(dose[k], floor));
+      const sorted = Float32Array.from(ps).sort();
+      const pmax = Math.max(sorted[Math.min(ps.length - 1, Math.floor(ps.length * 0.997))], 1e-3);
+      return { dose, nw, nz, mn, mx, pmax };
+    } catch (err) {
+      if (phantom.geometryOnly) throw new Error('Scout needs the Python GPU backend: ' + err.message);
+      console.warn('GPU scout failed — falling back to the browser engine', err);
+      mn = Infinity; mx = -Infinity;   // reset; the local loop recomputes below
+    }
+  }
   for (let j = 0; j < nz; j++) {
     // couch step j: imaging plane over patient +z (the region the table sweeps)
     const z = (j / (nz - 1)) * lenU;
@@ -598,15 +676,30 @@ function scoutProjection(view) {
       const u = (i - halfU) * pxU;
       let dx = dcx + ux * u - sx, dy = dcy + uy * u - sy, dz = 0;   // cell z == src z -> dz 0
       const dist = Math.hypot(dx, dy, dz); dx /= dist; dy /= dist; dz /= dist;
-      const { bone, soft, marrow } = phantom.trace(src, [dx, dy, dz], dist);
       let T = 0;
-      for (let b = 0; b < bins.length; b++) T += bins[b].w * Math.exp(-(muSoft[b] * soft + muBone[b] * bone + muMarr[b] * marrow));
+      if (voxel) {
+        const L = phantom.trace(src, [dx, dy, dz], dist);
+        let nh = 0; for (let m = 1; m < nmat; m++) { const lm = L[m]; if (lm) { hitId[nh] = m; hitLen[nh] = lm; nh++; } }
+        for (let b = 0; b < nb; b++) { let e = 0; for (let k = 0; k < nh; k++) e += muMat[hitId[k]][b] * hitLen[k]; T += bins[b].w * Math.exp(-e); }
+      } else {
+        const { bone, soft, marrow } = phantom.trace(src, [dx, dy, dz], dist);
+        for (let b = 0; b < nb; b++) T += bins[b].w * Math.exp(-(muSoft[b] * soft + muBone[b] * bone + muMarr[b] * marrow));
+      }
       const d = I0 * (refDist2 / (dist * dist)) * T;
       dose[j * nw + i] = d;
       if (d < mn) mn = d; if (d > mx) mx = d;
     }
   }
-  return { dose, nw, nz, mn, mx };                   // mn/mx: fixed window for stable stitching
+  // Display window for the log (line-integral) mapping: p = ln(open/dose). Normalise
+  // to a high PERCENTILE of p, not the absolute densest ray, so a handful of extreme
+  // paths (e.g. laterally through both shoulders) saturate to white instead of
+  // compressing the whole gray scale. Computed once here so stitching stays stable.
+  const floor = Math.max(mn, mx * 1e-12) || 1e-12;
+  const ps = new Float32Array(nw * nz);
+  for (let k = 0; k < ps.length; k++) ps[k] = Math.log(mx / Math.max(dose[k], floor));
+  const sorted = Float32Array.from(ps).sort();
+  const pmax = Math.max(sorted[Math.min(ps.length - 1, Math.floor(ps.length * 0.997))], 1e-3);
+  return { dose, nw, nz, mn, mx, pmax };             // fixed window for stable stitching
 }
 
 // Paint the topogram: attenuated (bone) -> bright, open field -> dark. Row 0 of the
@@ -624,12 +717,20 @@ function drawScout(cv, data, rowLimit) {
   const img = g.createImageData(nw, nz);
   const d8 = img.data;
   for (let k = 0; k < d8.length; k += 4) { d8[k] = d8[k + 1] = d8[k + 2] = 0; d8[k + 3] = 255; } // unscanned = black
-  const rng = (mx - mn) || 1;
+  // Log (line-integral) display, like a real scout/DR system: gray ∝ ln(open/dose).
+  // A body spans many DECADES of transmission (lungs ~e^-1, shoulders ~e^-12); a
+  // linear dose window crushes everything but the densest ray to white — the classic
+  // "underexposed" all-white scout. The log spreads those decades across the gray
+  // scale: air black, lungs dark gray, mediastinum/spine mid-gray with detail, the
+  // densest path white. Window fixed from the scan's mn/mx so stitching is stable.
+  const floor = Math.max(mn, mx * 1e-12) || 1e-12;
+  const pmax = data.pmax || Math.log(mx / floor) || 1;   // percentile window from scoutProjection
+  const GAMMA = 1.4;                                  // film-like response: lungs dark, soft tissue mid-gray
   for (let j = 0; j < lim; j++) {
     const imgRow = j;                                // isocentre (row 0) at the top (= start)
     for (let i = 0; i < nw; i++) {
-      const t = (dose[j * nw + i] - mn) / rng;        // 0 = most attenuated, 1 = open field
-      const v = Math.round(255 * Math.pow(1 - t, 0.7));
+      const p = Math.min(1, Math.log(mx / Math.max(dose[j * nw + i], floor)) / pmax);   // 0 open … 1 dense (clip white)
+      const v = Math.round(255 * Math.pow(p, GAMMA));
       const o = (imgRow * nw + i) * 4;
       d8[o] = d8[o + 1] = d8[o + 2] = v;
     }
@@ -649,7 +750,7 @@ function layoutScouts() {
   const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
   if (!box || !row || !ap || !lat) return;
   const len = ctx.S.ct.scanLen;                        // mm along the scan axis (both)
-  const wAP = SCOUT_WIDTH_MM.AP, wLAT = SCOUT_WIDTH_MM.LAT;
+  const wAP = scoutFov(), wLAT = scoutFov();
   const cs = getComputedStyle(row);
   const colGap = parseFloat(cs.columnGap || cs.gap) || 16;
   const hdr = box.querySelector('.scouthdr');
@@ -676,7 +777,7 @@ const MOVE_THRESH = 0.5;              // mm: below this, no table move is needed
 const TABLE_SPEED = 45;              // mm/s couch reposition speed (NOT the acquisition table speed)
 const N_GROUPS = 4;
 // ---- acquisition geometry stations (reference GE "Image Thickness" dialog) ----
-const DET_ROW_OPTS = [8, 16];                     // detector rows
+const DET_ROW_OPTS = [8, 16, 32, 64, 128];        // detector rows (MDCT generations)
 const ELEMENTS = [0.625, 1.25];                   // detector element sizes → beam collimation = rows × element
 const ACQ_THK = [0.625, 1.25, 2.5, 3.75, 5, 7.5, 10];  // reconstructed helical-thickness stations
 const PITCH_ACQ = [0.562, 0.938, 1.375, 1.75];    // pitch stations
@@ -808,8 +909,8 @@ function updatePlan() {
   const set = (id, v) => { const el = ctx.$(id); if (el) el.textContent = v; };
   set('ctScanStartV', fmtTablePos(g.box.top * len) + ' mm');
   set('ctScanEndV', fmtTablePos(g.box.bot * len) + ' mm');
-  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * SCOUT_FOV_MM;   // mediolateral offset (mm)
-  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * SCOUT_FOV_MM; // anteroposterior offset (mm)
+  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * scoutFov();   // mediolateral offset (mm)
+  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * scoutFov(); // anteroposterior offset (mm)
   updatePlanReady();
   renderScanGroups();
 }
@@ -1091,9 +1192,22 @@ function applyTableCommit() {
 // transverse slices -> store the reconstructed volume. The slices are then shown in
 // the cross-sectional viewer; old scans auto-delete past a cap so memory stays bounded.
 
-const RECON_N = 128;              // reconstruction grid (N x N pixels)
-const RECON_ANGLES = 128;         // projection angles over 180° (parallel beam)
-const RECON_DET = 128;            // detector samples across the FOV
+// ---- in-plane detector designs ----
+// quick: the original preview detector — 128 channels spanning the display FOV
+//   (channel pitch scales with DFOV), 128 views, 128² grid. Fast in the browser.
+// realistic: a fixed-geometry MDCT detector — 0.625 mm channel pitch at the
+//   isocentre across a 500 mm scan FOV (800 channels), 720 views/rotation, 512²
+//   recon matrix. The display FOV only selects the back-projected region, like a
+//   real scanner (no projection truncation). Heavy — meant for the Python GPU
+//   engine; the browser fallback works but crawls.
+const DET_MODES = {
+  quick:     { nDet: 128, nAngles: 128, gridN: 128, fixedPitch: false },
+  // photonBase: detected photons per channel per view at the reference technique —
+  // clinical scale (~10^6-10^7), so the 512² image lands at a clinical ~10-15 HU noise;
+  // the quick preview keeps the old (much lower) base tuned for its coarse grid.
+  realistic: { nDet: 800, nAngles: 720, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 500, photonBase: 8e6 },
+};
+const detMode = () => DET_MODES[ctx && ctx.S.ct.detMode] || DET_MODES.quick;
 const MAX_SLICES = 1024;          // safety cap only (the slice count follows the planned image count)
 const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slice/rot noise model)
 
@@ -1101,9 +1215,15 @@ const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slic
 // represents a cylinder). The mediolateral width on the AP scout is the cylinder
 // diameter — the direction in which neighbouring fingers are separated — so a box
 // drawn around a single finger reconstructs a small FOV that excludes the others.
-function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * SCOUT_FOV_MM); }
-// Per-reconstruction geometry: world-unit FOV radius, detector spacing, and centre.
-function reconGeo(fovMM, cx, cy) { const R = (fovMM / MM_PER_UNIT) / 2; return { fovMM, R, ds: (R * 2) / RECON_DET, cx, cy }; }
+function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * scoutFov()); }
+// Per-reconstruction geometry: display-FOV radius R (the back-projected region),
+// channel spacing ds, ray half-length rayR (how far the integration must reach —
+// the full scan FOV for the fixed-pitch detector), and the detector mode m.
+function reconGeo(fovMM, cx, cy) {
+  const m = detMode(), R = (fovMM / MM_PER_UNIT) / 2;
+  if (m.fixedPitch) return { fovMM, R, rayR: (m.sfovMM / MM_PER_UNIT) / 2, ds: m.chanMM / MM_PER_UNIT, cx, cy, m };
+  return { fovMM, R, rayR: R, ds: (R * 2) / m.nDet, cx, cy, m };
+}
 
 let scanToken = 0;                // invalidates an in-flight scan on abort / mode switch
 function cancelScan() { scanToken++; }
@@ -1146,8 +1266,8 @@ async function runScan() {
 // Auto-drive the couch to centre THIS group's box on the isocentre (mediolateral, then height).
 async function repositionForGroup(i, alive) {
   const c = ctx.S.ct, g = grp(i);
-  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * SCOUT_FOV_MM;    // mediolateral offset (mm)
-  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * SCOUT_FOV_MM;  // anteroposterior offset (mm)
+  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * scoutFov();    // mediolateral offset (mm)
+  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * scoutFov();  // anteroposterior offset (mm)
   await animateCommit('committedX', c.plan.targetX, 1.0, alive);
   if (!alive()) return;
   await animateCommit('committedY', c.plan.targetY, 0.72, alive);
@@ -1271,12 +1391,16 @@ function gaussian() {
   return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
 }
 
-// Discrete Ram-Lak kernel, indexed n = -(N-1)..(N-1) at detector spacing ds.
-function buildRamLak(ds) {
-  const N = RECON_DET, h = new Float32Array(2 * N - 1);
+// Discrete reconstruction kernel, indexed n = -(N-1)..(N-1) at channel spacing ds.
+// Ram-Lak (pure ramp) for the quick preview detector; Shepp-Logan (apodized ramp,
+// the clinical "standard" algorithm) for the realistic detector, where a pure ramp
+// at 0.625 mm pitch would amplify quantum noise into salt-and-pepper.
+function buildKernel(ds, N, shepp) {
+  const h = new Float32Array(2 * N - 1);
   for (let n = -(N - 1); n <= N - 1; n++) {
     let v;
-    if (n === 0) v = 1 / (4 * ds * ds);
+    if (shepp) v = -2 / (Math.PI * Math.PI * ds * ds * (4 * n * n - 1));
+    else if (n === 0) v = 1 / (4 * ds * ds);
     else if (n % 2 === 0) v = 0;
     else v = -1 / (Math.PI * Math.PI * n * n * ds * ds);
     h[n + (N - 1)] = v;
@@ -1286,18 +1410,20 @@ function buildRamLak(ds) {
 
 // Forward-project one slice at world plane z = z0 → sinogram [angle][detector].
 function projectSlice(phantom, z0, mu, photons0, geo) {
-  const cx = geo.cx, cy = geo.cy, R = geo.R, ds = geo.ds, halfDet = (RECON_DET - 1) / 2;
-  const sino = new Float32Array(RECON_ANGLES * RECON_DET);
-  for (let a = 0; a < RECON_ANGLES; a++) {
-    const th = a * Math.PI / RECON_ANGLES, ct = Math.cos(th), st = Math.sin(th);
-    const base = a * RECON_DET;
-    for (let k = 0; k < RECON_DET; k++) {
+  const cx = geo.cx, cy = geo.cy, RR = geo.rayR, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
+  const halfDet = (nDet - 1) / 2;
+  const sino = new Float32Array(nAng * nDet);
+  for (let a = 0; a < nAng; a++) {
+    const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th);
+    const base = a * nDet;
+    for (let k = 0; k < nDet; k++) {
       const r = (k - halfDet) * ds;
-      // ray: origin at t = -R along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
-      const o = [cx + r * ct + R * st, cy + r * st - R * ct, z0];
+      // ray: origin at t = -rayR along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
+      const o = [cx + r * ct + RR * st, cy + r * st - RR * ct, z0];
       const d = [-st, ct, 0];
-      const { bone, soft, marrow } = phantom.trace(o, d, 2 * R);
-      let p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow;
+      let p;
+      if (mu.voxel) { const L = phantom.trace(o, d, 2 * RR), arr = mu.arr; p = 0; for (let m = 1; m < arr.length; m++) { const lm = L[m]; if (lm) p += arr[m] * lm; } }
+      else { const { bone, soft, marrow } = phantom.trace(o, d, 2 * RR); p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow; }
       if (photons0 > 0) {                       // quantum noise from finite detected photons
         const Nd = Math.max(1, photons0 * Math.exp(-p));
         p += gaussian() / Math.sqrt(Nd);
@@ -1310,9 +1436,9 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
 }
 
 // Convolve each projection view with the ramp filter.
-function filterSino(sino, h, ds) {
-  const N = RECON_DET, out = new Float32Array(RECON_ANGLES * RECON_DET);
-  for (let a = 0; a < RECON_ANGLES; a++) {
+function filterSino(sino, h, ds, m) {
+  const N = m.nDet, out = new Float32Array(m.nAngles * N);
+  for (let a = 0; a < m.nAngles; a++) {
     const base = a * N;
     for (let k = 0; k < N; k++) {
       let acc = 0;
@@ -1325,12 +1451,13 @@ function filterSino(sino, h, ds) {
 
 // Back-project the filtered sinogram into the reconstruction grid (μ map, cm^-1).
 function backproject(q, geo) {
-  const N = RECON_N, R = geo.R, ds = geo.ds, halfDet = (RECON_DET - 1) / 2;
+  const N = geo.m.gridN, R = geo.R, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
+  const halfDet = (nDet - 1) / 2;
   const img = new Float32Array(N * N);
   const px2world = (i) => (-R + (i + 0.5) * (2 * R / N));   // pixel centre → world offset from FOV centre
   const R2 = R * R;
-  for (let a = 0; a < RECON_ANGLES; a++) {
-    const th = a * Math.PI / RECON_ANGLES, ct = Math.cos(th), st = Math.sin(th), base = a * RECON_DET;
+  for (let a = 0; a < nAng; a++) {
+    const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th), base = a * nDet;
     for (let iy = 0; iy < N; iy++) {
       const wy = px2world(iy), rowo = iy * N;
       for (let ix = 0; ix < N; ix++) {
@@ -1338,46 +1465,91 @@ function backproject(q, geo) {
         if (wx * wx + wy * wy > R2) continue;
         const kf = (wx * ct + wy * st) / ds + halfDet;
         const k0 = Math.floor(kf);
-        if (k0 < 0 || k0 >= RECON_DET - 1) continue;
+        if (k0 < 0 || k0 >= nDet - 1) continue;
         const f = kf - k0;
         img[rowo + ix] += q[base + k0] * (1 - f) + q[base + k0 + 1] * f;
       }
     }
   }
-  const scale = Math.PI / RECON_ANGLES;
+  const scale = Math.PI / nAng;
   for (let i = 0; i < img.length; i++) img[i] *= scale;
   return img;
 }
 
 async function reconstructSlices(g, alive, onProgress, onSlice) {
   const spec = Spectrum.make(g.kv), effE = spec.meanE;
-  const mu = { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
-  const muW = mu.soft;                           // reference "water" (soft tissue) for HU
   const phantom = ctx.buildPhantom();            // built at the committed table position (patient.z = isoZ)
+  const voxel = !!phantom.voxel;                 // chest (voxel/BodyMaterials) vs hand (analytic)
+  const mu = voxel ? { voxel: true, arr: muAtEnergy(effE) }
+                   : { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
+  const muW = voxel ? BodyMaterials.muWater(effE) : mu.soft;   // HU reference (water for voxel, soft for hand)
   const fovMM = groupDFOV(g);                     // DFOV = scan box diameter (box centre reposed to isocentre)
   const geo = reconGeo(fovMM, 0, ISO_Y);
-  const h = buildRamLak(geo.ds);
   const startMM = g.box.top * ctx.S.ct.scanLen, endMM = g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
   const count = Math.max(1, Math.min(MAX_SLICES, groupImages(g)));   // one slice per planned image
   const positions = [];
   for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
-  const photons0 = PHOTON_BASE * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5);
+  // Detected photons per sinogram sample. The quick detector is the noise reference;
+  // more views split the same tube output into smaller buckets (total output per
+  // rotation is set by the technique, not the view count). The realistic detector's
+  // finer channels pair with its apodized (Shepp-Logan) kernel — like a clinical
+  // "standard" algorithm — so its noise stays comparable at the same technique.
+  const photons0 = (geo.m.photonBase || PHOTON_BASE) * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5)
+    * (DET_MODES.quick.nAngles / geo.m.nAngles);
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
   // slice is emitted via onSlice as it completes so the scan shows the images coming
   // up live (the couch advances to that slice's position as it appears).
-  const N = RECON_N, nz = positions.length, vol = new Float32Array(nz * N * N);
+  const N = geo.m.gridN, nz = positions.length, vol = new Float32Array(nz * N * N);
   const meta = { gridN: N, fovMM, muWater: muW };
-  for (let si = 0; si < nz; si++) {
-    if (!alive()) return null;
-    const zw = positions[si] / MM_PER_UNIT;      // world plane for this slice (see scoutProjection geometry)
-    const sino = projectSlice(phantom, zw, mu, photons0, geo);
-    const q = filterSino(sino, h, geo.ds);
-    const img = backproject(q, geo);
-    vol.set(img, si * N * N);
-    if (onSlice) onSlice(si, nz, positions[si], img, meta);
-    if (onProgress) onProgress((si + 1) / nz);
-    await sleep(0);                              // yield so the couch + preview repaint between slices
+  // ---- Python GPU engine (voxel subjects): reconstruct in slice batches ----
+  let done = false;
+  if (voxel && ctx.S.ct.backend === 'python' && ctx.S.computeInfo && ctx.compute) {
+    try {
+      const center = [(phantom.min[0] + phantom.max[0]) / 2, (phantom.min[1] + phantom.max[1]) / 2,
+                      (phantom.min[2] + phantom.max[2]) / 2];
+      const base = { model: ctx.S.subject, flips: Array.from(phantom.flip, Boolean), center,
+                     cx: geo.cx, cy: geo.cy, nDet: geo.m.nDet, nAngles: geo.m.nAngles, gridN: N,
+                     ds: geo.ds, rayR: geo.rayR, dfovR: geo.R,
+                     kernel: geo.m.fixedPitch ? 'shepp' : 'ramlak',
+                     muArr: Array.from(mu.arr), photons0 };
+      const BATCH = 4;
+      for (let s0 = 0; s0 < nz; s0 += BATCH) {
+        if (!alive()) return null;
+        const zs = positions.slice(s0, s0 + BATCH).map(d => d / MM_PER_UNIT);
+        const batch = await ctx.compute.ctSlices({ ...base, z0List: zs });
+        for (let b = 0; b < zs.length; b++) {
+          const si = s0 + b;
+          vol.set(batch.subarray(b * N * N, (b + 1) * N * N), si * N * N);
+          if (onSlice) onSlice(si, nz, positions[si], vol.subarray(si * N * N, (si + 1) * N * N), meta);
+          if (onProgress) onProgress((si + 1) / nz);
+          await sleep(0);
+        }
+      }
+      done = true;
+    } catch (err) {
+      if (phantom.geometryOnly) {   // no browser volume — cannot reconstruct locally
+        setBusy(false); stopGantrySpin(); Sound.stopBuzz();
+        setHint('⚠ This model needs the Python GPU backend, which is not reachable.');
+        return null;
+      }
+      console.warn('GPU backend reconstruction failed — falling back to the browser engine', err);
+      setHint('Python backend unavailable — reconstructing in the browser…');
+    }
+  }
+  if (!done && !phantom.geometryOnly) {
+    const h = buildKernel(geo.ds, geo.m.nDet, geo.m.fixedPitch);
+    for (let si = 0; si < nz; si++) {
+      if (!alive()) return null;
+      const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
+      const sino = projectSlice(phantom, zw, mu, photons0, geo);
+      const q = filterSino(sino, h, geo.ds, geo.m);
+      const img = backproject(q, geo);
+      vol.set(img, si * N * N);
+      if (onSlice) onSlice(si, nz, positions[si], img, meta);
+      if (onProgress) onProgress((si + 1) / nz);
+      await sleep(0);                            // yield so the couch + preview repaint between slices
+    }
   }
   const slices = positions.map((d, i) => ({ d, mu: vol.subarray(i * N * N, (i + 1) * N * N) }));
   const dz = nz > 1 ? (positions[nz - 1] - positions[0]) / (nz - 1) : Math.max(g.interval, 0.1);
@@ -1487,7 +1659,7 @@ export function ctRenderViewer() {
   const scan = currentScan();
   const slider = ctx.$('ctSliceSlider');
   if (!scan || !scan.slices.length) {
-    cv.width = RECON_N; cv.height = RECON_N;
+    cv.width = 128; cv.height = 128;   // placeholder tile ("NO RECONSTRUCTION")
     const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
     g.fillStyle = '#3a4653'; g.font = '11px "Share Tech Mono",monospace'; g.textAlign = 'center';
     g.fillText('NO RECONSTRUCTION', cv.width / 2, cv.height / 2);
