@@ -1722,7 +1722,7 @@ function updateCtHistogram(scan, sl, wl, ww) {
     let b = Math.round((hu - HLO) / span * 255); hist[b < 0 ? 0 : b > 255 ? 255 : b]++;
   }
   const lo = wl - ww / 2;
-  ctx.drawHistogram(cv, hist, t => { const hu = HLO + t * span; return (hu - lo) / ww; });
+  ctx.drawHistogram(cv, hist, t => { const hu = HLO + t * span; return (hu - lo) / ww; }, ['-1000', '500 HU', '2000']);
 }
 // Light redraw (slice/window changed but not the scan list) — same as full render here.
 function refreshViewer() { ctRenderViewer(); }

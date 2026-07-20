@@ -11,6 +11,8 @@ import { Sound } from './audio/sound.js';
 import { loadModelFile, loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
+import lutData from './data/luts.json';
+import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
@@ -383,6 +385,7 @@ const S = {
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
+  lutOn:true, lut:lutData.luts.linear, protocol:null,   // display LUT (sigmoid) + selected APR protocol
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
@@ -735,7 +738,7 @@ function bind(){
   $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0};
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     resetPrep(); syncScene(); });
-  $('spread').addEventListener('input',e=>{ S.spread=e.target.value/100;
+  $('spread')?.addEventListener('input',e=>{ S.spread=e.target.value/100;
     buildHandMeshes(); resetPrep(); });
   // sliders that only affect geometry (update chips + scene)
   const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ'];
@@ -764,10 +767,6 @@ function bind(){
   $('kv').addEventListener('input',e=>{S.kv=parseInt(e.target.value);refreshReadouts();});
   $('ma').addEventListener('input',e=>{S.ma=maSteps[e.target.value];refreshReadouts();});
   $('mas').addEventListener('input',e=>{S.mas=masSteps[e.target.value];refreshReadouts();});
-  // APR presets
-  $('apr').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
-    S.kv=parseInt(b.dataset.kv); S.mas=parseFloat(b.dataset.mas);
-    $('kv').value=S.kv; $('mas').value=nearestMasIdx(); refreshReadouts();});
   // rotor: latches on until an exposure completes
   $('rotor').addEventListener('click',toggleRotor);
   // exposure switch: press AND HOLD for the exposure time
@@ -793,6 +792,16 @@ function bind(){
   if(histTgl){ histTgl.addEventListener('change',()=>{ S.showHist=histTgl.checked;
     document.body.classList.toggle('hist-off', !S.showHist);
     updateXrayHistogram(); ctRenderViewer?.(); }); }
+  // display LUT (sigmoid) toggle
+  $('lutToggle')?.addEventListener('change',e=>{ S.lutOn=e.target.checked;
+    if(S.hasImage) drawFilm(); else updateXrayHistogram(); });
+  // APR protocol picker
+  $('protocolBtn')?.addEventListener('click',openProtocolPopup);
+  $('protoPopClose')?.addEventListener('click',closeProtocolPopup);
+  $('protoPop')?.addEventListener('click',e=>{ if(e.target.id==='protoPop') closeProtocolPopup(); });
+  $('protoPopBody')?.addEventListener('click',e=>{ const b=e.target.closest('.proto-proj'); if(!b) return;
+    const p=findProtocol(b.dataset.part,b.dataset.proj); if(p){ applyProtocol(p,b.dataset.part); closeProtocolPopup(); } });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeProtocolPopup(); });
   // bay options dropdown (top-right): toggle open, close on outside click / Esc
   const bayCtl=$('bayCtl'), bayBtn=$('bayMenuBtn');
   if(bayBtn){
@@ -1083,7 +1092,7 @@ function renderRadiograph(target,entry){
   const cw=i1-i0+1, ch=j1-j0+1;
   // open-field normalization for log display
   let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
-  const a=40, denom=Math.log(1+a), contrast=S.win/100, bright=S.lev/100;
+  const a=40, denom=Math.log(1+a);
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -1091,8 +1100,7 @@ function renderRadiograph(target,entry){
     const k=(j0+j)*nx+(i0+i);
     let v;
     if(!mask[k]) v=0;
-    else { let t=sig[k]/mx; t=Math.log(1+a*t)/denom; v=1-t; }  // invert: bone->white
-    v=(v-0.5)*contrast+0.5+bright; v=Math.max(0,Math.min(1,v));
+    else { let t=sig[k]/mx; t=Math.log(1+a*t)/denom; v=toneMap(1-t); }  // invert: bone->white, then LUT
     const g=Math.round(v*255), o=(j*cw+i)*4;
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
@@ -1125,24 +1133,53 @@ function drawFilm(){
   updateXrayHistogram();
 }
 
-/* ---- display histogram + brightness/contrast response curve ----
-   Draws a 256-bin histogram of the image's base (pre window/level) grey values with
-   the current brightness/contrast response curve overlaid, so the user sees how the
-   window maps input tones to output. Shared drawer; x-ray + CT feed it their own data. */
-export function drawHistogram(canvas, hist, curveFn){
+/* ---- display look-up table (LUT) ----
+   Map a base display tone x∈[0,1] to output∈[0,1]. With the LUT on and a sigmoid LUT
+   selected, applies the DICOM SIGMOID VOI LUT (out = 1/(1+exp(-4(x-c)/w))); brightness
+   shifts the centre, contrast scales the width. Otherwise a linear window/level. */
+function toneMap(x){
+  const bright=S.lev/100, contrast=S.win/100;
+  if(S.lutOn && S.lut && S.lut.sigmoid){
+    const c=S.lut.center - bright, w=Math.max(0.05, S.lut.width/contrast);
+    return 1/(1+Math.exp(-4*(x-c)/w));
+  }
+  const v=(x-0.5)*contrast+0.5+bright; return v<0?0:v>1?1:v;
+}
+
+/* ---- display histogram + LUT response curve ----
+   Draws a proper histogram (blue bars, axis ticks) of the image's base grey values,
+   overlaid with the current LUT/response curve and a dashed identity diagonal so the
+   sigmoid roll-off is visible. curveFn maps input tone [0,1] -> output [0,1]. */
+export function drawHistogram(canvas, hist, curveFn, xlabels){
   if(!canvas) return;
   const g=canvas.getContext('2d'), W=canvas.width, H=canvas.height;
+  const padL=3, padR=3, padT=4, padB=11, pw=W-padL-padR, ph=H-padT-padB;
   g.clearRect(0,0,W,H);
+  g.fillStyle='#0a0f14'; g.fillRect(0,0,W,H);
+  // faint gridlines (quarters)
+  g.strokeStyle='rgba(120,150,175,.12)'; g.lineWidth=1;
+  for(let q=1;q<4;q++){ const gx=padL+pw*q/4; g.beginPath(); g.moveTo(gx,padT); g.lineTo(gx,padT+ph); g.stroke(); }
+  // histogram bars (blue), linear counts
   let hmax=1; for(const v of hist) if(v>hmax) hmax=v;
-  const logmax=Math.log(1+hmax)||1, n=hist.length;
-  g.fillStyle='#243441';
-  for(let x=0;x<n;x++){ const h=Math.log(1+hist[x])/logmax*(H-2);
-    g.fillRect(x/n*W, H-h, W/n+0.6, h); }
-  // response curve (input tone -> output tone), left→right = dark→bright input
-  g.strokeStyle='#35c6d6'; g.lineWidth=1.5; g.beginPath();
+  const n=hist.length, bw=pw/n;
+  g.fillStyle='#5b83d6';
+  for(let x=0;x<n;x++){ const h=hist[x]/hmax*ph; if(h>0) g.fillRect(padL+x*bw, padT+ph-h, Math.max(1,bw), h); }
+  // dashed identity diagonal (no-op reference)
+  g.strokeStyle='rgba(200,215,230,.35)'; g.setLineDash([3,3]); g.lineWidth=1;
+  g.beginPath(); g.moveTo(padL,padT+ph); g.lineTo(padL+pw,padT); g.stroke(); g.setLineDash([]);
+  // LUT / response curve
+  g.strokeStyle='#ffcf6b'; g.lineWidth=1.8; g.beginPath();
   for(let x=0;x<=n;x++){ const out=Math.max(0,Math.min(1,curveFn(x/n)));
-    const px=x/n*W, py=H-1-out*(H-2); if(x===0) g.moveTo(px,py); else g.lineTo(px,py); }
+    const px=padL+x/n*pw, py=padT+ph-out*ph; if(x===0) g.moveTo(px,py); else g.lineTo(px,py); }
   g.stroke();
+  // axis baseline + x ticks (0 · mid · max) — 8-bit display scale
+  g.strokeStyle='rgba(150,175,195,.5)'; g.lineWidth=1;
+  g.beginPath(); g.moveTo(padL,padT+ph+0.5); g.lineTo(padL+pw,padT+ph+0.5); g.stroke();
+  const lab=xlabels||['0','128','255'];
+  g.fillStyle='rgba(150,175,195,.75)'; g.font='7px "Share Tech Mono",monospace'; g.textBaseline='top';
+  g.textAlign='left';   g.fillText(lab[0], padL, padT+ph+2);
+  g.textAlign='center'; g.fillText(lab[1], padL+pw/2, padT+ph+2);
+  g.textAlign='right';  g.fillText(lab[2], padL+pw, padT+ph+2);
 }
 /* 256-bin histogram of the inverted log signal (the base tone before window/level),
    over the exposed field only — matches the mapping in renderRadiograph. */
@@ -1159,9 +1196,49 @@ function updateXrayHistogram(){
   const canvas=$('xrayHist'); if(!canvas) return;
   if(!S.showHist || !S.hasImage){ canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); return; }
   const hist=xrayHistData(); if(!hist) return;
-  const contrast=S.win/100, bright=S.lev/100;
-  drawHistogram(canvas, hist, v0=>(v0-0.5)*contrast+0.5+bright);
+  drawHistogram(canvas, hist, toneMap);   // curve is the actual applied LUT/window
 }
+
+/* ---- APR protocol picker ---------------------------------------------------
+   Protocols (data/protocols.json) set kVp/mAs (APR), the anti-scatter grid, the
+   display LUT, and optionally the subject model for a projection. Grouped body
+   part -> region -> projection in a popup. */
+function setGridUI(){
+  const v=$('gridStateV'); if(v) v.textContent=S.gridOn?'IN':'OUT';
+  const seg=$('gridSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',(b.dataset.grid==='on')===S.gridOn));
+}
+function findProtocol(part,proj){
+  const gr=protocolData.groups.find(g=>g.part===part); if(!gr) return null;
+  for(const rg of gr.regions){ const p=rg.projections.find(x=>x.proj===proj); if(p) return p; }
+  return null;
+}
+function applyProtocol(p,part){
+  S.protocol={proj:p.proj, part};
+  S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas;
+  const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv;
+  const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
+  S.gridOn=!!p.grid; setGridUI();
+  S.lut=lutData.luts[p.lut]||lutData.luts.linear;
+  const pv=$('protocolV'); if(pv) pv.textContent=p.proj;
+  refreshReadouts();
+  // switch the subject model when the protocol targets one we have
+  if(p.subject && p.subject!==S.subject && (p.subject==='hand'||VOXEL_MODELS[p.subject])) setSubject(p.subject);
+  else { syncScene(); if(S.hasImage) drawFilm(); }
+}
+function openProtocolPopup(){
+  const pop=$('protoPop'), body=$('protoPopBody'); if(!pop||!body) return;
+  body.innerHTML=protocolData.groups.map(gr=>
+    '<div class="proto-part">'+gr.part+'</div>'+
+    gr.regions.map(rg=>
+      '<div class="proto-region"><div class="proto-rname">'+rg.region+'</div><div class="proto-projs">'+
+      rg.projections.map(p=>{ const cur=S.protocol&&S.protocol.part===gr.part&&S.protocol.proj===p.proj;
+        return '<button class="proto-proj'+(cur?' on':'')+'" data-part="'+gr.part+'" data-proj="'+p.proj+'">'
+          +p.proj+'<small>'+p.kv+' kVp · '+p.mas+' mAs'+(p.grid?' · grid':' · no grid')+'</small></button>'; }).join('')+
+      '</div></div>').join('')
+  ).join('');
+  pop.classList.add('show');
+}
+function closeProtocolPopup(){ $('protoPop')?.classList.remove('show'); }
 
 function updateDI(EI){
   const DI = 10*Math.log10(EI/S.eiTarget);

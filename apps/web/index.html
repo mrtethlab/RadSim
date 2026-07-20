@@ -50,7 +50,7 @@
           <span class="slhint">scroll / drag</span>
         </div>
         <div class="slrow">
-          <canvas id="ctHist" class="histcanvas" width="248" height="56" title="Slice HU histogram + window/level response curve"></canvas>
+          <canvas id="ctHist" class="histcanvas" width="256" height="88" title="Slice HU histogram + window/level response curve"></canvas>
         </div>
         <div class="slrow">
           <span class="sllab">Level</span><input type="range" id="ctWL" min="-1000" max="2000" value="60">
@@ -185,10 +185,6 @@
             <div class="valchip" id="objRotZv">0°</div></div>
           <input type="range" id="objRotZ" min="-180" max="180" value="0" step="1">
           <div class="mini"><button id="objRotReset">↺ reset orientation</button></div>
-          <div class="row hand-only" style="margin-top:10px">
-            <div class="rl">Finger spread</div>
-            <input type="range" id="spread" min="0" max="100" value="45" style="max-width:150px">
-          </div>
         </div>
       </div>
 
@@ -211,7 +207,6 @@
           </div>
           <div class="note" style="margin-top:4px">Quick = 128-channel preview detector (pitch follows the recon FOV). Realistic = fixed 0.625&nbsp;mm DEL pitch across a 500&nbsp;mm scan FOV — 800 channels × 720 views, 512² matrix. Heavy: pair it with the Python GPU engine.</div>
 
-          <div class="note" style="margin-top:6px">Scout (topogram) beam width 1.0 mm (CT DEL pitch). The scout runs from the isocentre for the scan length; each scan group then plans its diagnostic acquisition + reconstructions.</div>
         </div>
       </div>
 
@@ -294,7 +289,6 @@
                 <path d="M10.5 13.7 h3 M11 15.1 h2"/>
               </svg>
             </button></div>
-          <div class="note" style="margin-top:6px">Collimated-out anatomy is cut from the image, and only the light field contributes to the exposure index.</div>
         </div>
       </div>
 
@@ -350,7 +344,6 @@
             <button data-focus="180">180</button>
           </div>
 
-          <div class="note" style="margin-top:6px">A focused grid cleans up scatter but cuts primary when SID ≠ focal length, off-centre, or angled across the strips — raising the dose needed for target EI.</div>
         </div>
       </div>
 
@@ -378,6 +371,8 @@
           </div>
           <label class="cttoggle" style="margin-top:12px"><input type="checkbox" id="histToggle" checked>
             <span>Show display histogram</span></label>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="lutToggle" checked>
+            <span>Apply display LUT (sigmoid gradation)</span></label>
         </div>
       </div>
 
@@ -401,6 +396,10 @@
       <div class="grp xray-only">
         <div class="lab">Technique</div>
         <div class="bod">
+          <div class="protohead">
+            <button class="protobtn" id="protocolBtn" type="button">◉ Select protocol</button>
+            <div class="protocur"><span class="pl">Protocol</span><span class="protochip" id="protocolV">— none —</span></div>
+          </div>
           <div class="row"><div class="rl">kVp <small>kilovoltage</small></div>
             <div class="stepper"><button data-step="kv" data-d="-1">−</button>
               <div class="sv" id="kvSv">55</div><button data-step="kv" data-d="1">+</button></div></div>
@@ -415,11 +414,6 @@
           <input type="range" id="mas" min="0" max="24" value="7" step="1">
           <div class="row xray-only" style="margin-top:6px"><div class="rl">Exposure time</div>
             <div style="font-family:var(--seg);color:var(--green);font-size:14px" id="timeInline">20 ms</div></div>
-          <div class="mini" id="apr">
-            <button data-part="hand-pa" data-kv="55" data-mas="2">HAND PA 55/2.0</button>
-            <button data-part="hand-obl" data-kv="60" data-mas="2.5">OBL 60/2.5</button>
-            <button data-part="fine" data-kv="50" data-mas="1.6">DETAIL 50/1.6</button>
-          </div>
         </div>
       </div>
 
@@ -477,7 +471,6 @@
         <div class="bod">
           <label class="cttoggle"><input type="checkbox" id="ctAutoDel" checked>
             <span>Auto-delete oldest past <b id="ctCapV">4</b> scan groups</span></label>
-          <div class="note" style="margin-top:6px">Reconstructed scans (slices + image data) are held in memory. With this on, the oldest scan is discarded once a new one pushes the total over the limit — so stored data can't grow without bound.</div>
           <div class="ctstorelist" id="ctStorageList"></div>
           <button class="ctstoreclear" id="ctStorageClear" type="button">Clear all stored scans</button>
         </div>
@@ -485,19 +478,22 @@
       <div class="grp">
         <div class="lab">Display · window / level</div>
         <div class="bod">
-          <canvas id="xrayHist" class="histcanvas xray-only" width="248" height="62" title="Pixel histogram + brightness/contrast response curve"></canvas>
+          <canvas id="xrayHist" class="histcanvas xray-only" width="256" height="96" title="Pixel histogram + brightness/contrast response curve"></canvas>
           <div class="row"><div class="rl">Brightness</div>
             <input type="range" id="level" min="-60" max="60" value="0"></div>
           <div class="row"><div class="rl">Contrast</div>
             <input type="range" id="windo" min="30" max="220" value="100"></div>
         </div>
       </div>
-      <div class="note">
-        Image is computed from scratch each exposure: polyenergetic beam, energy-dependent
-        attenuation through the posed hand, inverse-square dose, quantum mottle, and an
-        IEC&nbsp;62494 exposure index. <span class="kbd">Space</span> to expose.
-      </div>
     </div>
+  </div>
+</div>
+
+<!-- APR protocol picker (body part -> region -> projection) -->
+<div class="protopop" id="protoPop">
+  <div class="protopop-card">
+    <div class="protopop-hd"><span>Select x-ray protocol</span><button class="protopop-x" id="protoPopClose" type="button">✕</button></div>
+    <div class="protopop-body" id="protoPopBody"></div>
   </div>
 </div>
 

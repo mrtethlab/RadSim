@@ -1,0 +1,70 @@
+{
+  "_about": "Anatomically Programmed Radiography (APR) chart. Selecting a protocol sets the technique (kVp / mAs), anti-scatter grid, and display LUT for that projection. Grouped body part -> region -> projection. kVp/mAs follow typical adult DR technique charts: distal extremities 50-65 kVp no grid; proximal limb + skull/spine/abdomen/pelvis 70-90 kVp with grid; chest high-kVp 110-125 kVp with grid. Values are teaching approximations, not a substitute for a facility chart.",
+  "_reference": "Typical adult radiographic technique charts (Merrill's Atlas / Bontrager positioning references); grid + kVp ranges per body-part attenuation.",
+  "groups": [
+    { "part": "Upper extremity", "regions": [
+      { "region": "Fingers", "projections": [
+        { "proj": "PA fingers",      "kv": 55, "mas": 1.6, "grid": false, "lut": "extremity" },
+        { "proj": "Lateral finger",  "kv": 57, "mas": 2.0, "grid": false, "lut": "extremity" } ] },
+      { "region": "Hand", "projections": [
+        { "proj": "PA hand",         "kv": 55, "mas": 2.0, "grid": false, "lut": "extremity", "subject": "hand" },
+        { "proj": "Oblique hand",    "kv": 57, "mas": 2.5, "grid": false, "lut": "extremity", "subject": "hand" },
+        { "proj": "Lateral hand",    "kv": 58, "mas": 3.2, "grid": false, "lut": "extremity", "subject": "hand" } ] },
+      { "region": "Wrist", "projections": [
+        { "proj": "PA wrist",        "kv": 58, "mas": 2.5, "grid": false, "lut": "extremity" },
+        { "proj": "Oblique wrist",   "kv": 60, "mas": 3.0, "grid": false, "lut": "extremity" },
+        { "proj": "Lateral wrist",   "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity" } ] },
+      { "region": "Forearm", "projections": [
+        { "proj": "AP forearm",      "kv": 62, "mas": 3.2, "grid": false, "lut": "extremity" },
+        { "proj": "Lateral forearm", "kv": 64, "mas": 4.0, "grid": false, "lut": "extremity" } ] },
+      { "region": "Elbow", "projections": [
+        { "proj": "AP elbow",        "kv": 64, "mas": 3.2, "grid": false, "lut": "extremity" },
+        { "proj": "Lateral elbow",   "kv": 66, "mas": 4.0, "grid": false, "lut": "extremity" } ] },
+      { "region": "Humerus", "projections": [
+        { "proj": "AP humerus",      "kv": 70, "mas": 5.0, "grid": false, "lut": "bone" },
+        { "proj": "Lateral humerus", "kv": 72, "mas": 6.4, "grid": false, "lut": "bone" } ] },
+      { "region": "Shoulder", "projections": [
+        { "proj": "AP shoulder",     "kv": 72, "mas": 6.4, "grid": true,  "lut": "bone" },
+        { "proj": "Y view shoulder", "kv": 75, "mas": 8.0, "grid": true,  "lut": "bone" } ] } ] },
+    { "part": "Lower extremity", "regions": [
+      { "region": "Toes / Foot", "projections": [
+        { "proj": "AP foot",         "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity" },
+        { "proj": "Oblique foot",    "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity" },
+        { "proj": "Lateral foot",    "kv": 62, "mas": 4.0, "grid": false, "lut": "extremity" } ] },
+      { "region": "Ankle", "projections": [
+        { "proj": "AP ankle",        "kv": 63, "mas": 3.2, "grid": false, "lut": "extremity" },
+        { "proj": "Mortise ankle",   "kv": 64, "mas": 3.6, "grid": false, "lut": "extremity" },
+        { "proj": "Lateral ankle",   "kv": 65, "mas": 4.0, "grid": false, "lut": "extremity" } ] },
+      { "region": "Knee", "projections": [
+        { "proj": "AP knee",         "kv": 68, "mas": 5.0, "grid": true,  "lut": "bone" },
+        { "proj": "Lateral knee",    "kv": 70, "mas": 5.6, "grid": true,  "lut": "bone" } ] },
+      { "region": "Femur", "projections": [
+        { "proj": "AP femur",        "kv": 75, "mas": 8.0, "grid": true,  "lut": "bone" },
+        { "proj": "Lateral femur",   "kv": 77, "mas": 10.0, "grid": true, "lut": "bone" } ] } ] },
+    { "part": "Chest", "regions": [
+      { "region": "Chest", "projections": [
+        { "proj": "PA chest",        "kv": 120, "mas": 2.5, "grid": true,  "lut": "chest", "subject": "chest" },
+        { "proj": "Lateral chest",   "kv": 120, "mas": 6.4, "grid": true,  "lut": "chest", "subject": "chest" },
+        { "proj": "AP chest (portable)", "kv": 90, "mas": 3.2, "grid": false, "lut": "chest", "subject": "chest" } ] } ] },
+    { "part": "Abdomen / Pelvis", "regions": [
+      { "region": "Abdomen", "projections": [
+        { "proj": "AP abdomen (KUB)", "kv": 80, "mas": 32.0, "grid": true, "lut": "abdomen" },
+        { "proj": "Upright abdomen",  "kv": 80, "mas": 36.0, "grid": true, "lut": "abdomen" } ] },
+      { "region": "Pelvis", "projections": [
+        { "proj": "AP pelvis",        "kv": 80, "mas": 36.0, "grid": true, "lut": "bone" } ] } ] },
+    { "part": "Spine", "regions": [
+      { "region": "Cervical", "projections": [
+        { "proj": "AP cervical",      "kv": 75, "mas": 12.5, "grid": true, "lut": "spine" },
+        { "proj": "Lateral cervical", "kv": 78, "mas": 16.0, "grid": true, "lut": "spine" } ] },
+      { "region": "Thoracic", "projections": [
+        { "proj": "AP thoracic",      "kv": 80, "mas": 25.0, "grid": true, "lut": "spine" },
+        { "proj": "Lateral thoracic", "kv": 85, "mas": 50.0, "grid": true, "lut": "spine" } ] },
+      { "region": "Lumbar", "projections": [
+        { "proj": "AP lumbar",        "kv": 82, "mas": 36.0, "grid": true, "lut": "spine" },
+        { "proj": "Lateral lumbar",   "kv": 90, "mas": 64.0, "grid": true, "lut": "spine" } ] } ] },
+    { "part": "Head", "regions": [
+      { "region": "Skull", "projections": [
+        { "proj": "AP skull",         "kv": 80, "mas": 25.0, "grid": true, "lut": "skull", "subject": "headneck" },
+        { "proj": "Lateral skull",    "kv": 78, "mas": 20.0, "grid": true, "lut": "skull", "subject": "headneck" } ] } ] }
+  ]
+}
