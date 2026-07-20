@@ -21,10 +21,11 @@ let laserTopTex = null, laserSideTex = null;
 const SLICE_MM = [0.625, 1.25, 2.5, 5, 10];   // slice-thickness stations
 const MM_PER_UNIT = 10;                        // 1 world unit = 10 mm
 const ISO_Y = 6;                               // gantry vertical isocentre (bore centre, world units)
+const BORE_R = 35;                             // bore hole radius (world units) → 700 mm bore, real-CT scale
 // scout field of view (mm across the image). Equal for AP and LAT so the two
 // scouts share the SAME aspect ratio and the scan box is a circular FOV (cylinder).
-const SCOUT_FOV_MM = 180;
-const SCOUT_WIDTH_MM = { AP: SCOUT_FOV_MM, LAT: SCOUT_FOV_MM };
+const SCOUT_FOV_MM = 180;                       // default (hand); the chest widens it (see S.ct.scoutFovMM)
+const scoutFov = () => (ctx && ctx.S.ct.scoutFovMM) || SCOUT_FOV_MM;   // scan/scout FOV width (mm), subject-adaptive
 // CT patient vertical position (world units) for the current table height. Default
 // table height (0) centres the patient at the gantry isocentre.
 function ctPatientY() { return ISO_Y + ctx.S.ct.tableY / MM_PER_UNIT; }
@@ -103,30 +104,30 @@ export function initCT(context) {
 function buildCTScene() {
   const { THREE, three } = ctx;
 
-  // ---- couch (moving) ----
+  // ---- couch (moving) ---- real-CT scale: a long, wide pallet the patient lies on
   couch = new THREE.Group();
   const padMat = new THREE.MeshStandardMaterial({ color: 0x232a31, metalness: 0.2, roughness: 0.75 });
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(15, 1.2, 66), padMat);
-  pad.position.set(0, -0.6, 8); pad.receiveShadow = true; couch.add(pad);   // pad top at local y=0
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(15.6, 0.5, 66), new THREE.MeshStandardMaterial({ color: 0x2f3a44, metalness: 0.4, roughness: 0.5 }));
-  rail.position.set(0, -1.15, 8); couch.add(rail);
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(46, 3, 220), padMat);
+  pad.position.set(0, -1.5, 8); pad.receiveShadow = true; couch.add(pad);    // pad top at local y=0
+  const rail = new THREE.Mesh(new THREE.BoxGeometry(50, 2, 220), new THREE.MeshStandardMaterial({ color: 0x2f3a44, metalness: 0.4, roughness: 0.5 }));
+  rail.position.set(0, -4, 8); couch.add(rail);
   couch.visible = false; three.scene.add(couch);
 
-  // ---- gantry (static) ----
+  // ---- gantry (static) ---- ~700 mm bore so a real torso passes through cleanly
   gantry = new THREE.Group();
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(15, 3.4, 18, 44),
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 9, 9, 24, 72),
     new THREE.MeshStandardMaterial({ color: 0x3c4753, metalness: 0.55, roughness: 0.4, emissive: 0x141a20, emissiveIntensity: 1 }));
   ring.position.set(0, ISO_Y, 0); gantry.add(ring);                          // bore centred at the isocentre
-  const ringIn = new THREE.Mesh(new THREE.TorusGeometry(12, 0.7, 12, 44),
+  const ringIn = new THREE.Mesh(new THREE.TorusGeometry(BORE_R, 1.6, 12, 72),
     new THREE.MeshStandardMaterial({ color: 0x11161b, metalness: 0.3, roughness: 0.8 }));
-  ringIn.position.set(0, ISO_Y, 1.4); gantry.add(ringIn);
+  ringIn.position.set(0, ISO_Y, 3.5); gantry.add(ringIn);
   // rotating tube/detector assembly inside the bore — spins about the bore axis (z)
   // during a scan so the acquisition is visible. Static (parked) otherwise.
-  gantrySpin = new THREE.Group(); gantrySpin.position.set(0, ISO_Y, 0.6);
-  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(3.2, 2.2, 1.6),
+  gantrySpin = new THREE.Group(); gantrySpin.position.set(0, ISO_Y, 3);
+  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(8, 5, 3.5),
     new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb733, emissiveIntensity: 0.9, metalness: 0.3, roughness: 0.4 }));
-  tubeBlk.position.set(0, 13, 0); gantrySpin.add(tubeBlk);                    // focal spot at top of the ring
-  const detArc = new THREE.Mesh(new THREE.TorusGeometry(12, 0.9, 8, 24, Math.PI * 0.9),
+  tubeBlk.position.set(0, BORE_R + 3, 0); gantrySpin.add(tubeBlk);           // focal spot at top of the ring
+  const detArc = new THREE.Mesh(new THREE.TorusGeometry(BORE_R, 2.5, 8, 40, Math.PI * 0.9),
     new THREE.MeshStandardMaterial({ color: 0x1a2833, emissive: 0x0a2230, emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.5 }));
   detArc.rotation.z = -Math.PI / 2 - Math.PI * 0.45; detArc.position.set(0, 0, 0); gantrySpin.add(detArc);   // opposing detector arc
   gantrySpin.visible = false; gantry.add(gantrySpin);
@@ -207,13 +208,16 @@ export function ctSyncScene() {
     three.handGroup.position.x = S.ct.patient.x;
     three.handGroup.position.y = py;
     three.handGroup.position.z = S.ct.patient.z;
-    couch.position.y = py - 0.4;                         // pad top just under the patient
+    // pad sits at the patient's posterior surface: just under the hand, or at the back
+    // of the chest (its lower AP extent) so the isocentre still runs through mid-body.
+    const backDrop = (S.subject === 'chest' && S.voxelModel) ? (S.voxelModel.extentMM[1] / 2) / MM_PER_UNIT : 0.4;
+    couch.position.y = py - backDrop;
     couch.position.z = 0;                               // base; animateTableTravel drives it
     // gantry + lasers stay fixed at the isocentre (only the couch + patient move)
     gantry.position.set(0, 0, 0);
-    laserTop.position.set(0, ISO_Y + 20, 0); laserTop.target.position.set(0, ISO_Y, 0);
+    laserTop.position.set(0, ISO_Y + BORE_R + 8, 0); laserTop.target.position.set(0, ISO_Y, 0);
     laserTop.target.updateMatrixWorld();
-    laserSide.position.set(22, ISO_Y, 0); laserSide.target.position.set(0, ISO_Y, 0);
+    laserSide.position.set(BORE_R + 8, ISO_Y, 0); laserSide.target.position.set(0, ISO_Y, 0);
     laserSide.target.updateMatrixWorld();
     // no collimator light field in CT — only the lasers
     three.lamp.intensity = 0; three.lamp.castShadow = false;
@@ -579,7 +583,7 @@ function scoutProjection(view) {
   const I0 = S.ct.scoutMa * Math.pow(S.ct.scoutKv / 70, 2);
   const PXMM = 1.5;                                  // mm per (square) pixel — undistorted (scout beam width)
   const lenU = scanLenU();                           // scan length in world units (z axis)
-  const widthMM = SCOUT_WIDTH_MM[view];              // width (AP) / thickness (LAT) field
+  const widthMM = scoutFov();              // width (AP) / thickness (LAT) field
   const nz = Math.max(2, Math.round(S.ct.scanLen / PXMM));
   const nw = Math.max(2, Math.round(widthMM / PXMM));
   const pxU = (widthMM / MM_PER_UNIT) / nw;          // == lenU/nz == PXMM/10 -> square pixels
@@ -657,7 +661,7 @@ function layoutScouts() {
   const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
   if (!box || !row || !ap || !lat) return;
   const len = ctx.S.ct.scanLen;                        // mm along the scan axis (both)
-  const wAP = SCOUT_WIDTH_MM.AP, wLAT = SCOUT_WIDTH_MM.LAT;
+  const wAP = scoutFov(), wLAT = scoutFov();
   const cs = getComputedStyle(row);
   const colGap = parseFloat(cs.columnGap || cs.gap) || 16;
   const hdr = box.querySelector('.scouthdr');
@@ -816,8 +820,8 @@ function updatePlan() {
   const set = (id, v) => { const el = ctx.$(id); if (el) el.textContent = v; };
   set('ctScanStartV', fmtTablePos(g.box.top * len) + ' mm');
   set('ctScanEndV', fmtTablePos(g.box.bot * len) + ' mm');
-  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * SCOUT_FOV_MM;   // mediolateral offset (mm)
-  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * SCOUT_FOV_MM; // anteroposterior offset (mm)
+  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * scoutFov();   // mediolateral offset (mm)
+  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * scoutFov(); // anteroposterior offset (mm)
   updatePlanReady();
   renderScanGroups();
 }
@@ -1109,7 +1113,7 @@ const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slic
 // represents a cylinder). The mediolateral width on the AP scout is the cylinder
 // diameter — the direction in which neighbouring fingers are separated — so a box
 // drawn around a single finger reconstructs a small FOV that excludes the others.
-function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * SCOUT_FOV_MM); }
+function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * scoutFov()); }
 // Per-reconstruction geometry: world-unit FOV radius, detector spacing, and centre.
 function reconGeo(fovMM, cx, cy) { const R = (fovMM / MM_PER_UNIT) / 2; return { fovMM, R, ds: (R * 2) / RECON_DET, cx, cy }; }
 
@@ -1154,8 +1158,8 @@ async function runScan() {
 // Auto-drive the couch to centre THIS group's box on the isocentre (mediolateral, then height).
 async function repositionForGroup(i, alive) {
   const c = ctx.S.ct, g = grp(i);
-  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * SCOUT_FOV_MM;    // mediolateral offset (mm)
-  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * SCOUT_FOV_MM;  // anteroposterior offset (mm)
+  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * scoutFov();    // mediolateral offset (mm)
+  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * scoutFov();  // anteroposterior offset (mm)
   await animateCommit('committedX', c.plan.targetX, 1.0, alive);
   if (!alive()) return;
   await animateCommit('committedY', c.plan.targetY, 0.72, alive);

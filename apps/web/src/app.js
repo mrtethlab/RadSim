@@ -99,6 +99,7 @@ function initScene(){
 
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
+  three.setOrbitRad=(r)=>{ rad=r; };            // used to frame the large CT rig vs the small hand
   const ctFixedPov = () => S.mode==='ct' && (S.ct.pov==='ap' || S.ct.pov==='lat');
   function updateCamera(){
     if(ctFixedPov()){
@@ -106,10 +107,12 @@ function initScene(){
       // so the ring never overhangs the patient, same distance from the isocentre
       // (10.5) and same (very wide) FOV. Lat is the AP view rotated 90° about the
       // bore axis (z). They never track the patient: only the couch + table move.
-      if(cam.fov!==132){ cam.fov=132; cam.updateProjectionMatrix(); }  // extreme wide (distortion ok) for the full bore + gaps
+      // CT bore is centred at (0, ISO_Y=6) with hole radius BORE_R=35 (see ct.js). Sit
+      // just inside the inner rim so the ring frames the patient without overhanging.
+      if(cam.fov!==110){ cam.fov=110; cam.updateProjectionMatrix(); }  // wide (some distortion) for the full bore
       cam.up.set(0,0,1);                        // +z (un-scanned anatomy) toward top of frame
-      if(S.ct.pov==='lat') cam.position.set(10.5, 6, 0);   // +x rim, looking toward -x (lateral)
-      else                 cam.position.set(0, 16.5, 0);   // top rim, looking straight down (AP)
+      if(S.ct.pov==='lat') cam.position.set(33, 6, 0);    // +x rim, looking toward -x (lateral)
+      else                 cam.position.set(0, 39, 0);    // top rim, looking straight down (AP)
       cam.lookAt(0, 6, 0);
       return;
     }
@@ -141,7 +144,7 @@ function initScene(){
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
   canvas.addEventListener('pointerup',()=>drag=false);
   canvas.addEventListener('wheel',e=>{ if(!orbitActive())return;
-    e.preventDefault();rad=Math.max(55,Math.min(240,rad+e.deltaY*0.09));},{passive:false});
+    e.preventDefault();rad=Math.max(40,Math.min(700,rad+e.deltaY*0.25));},{passive:false});
 
   let prevW=0, prevH=0;
   function resize(){
@@ -166,8 +169,8 @@ function initScene(){
     } else if(S.mode==='ct' && S.ct.moveBlit){
       // table move: mirror the axis' PoV into the monitor, independent of the bay
       // camera (so the bay can be watched in orbit at the same time).
-      povCam.aspect=cam.aspect; povCam.fov=132; povCam.up.set(0,0,1);
-      if(S.ct.moveBlit==='lat') povCam.position.set(10.5,6,0); else povCam.position.set(0,16.5,0);
+      povCam.aspect=cam.aspect; povCam.fov=110; povCam.up.set(0,0,1);
+      if(S.ct.moveBlit==='lat') povCam.position.set(33,6,0); else povCam.position.set(0,39,0);
       povCam.lookAt(0,6,0); povCam.updateProjectionMatrix();
       renderer.render(scene,povCam); blitToFilm();
       renderer.render(scene,cam);      // restore the bay view for display
@@ -251,11 +254,14 @@ async function setSubject(sub){
         [...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.sub==='hand')); return; }
     }
     S.subject='chest';
+    // scale the scan field of view to the model (mediolateral × AP extent) so the whole thorax fits
+    S.ct.scoutFovMM=Math.round(Math.max(S.voxelModel.extentMM[0], S.voxelModel.extentMM[1])+70);
     if(three.chestGroup) three.chestGroup.visible=true;
     if(three.softGrp) three.softGrp.visible=false;
     if(three.boneGrp) three.boneGrp.visible=false;
   } else {
     S.subject='hand';
+    S.ct.scoutFovMM=180;
     if(three.chestGroup) three.chestGroup.visible=false;
     applyHandView();
   }
@@ -270,6 +276,21 @@ function applyVoxelMeshTransform(grp){
   grp.position.set(0,0,0); grp.rotation.set(0,0,0);
 }
 
+/* X-ray detector receptor size. The 3D receptor + corner markers were modelled at
+   24x30 cm, so scale them to the selected size; computeRadiograph reads S.detW/detH. */
+function updateDetector(){
+  if(!three.det) return;
+  const sx=S.detW/24, sz=S.detH/30;
+  three.det.scale.set(sx,1,sz);
+  if(three.detMarks) three.detMarks.scale.set(sx,1,sz);
+}
+function setDetSize(w,h){
+  S.detW=w; S.detH=h;
+  const seg=$('detSizeSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on', +b.dataset.w===w));
+  const el=$('detSizeV'); if(el) el.textContent=w+'×'+h+' cm';
+  updateDetector();
+}
+
 /* ============================================================================
    STATE + WIRING
    ============================================================================ */
@@ -279,6 +300,7 @@ const S = {
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
+  detW:35, detH:43,            // x-ray detector receptor size (cm): 25x30 small / 35x43 large
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
   voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
@@ -291,6 +313,7 @@ const S = {
     pitch:1.0,                 // table travel per rotation / total collimation
     rotSpeed:0.5,              // seconds per gantry rotation
     scanLen:300,               // mm scout/scan length (from isocentre)
+    scoutFovMM:180,            // scout/scan field of view (mm) — adapts to the subject (hand 180 / chest ~460)
     scoutKv:80,                // scout topogram technique (kV)
     scoutMa:20,                // scout topogram technique (mA)
     tablePos:0,                // mm; signed: +I (inferior) / -S (superior); isocentre zeroes it
@@ -431,6 +454,7 @@ function syncScene(){
   three.key.intensity = on ? 0.5 : 0.9;
   three.cr.visible = !on;                       // crosshair now comes from the lamp
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
+  updateDetector();                             // receptor size (25x30 / 35x43)
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
 }
 
@@ -552,6 +576,7 @@ function setContent(c){
   const img=(c==='image');
   const slices=(c==='slices');   // CT cross-sectional viewer (reconstructed transverse slices)
   const recons=(c==='recons');   // CT reconstruction planning / multiplanar viewer
+  if(c==='3d' && three.setOrbitRad) three.setOrbitRad(S.mode==='ct'?260:115);   // frame the large CT rig vs the hand
   // switching the bay to 3D in CT defaults to Orbit (whole-scene view), not a fixed PoV
   if(!img && !slices && !recons && S.mode==='ct') setCTPov('orbit');
   // In CT with scouts acquired, the Image (Scout) view IS the scout window (AP+LAT
@@ -668,6 +693,9 @@ function bind(){
   });
   segPick('resSeg', b=>{ S.resolution=b.dataset.res;
     const [nx,ny]=RES_MAP[S.resolution]; $('resV').textContent=nx+'×'+ny; });
+  $('detSizeSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
+    [...$('detSizeSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
+    setDetSize(parseInt(b.dataset.w),parseInt(b.dataset.h));});
   segPick('gridSeg', b=>{ S.gridOn=(b.dataset.grid==='on');
     $('gridStateV').textContent=S.gridOn?'IN':'OUT'; });
   segPick('gridRatioSeg', b=>{ S.gridRatio=parseInt(b.dataset.ratio);
@@ -770,9 +798,9 @@ async function computeRadiograph(){
   const phantom=buildPhantom();
   const source=sourcePos();
 
-  // detector matches the 3D image receptor (24 x 30 cm) so open collimation
+  // detector matches the 3D image receptor (selectable size) so open collimation
   // captures the whole plate, with empty field between the model and the edges.
-  const detW=24, detH=30;          // cm
+  const detW=S.detW, detH=S.detH;  // cm (25x30 small / 35x43 large)
   const [nx,ny]=RES_MAP[S.resolution]||RES_MAP.std;   // pixel matrix (4:5)
   const pxU=detW/nx, pxV=detH/ny;
   const detCenter=[0,0,0];
