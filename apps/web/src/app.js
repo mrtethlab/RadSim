@@ -235,7 +235,7 @@ function buildHandMeshes(){
 /* Toggle which model is visible (display only). */
 function applyHandView(){
   if(!three.softGrp||!three.boneGrp) return;
-  if(S.subject==='chest'){ three.softGrp.visible=false; three.boneGrp.visible=false; if(three.chestGroup) three.chestGroup.visible=true; return; }
+  if(S.subject!=='hand'){ three.softGrp.visible=false; three.boneGrp.visible=false; if(three.chestGroup) three.chestGroup.visible=true; return; }
   const boneOnly=(S.handView==='bone');
   three.softGrp.visible=!boneOnly; three.boneGrp.visible=boneOnly;
 }
@@ -245,59 +245,85 @@ function setHandView(v){
   applyHandView();
 }
 
-/* Switch the scan subject between the analytic hand and the voxel chest. The chest
-   model (material volume + display mesh) is fetched on first use and shown in the
-   handGroup so the CT positioning offsets apply to it just like the hand. */
+/* Voxel model registry: the analytic hand plus every folder in public/models/. The
+   `id` is BOTH the folder name and the file basename (…/<id>/<id>.model.json) and the
+   model name sent to the Python backend, so keep them in sync with the build output.
+   scoutKv/scoutMa are the default CT scout technique; xrayKv the default x-ray kV
+   (thin extremities need far less than a thick torso). */
+const VOXEL_MODELS = {
+  chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
+  headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
+  chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
+  upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
+  lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
+  wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
+};
+
+/* Prepare a freshly loaded display mesh so it lights + shadows like the hand: the
+   exported GLB carries PBR defaults (metalness 1), no shadow flags and NO normals
+   (GLTFLoader falls back to flat shading, which breaks the spot-light cookie
+   projection — the light field floods the whole mesh unmasked). */
+function prepVoxelMesh(grp){
+  grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
+    if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    const ms=Array.isArray(o.material)?o.material:[o.material];
+    for(const m of ms){ if(m){ m.metalness=0; m.roughness=0.95; m.flatShading=false; m.needsUpdate=true; } } } });
+}
+
+/* Switch the scan subject between the analytic hand and any voxel model. Models
+   (material volume + display mesh) are fetched on first use and cached; the meshes
+   all live in handGroup so the CT positioning offsets apply to them like the hand. */
 async function setSubject(sub){
-  const seg=$('subjectSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.sub===sub));
-  const hint=$('subjectHint');
-  if(sub==='chest'){
-    if(!S.voxelModel){
-      if(hint) hint.textContent='Loading chest model…';
-      S.subjectLoading=true;   // guards CT START/exposure until the swap completes
-      try{
-        S.voxelModel=await loadVoxelModel('/models/chest','chest');
-        if(S.voxelModel.meshUrl){
-          const grp=await loadModelUrl(S.voxelModel.meshUrl);
-          // the exported GLB carries PBR defaults (metalness 1), no shadow flags and NO
-          // normals (GLTFLoader falls back to flat shading, which breaks the spot-light
-          // cookie projection — the light field floods the whole mesh unmasked). Compute
-          // real vertex normals and make it matte + shadow-aware so the collimator light
-          // projects onto it and it throws its own shadow, exactly like the hand.
-          grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
-            if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
-            const ms=Array.isArray(o.material)?o.material:[o.material];
-            for(const m of ms){ if(m){ m.metalness=0; m.roughness=0.95; m.flatShading=false; m.needsUpdate=true; } } } });
-          applyVoxelMeshTransform(grp);
-          three.handGroup.add(grp); three.chestGroup=grp;
-        }
-        if(hint) hint.textContent=S.voxelModel.header.name+' · '+S.voxelModel.dims.join('×')+' @ '+S.voxelModel.spacingMM[0]+'mm';
-      }catch(err){ console.error('chest load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
-        [...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.sub==='hand')); return; }
-      finally{ S.subjectLoading=false; }
-    }
-    S.subject='chest';
-    const ext=S.voxelModel.extentMM;
-    // scale the scan field of view to the model (mediolateral × AP extent) so the whole thorax fits
-    S.ct.scoutFovMM=Math.round(Math.max(ext[0], ext[1])+70);
-    // default the scan to cover the WHOLE anatomy, pre-isocentred at the superior end
-    // (scan runs superior→inferior). Brighter scout technique for a thick body part.
-    S.ct.scanLen=Math.min(600, Math.round(ext[2]));
-    // rest centred in the bore; isocentre pre-set at the superior end so START sweeps the whole chest
-    S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
-    S.ct.isocentred=true; S.ct.tablePos=0; S.ct.tableY=0;
-    S.ct.scoutKv=120; S.ct.scoutMa=120;
-    if(three.chestGroup) three.chestGroup.visible=true;
-    if(three.softGrp) three.softGrp.visible=false;
-    if(three.boneGrp) three.boneGrp.visible=false;
-  } else {
+  const sel=$('subjectSel'); const hint=$('subjectHint');
+  S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
+  const showActive=(id)=>{ for(const k in three.voxelMeshes) three.voxelMeshes[k].visible=(k===id);
+                           three.chestGroup=three.voxelMeshes[id]||null; };
+  if(sub==='hand'){
     S.subject='hand';
     S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scoutKv=80; S.ct.scoutMa=20;
     S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
-    if(three.chestGroup) three.chestGroup.visible=false;
-    applyHandView();
+    showActive(null); applyHandView();
+    if(hint) hint.textContent='Analytic hand phantom';
+    if(sel) sel.value='hand';
+    const sl=$('ctScanLen'); if(sl) sl.value=S.ct.scanLen;
+    syncScene(); return;
   }
-  const sl=$('ctScanLen'); if(sl) sl.value=S.ct.scanLen;   // reflect the auto scan length
+  const cfg=VOXEL_MODELS[sub];
+  if(!cfg){ console.warn('unknown subject',sub); return; }
+  let vm=S.voxelCache[sub];
+  if(!vm){
+    if(hint) hint.textContent='Loading '+cfg.title+'…';
+    S.subjectLoading=true;   // guards CT START/exposure until the swap completes
+    try{
+      vm=await loadVoxelModel('/models/'+sub, sub);
+      S.voxelCache[sub]=vm;
+      if(vm.meshUrl){
+        const grp=await loadModelUrl(vm.meshUrl);
+        prepVoxelMesh(grp);
+        grp.visible=false; three.handGroup.add(grp); three.voxelMeshes[sub]=grp;
+      }
+    }catch(err){ console.error(sub+' load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
+      if(sel) sel.value=S.subject; return; }
+    finally{ S.subjectLoading=false; }
+  }
+  S.voxelModel=vm; S.subject=sub;
+  const ext=vm.extentMM;
+  // scan field of view scales to the model (mediolateral × AP extent) so it fits
+  S.ct.scoutFovMM=Math.round(Math.max(ext[0], ext[1])+70);
+  // default the scan to cover the WHOLE anatomy, pre-isocentred at the superior end
+  // (scan runs superior→inferior). Tall models (whole body) need a longer scout.
+  S.ct.scanLen=Math.round(ext[2]);
+  const sl=$('ctScanLen'); if(sl){ sl.max=Math.max(600, S.ct.scanLen); sl.value=S.ct.scanLen; }
+  S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
+  S.ct.isocentred=true; S.ct.tablePos=0; S.ct.tableY=0;
+  S.ct.scoutKv=cfg.scoutKv; S.ct.scoutMa=cfg.scoutMa;
+  // default x-ray kV to the model (thin extremities need far less than a torso)
+  if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
+  showActive(sub);
+  if(three.softGrp) three.softGrp.visible=false;
+  if(three.boneGrp) three.boneGrp.visible=false;
+  if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
+  if(sel) sel.value=sub;
   syncScene();
 }
 /* Position + orient the chest display mesh so it matches the VoxelPhantom (same axis
@@ -464,7 +490,7 @@ function buildPhantom(){
   // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
   // CT patient offset (couch position / table height) so scout + recon sweep the real
   // anatomy. Uses the expanded BodyMaterials via its labelled volume.
-  if(S.subject==='chest' && S.voxelModel){
+  if(S.subject!=='hand' && S.voxelModel){
     const vm=S.voxelModel;
     const cx = S.mode==='ct' ? S.ct.patient.x : 0;
     const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
@@ -498,14 +524,14 @@ function syncScene(){
   if(!three.tube) return;
   // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips).
   // The voxel chest is placed by ctSyncScene instead, so skip the hand transforms.
-  if(S.subject!=='chest'){
+  if(S.subject==='hand'){
     three.handGroup.rotation.z = poseRot();
     const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
     three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid;
   } else {
     three.handGroup.rotation.z = 0;
     if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);   // flips are mode-dependent
-    if(S.mode!=='ct' && S.voxelModel){                                // x-ray: rest the chest on the detector
+    if(S.mode!=='ct' && S.voxelModel){                                // x-ray: rest the model on the detector
       three.handGroup.position.set(0, (S.voxelModel.extentMM[1]/2)/10, 0);
     }
   }
@@ -756,8 +782,8 @@ function bind(){
   $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
   // render mode: soft-tissue anatomy  <->  skeleton (display only)
   $('renderSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setHandView(b.dataset.hv);});
-  // subject: analytic hand  <->  voxel chest model
-  $('subjectSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setSubject(b.dataset.sub);});
+  // subject: analytic hand  <->  any voxel model
+  $('subjectSel')?.addEventListener('change',e=>setSubject(e.target.value));
   // collimator light on/off
   $('lfBtn').addEventListener('click',()=>{ S.lfOn=!S.lfOn;
     $('lfBtn').classList.toggle('on',S.lfOn); $('lfBtn').setAttribute('aria-pressed',S.lfOn);
@@ -1027,8 +1053,8 @@ function renderRadiograph(target){
   //    vertical mirror, so left/right chirality is preserved.
   //  - chest: shoulders (-z) are already up as recorded; mirror horizontally because
   //    a PA projection is displayed as if facing the patient (L marker on the right).
-  const baseRot = S.subject==='chest' ? 0 : 180;
-  const baseFlipH = S.subject==='chest';
+  const baseRot = S.subject!=='hand' ? 0 : 180;
+  const baseFlipH = S.subject!=='hand';
   const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
@@ -1056,7 +1082,8 @@ function updateDI(EI){
 }
 
 function annotate(spec){
-  $('fnTL').textContent=(S.subject==='chest'?'CHEST':'HAND')+' · '+S.pose;
+  const subjName=(S.subject==='hand'?'HAND':(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase());
+  $('fnTL').textContent=subjName+' · '+S.pose;
   $('fnTR').textContent=S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs';
   $('fnBL').textContent='SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV';
   $('fnBR').textContent='DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');

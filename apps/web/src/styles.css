@@ -403,6 +403,9 @@ body.mode-ct .di{display:none}
 .ctslices.show{display:flex}
 .slhdr{display:flex; align-items:center; justify-content:space-between; gap:12px}
 .slhdr .sltitle{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:var(--cyan); text-transform:uppercase}
+.subjectsel{width:100%; max-width:190px; background:#0b1116; color:var(--txt);
+  border:1px solid var(--edge2); border-radius:4px; font-family:var(--disp);
+  font-size:12px; padding:4px 8px; margin-top:2px; cursor:pointer}
 .slsel{background:#0b1116; color:var(--txt); border:1px solid var(--edge2); border-radius:4px;
   font-family:var(--disp); font-size:13px; padding:5px 10px; min-width:150px}
 .slsel:disabled{color:var(--muted2)}

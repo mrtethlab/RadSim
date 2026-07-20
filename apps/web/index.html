@@ -127,10 +127,15 @@
         </div>
         <div>
           <div class="cl">Subject</div>
-          <div class="segmini" id="subjectSeg">
-            <button data-sub="hand" class="on">Hand</button>
-            <button data-sub="chest">Chest</button>
-          </div>
+          <select id="subjectSel" class="subjectsel">
+            <option value="hand" selected>Hand (analytic)</option>
+            <option value="chest">Chest</option>
+            <option value="headneck">Head &amp; neck</option>
+            <option value="chestabdopelvis">Chest / abdo / pelvis</option>
+            <option value="upperextremity">Upper extremity</option>
+            <option value="lowerextremity">Lower extremity</option>
+            <option value="wholebody">Whole body</option>
+          </select>
           <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:4px; text-align:left; letter-spacing:.3px; max-width:190px"></div>
         </div>
         <div>
