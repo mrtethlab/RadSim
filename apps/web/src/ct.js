@@ -222,7 +222,7 @@ export function ctSyncScene() {
     // no collimator light field in CT — only the lasers
     three.lamp.intensity = 0; three.lamp.castShadow = false;
     three.cr.visible = false;
-    three.amb.intensity = 0.9; three.key.intensity = 0.9;
+    three.amb.intensity = 1.55; three.key.intensity = 1.35;   // brighter — the big rig read too dark
   } else {
     three.handGroup.position.x = 0;
     three.handGroup.position.z = 0;

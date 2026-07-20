@@ -25,8 +25,8 @@ function initScene(){
   renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   const scene=new THREE.Scene();
   scene.background=new THREE.Color(0x0a0c0f);
-  scene.fog=new THREE.Fog(0x0a0c0f, 120, 320);
-  const cam=new THREE.PerspectiveCamera(42,1,1,1000);
+  scene.fog=new THREE.Fog(0x0a0c0f, 600, 2600);   // very light haze — the CT rig is large + far
+  const cam=new THREE.PerspectiveCamera(42,1,1,3200);
   const amb=new THREE.AmbientLight(0x6b7785,0.9); scene.add(amb);
   const key=new THREE.DirectionalLight(0xbfe9ff,0.9); key.position.set(40,90,60); scene.add(key);
   const rim=new THREE.DirectionalLight(0x35c6d6,0.35); rim.position.set(-50,20,-40); scene.add(rim);
@@ -254,24 +254,34 @@ async function setSubject(sub){
         [...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.sub==='hand')); return; }
     }
     S.subject='chest';
+    const ext=S.voxelModel.extentMM;
     // scale the scan field of view to the model (mediolateral × AP extent) so the whole thorax fits
-    S.ct.scoutFovMM=Math.round(Math.max(S.voxelModel.extentMM[0], S.voxelModel.extentMM[1])+70);
+    S.ct.scoutFovMM=Math.round(Math.max(ext[0], ext[1])+70);
+    // default the scan to cover the WHOLE anatomy, pre-isocentred at the superior end
+    // (scan runs superior→inferior). Brighter scout technique for a thick body part.
+    S.ct.scanLen=Math.min(600, Math.round(ext[2]));
+    // rest centred in the bore; isocentre pre-set at the superior end so START sweeps the whole chest
+    S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
+    S.ct.isocentred=true; S.ct.tablePos=0; S.ct.tableY=0;
+    S.ct.scoutKv=120; S.ct.scoutMa=120;
     if(three.chestGroup) three.chestGroup.visible=true;
     if(three.softGrp) three.softGrp.visible=false;
     if(three.boneGrp) three.boneGrp.visible=false;
   } else {
     S.subject='hand';
-    S.ct.scoutFovMM=180;
+    S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scoutKv=80; S.ct.scoutMa=20;
+    S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
     if(three.chestGroup) three.chestGroup.visible=false;
     applyHandView();
   }
+  const sl=$('ctScanLen'); if(sl) sl.value=S.ct.scanLen;   // reflect the auto scan length
   syncScene();
 }
 /* Position + orient the chest display mesh so it matches the VoxelPhantom (same axis
    flips) and is scaled from mm to world units. The mesh is a child of handGroup, so
    handGroup's translation (CT patient offset) then places it at the isocentre. */
 function applyVoxelMeshTransform(grp){
-  const f=S.voxelFlip, s=0.1;   // mm -> world (1 unit = 10 mm)
+  const f=voxelFlips(), s=0.1;   // mm -> world (1 unit = 10 mm)
   grp.scale.set(s*(f[0]?-1:1), s*(f[1]?-1:1), s*(f[2]?-1:1));
   grp.position.set(0,0,0); grp.rotation.set(0,0,0);
 }
@@ -304,7 +314,6 @@ const S = {
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
   voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
-  voxelFlip:[false,true,false],// anatomical axis flips for the chest (A-P up, head order)
   // ---- CT mode ----
   mode:'xray',                 // 'xray' | 'ct'
   ct:{
@@ -388,6 +397,13 @@ function baseLift(skin, bone, rot){
 /* Build the world-space physics phantom from current pose (bakes transform).
    Same skin+bone primitives shown in 3D, rotated by pose and lifted onto the
    detector so bone is nested inside soft tissue. */
+// Anatomical axis flips for the voxel chest (volume axes: x=Left, y=Posterior,
+// z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first (anterior
+// up, head toward −z into the bore). X-ray = PA upright feel (posterior up / anterior
+// toward the detector), long axis left→right on the plate.
+function voxelFlips(){
+  return S.mode==='ct' ? [false,true,true] : [false,false,false];
+}
 function buildPhantom(){
   // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
   // CT patient offset (couch position / table height) so scout + recon sweep the real
@@ -397,7 +413,7 @@ function buildPhantom(){
     const cx = S.mode==='ct' ? S.ct.patient.x : 0;
     const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
     const cz = S.mode==='ct' ? S.ct.patient.z : 0;
-    return vm.makePhantom([cx,cy,cz], S.voxelFlip);
+    return vm.makePhantom([cx,cy,cz], voxelFlips());
   }
   const ph=new Phantom();
   const rot=poseRot();
@@ -432,6 +448,10 @@ function syncScene(){
     three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid;
   } else {
     three.handGroup.rotation.z = 0;
+    if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);   // flips are mode-dependent
+    if(S.mode!=='ct' && S.voxelModel){                                // x-ray: rest the chest on the detector
+      three.handGroup.position.set(0, (S.voxelModel.extentMM[1]/2)/10, 0);
+    }
   }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
