@@ -195,20 +195,12 @@
       <div class="grp ct-only" id="ctSettings">
         <div class="lab">Scout planning</div>
         <div class="bod">
-          <div class="row"><div class="rl">Start location <small>from iso</small></div>
-            <div class="valchip" id="ctScoutStartV">0.0 mm</div></div>
-          <div class="row" style="margin-top:8px"><div class="rl">End location</div>
-            <div class="valchip" id="ctScoutEndV">I300.0 mm</div></div>
+          <!-- scout groups: AP (scan plane 0°) + Lateral (90°); click kV/mA to edit -->
+          <div class="scouttable" id="ctScoutTable"></div>
           <div class="row" style="margin-top:10px"><div class="rl">Scan length</div>
             <div class="valchip" id="ctScanLenV">300 mm</div></div>
           <input type="range" id="ctScanLen" min="50" max="600" step="10" value="300">
-          <div class="row" style="margin-top:12px"><div class="rl">kV <small>scout technique</small></div>
-            <div class="stepper"><button data-ctstep="scoutKv" data-d="-1">−</button>
-              <div class="sv" id="ctScoutKvV">80</div><button data-ctstep="scoutKv" data-d="1">+</button></div></div>
-          <div class="row" style="margin-top:10px"><div class="rl">mA</div>
-            <div class="stepper"><button data-ctstep="scoutMa" data-d="-1">−</button>
-              <div class="sv" id="ctScoutMaV">20</div><button data-ctstep="scoutMa" data-d="1">+</button></div></div>
-          <div class="row" style="margin-top:12px"><div class="rl">Est. scan time</div>
+          <div class="row" style="margin-top:10px"><div class="rl">Est. scan time</div>
             <div class="valchip green" id="ctExpTimeV">— s</div></div>
 
           <div class="row" style="margin-top:12px"><div class="rl">CT detector</div>

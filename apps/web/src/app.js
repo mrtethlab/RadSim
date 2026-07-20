@@ -282,6 +282,7 @@ async function setSubject(sub){
   if(sub==='hand'){
     S.subject='hand';
     S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scoutKv=80; S.ct.scoutMa=20;
+    S.ct.scoutTech=[{kv:80,ma:20},{kv:80,ma:20}];
     S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
     applyBackendOnly(false);
     showActive(null); applyHandView();
@@ -319,6 +320,7 @@ async function setSubject(sub){
   S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
   S.ct.isocentred=true; S.ct.tablePos=0; S.ct.tableY=0;
   S.ct.scoutKv=cfg.scoutKv; S.ct.scoutMa=cfg.scoutMa;
+  S.ct.scoutTech=[{kv:cfg.scoutKv,ma:cfg.scoutMa},{kv:cfg.scoutKv,ma:cfg.scoutMa}];
   // default x-ray kV to the model (thin extremities need far less than a torso)
   if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
   // backend-only models (large, no volume in the browser) MUST use the Python engine
@@ -403,8 +405,10 @@ const S = {
     rotSpeed:0.5,              // seconds per gantry rotation
     scanLen:300,               // mm scout/scan length (from isocentre)
     scoutFovMM:180,            // scout/scan field of view (mm) — adapts to the subject (hand 180 / chest ~460)
-    scoutKv:80,                // scout topogram technique (kV)
+    scoutKv:80,                // scout topogram technique (kV) — default source
     scoutMa:20,                // scout topogram technique (mA)
+    // per-plane scout technique: index 0 = AP (scan plane 0°), 1 = Lateral (90°)
+    scoutTech:[{kv:80,ma:20},{kv:80,ma:20}],
     tablePos:0,                // mm; signed: +I (inferior) / -S (superior); isocentre zeroes it
     isoZ:0,                    // patient z recorded when the isocentre was set
     isocentred:false,

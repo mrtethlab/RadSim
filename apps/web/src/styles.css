@@ -327,6 +327,14 @@ body.mode-ct .di{display:none}
 .sg-station{cursor:pointer; border-bottom:1px dashed rgba(255,255,255,.25)}
 .sg-station:hover{color:#fff; background:rgba(255,255,255,.06)}
 .sg-calc{color:var(--muted2); font-style:italic}
+/* scout planning table (2 planes, compact, fits the side panel) */
+.scouttable{--gc:var(--cyan); margin:2px 0 6px}
+.scouttable .sg-table{font-size:11.5px}
+.scouttable .sg-table th{padding:5px 4px; font-size:9px}
+.scouttable .sg-table td{padding:6px 4px}
+.scouttable .sg-row{border-left:4px solid var(--cyan); cursor:default}
+.sc-plane{display:inline-flex; flex-direction:column; line-height:1.05; color:var(--cyan); font-family:var(--seg)}
+.sc-plane small{color:var(--muted); font-size:8.5px; letter-spacing:.3px; text-transform:uppercase}
 .sg-num{position:relative; width:26px; height:26px; border-radius:5px; background:var(--gc); color:#04121c;
   font-family:var(--seg); font-size:12px; display:inline-flex; align-items:center; justify-content:center; font-weight:700}
 .sg-num.del{cursor:pointer}

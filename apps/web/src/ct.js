@@ -86,6 +86,7 @@ export function initCT(context) {
   injectSymbols();
   wireModeToggle();
   wireCTSettings();
+  wireScoutTable();
   wireCTConsole();
   initScanBoxes();
   wireStorage();
@@ -379,10 +380,7 @@ function scoutScanTime() { return ctx.S.ct.scanLen / SCOUT_SPEED_MMPS; }   // se
 function updateCTReadouts() {
   const { S, $ } = ctx;
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-  set('ctScoutStartV', fmtTablePos(0) + ' mm');            // scout runs from the isocentre
-  set('ctScoutEndV', fmtTablePos(S.ct.scanLen) + ' mm');
-  set('ctScoutKvV', S.ct.scoutKv);
-  set('ctScoutMaV', S.ct.scoutMa);
+  renderScoutTable();
   set('ctScanLenV', S.ct.scanLen + ' mm');
   const et = scoutScanTime();
   set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
@@ -618,14 +616,15 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
 async function scoutProjection(view) {
   const { S } = ctx;
   const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
-  const bins = Spectrum.make(S.ct.scoutKv).bins, nb = bins.length;   // scout uses its own technique
+  const tech = S.ct.scoutTech[view === 'AP' ? 0 : 1];   // per-plane technique (AP 0° / Lat 90°)
+  const bins = Spectrum.make(tech.kv).bins, nb = bins.length;
   const voxel = !!phantom.voxel;                    // chest (voxel) vs hand (analytic) attenuation
   const muMat = voxel ? muOverBins(bins) : null, nmat = voxel ? muMat.length : 0;
   const hitId = voxel ? new Int32Array(nmat) : null, hitLen = voxel ? new Float64Array(nmat) : null;
   const muSoft = voxel ? null : bins.map(b => Materials.mu('soft', b.E));
   const muBone = voxel ? null : bins.map(b => Materials.mu('bone', b.E));
   const muMarr = voxel ? null : bins.map(b => Materials.mu('marrow', b.E));
-  const I0 = S.ct.scoutMa * Math.pow(S.ct.scoutKv / 70, 2);
+  const I0 = tech.ma * Math.pow(tech.kv / 70, 2);
   // CT detector element (DEL) pitch ~1 mm — the scout's square pixel. Independent of
   // the x-ray DR detector resolution (~100 µm), which never applies to CT.
   const PXMM = 1.0;
@@ -959,6 +958,38 @@ const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff"
 const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'Total Images', 'Detector Config',
   'Helical Thickness', 'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time', 'Slice Interval',
   'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
+
+// Scout planning table: AP (scan plane 0°) + Lateral (90°) as two scout groups.
+// Simpler than the scan-group table (no slice/pitch) — start/end are shared (the
+// scout always runs from the isocentre for the scan length); kV/mA edit per plane.
+const SCOUT_PLANES = [{ label: 'AP', ang: 0 }, { label: 'Lateral', ang: 90 }];
+function renderScoutTable() {
+  const cont = ctx.$('ctScoutTable'); if (!cont) return;
+  const c = ctx.S.ct;
+  const start = fmtTablePos(0) + ' mm', end = fmtTablePos(c.scanLen) + ' mm';
+  const rows = SCOUT_PLANES.map((p, i) => {
+    const t = c.scoutTech[i];
+    return '<tr class="sg-row" data-plane="' + i + '">'
+      + '<td><span class="sc-plane">' + p.ang + '°<small>' + p.label + '</small></span></td>'
+      + '<td><span class="sg-calc">' + start + '</span></td>'
+      + '<td><span class="sg-calc">' + end + '</span></td>'
+      + '<td><span class="sg-edit" data-act="kv">' + t.kv + ' kV</span></td>'
+      + '<td><span class="sg-edit" data-act="ma">' + t.ma + ' mA</span></td></tr>';
+  }).join('');
+  cont.innerHTML = '<table class="sg-table"><thead><tr>'
+    + ['Scan plane', 'Start', 'End', 'kV', 'mA'].map((h) => '<th>' + h + '</th>').join('')
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+function wireScoutTable() {
+  const cont = ctx.$('ctScoutTable'); if (!cont) return;
+  cont.addEventListener('click', (e) => {
+    const span = e.target.closest('.sg-edit'); if (!span) return;
+    const row = span.closest('.sg-row'); const i = +row.dataset.plane, act = span.dataset.act;
+    const t = ctx.S.ct.scoutTech[i];
+    if (act === 'kv') openTypedPopup('Scout kV — ' + SCOUT_PLANES[i].label, t.kv, (v) => { t.kv = Math.max(70, Math.min(140, Math.round(v))); updateCTReadouts(); });
+    else if (act === 'ma') openTypedPopup('Scout mA — ' + SCOUT_PLANES[i].label, t.ma, (v) => { t.ma = Math.max(5, Math.min(500, Math.round(v))); updateCTReadouts(); });
+  });
+}
 
 function renderScanGroups() {
   const cont = ctx.$('ctScanGroups'); if (!cont) return;
