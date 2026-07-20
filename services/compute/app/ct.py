@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from .gpu import DEVICE, get_volume, sample_ids
+from .gpu import DEVICE, get_volume, sample_ids, rot_tensor
 
 STEP = 0.05          # in-plane march step, world units (0.5 mm)
 FWD_BATCH = 16       # forward-projection angle batching ((a,K,S,3) points tensor)
@@ -55,6 +55,7 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     mu[0] = 0.0                                        # air
     photons0 = float(p["photons0"])
     z0_list = [float(z) for z in p["z0List"]]
+    rot = rot_tensor(p.get("rot"))
 
     half_det = (n_det - 1) / 2.0
     th = torch.arange(n_ang, device=DEVICE, dtype=torch.float32) * math.pi / n_ang
@@ -87,7 +88,7 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
             pxr = ox[a0:a1].unsqueeze(2) + dx[a0:a1].unsqueeze(2) * ts        # (a, K, S)
             pyr = oy[a0:a1].unsqueeze(2) + dy[a0:a1].unsqueeze(2) * ts
             pts = torch.stack([pxr, pyr, torch.full_like(pxr, z0)], dim=-1)   # (a, K, S, 3)
-            ids = sample_ids(vv, pts, center)
+            ids = sample_ids(vv, pts, center, rot)
             sino[a0:a1] = (mu[ids] * STEP).sum(dim=-1)
         if photons0 > 0:
             nd = (photons0 * torch.exp(-sino)).clamp(min=1.0)
@@ -130,6 +131,7 @@ def scout(p: dict[str, Any]) -> np.ndarray:
     mu = torch.tensor(p["muMat"], dtype=torch.float32, device=DEVICE)         # (nmat, nb)
     mu[0].zero_()
     I0 = float(p["I0"])
+    rot = rot_tensor(p.get("rot"))
     refDist2 = (sx - dcx) ** 2 + (sy - dcy) ** 2
     half = (nw - 1) / 2.0
     src = torch.tensor([sx, sy], device=DEVICE)
@@ -152,7 +154,7 @@ def scout(p: dict[str, Any]) -> np.ndarray:
         pz = torch.full_like(px, float(z))
         valid = ts.unsqueeze(0) < dist.unsqueeze(1)
         pts = torch.stack([px, py, pz], dim=-1)                              # (nw, S, 3)
-        ids = sample_ids(vv, pts, center)
+        ids = sample_ids(vv, pts, center, rot)
         L = torch.zeros(nw, vv.nmat, device=DEVICE)
         L.scatter_add_(1, ids, torch.full_like(px, STEPn) * valid)
         T = torch.exp(-(L @ mu)) @ w                                         # polyenergetic transmission

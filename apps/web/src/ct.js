@@ -653,6 +653,7 @@ async function scoutProjection(view) {
         model: S.subject, flips: Array.from(phantom.flip, Boolean), center,
         nw, nz, pxU, lenU, sx, sy, dcx, dcy, ux, uy,
         binsW: bins.map(b => b.w), muMat: muMat.map(r => Array.from(r)), I0,
+        rot: phantom.rot ? Array.from(phantom.rot) : null,
       });
       dose.set(out);
       for (let k = 0; k < dose.length; k++) { const d = dose[k]; if (d < mn) mn = d; if (d > mx) mx = d; }
@@ -1512,6 +1513,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice) {
                      cx: geo.cx, cy: geo.cy, nDet: geo.m.nDet, nAngles: geo.m.nAngles, gridN: N,
                      ds: geo.ds, rayR: geo.rayR, dfovR: geo.R,
                      kernel: geo.m.fixedPitch ? 'shepp' : 'ramlak',
+                     rot: phantom.rot ? Array.from(phantom.rot) : null,
                      muArr: Array.from(mu.arr), photons0 };
       const BATCH = 4;
       for (let s0 = 0; s0 < nz; s0 += BATCH) {

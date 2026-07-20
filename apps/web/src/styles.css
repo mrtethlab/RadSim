@@ -403,6 +403,8 @@ body.mode-ct .di{display:none}
 .ctslices.show{display:flex}
 .slhdr{display:flex; align-items:center; justify-content:space-between; gap:12px}
 .slhdr .sltitle{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:var(--cyan); text-transform:uppercase}
+.hand-only{display:none}
+body.subj-hand .hand-only{display:flex}
 /* Image-view overlay: 4-corner metadata + last-10 review strip (x-ray) */
 .imgview-ui{position:absolute; inset:0; z-index:9; pointer-events:none; display:none}
 .imgview-ui.show{display:block}

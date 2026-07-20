@@ -10,7 +10,7 @@ import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
 import { loadModelFile, loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
-import { muOverBins } from './core/voxelPhantom.js';
+import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
@@ -378,6 +378,7 @@ function setDetOrient(o){ S.detOrient=o; applyDet(); }
    ============================================================================ */
 const S = {
   pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
+  objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
@@ -465,17 +466,23 @@ const $=id=>document.getElementById(id);
 
 /* pose -> external rotation of the hand about its long (z) axis.
    Negative rotation lifts the radial (thumb) side, i.e. external rotation. */
-function poseRot(){ return S.pose==='PA'?0 : S.pose==='OBL'?-Math.PI/4 : -Math.PI/2; }
+function poseRot(){ return 0; }   // retained for compatibility; object rotation now lives in S.objRot
 
-/* Base lift (cm, before OID) that rests the hand on the receptor for the current
-   pose. PA keeps the flat resting height (palm/fingers down, forearm allowed to
-   dip and get clipped). OBL/LAT rest the LOWEST rotated surface point on the
-   detector, so nothing clips through as the hand rolls onto its edge. */
-function baseLift(skin, bone, rot){
-  if(rot===0) return REST_LIFT;
-  const cosR=Math.cos(rot), sinR=Math.sin(rot);
+/* Object rotate/tilt: world rotation matrix (row-major 3x3) from the S.objRot euler
+   angles (degrees). Applied to BOTH the traced phantom + the 3D display so the two agree. */
+function objMat(){ const r=S.objRot, d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); }
+function isObjRotated(){ const r=S.objRot; return r.x||r.y||r.z; }
+function applyMat3(R,p){ return [R[0]*p[0]+R[1]*p[1]+R[2]*p[2], R[3]*p[0]+R[4]*p[1]+R[5]*p[2], R[6]*p[0]+R[7]*p[1]+R[8]*p[2]]; }
+function setGroupRot(grp,R){ const m=new THREE.Matrix4();
+  m.set(R[0],R[1],R[2],0, R[3],R[4],R[5],0, R[6],R[7],R[8],0, 0,0,0,1); grp.setRotationFromMatrix(m); }
+
+/* Base lift (cm, before OID) that rests the hand on the receptor after the object
+   rotation R: finds the lowest surface point of the rotated hand and lifts it so
+   nothing clips through the detector. */
+function baseLift(skin, bone, R){
+  if(!isObjRotated()) return REST_LIFT;
   let minY=Infinity;
-  const low=(p,r)=>{ const yr=p[0]*sinR + p[1]*cosR - r; if(yr<minY) minY=yr; };
+  const low=(p,r)=>{ const yr=applyMat3(R,p)[1]-r; if(yr<minY) minY=yr; };
   for(const c of skin){ const r1=c.r1!==undefined?c.r1:c.r, r2=c.r1!==undefined?c.r2:c.r; low(c.a,r1); low(c.b,r2); }
   for(const c of bone){ low(c.a,c.r1); low(c.b,c.r2); }
   return -minY + 0.05;   // +margin so the edge rests just above the receptor
@@ -495,26 +502,25 @@ function buildPhantom(){
   // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
   // CT patient offset (couch position / table height) so scout + recon sweep the real
   // anatomy. Uses the expanded BodyMaterials via its labelled volume.
+  const R=objMat();
   if(S.subject!=='hand' && S.voxelModel){
     const vm=S.voxelModel;
     const cx = S.mode==='ct' ? S.ct.patient.x : 0;
     const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
     const cz = S.mode==='ct' ? S.ct.patient.z : 0;
-    return vm.makePhantom([cx,cy,cz], voxelFlips());
+    return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
   }
   const ph=new Phantom();
-  const rot=poseRot();
-  const cosR=Math.cos(rot), sinR=Math.sin(rot);
   const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-  // x-ray: rest on the receptor (pose-aware) + OID. CT: sit at the table height
+  // x-ray: rest on the receptor (rotation-aware) + OID. CT: sit at the table height
   // (patientY), so the 3D model and the traced phantom share one vertical position.
-  const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,rot)+S.oid;
+  const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,R)+S.oid;
   // in CT the patient is offset from the gantry isocentre by the direction pad
   const cx = S.mode==='ct' ? S.ct.patient.x : 0;
   const cz = S.mode==='ct' ? S.ct.patient.z : 0;
-  function xf(p){                // rotate about long (z) axis, then lift, then CT offset
-    const x=p[0], y=p[1], z=p[2];
-    return [x*cosR - y*sinR + cx, x*sinR + y*cosR + liftY, z + cz];
+  function xf(p){                // rotate the object (about origin), then lift, then CT offset
+    const q=applyMat3(R,p);
+    return [q[0]+cx, q[1]+liftY, q[2]+cz];
   }
   for(const c of skin){
     if(c.r1!==undefined) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,'soft');
@@ -527,12 +533,12 @@ function buildPhantom(){
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
+  document.body.classList.toggle('subj-hand', S.subject==='hand');   // finger-spread control is hand-only
   // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips).
   // The voxel chest is placed by ctSyncScene instead, so skip the hand transforms.
   if(S.subject==='hand'){
-    three.handGroup.rotation.z = poseRot();
     const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-    three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid;
+    three.handGroup.position.set(0, baseLift(skin,bone,objMat())+S.oid, 0);
   } else {
     three.handGroup.rotation.z = 0;
     if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);   // flips are mode-dependent
@@ -563,6 +569,12 @@ function syncScene(){
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
   updateDetector();                             // receptor size (25x30 / 35x43)
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
+  // object rotate/tilt (applies last, in both modes): rotate the visible object about
+  // its centre to match the traced phantom. Hand meshes ride handGroup; a voxel mesh
+  // is centred at its own origin so it rotates in place inside handGroup.
+  const R=objMat();
+  if(S.subject==='hand') setGroupRot(three.handGroup, R);
+  else if(three.chestGroup) setGroupRot(three.chestGroup, R);
 }
 
 /* Redraw the collimator cookie: bright rectangular aperture sized to the field
@@ -710,14 +722,15 @@ function setBay3DEnabled(on){
 
 /* ---- Controls wiring ---- */
 function bind(){
-  // pose
-  $('poseSeg').addEventListener('click',e=>{
-    const b=e.target.closest('button'); if(!b)return;
-    [...$('poseSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
-    S.pose=b.dataset.pose; $('poseName').textContent=b.textContent.toUpperCase();
-    buildHandMeshes();   // thumb geometry is pose-dependent (LAT lays it flat)
-    resetPrep(); syncScene();
-  });
+  // object rotate / tilt (generic, any subject) — updates chip, phantom + 3D
+  const rotAxes=[['objRotX','x'],['objRotY','y'],['objRotZ','z']];
+  for(const [id,ax] of rotAxes){
+    $(id)?.addEventListener('input',e=>{ S.objRot[ax]=parseInt(e.target.value);
+      $(id+'v').textContent=S.objRot[ax]+'°'; resetPrep(); syncScene(); });
+  }
+  $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0};
+    for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
+    resetPrep(); syncScene(); });
   $('spread').addEventListener('input',e=>{ S.spread=e.target.value/100;
     buildHandMeshes(); resetPrep(); });
   // sliders that only affect geometry (update chips + scene)
@@ -969,6 +982,7 @@ async function computeRadiograph(){
         muMat:muOverBins(spectrum.bins).map(r=>Array.from(r)),
         I0, refDist:100,
         coneD:fd, coneW:wAxis, coneL:lAxis, coneTw:tw, coneTl:tl,
+        rot: phantom.rot ? Array.from(phantom.rot) : null,
       });
     }catch(err){
       if(phantom.geometryOnly){   // no browser volume to fall back to

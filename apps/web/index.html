@@ -173,14 +173,19 @@
     <div class="pad">
 
       <div class="grp">
-        <div class="lab">Projection <span id="poseName" style="color:var(--cyan)">PA</span></div>
+        <div class="lab">Object · rotate / tilt</div>
         <div class="bod">
-          <div class="seg" id="poseSeg">
-            <button data-pose="PA" class="on">PA</button>
-            <button data-pose="OBL">Oblique</button>
-            <button data-pose="LAT">Lateral</button>
-          </div>
-          <div class="row" style="margin-top:12px">
+          <div class="row"><div class="rl">Rotate <small>vertical</small></div>
+            <div class="valchip" id="objRotYv">0°</div></div>
+          <input type="range" id="objRotY" min="-180" max="180" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Tilt <small>lateral</small></div>
+            <div class="valchip" id="objRotXv">0°</div></div>
+          <input type="range" id="objRotX" min="-180" max="180" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Roll <small>long axis</small></div>
+            <div class="valchip" id="objRotZv">0°</div></div>
+          <input type="range" id="objRotZ" min="-180" max="180" value="0" step="1">
+          <div class="mini"><button id="objRotReset">↺ reset orientation</button></div>
+          <div class="row hand-only" style="margin-top:10px">
             <div class="rl">Finger spread</div>
             <input type="range" id="spread" min="0" max="100" value="45" style="max-width:150px">
           </div>
