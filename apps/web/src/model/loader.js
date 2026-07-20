@@ -28,3 +28,10 @@ export function loadModelFile(file) {
     );
   });
 }
+
+// Load a .glb/.gltf from a URL (e.g. a bundled model in /public) -> THREE.Group.
+export function loadModelUrl(url) {
+  return new Promise((resolve, reject) => {
+    loader.load(url, (gltf) => resolve(gltf.scene), undefined, reject);
+  });
+}

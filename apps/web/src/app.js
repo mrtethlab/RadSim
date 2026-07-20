@@ -8,7 +8,9 @@ import { AttenuationEngine } from './core/engine.js';
 import { Detector } from './core/detector.js';
 import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
-import { loadModelFile } from './model/loader.js';
+import { loadModelFile, loadModelUrl } from './model/loader.js';
+import { loadVoxelModel } from './model/voxelLoader.js';
+import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
 
@@ -218,6 +220,7 @@ function buildHandMeshes(){
 /* Toggle which model is visible (display only). */
 function applyHandView(){
   if(!three.softGrp||!three.boneGrp) return;
+  if(S.subject==='chest'){ three.softGrp.visible=false; three.boneGrp.visible=false; if(three.chestGroup) three.chestGroup.visible=true; return; }
   const boneOnly=(S.handView==='bone');
   three.softGrp.visible=!boneOnly; three.boneGrp.visible=boneOnly;
 }
@@ -225,6 +228,46 @@ function setHandView(v){
   S.handView=v;
   const seg=$('renderSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.hv===v));
   applyHandView();
+}
+
+/* Switch the scan subject between the analytic hand and the voxel chest. The chest
+   model (material volume + display mesh) is fetched on first use and shown in the
+   handGroup so the CT positioning offsets apply to it just like the hand. */
+async function setSubject(sub){
+  const seg=$('subjectSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.sub===sub));
+  const hint=$('subjectHint');
+  if(sub==='chest'){
+    if(!S.voxelModel){
+      if(hint) hint.textContent='Loading chest model…';
+      try{
+        S.voxelModel=await loadVoxelModel('/models/chest','chest');
+        if(S.voxelModel.meshUrl){
+          const grp=await loadModelUrl(S.voxelModel.meshUrl);
+          applyVoxelMeshTransform(grp);
+          three.handGroup.add(grp); three.chestGroup=grp;
+        }
+        if(hint) hint.textContent=S.voxelModel.header.name+' · '+S.voxelModel.dims.join('×')+' @ '+S.voxelModel.spacingMM[0]+'mm';
+      }catch(err){ console.error('chest load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
+        [...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.sub==='hand')); return; }
+    }
+    S.subject='chest';
+    if(three.chestGroup) three.chestGroup.visible=true;
+    if(three.softGrp) three.softGrp.visible=false;
+    if(three.boneGrp) three.boneGrp.visible=false;
+  } else {
+    S.subject='hand';
+    if(three.chestGroup) three.chestGroup.visible=false;
+    applyHandView();
+  }
+  syncScene();
+}
+/* Position + orient the chest display mesh so it matches the VoxelPhantom (same axis
+   flips) and is scaled from mm to world units. The mesh is a child of handGroup, so
+   handGroup's translation (CT patient offset) then places it at the isocentre. */
+function applyVoxelMeshTransform(grp){
+  const f=S.voxelFlip, s=0.1;   // mm -> world (1 unit = 10 mm)
+  grp.scale.set(s*(f[0]?-1:1), s*(f[1]?-1:1), s*(f[2]?-1:1));
+  grp.position.set(0,0,0); grp.rotation.set(0,0,0);
 }
 
 /* ============================================================================
@@ -236,6 +279,10 @@ const S = {
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
+  // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
+  subject:'hand',              // 'hand' | 'chest'
+  voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
+  voxelFlip:[false,true,false],// anatomical axis flips for the chest (A-P up, head order)
   // ---- CT mode ----
   mode:'xray',                 // 'xray' | 'ct'
   ct:{
@@ -319,6 +366,16 @@ function baseLift(skin, bone, rot){
    Same skin+bone primitives shown in 3D, rotated by pose and lifted onto the
    detector so bone is nested inside soft tissue. */
 function buildPhantom(){
+  // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
+  // CT patient offset (couch position / table height) so scout + recon sweep the real
+  // anatomy. Uses the expanded BodyMaterials via its labelled volume.
+  if(S.subject==='chest' && S.voxelModel){
+    const vm=S.voxelModel;
+    const cx = S.mode==='ct' ? S.ct.patient.x : 0;
+    const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
+    const cz = S.mode==='ct' ? S.ct.patient.z : 0;
+    return vm.makePhantom([cx,cy,cz], S.voxelFlip);
+  }
   const ph=new Phantom();
   const rot=poseRot();
   const cosR=Math.cos(rot), sinR=Math.sin(rot);
@@ -344,10 +401,15 @@ function buildPhantom(){
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
-  // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips)
-  three.handGroup.rotation.z = poseRot();
-  { const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-    three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid; }
+  // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips).
+  // The voxel chest is placed by ctSyncScene instead, so skip the hand transforms.
+  if(S.subject!=='chest'){
+    three.handGroup.rotation.z = poseRot();
+    const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
+    three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid;
+  } else {
+    three.handGroup.rotation.z = 0;
+  }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
   const src=sourcePos();
@@ -593,6 +655,8 @@ function bind(){
   $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
   // render mode: soft-tissue anatomy  <->  skeleton (display only)
   $('renderSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setHandView(b.dataset.hv);});
+  // subject: analytic hand  <->  voxel chest model
+  $('subjectSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setSubject(b.dataset.sub);});
   // collimator light on/off
   $('lfBtn').addEventListener('click',()=>{ S.lfOn=!S.lfOn;
     $('lfBtn').classList.toggle('on',S.lfOn); $('lfBtn').setAttribute('aria-pressed',S.lfOn);
