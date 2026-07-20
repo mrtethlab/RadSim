@@ -51,6 +51,9 @@ export class ComputeClient {
   // GPU CT reconstruction of transverse slices -> Float32Array (nz*N*N).
   ctSlices(payload) { return this._binary('/ct/slices', payload); }
 
+  // GPU CT scout/topogram -> Float32Array (nz*nw) dose map.
+  ctScout(payload) { return this._binary('/ct/scout', payload); }
+
   // Convert an uploaded .blend to .glb (requires Blender on the backend PATH).
   async convertBlendToGlb(file) {
     const fd = new FormData();

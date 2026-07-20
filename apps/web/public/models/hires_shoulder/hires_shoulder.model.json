@@ -1,0 +1,205 @@
+{
+  "name": "Shoulder \u00b7 0.25 mm",
+  "source": "3D Slicer CTChest (0.76 mm) \u00b7 upscaled",
+  "dims": [
+    619,
+    606,
+    679
+  ],
+  "spacing": [
+    0.25,
+    0.25,
+    0.25
+  ],
+  "order": "x-fastest: i = x + nx*(y + ny*z)",
+  "volume": "hires_shoulder.mat.bin",
+  "dtype": "uint8",
+  "mesh": "hires_shoulder.glb",
+  "materials": [
+    {
+      "id": 0,
+      "name": "Air",
+      "hu": -1000,
+      "color": "#000000"
+    },
+    {
+      "id": 1,
+      "name": "Lung",
+      "hu": -700,
+      "color": "#3a4a63"
+    },
+    {
+      "id": 2,
+      "name": "Fat",
+      "hu": -90,
+      "color": "#f2e2b0"
+    },
+    {
+      "id": 3,
+      "name": "Water",
+      "hu": 0,
+      "color": "#2f6fb0"
+    },
+    {
+      "id": 4,
+      "name": "Cerebrospinal fluid",
+      "hu": 12,
+      "color": "#4a90c0"
+    },
+    {
+      "id": 5,
+      "name": "Simple fluid",
+      "hu": 10,
+      "color": "#3f80b8"
+    },
+    {
+      "id": 6,
+      "name": "Bile",
+      "hu": 20,
+      "color": "#6b8e23"
+    },
+    {
+      "id": 7,
+      "name": "Muscle",
+      "hu": 45,
+      "color": "#9e4b4b"
+    },
+    {
+      "id": 8,
+      "name": "Blood",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 9,
+      "name": "Clotted blood",
+      "hu": 75,
+      "color": "#7a2222"
+    },
+    {
+      "id": 10,
+      "name": "Soft tissue",
+      "hu": 40,
+      "color": "#c07a6a"
+    },
+    {
+      "id": 11,
+      "name": "Liver",
+      "hu": 60,
+      "color": "#8a4b32"
+    },
+    {
+      "id": 12,
+      "name": "Spleen",
+      "hu": 50,
+      "color": "#6d3b52"
+    },
+    {
+      "id": 13,
+      "name": "Kidney",
+      "hu": 40,
+      "color": "#9c5a3c"
+    },
+    {
+      "id": 14,
+      "name": "Pancreas",
+      "hu": 40,
+      "color": "#c9a15a"
+    },
+    {
+      "id": 15,
+      "name": "Heart / myocardium",
+      "hu": 45,
+      "color": "#a83232"
+    },
+    {
+      "id": 16,
+      "name": "Cartilage",
+      "hu": 110,
+      "color": "#cfd8e0"
+    },
+    {
+      "id": 17,
+      "name": "Trabecular bone",
+      "hu": 300,
+      "color": "#e8dfc0"
+    },
+    {
+      "id": 18,
+      "name": "Cortical bone",
+      "hu": 1200,
+      "color": "#faf3dc"
+    },
+    {
+      "id": 19,
+      "name": "Tooth enamel",
+      "hu": 2500,
+      "color": "#ffffff"
+    },
+    {
+      "id": 20,
+      "name": "Iodine contrast",
+      "hu": 350,
+      "color": "#ffd24d"
+    },
+    {
+      "id": 21,
+      "name": "Calcification",
+      "hu": 600,
+      "color": "#f0ead2"
+    },
+    {
+      "id": 22,
+      "name": "Kidney stone",
+      "hu": 800,
+      "color": "#d8cba0"
+    },
+    {
+      "id": 23,
+      "name": "Skin",
+      "hu": 30,
+      "color": "#d8a07a"
+    },
+    {
+      "id": 24,
+      "name": "Aluminum",
+      "hu": null,
+      "color": "#9fb4c0"
+    },
+    {
+      "id": 25,
+      "name": "Titanium",
+      "hu": null,
+      "color": "#b8c2cc"
+    },
+    {
+      "id": 26,
+      "name": "Stainless steel",
+      "hu": null,
+      "color": "#d0d4d8"
+    },
+    {
+      "id": 27,
+      "name": "Lead",
+      "hu": null,
+      "color": "#6a6f77"
+    }
+  ],
+  "materialsPresent": [
+    0,
+    1,
+    2,
+    7,
+    8,
+    15,
+    16,
+    17,
+    18,
+    23
+  ],
+  "huReference": [
+    -3024,
+    1548
+  ],
+  "backendOnly": true
+}

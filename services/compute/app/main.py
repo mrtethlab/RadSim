@@ -113,6 +113,30 @@ def ct_slices(req: CTSlicesRequest) -> Response:
     return _f32_response(ct.recon_slices(req.model_dump()))
 
 
+class CTScoutRequest(BaseModel):
+    model: str
+    flips: list[bool]
+    center: list[float]
+    nw: int
+    nz: int
+    pxU: float
+    lenU: float
+    sx: float
+    sy: float
+    dcx: float
+    dcy: float
+    ux: float
+    uy: float
+    binsW: list[float]
+    muMat: list[list[float]]
+    I0: float
+
+
+@app.post("/ct/scout")
+def ct_scout(req: CTScoutRequest) -> Response:
+    return _f32_response(ct.scout(req.model_dump()))
+
+
 # ---- legacy JSON stubs (kept so old clients keep getting a sane answer) ----
 class ProjectRequest(BaseModel):
     kv: float = 60.0

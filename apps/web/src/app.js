@@ -257,6 +257,7 @@ const VOXEL_MODELS = {
   upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
   lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
   wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
+  hires_shoulder:  { title:'Shoulder · 0.25 mm',    scoutKv:110, scoutMa:120, xrayKv:70  },
 };
 
 /* Prepare a freshly loaded display mesh so it lights + shadows like the hand: the
@@ -282,6 +283,7 @@ async function setSubject(sub){
     S.subject='hand';
     S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scoutKv=80; S.ct.scoutMa=20;
     S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
+    applyBackendOnly(false);
     showActive(null); applyHandView();
     if(hint) hint.textContent='Analytic hand phantom';
     if(sel) sel.value='hand';
@@ -319,6 +321,8 @@ async function setSubject(sub){
   S.ct.scoutKv=cfg.scoutKv; S.ct.scoutMa=cfg.scoutMa;
   // default x-ray kV to the model (thin extremities need far less than a torso)
   if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
+  // backend-only models (large, no volume in the browser) MUST use the Python engine
+  applyBackendOnly(!!vm.backendOnly);
   showActive(sub);
   if(three.softGrp) three.softGrp.visible=false;
   if(three.boneGrp) three.boneGrp.visible=false;
@@ -947,7 +951,13 @@ async function computeRadiograph(){
         I0, refDist:100,
         coneD:fd, coneW:wAxis, coneL:lAxis, coneTw:tw, coneTl:tl,
       });
-    }catch(err){ console.warn('GPU backend projection failed — falling back to the browser engine', err); dose=null; }
+    }catch(err){
+      if(phantom.geometryOnly){   // no browser volume to fall back to
+        $('prog').style.width='0%';
+        throw new Error('This model requires the Python GPU backend, which is not reachable. '+err.message);
+      }
+      console.warn('GPU backend projection failed — falling back to the browser engine', err); dose=null;
+    }
   }
   if(!dose){
     dose=await AttenuationEngine.project({
@@ -1106,8 +1116,9 @@ async function refreshComputeStatus(){
     const b=document.querySelector('#'+segId+' button[data-be="python"]');
     if(b) b.disabled=!on;
   }
-  // if the backend vanished while selected, drop back to the browser engine
-  if(!on){
+  // if the backend vanished while selected, drop back to the browser engine — unless
+  // a backend-only model is loaded (it has no browser volume, so local can't render it)
+  if(!on && !S.backendOnly){
     if(S.xrayBackend==='python') setBackend('xray','local');
     if(S.ct.backend==='python') setBackend('ct','local');
   }
@@ -1123,6 +1134,22 @@ function setBackend(mode,val){
   if(mode==='xray') S.xrayBackend=val; else S.ct.backend=val;
   const seg=$(mode==='xray'?'backendSegX':'backendSegCT');
   if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.be===val));
+}
+/* A backend-only model has no volume in the browser, so it can ONLY render via the
+   Python GPU engine — force it in both modes and lock out the Browser toggle. */
+function applyBackendOnly(on){
+  S.backendOnly=on;
+  if(on){ setBackend('xray','python'); setBackend('ct','python'); }
+  for(const segId of ['backendSegX','backendSegCT']){
+    const seg=$(segId); if(!seg) continue;
+    const local=seg.querySelector('button[data-be="local"]');
+    const py=seg.querySelector('button[data-be="python"]');
+    if(local) local.disabled=on;                          // can't use the browser engine
+    if(on && py) py.disabled=!S.computeInfo;               // python still needs the backend up
+  }
+  if(on && !S.computeInfo){ refreshComputeStatus().then(ok=>{
+    if(!ok){ const h=$('subjectHint'); if(h) h.textContent='⚠ Start the Python backend — this model needs the GPU engine.'; }
+  }); }
 }
 function wireBackendToggles(){
   for(const [segId,mode] of [['backendSegX','xray'],['backendSegCT','ct']]){

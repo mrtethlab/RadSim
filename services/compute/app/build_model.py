@@ -174,24 +174,15 @@ def _region_bounds(region, lab, cmap, shape, spacing):
     return (max(0, zs.min() - mg), min(zN, zs.max() + mg + 1), 0, yN, 0, xN)
 
 
-def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source):
-    os.makedirs(out_dir, exist_ok=True)
-    print(f"[1/5] loading + resampling to {spacing} mm iso …")
-    ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
-    seg = sitk.ReadImage(seg_path)
-    seg = sitk.Resample(seg, ct, sitk.Transform(), sitk.sitkNearestNeighbor, 0, seg.GetPixelID())
-    hu = sitk.GetArrayFromImage(ct).astype(np.int16)      # (z, y, x)
-    lab = sitk.GetArrayFromImage(seg).astype(np.int32)
-    print(f"      grid {hu.shape[::-1]}  ({hu.size/1e6:.1f} M voxels)")
-
-    print("[2/5] body mask + HU-based background materials …")
+def materialize(hu, lab, spacing):
+    """Assign a body-material id to every voxel of an (already-resampled) HU + label
+    volume. Returns (mat uint8, body mask). Reused by build() and build_highres."""
     body = hu > -320
     body = ndi.binary_closing(body, iterations=2)
     body = ndi.binary_fill_holes(body)
     lbl, n = ndi.label(body)
     if n > 1:
         sizes = ndi.sum(np.ones_like(lbl), lbl, index=range(1, n + 1))
-        # keep components within 25% of the largest (both legs, both arms)
         big = sizes.max()
         keep = {i + 1 for i, s in enumerate(sizes) if s >= 0.25 * big}
         body = np.isin(lbl, list(keep))
@@ -205,11 +196,9 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
     m[(hu >= 120) & (hu < 300)] = TRABECULAR
     m[hu >= 300] = CORTICAL
     mat[body] = m[body]
-
     shell = body & ~ndi.binary_erosion(body, iterations=max(1, int(round(1.5 / spacing))))
     mat[shell] = SKIN
 
-    print("[3/5] mapping segmented organs …")
     cmap = ts_class_map()
     bone_ids, mat_of = [], {}
     for lid, nm in cmap.items():
@@ -224,28 +213,19 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
         bone_mask = np.isin(lab, bone_ids)
         mat[bone_mask & (hu >= 350)] = CORTICAL
         mat[bone_mask & (hu < 350)] = TRABECULAR
+    return mat, body
 
-    # ---- region crop, then tight body bbox ----
-    z0r, z1r, y0r, y1r, x0r, x1r = _region_bounds(region, lab, cmap, hu.shape, spacing)
-    if (z0r, z1r, y0r, y1r, x0r, x1r) != (0, hu.shape[0], 0, hu.shape[1], 0, hu.shape[2]):
-        print(f"      region '{region}': z[{z0r}:{z1r}] y[{y0r}:{y1r}] x[{x0r}:{x1r}]")
-    sl = (slice(z0r, z1r), slice(y0r, y1r), slice(x0r, x1r))
-    body = body[sl]; mat = mat[sl]; hu = hu[sl]
 
-    print("[4/5] cropping to body + writing volume …")
-    zs, ys, xs = np.where(body)
-    if zs.size == 0:
-        raise SystemExit("empty body mask after region crop — check the region/anchor")
-    pad = 4
-    z0, z1 = max(0, zs.min() - pad), min(mat.shape[0], zs.max() + pad + 1)
-    y0, y1 = max(0, ys.min() - pad), min(mat.shape[1], ys.max() + pad + 1)
-    x0, x1 = max(0, xs.min() - pad), min(mat.shape[2], xs.max() + pad + 1)
-    mat = np.ascontiguousarray(mat[z0:z1, y0:y1, x0:x1])
-    hu_c = hu[z0:z1, y0:y1, x0:x1]
-    nz, ny, nx = mat.shape
-    mat.tofile(os.path.join(out_dir, f"{name}.mat.bin"))
-
+def write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source,
+                backend_only=False, mesh_step_mul=1):
+    """Tight-crop to the body bbox, write <name>.mat.bin + .model.json (+ .glb).
+    mesh_step_mul coarsens the display mesh (use >1 for sub-mm grids so the .glb
+    stays small — the mesh is only for the positioning view, not the physics)."""
+    os.makedirs(out_dir, exist_ok=True)
     present = sorted(int(v) for v in np.unique(mat))
+    nz, ny, nx = mat.shape
+    mat = np.ascontiguousarray(mat)
+    mat.tofile(os.path.join(out_dir, f"{name}.mat.bin"))
     legend = [dict(id=i, name=nm, hu=hu_, color=f"#{c:06x}") for (i, nm, hu_, c) in LEGEND]
     header = dict(
         name=title, source=source,
@@ -254,20 +234,49 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
         volume=f"{name}.mat.bin", dtype="uint8", mesh=f"{name}.glb" if mesh else None,
         materials=legend, materialsPresent=present,
         huReference=[int(hu_c.min()), int(hu_c.max())],
+        backendOnly=bool(backend_only),   # frontend: skip fetching the .mat.bin, force the GPU backend
     )
     with open(os.path.join(out_dir, f"{name}.model.json"), "w") as f:
         json.dump(header, f, indent=2)
     print(f"      {nx}x{ny}x{nz} = {mat.size/1e6:.1f} MB uint8; materials present: {present}")
-
     if mesh:
-        print("[5/5] building display mesh …")
-        _build_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"))
-    else:
-        print("[5/5] mesh skipped")
+        print("      building display mesh …")
+        _build_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"), mesh_step_mul)
+
+
+def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source):
+    print(f"[1/4] loading + resampling to {spacing} mm iso …")
+    ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
+    seg = sitk.ReadImage(seg_path)
+    seg = sitk.Resample(seg, ct, sitk.Transform(), sitk.sitkNearestNeighbor, 0, seg.GetPixelID())
+    hu = sitk.GetArrayFromImage(ct).astype(np.int16)      # (z, y, x)
+    lab = sitk.GetArrayFromImage(seg).astype(np.int32)
+    print(f"      grid {hu.shape[::-1]}  ({hu.size/1e6:.1f} M voxels)")
+
+    print("[2/4] materials …")
+    mat, body = materialize(hu, lab, spacing)
+
+    print("[3/4] region crop + tight body bbox …")
+    b = _region_bounds(region, lab, ts_class_map(), hu.shape, spacing)
+    if b != (0, hu.shape[0], 0, hu.shape[1], 0, hu.shape[2]):
+        print(f"      region '{region}': z[{b[0]}:{b[1]}] y[{b[2]}:{b[3]}] x[{b[4]}:{b[5]}]")
+    sl = (slice(b[0], b[1]), slice(b[2], b[3]), slice(b[4], b[5]))
+    body = body[sl]; mat = mat[sl]; hu = hu[sl]
+    zs, ys, xs = np.where(body)
+    if zs.size == 0:
+        raise SystemExit("empty body mask after region crop — check the region/anchor")
+    pad = 4
+    z0, z1 = max(0, zs.min() - pad), min(mat.shape[0], zs.max() + pad + 1)
+    y0, y1 = max(0, ys.min() - pad), min(mat.shape[1], ys.max() + pad + 1)
+    x0, x1 = max(0, xs.min() - pad), min(mat.shape[2], xs.max() + pad + 1)
+    mat = mat[z0:z1, y0:y1, x0:x1]; hu_c = hu[z0:z1, y0:y1, x0:x1]
+
+    print("[4/4] writing volume …")
+    write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source)
     print("done ->", out_dir)
 
 
-def _build_mesh(mat: np.ndarray, spacing: float, path: str):
+def _build_mesh(mat: np.ndarray, spacing: float, path: str, step_mul: int = 1):
     import trimesh
     from skimage import measure
 
@@ -287,7 +296,7 @@ def _build_mesh(mat: np.ndarray, spacing: float, path: str):
             continue
         vol = ndi.binary_closing(mask, iterations=1).astype(np.float32)
         try:
-            verts, faces, _, _ = measure.marching_cubes(vol, level=0.5, step_size=step)
+            verts, faces, _, _ = measure.marching_cubes(vol, level=0.5, step_size=step * step_mul)
         except (RuntimeError, ValueError):
             continue
         v = np.column_stack([verts[:, 2], verts[:, 1], verts[:, 0]]) * spacing - centre

@@ -19,7 +19,8 @@ export class VoxelPhantom {
     this.voxel = true;
     const [nx, ny, nz] = model.dims;
     this.nx = nx; this.ny = ny; this.nz = nz;
-    this.data = model.data;
+    this.data = model.data;                     // null => geometry-only (backend does the tracing)
+    this.geometryOnly = !model.data;
     this.vs = model.vs.slice();                 // cm/voxel per axis
     this.nmat = BodyMaterials.count;
     this.setCenter(center);
@@ -51,6 +52,7 @@ export class VoxelPhantom {
   // d is a unit vector; returns a Float32Array indexed by BodyMaterials id.
   trace(o, d, maxT = Infinity) {
     const L = new Float32Array(this.nmat);
+    if (this.geometryOnly) return L;   // no volume in the browser — the GPU backend traces
     const min = this.min, max = this.max, vs = this.vs;
     // slab-clip the ray to the volume AABB
     let t0 = 0, t1 = maxT;

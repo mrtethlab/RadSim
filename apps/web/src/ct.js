@@ -506,8 +506,8 @@ async function acquireScouts() {
   resetToIsocentre();                 // compute the scouts from the isocentre position
   let ap, lat;
   try {
-    ap = scoutProjection('AP');
-    lat = scoutProjection('LAT');
+    ap = await scoutProjection('AP');
+    lat = await scoutProjection('LAT');
   } catch (err) {
     console.error('scout compute failed', err);
     setHint('Scout acquisition failed: ' + err.message);
@@ -615,7 +615,7 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
 // the bore, so the imaging plane sits over patient +z = +(j/(nz-1))*lenU. This is
 // the SAME +z region the table-travel animation sweeps, so the stitched image and
 // the on-screen motion always show the same anatomy.
-function scoutProjection(view) {
+async function scoutProjection(view) {
   const { S } = ctx;
   const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
   const bins = Spectrum.make(S.ct.scoutKv).bins, nb = bins.length;   // scout uses its own technique
@@ -644,6 +644,30 @@ function scoutProjection(view) {
   const halfU = (nw - 1) / 2;
   const dose = new Float32Array(nw * nz);
   let mn = Infinity, mx = -Infinity;
+  // ---- Python GPU scout (voxel subjects) ----
+  if (voxel && S.ct.backend === 'python' && S.computeInfo && ctx.compute) {
+    try {
+      const center = [(phantom.min[0] + phantom.max[0]) / 2, (phantom.min[1] + phantom.max[1]) / 2,
+                      (phantom.min[2] + phantom.max[2]) / 2];
+      const out = await ctx.compute.ctScout({
+        model: S.subject, flips: Array.from(phantom.flip, Boolean), center,
+        nw, nz, pxU, lenU, sx, sy, dcx, dcy, ux, uy,
+        binsW: bins.map(b => b.w), muMat: muMat.map(r => Array.from(r)), I0,
+      });
+      dose.set(out);
+      for (let k = 0; k < dose.length; k++) { const d = dose[k]; if (d < mn) mn = d; if (d > mx) mx = d; }
+      const floor = Math.max(mn, mx * 1e-12) || 1e-12;
+      const ps = new Float32Array(dose.length);
+      for (let k = 0; k < ps.length; k++) ps[k] = Math.log(mx / Math.max(dose[k], floor));
+      const sorted = Float32Array.from(ps).sort();
+      const pmax = Math.max(sorted[Math.min(ps.length - 1, Math.floor(ps.length * 0.997))], 1e-3);
+      return { dose, nw, nz, mn, mx, pmax };
+    } catch (err) {
+      if (phantom.geometryOnly) throw new Error('Scout needs the Python GPU backend: ' + err.message);
+      console.warn('GPU scout failed — falling back to the browser engine', err);
+      mn = Infinity; mx = -Infinity;   // reset; the local loop recomputes below
+    }
+  }
   for (let j = 0; j < nz; j++) {
     // couch step j: imaging plane over patient +z (the region the table sweeps)
     const z = (j / (nz - 1)) * lenU;
@@ -1504,11 +1528,16 @@ async function reconstructSlices(g, alive, onProgress, onSlice) {
       }
       done = true;
     } catch (err) {
+      if (phantom.geometryOnly) {   // no browser volume — cannot reconstruct locally
+        setBusy(false); stopGantrySpin(); Sound.stopBuzz();
+        setHint('⚠ This model needs the Python GPU backend, which is not reachable.');
+        return null;
+      }
       console.warn('GPU backend reconstruction failed — falling back to the browser engine', err);
       setHint('Python backend unavailable — reconstructing in the browser…');
     }
   }
-  if (!done) {
+  if (!done && !phantom.geometryOnly) {
     const h = buildKernel(geo.ds, geo.m.nDet, geo.m.fixedPitch);
     for (let si = 0; si < nz; si++) {
       if (!alive()) return null;

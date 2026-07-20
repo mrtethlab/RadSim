@@ -114,6 +114,52 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     return out
 
 
+@torch.no_grad()
+def scout(p: dict[str, Any]) -> np.ndarray:
+    """GPU topogram — mirrors scoutProjection in apps/web/src/ct.js. A stack of
+    fixed-gantry in-plane fan views (one per couch/table position along z), so the
+    result is distortion-free (fan only across the width, no z-divergence). Returns
+    a (nz, nw) polyenergetic dose map (line integrals over the spectrum bins)."""
+    vv = get_volume(p["model"], p["flips"])
+    center = p["center"]
+    nw, nz = int(p["nw"]), int(p["nz"])
+    pxU = float(p["pxU"])                      # world units per width pixel
+    lenU = float(p["lenU"])                    # scan length (world units) along z
+    sx, sy, dcx, dcy, ux, uy = (float(p[k]) for k in ("sx", "sy", "dcx", "dcy", "ux", "uy"))
+    w = torch.tensor(p["binsW"], dtype=torch.float32, device=DEVICE)          # (nb,)
+    mu = torch.tensor(p["muMat"], dtype=torch.float32, device=DEVICE)         # (nmat, nb)
+    mu[0].zero_()
+    I0 = float(p["I0"])
+    refDist2 = (sx - dcx) ** 2 + (sy - dcy) ** 2
+    half = (nw - 1) / 2.0
+    src = torch.tensor([sx, sy], device=DEVICE)
+    # detector cells along the width axis (u), all at the row's z (dz = 0)
+    u = (torch.arange(nw, device=DEVICE, dtype=torch.float32) - half) * pxU
+    cx = dcx + ux * u; cy = dcy + uy * u                                      # (nw,)
+    dx = cx - sx; dy = cy - sy
+    dist = torch.sqrt(dx * dx + dy * dy)
+    dirx = dx / dist; diry = dy / dist                                        # (nw,)
+    STEPn = 0.05
+    maxlen = float(dist.max())
+    nsteps = int(math.ceil(maxlen / STEPn))
+    ts = (torch.arange(nsteps, device=DEVICE, dtype=torch.float32) + 0.5) * STEPn  # (S,)
+    out = np.empty((nz, nw), dtype=np.float32)
+    zsrc = torch.linspace(0.0, lenU, nz, device=DEVICE)                       # couch step per row
+    for j in range(nz):
+        z = zsrc[j]
+        px = sx + dirx.unsqueeze(1) * ts                                      # (nw, S)
+        py = sy + diry.unsqueeze(1) * ts
+        pz = torch.full_like(px, float(z))
+        valid = ts.unsqueeze(0) < dist.unsqueeze(1)
+        pts = torch.stack([px, py, pz], dim=-1)                              # (nw, S, 3)
+        ids = sample_ids(vv, pts, center)
+        L = torch.zeros(nw, vv.nmat, device=DEVICE)
+        L.scatter_add_(1, ids, torch.full_like(px, STEPn) * valid)
+        T = torch.exp(-(L @ mu)) @ w                                         # polyenergetic transmission
+        out[j] = (I0 * (refDist2 / (dist * dist)) * T).cpu().numpy()
+    return out
+
+
 # ---- legacy stub API ----
 def reconstruct(params: dict[str, Any]) -> dict:
     return {"implemented": True, "backend": f"torch-{DEVICE.type}",
