@@ -22,11 +22,27 @@
       <div class="scoutrow">
         <div class="scoutcol">
           <div class="scouthdr">AP SCOUT</div>
-          <div class="scoutwrap" id="wrapAP"><canvas id="scoutAP"></canvas></div>
+          <div class="scoutwrap" id="wrapAP">
+            <div class="scoutfit" id="fitAP"><canvas id="scoutAP"></canvas></div>
+            <div class="reposcluster reposrow" id="reposAP" title="Reposition mediolaterally (moves the table)">
+              <button data-repo="x" data-dir="-1" data-big="1" title="Left · large"><span class="chev">«</span></button>
+              <button data-repo="x" data-dir="-1" title="Left · small"><span class="chev">‹</span></button>
+              <button data-repo="x" data-dir="1" title="Right · small"><span class="chev">›</span></button>
+              <button data-repo="x" data-dir="1" data-big="1" title="Right · large"><span class="chev">»</span></button>
+            </div>
+          </div>
         </div>
         <div class="scoutcol">
           <div class="scouthdr">LATERAL SCOUT</div>
-          <div class="scoutwrap" id="wrapLAT"><canvas id="scoutLAT"></canvas></div>
+          <div class="scoutwrap" id="wrapLAT">
+            <div class="scoutfit" id="fitLAT"><canvas id="scoutLAT"></canvas></div>
+            <div class="reposcluster reposcol" id="reposLAT" title="Reposition anteroposteriorly (moves the table)">
+              <button data-repo="y" data-dir="-1" data-big="1" title="Anterior · large"><span class="chev vchev">«</span></button>
+              <button data-repo="y" data-dir="-1" title="Anterior · small"><span class="chev vchev">‹</span></button>
+              <button data-repo="y" data-dir="1" title="Posterior · small"><span class="chev vchev">›</span></button>
+              <button data-repo="y" data-dir="1" data-big="1" title="Posterior · large"><span class="chev vchev">»</span></button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="scangroups" id="ctScanGroups"></div>
@@ -48,6 +64,9 @@
           <span class="sllab">Slice</span>
           <input type="range" id="ctSliceSlider" min="0" max="0" value="0">
           <span class="slhint">scroll / drag</span>
+        </div>
+        <div class="slrow">
+          <canvas id="ctHist" class="histcanvas" width="256" height="88" title="Slice HU histogram + window/level response curve"></canvas>
         </div>
         <div class="slrow">
           <span class="sllab">Level</span><input type="range" id="ctWL" min="-1000" max="2000" value="60">
@@ -88,6 +107,14 @@
     </div>
     <div class="ctpop" id="ctPop"><div class="ctpop-inner" id="ctPopInner"></div></div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
+    <!-- Image-view overlay (x-ray): 4-corner metadata + last-10 review strip -->
+    <div class="imgview-ui" id="imgViewUI">
+      <div class="ivnote t l" id="ivTL"></div>
+      <div class="ivnote t r" id="ivTR"></div>
+      <div class="ivnote b l" id="ivBL"></div>
+      <div class="ivnote b r" id="ivBR"></div>
+      <div class="imgstrip" id="imgStrip"></div>
+    </div>
     <div class="bayctl" id="bayCtl">
       <button class="baymenu-btn" id="bayMenuBtn" type="button" aria-expanded="false" aria-controls="bayMenu">
         <span class="gear" aria-hidden="true">⚙</span> VIEW OPTIONS <span class="caret" aria-hidden="true">▾</span>
@@ -119,13 +146,6 @@
           </div>
         </div>
         <div>
-          <div class="cl">Render</div>
-          <div class="segmini" id="renderSeg">
-            <button data-hv="soft" class="on">Anatomy</button>
-            <button data-hv="bone">Skeleton</button>
-          </div>
-        </div>
-        <div>
           <div class="cl">Subject</div>
           <select id="subjectSel" class="subjectsel">
             <option value="hand" selected>Hand (analytic)</option>
@@ -138,14 +158,6 @@
             <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
           </select>
           <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:4px; text-align:left; letter-spacing:.3px; max-width:190px"></div>
-        </div>
-        <div>
-          <div class="cl">Model <span id="computeDot" title="compute backend">○</span></div>
-          <div class="segmini">
-            <button id="loadModelBtn" type="button">Load .glb</button>
-            <button id="clearModelBtn" type="button">Clear</button>
-          </div>
-          <input id="loadModelInput" type="file" accept=".glb,.gltf" style="display:none"/>
         </div>
       </div>
     </div>
@@ -162,55 +174,44 @@
     <div class="pad">
 
       <div class="grp">
-        <div class="lab">Projection <span id="poseName" style="color:var(--cyan)">PA</span></div>
+        <div class="lab">Object · rotate / tilt</div>
         <div class="bod">
-          <div class="seg" id="poseSeg">
-            <button data-pose="PA" class="on">PA</button>
-            <button data-pose="OBL">Oblique</button>
-            <button data-pose="LAT">Lateral</button>
-          </div>
-          <div class="row" style="margin-top:12px">
-            <div class="rl">Finger spread</div>
-            <input type="range" id="spread" min="0" max="100" value="45" style="max-width:150px">
-          </div>
+          <div class="row"><div class="rl">Rotate <small>vertical</small></div>
+            <div class="valchip" id="objRotYv">0°</div></div>
+          <input type="range" id="objRotY" min="-180" max="180" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Tilt <small>lateral</small></div>
+            <div class="valchip" id="objRotXv">0°</div></div>
+          <input type="range" id="objRotX" min="-180" max="180" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Roll <small>long axis</small></div>
+            <div class="valchip" id="objRotZv">0°</div></div>
+          <input type="range" id="objRotZ" min="-180" max="180" value="0" step="1">
+          <div class="mini"><button id="objRotReset">↺ reset orientation</button></div>
         </div>
       </div>
 
       <div class="grp ct-only" id="ctSettings">
         <div class="lab">Scout planning</div>
         <div class="bod">
-          <div class="row"><div class="rl">Start location <small>from iso</small></div>
-            <div class="valchip" id="ctScoutStartV">0.0 mm</div></div>
-          <div class="row" style="margin-top:8px"><div class="rl">End location</div>
-            <div class="valchip" id="ctScoutEndV">I300.0 mm</div></div>
+          <!-- scout groups: AP (scan plane 0°) + Lateral (90°); click kV/mA to edit -->
+          <div class="scouttable" id="ctScoutTable"></div>
           <div class="row" style="margin-top:10px"><div class="rl">Scan length</div>
             <div class="valchip" id="ctScanLenV">300 mm</div></div>
           <input type="range" id="ctScanLen" min="50" max="600" step="10" value="300">
-          <div class="row" style="margin-top:12px"><div class="rl">kV <small>scout technique</small></div>
-            <div class="stepper"><button data-ctstep="scoutKv" data-d="-1">−</button>
-              <div class="sv" id="ctScoutKvV">80</div><button data-ctstep="scoutKv" data-d="1">+</button></div></div>
-          <div class="row" style="margin-top:10px"><div class="rl">mA</div>
-            <div class="stepper"><button data-ctstep="scoutMa" data-d="-1">−</button>
-              <div class="sv" id="ctScoutMaV">20</div><button data-ctstep="scoutMa" data-d="1">+</button></div></div>
-          <div class="row" style="margin-top:12px"><div class="rl">Est. scan time</div>
+          <div class="row" style="margin-top:10px"><div class="rl">Est. scan time</div>
             <div class="valchip green" id="ctExpTimeV">— s</div></div>
+        </div>
+      </div>
 
-          <div class="row" style="margin-top:12px"><div class="rl">CT detector</div>
+      <div class="grp ct-only" id="ctDetectorGrp">
+        <div class="lab">Detector</div>
+        <div class="bod">
+          <div class="row"><div class="rl">CT detector</div>
             <div class="valchip" id="ctDetModeV">128 ch · preview</div></div>
           <div class="seg" id="ctDetModeSeg">
             <button data-dm="quick" class="on">Quick</button>
             <button data-dm="realistic">Realistic</button>
           </div>
           <div class="note" style="margin-top:4px">Quick = 128-channel preview detector (pitch follows the recon FOV). Realistic = fixed 0.625&nbsp;mm DEL pitch across a 500&nbsp;mm scan FOV — 800 channels × 720 views, 512² matrix. Heavy: pair it with the Python GPU engine.</div>
-
-          <div class="row" style="margin-top:12px"><div class="rl">Compute engine</div>
-            <div class="valchip" id="backendStatusCT">checking…</div></div>
-          <div class="seg" id="backendSegCT">
-            <button data-be="local" class="on">Browser</button>
-            <button data-be="python" disabled>Python GPU</button>
-          </div>
-
-          <div class="note" style="margin-top:6px">Scout (topogram) beam width 1.0 mm (CT DEL pitch). The scout runs from the isocentre for the scan length; each scan group then plans its diagnostic acquisition + reconstructions.</div>
         </div>
       </div>
 
@@ -293,7 +294,6 @@
                 <path d="M10.5 13.7 h3 M11 15.1 h2"/>
               </svg>
             </button></div>
-          <div class="note" style="margin-top:6px">Collimated-out anatomy is cut from the image, and only the light field contributes to the exposure index.</div>
         </div>
       </div>
 
@@ -319,16 +319,13 @@
             <button data-res="high">High</button>
           </div>
           <div class="note" style="margin-top:4px">Quick = coarse draft preview (~1 mm px, fast compute). Low/Std/High = true DR matrices ray-cast at native resolution.</div>
+        </div>
+      </div>
 
-          <div class="row" style="margin-top:12px"><div class="rl">Compute engine</div>
-            <div class="valchip" id="backendStatusX">checking…</div></div>
-          <div class="seg" id="backendSegX">
-            <button data-be="local" class="on">Browser</button>
-            <button data-be="python" disabled>Python GPU</button>
-          </div>
-          <div class="note" style="margin-top:4px">Python GPU offloads voxel-model (chest) ray-casting to the compute backend. The analytic hand always computes in-browser. Start it with: <b>uvicorn app.main:app --port 8000</b> in services/compute.</div>
-
-          <div class="row" style="margin-top:12px"><div class="rl">Anti-scatter grid</div>
+      <div class="grp xray-only">
+        <div class="lab">Anti-scatter grid</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Grid</div>
             <div class="valchip" id="gridStateV">OUT</div></div>
           <div class="seg" id="gridSeg">
             <button data-grid="off" class="on">Out</button>
@@ -352,7 +349,39 @@
             <button data-focus="180">180</button>
           </div>
 
-          <div class="note" style="margin-top:6px">A focused grid cleans up scatter but cuts primary when SID ≠ focal length, off-centre, or angled across the strips — raising the dose needed for target EI.</div>
+        </div>
+      </div>
+
+      <!-- SIMULATION: compute engine + display options (both modes) -->
+      <div class="grp" id="simGrp">
+        <div class="lab">Simulation</div>
+        <div class="bod">
+          <div class="xray-only">
+            <div class="row"><div class="rl">Compute engine</div>
+              <div class="valchip" id="backendStatusX">checking…</div></div>
+            <div class="seg" id="backendSegX">
+              <button data-be="local" class="on">Browser</button>
+              <button data-be="python" disabled>Python GPU</button>
+            </div>
+            <div class="note" style="margin-top:4px">Python GPU offloads voxel-model ray-casting to the compute backend. The analytic hand always computes in-browser. Start it with: <b>uvicorn app.main:app --port 8000</b> in services/compute.</div>
+          </div>
+          <div class="ct-only">
+            <div class="row"><div class="rl">Compute engine</div>
+              <div class="valchip" id="backendStatusCT">checking…</div></div>
+            <div class="seg" id="backendSegCT">
+              <button data-be="local" class="on">Browser</button>
+              <button data-be="python" disabled>Python GPU</button>
+            </div>
+            <div class="note" style="margin-top:4px">Python GPU offloads voxel-model scout + reconstruction to the compute backend.</div>
+          </div>
+          <label class="cttoggle xray-only" style="margin-top:12px"><input type="checkbox" id="rescaleToggle" checked>
+            <span>Automatic rescaling <small style="color:var(--muted)">(DR auto-ranging)</small></span></label>
+          <label class="cttoggle xray-only" style="margin-top:8px"><input type="checkbox" id="detailToggle" checked>
+            <span>Detail enhancement <small style="color:var(--muted)">(DR multiscale edge boost)</small></span></label>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="histToggle" checked>
+            <span>Show display histogram</span></label>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="curveToggle" checked>
+            <span>Show LUT / response curve</span></label>
         </div>
       </div>
 
@@ -361,7 +390,7 @@
 
   <!-- ============ GENERATOR CONSOLE + MONITOR ============ -->
   <div class="col">
-    <div class="hdr"><div class="t"><b>GENERATOR</b> / A1</div><div class="u" id="clock">STANDBY</div></div>
+    <div class="hdr"><div class="t"><b id="consoleLbl">GENERATOR</b> / A1</div><div class="u" id="clock">STANDBY</div></div>
     <div class="pad">
 
       <div class="readout xray-only">
@@ -376,6 +405,10 @@
       <div class="grp xray-only">
         <div class="lab">Technique</div>
         <div class="bod">
+          <div class="protohead">
+            <button class="protobtn" id="protocolBtn" type="button">◉ Select protocol</button>
+            <div class="protocur"><span class="pl">Protocol</span><span class="protochip" id="protocolV">— none —</span></div>
+          </div>
           <div class="row"><div class="rl">kVp <small>kilovoltage</small></div>
             <div class="stepper"><button data-step="kv" data-d="-1">−</button>
               <div class="sv" id="kvSv">55</div><button data-step="kv" data-d="1">+</button></div></div>
@@ -390,11 +423,6 @@
           <input type="range" id="mas" min="0" max="24" value="7" step="1">
           <div class="row xray-only" style="margin-top:6px"><div class="rl">Exposure time</div>
             <div style="font-family:var(--seg);color:var(--green);font-size:14px" id="timeInline">20 ms</div></div>
-          <div class="mini" id="apr">
-            <button data-part="hand-pa" data-kv="55" data-mas="2">HAND PA 55/2.0</button>
-            <button data-part="hand-obl" data-kv="60" data-mas="2.5">OBL 60/2.5</button>
-            <button data-part="fine" data-kv="50" data-mas="1.6">DETAIL 50/1.6</button>
-          </div>
         </div>
       </div>
 
@@ -452,7 +480,6 @@
         <div class="bod">
           <label class="cttoggle"><input type="checkbox" id="ctAutoDel" checked>
             <span>Auto-delete oldest past <b id="ctCapV">4</b> scan groups</span></label>
-          <div class="note" style="margin-top:6px">Reconstructed scans (slices + image data) are held in memory. With this on, the oldest scan is discarded once a new one pushes the total over the limit — so stored data can't grow without bound.</div>
           <div class="ctstorelist" id="ctStorageList"></div>
           <button class="ctstoreclear" id="ctStorageClear" type="button">Clear all stored scans</button>
         </div>
@@ -460,18 +487,22 @@
       <div class="grp">
         <div class="lab">Display · window / level</div>
         <div class="bod">
+          <canvas id="xrayHist" class="histcanvas xray-only" width="256" height="96" title="Pixel histogram + brightness/contrast response curve"></canvas>
           <div class="row"><div class="rl">Brightness</div>
-            <input type="range" id="level" min="-60" max="60" value="0"></div>
+            <input type="range" id="level" min="-120" max="120" value="0"></div>
           <div class="row"><div class="rl">Contrast</div>
-            <input type="range" id="windo" min="30" max="220" value="100"></div>
+            <input type="range" id="windo" min="15" max="340" value="100"></div>
         </div>
       </div>
-      <div class="note">
-        Image is computed from scratch each exposure: polyenergetic beam, energy-dependent
-        attenuation through the posed hand, inverse-square dose, quantum mottle, and an
-        IEC&nbsp;62494 exposure index. <span class="kbd">Space</span> to expose.
-      </div>
     </div>
+  </div>
+</div>
+
+<!-- APR protocol picker (body part -> region -> projection) -->
+<div class="protopop" id="protoPop">
+  <div class="protopop-card">
+    <div class="protopop-hd"><span>Select x-ray protocol</span><button class="protopop-x" id="protoPopClose" type="button">✕</button></div>
+    <div class="protopop-body" id="protoPopBody"></div>
   </div>
 </div>
 

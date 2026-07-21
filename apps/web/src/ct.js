@@ -86,6 +86,7 @@ export function initCT(context) {
   injectSymbols();
   wireModeToggle();
   wireCTSettings();
+  wireScoutTable();
   wireCTConsole();
   initScanBoxes();
   wireStorage();
@@ -306,6 +307,8 @@ function applyMode(mode) {
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition' : 'Digit · Hand phantom';
   const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Scout window in CT
   if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Scout' : 'Image';
+  const consoleLbl = ctx.$('consoleLbl');    // x-ray generator vs CT console
+  if (consoleLbl) consoleLbl.textContent = mode === 'ct' ? 'CONSOLE' : 'GENERATOR';
   // A mode switch is a clean slate: tear down the CT scout workflow and any carried
   // view state so nothing from the other mode lingers (stale image, scout overlay,
   // tube-POV camera, Image view). Acquisition params + technique are user setup and
@@ -379,10 +382,7 @@ function scoutScanTime() { return ctx.S.ct.scanLen / SCOUT_SPEED_MMPS; }   // se
 function updateCTReadouts() {
   const { S, $ } = ctx;
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
-  set('ctScoutStartV', fmtTablePos(0) + ' mm');            // scout runs from the isocentre
-  set('ctScoutEndV', fmtTablePos(S.ct.scanLen) + ' mm');
-  set('ctScoutKvV', S.ct.scoutKv);
-  set('ctScoutMaV', S.ct.scoutMa);
+  renderScoutTable();
   set('ctScanLenV', S.ct.scanLen + ' mm');
   const et = scoutScanTime();
   set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
@@ -618,14 +618,15 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
 async function scoutProjection(view) {
   const { S } = ctx;
   const phantom = ctx.buildPhantom();               // CT patient (offset baked in CT mode)
-  const bins = Spectrum.make(S.ct.scoutKv).bins, nb = bins.length;   // scout uses its own technique
+  const tech = S.ct.scoutTech[view === 'AP' ? 0 : 1];   // per-plane technique (AP 0° / Lat 90°)
+  const bins = Spectrum.make(tech.kv).bins, nb = bins.length;
   const voxel = !!phantom.voxel;                    // chest (voxel) vs hand (analytic) attenuation
   const muMat = voxel ? muOverBins(bins) : null, nmat = voxel ? muMat.length : 0;
   const hitId = voxel ? new Int32Array(nmat) : null, hitLen = voxel ? new Float64Array(nmat) : null;
   const muSoft = voxel ? null : bins.map(b => Materials.mu('soft', b.E));
   const muBone = voxel ? null : bins.map(b => Materials.mu('bone', b.E));
   const muMarr = voxel ? null : bins.map(b => Materials.mu('marrow', b.E));
-  const I0 = S.ct.scoutMa * Math.pow(S.ct.scoutKv / 70, 2);
+  const I0 = tech.ma * Math.pow(tech.kv / 70, 2);
   // CT detector element (DEL) pitch ~1 mm — the scout's square pixel. Independent of
   // the x-ray DR detector resolution (~100 µm), which never applies to CT.
   const PXMM = 1.0;
@@ -653,6 +654,7 @@ async function scoutProjection(view) {
         model: S.subject, flips: Array.from(phantom.flip, Boolean), center,
         nw, nz, pxU, lenU, sx, sy, dcx, dcy, ux, uy,
         binsW: bins.map(b => b.w), muMat: muMat.map(r => Array.from(r)), I0,
+        rot: phantom.rot ? Array.from(phantom.rot) : null,
       });
       dose.set(out);
       for (let k = 0; k < dose.length; k++) { const d = dose[k]; if (d < mn) mn = d; if (d > mx) mx = d; }
@@ -711,10 +713,18 @@ async function scoutProjection(view) {
 function drawScout(cv, data, rowLimit) {
   if (!cv) return;
   const { dose, nw, nz, mn, mx } = data;
+  // The LATERAL scout is rotated 90° so the patient LONG axis (scan length, z) runs
+  // HORIZONTALLY (start/superior at the left, table feed = left→right) and the
+  // anterior-posterior depth runs vertically. The AP scout stays portrait (long axis
+  // vertical). This lets the reposition buttons read naturally: AP left/right = medio-
+  // lateral, LAT up/down = anterior/posterior, with the table-feed axis handled by the
+  // box drag in each view.
+  const rotated = cv.id === 'scoutLAT';
   const lim = rowLimit == null ? nz : Math.max(0, Math.min(nz, Math.round(rowLimit)));
-  if (cv.width !== nw || cv.height !== nz) { cv.width = nw; cv.height = nz; }
+  const outW = rotated ? nz : nw, outH = rotated ? nw : nz;
+  if (cv.width !== outW || cv.height !== outH) { cv.width = outW; cv.height = outH; }
   const g = cv.getContext('2d');
-  const img = g.createImageData(nw, nz);
+  const img = g.createImageData(outW, outH);
   const d8 = img.data;
   for (let k = 0; k < d8.length; k += 4) { d8[k] = d8[k + 1] = d8[k + 2] = 0; d8[k + 3] = 255; } // unscanned = black
   // Log (line-integral) display, like a real scout/DR system: gray ∝ ln(open/dose).
@@ -726,12 +736,15 @@ function drawScout(cv, data, rowLimit) {
   const floor = Math.max(mn, mx * 1e-12) || 1e-12;
   const pmax = data.pmax || Math.log(mx / floor) || 1;   // percentile window from scoutProjection
   const GAMMA = 1.4;                                  // film-like response: lungs dark, soft tissue mid-gray
-  for (let j = 0; j < lim; j++) {
-    const imgRow = j;                                // isocentre (row 0) at the top (= start)
-    for (let i = 0; i < nw; i++) {
+  for (let j = 0; j < lim; j++) {                    // j = scan-length index (0 = start/superior)
+    for (let i = 0; i < nw; i++) {                   // i = cross index (mediolateral AP / depth LAT)
       const p = Math.min(1, Math.log(mx / Math.max(dose[j * nw + i], floor)) / pmax);   // 0 open … 1 dense (clip white)
       const v = Math.round(255 * Math.pow(p, GAMMA));
-      const o = (imgRow * nw + i) * 4;
+      const ox = rotated ? j : i;                    // LAT: scan length → x (left = start)
+      // LAT depth → y, flipped so the ANTERIOR side is at the top (posterior at the bottom
+      // for a supine patient); AP: scan length → y (top = start).
+      const oy = rotated ? (nw - 1 - i) : j;
+      const o = (oy * outW + ox) * 4;
       d8[o] = d8[o + 1] = d8[o + 2] = v;
     }
   }
@@ -749,17 +762,26 @@ function layoutScouts() {
   const row = box && box.querySelector('.scoutrow');
   const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
   if (!box || !row || !ap || !lat) return;
-  const len = ctx.S.ct.scanLen;                        // mm along the scan axis (both)
-  const wAP = scoutFov(), wLAT = scoutFov();
   const cs = getComputedStyle(row);
   const colGap = parseFloat(cs.columnGap || cs.gap) || 16;
   const hdr = box.querySelector('.scouthdr');
   const hdrH = (hdr ? hdr.offsetHeight : 18) + 6;      // header + column inner gap
   const availW = Math.max(40, row.clientWidth - colGap);
   const availH = Math.max(40, row.clientHeight - hdrH); // the scoutrow's own height (table sits below)
-  const scale = Math.min(availW / (wAP + wLAT), availH / len);   // shared px per mm
-  const set = (cv, wmm) => { cv.style.width = (wmm * scale) + 'px'; cv.style.height = (len * scale) + 'px'; };
-  set(ap, wAP); set(lat, wLAT);
+  // Both scout windows are the SAME square (capped by the available height so they never
+  // clip into the scan-group table below). Each image (AP landscape, rotated LATERAL
+  // portrait) is letterboxed inside its square via .scoutfit, which the scan boxes are
+  // positioned within; the blank padding hosts the overlaid reposition buttons.
+  const S = Math.max(40, Math.floor(Math.min(availH, availW / 2)));
+  const place = (cv) => {
+    const wrap = cv.closest('.scoutwrap'), fit = cv.parentElement;
+    if (!wrap || !fit) return;
+    wrap.style.width = S + 'px'; wrap.style.height = S + 'px';
+    const ar = (cv.width || 1) / (cv.height || 1);   // native image aspect (already rotated for LAT)
+    let w = S, h = S / ar; if (h > S) { h = S; w = S * ar; }
+    fit.style.width = Math.round(w) + 'px'; fit.style.height = Math.round(h) + 'px';
+  };
+  place(ap); place(lat);
 }
 
 // keep the last scout data for later phases (scan box) to reuse the geometry/dims
@@ -816,9 +838,10 @@ function defaultGroups() {
 }
 
 function initScanBoxes() {
-  buildGroupBoxes('wrapAP', 'ap');
-  buildGroupBoxes('wrapLAT', 'lat');
+  buildGroupBoxes('fitAP', 'ap');
+  buildGroupBoxes('fitLAT', 'lat');
   wireScanGroupTable();
+  wireReposButtons();
 }
 // one DOM box per group per scout (shown/positioned per group in renderScanBoxes)
 function buildGroupBoxes(wrapId, view) {
@@ -826,7 +849,7 @@ function buildGroupBoxes(wrapId, view) {
   for (let gi = 0; gi < N_GROUPS; gi++) {
     const box = document.createElement('div');
     box.className = 'scanbox gc' + gi; box.dataset.group = gi; box.dataset.view = view;
-    box.innerHTML = '<div class="slices"></div><div class="glbl"></div>' +
+    box.innerHTML = '<div class="slices"></div>' +
       '<div class="xh xh-h"></div><div class="xh xh-v"></div>' +
       '<div class="eh eh-t" data-edge="t"></div><div class="eh eh-b" data-edge="b"></div>' +
       '<div class="eh eh-l" data-edge="l"></div><div class="eh eh-r" data-edge="r"></div>';
@@ -851,17 +874,23 @@ function renderScanBoxes() {
     el.classList.toggle('shown', shown);
     el.classList.toggle('active', gi === c.activeGroup);
     if (!shown) return;
-    const L = view === 'ap' ? g.box.apL : g.box.latL, R = view === 'ap' ? g.box.apR : g.box.latR;
-    el.style.left = (L * 100) + '%'; el.style.top = (g.box.top * 100) + '%';
-    el.style.width = ((R - L) * 100) + '%'; el.style.height = ((g.box.bot - g.box.top) * 100) + '%';
-    // per-slice dotted lines (spacing = interval), thickness in the label
+    // AP: scan length (top/bot) → vertical, cross axis (apL/apR) → horizontal.
+    // LAT (rotated): scan length (top/bot) → horizontal, depth (latL/latR) → vertical.
+    if (view === 'ap') {
+      el.style.left = (g.box.apL * 100) + '%'; el.style.width = ((g.box.apR - g.box.apL) * 100) + '%';
+      el.style.top = (g.box.top * 100) + '%'; el.style.height = ((g.box.bot - g.box.top) * 100) + '%';
+    } else {
+      el.style.left = (g.box.top * 100) + '%'; el.style.width = ((g.box.bot - g.box.top) * 100) + '%';
+      el.style.top = (g.box.latL * 100) + '%'; el.style.height = ((g.box.latR - g.box.latL) * 100) + '%';
+    }
+    // per-slice dotted lines (spacing = interval) run ACROSS the scan-length axis
     const sl = el.querySelector('.slices'), lenMM = groupScanLenMM(g);
     const period = lenMM > 0 ? (g.interval / lenMM) * 100 : 100;
     if (period >= 0.7 && g.interval > 0) {
-      sl.style.backgroundImage = 'repeating-linear-gradient(to bottom, var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
+      const dir = view === 'ap' ? 'to bottom' : 'to right';
+      sl.style.backgroundImage = 'repeating-linear-gradient(' + dir + ', var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
       sl.style.opacity = '0.55';
     } else { sl.style.backgroundImage = 'none'; }
-    el.querySelector('.glbl').textContent = 'G' + (gi + 1) + ' · ' + fmtNum(g.sliceThk) + ' mm';
   });
 }
 
@@ -891,15 +920,73 @@ function wireScanBox(box, gi, view) {
     box.addEventListener('pointerup', onUp); box.addEventListener('pointercancel', onUp);
   });
 }
+// The box is LOCKED at the centre of the scout on the cross axis (mediolateral on AP,
+// depth on LAT) — cross repositioning is done by the reposition buttons, which move the
+// table. The box only MOVES along the table long axis (scan length), and RESIZES
+// symmetrically about its centre on either axis. Screen deltas map per view: on the
+// portrait AP the scan-length axis is vertical (dv); on the rotated-landscape LAT it is
+// horizontal (du).
 function applyBoxDrag(gi, view, edge, s0, du, dv) {
-  const b = grp(gi).box, L = view === 'ap' ? 'apL' : 'latL', R = view === 'ap' ? 'apR' : 'latR';
+  const b = grp(gi).box;
+  const CL = view === 'ap' ? 'apL' : 'latL', CR = view === 'ap' ? 'apR' : 'latR';
+  const scanD = view === 'ap' ? dv : du;    // delta along the scan-length axis (top/bot)
+  const crossD = view === 'ap' ? du : dv;   // delta along the cross axis (apL/apR | latL/latR)
+  const scanLo = view === 'ap' ? 't' : 'l', scanHi = view === 'ap' ? 'b' : 'r';
   if (!edge) {
-    const w = s0[R] - s0[L], nl = clampV(s0[L] + du, 0, 1 - w); b[L] = nl; b[R] = nl + w;
-    const h = s0.bot - s0.top, nt = clampV(s0.top + dv, 0, 1 - h); b.top = nt; b.bot = nt + h;
-  } else if (edge === 't') b.top = clampV(s0.top + dv, 0, s0.bot - BOX_MIN);
-  else if (edge === 'b') b.bot = clampV(s0.bot + dv, s0.top + BOX_MIN, 1);
-  else if (edge === 'l') b[L] = clampV(s0[L] + du, 0, s0[R] - BOX_MIN);
-  else if (edge === 'r') b[R] = clampV(s0[R] + du, s0[L] + BOX_MIN, 1);
+    // MOVE along the table long axis only; cross axis stays locked at centre.
+    const h = s0.bot - s0.top, nt = clampV(s0.top + scanD, 0, 1 - h);
+    b.top = nt; b.bot = nt + h;
+  } else if (edge === scanLo || edge === scanHi) {
+    // symmetric resize of the scan-length extent about the box centre
+    const cen = (s0.top + s0.bot) / 2;
+    const raw = edge === scanLo ? cen - (s0.top + scanD) : (s0.bot + scanD) - cen;
+    const half = clampV(raw, BOX_MIN / 2, Math.min(cen, 1 - cen));
+    b.top = cen - half; b.bot = cen + half;
+  } else {
+    // symmetric resize about the LOCKED centre (0.5). The AP (mediolateral) and LAT
+    // (anteroposterior) cross extents are LINKED to the same half-width, so widening one
+    // aspect widens the other by the same amount — the scan volume is a circular cylinder,
+    // never an ellipse.
+    const raw = (edge === 'l' || edge === 't') ? 0.5 - (s0[CL] + crossD) : (s0[CR] + crossD) - 0.5;
+    const half = clampV(raw, BOX_MIN / 2, 0.5);
+    b.apL = 0.5 - half; b.apR = 0.5 + half;
+    b.latL = 0.5 - half; b.latR = 0.5 + half;
+  }
+}
+
+// ---- scout reposition buttons ----------------------------------------------
+// The box is locked at the scout centre, so imaging an off-centre region means moving
+// the PATIENT: the buttons pan the scout image under the fixed box and set the scan-
+// centre offset (mm), which requires a table reposition to commit. AP buttons shift the
+// mediolateral centre (left/right); LATERAL buttons shift the anteroposterior centre
+// (up/down). The table-feed axis in each view is handled by dragging the box instead.
+const REPOS_STEP = { small: 5, large: 25 };   // mm per press (single vs double chevron)
+function nudgeRepos(axis, dir, big) {
+  const c = ctx.S.ct;
+  if (c.phase !== 'planning') return;
+  const step = (big ? REPOS_STEP.large : REPOS_STEP.small) * dir;
+  const lim = scoutFov() / 2;                 // keep the scan centre inside the scout FOV
+  if (axis === 'x') c.plan.targetX = clampV(c.plan.targetX + step, -lim, lim);
+  else c.plan.targetY = clampV(c.plan.targetY + step, -lim, lim);
+  updatePlan();
+}
+// Pan each scout so the (centred) box sits over the button-selected scan centre. AP pans
+// mediolaterally (horizontal); the rotated LATERAL pans anteroposteriorly (vertical).
+function applyScoutPan() {
+  const c = ctx.S.ct, fov = scoutFov() || 1;
+  const ax = -((c.plan.targetX - c.plan.committedX) / fov) * 100;
+  const ay = -((c.plan.targetY - c.plan.committedY) / fov) * 100;
+  const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
+  if (ap) ap.style.transform = 'translate(' + ax.toFixed(2) + '%, 0)';
+  if (lat) lat.style.transform = 'translate(0, ' + ay.toFixed(2) + '%)';
+}
+function wireReposButtons() {
+  const handler = (e) => {
+    const b = e.target.closest('button[data-repo]'); if (!b) return;
+    nudgeRepos(b.dataset.repo, +b.dataset.dir, b.dataset.big === '1');
+  };
+  ctx.$('reposAP')?.addEventListener('click', handler);
+  ctx.$('reposLAT')?.addEventListener('click', handler);
 }
 
 // Scans run sequentially, so the reposition before START is for the NEXT (first)
@@ -909,8 +996,10 @@ function updatePlan() {
   const set = (id, v) => { const el = ctx.$(id); if (el) el.textContent = v; };
   set('ctScanStartV', fmtTablePos(g.box.top * len) + ' mm');
   set('ctScanEndV', fmtTablePos(g.box.bot * len) + ' mm');
-  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * scoutFov();   // mediolateral offset (mm)
-  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * scoutFov(); // anteroposterior offset (mm)
+  // The scan box is locked at the scout centre on the cross axes; the mediolateral (X)
+  // and anteroposterior (Y) scan-centre offsets come from the reposition buttons
+  // (c.plan.targetX / targetY), which is what requires a table move.
+  applyScoutPan();
   updatePlanReady();
   renderScanGroups();
 }
@@ -958,6 +1047,38 @@ const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff"
 const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'Total Images', 'Detector Config',
   'Helical Thickness', 'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time', 'Slice Interval',
   'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
+
+// Scout planning table: AP (scan plane 0°) + Lateral (90°) as two scout groups.
+// Simpler than the scan-group table (no slice/pitch) — start/end are shared (the
+// scout always runs from the isocentre for the scan length); kV/mA edit per plane.
+const SCOUT_PLANES = [{ label: 'AP', ang: 0 }, { label: 'Lateral', ang: 90 }];
+function renderScoutTable() {
+  const cont = ctx.$('ctScoutTable'); if (!cont) return;
+  const c = ctx.S.ct;
+  const start = fmtTablePos(0) + ' mm', end = fmtTablePos(c.scanLen) + ' mm';
+  const rows = SCOUT_PLANES.map((p, i) => {
+    const t = c.scoutTech[i];
+    return '<tr class="sg-row" data-plane="' + i + '">'
+      + '<td><span class="sc-plane">' + p.ang + '°<small>' + p.label + '</small></span></td>'
+      + '<td><span class="sg-calc">' + start + '</span></td>'
+      + '<td><span class="sg-calc">' + end + '</span></td>'
+      + '<td><span class="sg-edit" data-act="kv">' + t.kv + ' kV</span></td>'
+      + '<td><span class="sg-edit" data-act="ma">' + t.ma + ' mA</span></td></tr>';
+  }).join('');
+  cont.innerHTML = '<table class="sg-table"><thead><tr>'
+    + ['Scan plane', 'Start', 'End', 'kV', 'mA'].map((h) => '<th>' + h + '</th>').join('')
+    + '</tr></thead><tbody>' + rows + '</tbody></table>';
+}
+function wireScoutTable() {
+  const cont = ctx.$('ctScoutTable'); if (!cont) return;
+  cont.addEventListener('click', (e) => {
+    const span = e.target.closest('.sg-edit'); if (!span) return;
+    const row = span.closest('.sg-row'); const i = +row.dataset.plane, act = span.dataset.act;
+    const t = ctx.S.ct.scoutTech[i];
+    if (act === 'kv') openTypedPopup('Scout kV — ' + SCOUT_PLANES[i].label, t.kv, (v) => { t.kv = Math.max(70, Math.min(140, Math.round(v))); updateCTReadouts(); });
+    else if (act === 'ma') openTypedPopup('Scout mA — ' + SCOUT_PLANES[i].label, t.ma, (v) => { t.ma = Math.max(5, Math.min(500, Math.round(v))); updateCTReadouts(); });
+  });
+}
 
 function renderScanGroups() {
   const cont = ctx.$('ctScanGroups'); if (!cont) return;
@@ -1263,11 +1384,10 @@ async function runScan() {
   setHint('Scan complete — ' + S.ct.storage.length + ' scan(s) stored. Scroll the slices; ABORT to plan a new scan.');
 }
 
-// Auto-drive the couch to centre THIS group's box on the isocentre (mediolateral, then height).
+// Auto-drive the couch to the reposition-button target (mediolateral, then height). The
+// scan box is centred; the button-driven c.plan.targetX/targetY are the scan-centre offset.
 async function repositionForGroup(i, alive) {
-  const c = ctx.S.ct, g = grp(i);
-  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * scoutFov();    // mediolateral offset (mm)
-  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * scoutFov();  // anteroposterior offset (mm)
+  const c = ctx.S.ct;
   await animateCommit('committedX', c.plan.targetX, 1.0, alive);
   if (!alive()) return;
   await animateCommit('committedY', c.plan.targetY, 0.72, alive);
@@ -1512,6 +1632,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice) {
                      cx: geo.cx, cy: geo.cy, nDet: geo.m.nDet, nAngles: geo.m.nAngles, gridN: N,
                      ds: geo.ds, rayR: geo.rayR, dfovR: geo.R,
                      kernel: geo.m.fixedPitch ? 'shepp' : 'ramlak',
+                     rot: phantom.rot ? Array.from(phantom.rot) : null,
                      muArr: Array.from(mu.arr), photons0 };
       const BATCH = 4;
       for (let s0 = 0; s0 < nz; s0 += BATCH) {
@@ -1671,8 +1792,25 @@ export function ctRenderViewer() {
   v.slice = Math.max(0, Math.min(scan.slices.length - 1, v.slice));
   const sl = scan.slices[v.slice];
   drawSliceToCanvas(cv, scan, sl, v.wl, v.ww);
+  updateCtHistogram(scan, sl, v.wl, v.ww);
   if (slider) { slider.max = scan.slices.length - 1; slider.value = v.slice; slider.disabled = scan.slices.length < 2; }
   updateViewerInfo(scan, sl);
+}
+
+// Slice HU histogram (fixed −1000…2000 axis, matching the sliders) with the current
+// window/level ramp overlaid, so the operator sees where the window sits on the data.
+function updateCtHistogram(scan, sl, wl, ww) {
+  const cv = ctx.$('ctHist'); if (!cv || !ctx.drawHistogram) return;
+  if (!ctx.S.showHist || !scan || !sl) { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); return; }
+  const N = scan.gridN, muW = scan.muWater, c = N / 2, R2 = c * c;
+  const HLO = -1000, HHI = 2000, span = HHI - HLO, hist = new Uint32Array(256);
+  for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
+    const dx = ix - c + 0.5, dy = iy - c + 0.5; if (dx * dx + dy * dy > R2) continue;
+    const hu = 1000 * (sl.mu[iy * N + ix] - muW) / muW;
+    let b = Math.round((hu - HLO) / span * 255); hist[b < 0 ? 0 : b > 255 ? 255 : b]++;
+  }
+  const lo = wl - ww / 2;
+  ctx.drawHistogram(cv, hist, t => { const hu = HLO + t * span; return (hu - lo) / ww; }, ['-1000', '500 HU', '2000']);
 }
 // Light redraw (slice/window changed but not the scan list) — same as full render here.
 function refreshViewer() { ctRenderViewer(); }

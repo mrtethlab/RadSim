@@ -1,0 +1,70 @@
+{
+  "_about": "Anatomically Programmed Radiography (APR) chart. Selecting a protocol sets technique (kVp/mAs), anti-scatter grid, display LUT, SID, collimated field, and receptor size/orientation for that projection. Grouped body part -> region -> projection. Typical adult DR values: distal extremities 50-65 kVp no grid at 100 cm SID; proximal limb/skull/spine/abdomen/pelvis 70-90 kVp with grid at 100 cm; chest high-kVp 110-125 kVp with grid at 180 cm. coll = collimated field [width_cm, length_cm]; det = receptor [short_cm, long_cm]; orient = portrait/landscape. Teaching approximations, not a facility chart.",
+  "_reference": "Merrill's Atlas / Bontrager positioning references for SID, receptor size, and collimation; grid + kVp per body-part attenuation.",
+  "groups": [
+    { "part": "Upper extremity", "regions": [
+      { "region": "Fingers", "projections": [
+        { "proj": "PA fingers",      "kv": 55, "mas": 1.6, "grid": false, "lut": "extremity", "sid": 100, "coll": [9, 12],  "det": [25, 30], "orient": "portrait" },
+        { "proj": "Lateral finger",  "kv": 57, "mas": 2.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [7, 12],  "det": [25, 30], "orient": "portrait" } ] },
+      { "region": "Hand", "projections": [
+        { "proj": "PA hand",         "kv": 55, "mas": 2.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [14, 18], "det": [25, 30], "orient": "portrait", "subject": "hand" },
+        { "proj": "Oblique hand",    "kv": 57, "mas": 2.5, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 18], "det": [25, 30], "orient": "portrait", "subject": "hand" },
+        { "proj": "Lateral hand",    "kv": 58, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 18], "det": [25, 30], "orient": "portrait", "subject": "hand" } ] },
+      { "region": "Wrist", "projections": [
+        { "proj": "PA wrist",        "kv": 58, "mas": 2.5, "grid": false, "lut": "extremity", "sid": 100, "coll": [10, 13], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Oblique wrist",   "kv": 60, "mas": 3.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [10, 13], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Lateral wrist",   "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [9, 13],  "det": [25, 30], "orient": "portrait" } ] },
+      { "region": "Forearm", "projections": [
+        { "proj": "AP forearm",      "kv": 62, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 40], "det": [35, 43], "orient": "portrait" },
+        { "proj": "Lateral forearm", "kv": 64, "mas": 4.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 40], "det": [35, 43], "orient": "portrait" } ] },
+      { "region": "Elbow", "projections": [
+        { "proj": "AP elbow",        "kv": 64, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 18], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Lateral elbow",   "kv": 66, "mas": 4.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 18], "det": [25, 30], "orient": "portrait" } ] },
+      { "region": "Humerus", "projections": [
+        { "proj": "AP humerus",      "kv": 70, "mas": 5.0, "grid": false, "lut": "bone", "sid": 100, "coll": [15, 40], "det": [35, 43], "orient": "portrait" },
+        { "proj": "Lateral humerus", "kv": 72, "mas": 6.4, "grid": false, "lut": "bone", "sid": 100, "coll": [15, 40], "det": [35, 43], "orient": "portrait" } ] },
+      { "region": "Shoulder", "projections": [
+        { "proj": "AP shoulder",     "kv": 72, "mas": 6.4, "grid": true,  "lut": "bone", "sid": 100, "coll": [20, 25], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Y view shoulder", "kv": 75, "mas": 8.0, "grid": true,  "lut": "bone", "sid": 100, "coll": [22, 27], "det": [25, 30], "orient": "portrait" } ] } ] },
+    { "part": "Lower extremity", "regions": [
+      { "region": "Toes / Foot", "projections": [
+        { "proj": "AP foot",         "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 20], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Oblique foot",    "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 20], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Lateral foot",    "kv": 62, "mas": 4.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [14, 22], "det": [25, 30], "orient": "portrait" } ] },
+      { "region": "Ankle", "projections": [
+        { "proj": "AP ankle",        "kv": 63, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 16], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Mortise ankle",   "kv": 64, "mas": 3.6, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 16], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Lateral ankle",   "kv": 65, "mas": 4.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [14, 16], "det": [25, 30], "orient": "portrait" } ] },
+      { "region": "Knee", "projections": [
+        { "proj": "AP knee",         "kv": 68, "mas": 5.0, "grid": true,  "lut": "bone", "sid": 100, "coll": [18, 22], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Lateral knee",    "kv": 70, "mas": 5.6, "grid": true,  "lut": "bone", "sid": 100, "coll": [18, 22], "det": [25, 30], "orient": "portrait" } ] },
+      { "region": "Femur", "projections": [
+        { "proj": "AP femur",        "kv": 75, "mas": 8.0,  "grid": true, "lut": "bone", "sid": 100, "coll": [15, 43], "det": [35, 43], "orient": "portrait" },
+        { "proj": "Lateral femur",   "kv": 77, "mas": 10.0, "grid": true, "lut": "bone", "sid": 100, "coll": [15, 43], "det": [35, 43], "orient": "portrait" } ] } ] },
+    { "part": "Chest", "regions": [
+      { "region": "Chest", "projections": [
+        { "proj": "PA chest",        "kv": 120, "mas": 2.5, "grid": true,  "lut": "chest", "sid": 180, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" },
+        { "proj": "Lateral chest",   "kv": 120, "mas": 6.4, "grid": true,  "lut": "chest", "sid": 180, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" },
+        { "proj": "AP chest (portable)", "kv": 90, "mas": 3.2, "grid": false, "lut": "chest", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" } ] } ] },
+    { "part": "Abdomen / Pelvis", "regions": [
+      { "region": "Abdomen", "projections": [
+        { "proj": "AP abdomen (KUB)", "kv": 80, "mas": 32.0, "grid": true, "lut": "abdomen", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait" },
+        { "proj": "Upright abdomen",  "kv": 80, "mas": 36.0, "grid": true, "lut": "abdomen", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait" } ] },
+      { "region": "Pelvis", "projections": [
+        { "proj": "AP pelvis",        "kv": 80, "mas": 36.0, "grid": true, "lut": "bone", "sid": 100, "coll": [43, 35], "det": [35, 43], "orient": "landscape" } ] } ] },
+    { "part": "Spine", "regions": [
+      { "region": "Cervical", "projections": [
+        { "proj": "AP cervical",      "kv": 75, "mas": 12.5, "grid": true, "lut": "spine", "sid": 100, "coll": [12, 25], "det": [25, 30], "orient": "portrait" },
+        { "proj": "Lateral cervical", "kv": 78, "mas": 16.0, "grid": true, "lut": "spine", "sid": 180, "coll": [18, 25], "det": [25, 30], "orient": "portrait" } ] },
+      { "region": "Thoracic", "projections": [
+        { "proj": "AP thoracic",      "kv": 80, "mas": 25.0, "grid": true, "lut": "spine", "sid": 100, "coll": [15, 42], "det": [35, 43], "orient": "portrait" },
+        { "proj": "Lateral thoracic", "kv": 85, "mas": 50.0, "grid": true, "lut": "spine", "sid": 100, "coll": [15, 42], "det": [35, 43], "orient": "portrait" } ] },
+      { "region": "Lumbar", "projections": [
+        { "proj": "AP lumbar",        "kv": 82, "mas": 36.0, "grid": true, "lut": "spine", "sid": 100, "coll": [20, 42], "det": [35, 43], "orient": "portrait" },
+        { "proj": "Lateral lumbar",   "kv": 90, "mas": 64.0, "grid": true, "lut": "spine", "sid": 100, "coll": [18, 42], "det": [35, 43], "orient": "portrait" } ] } ] },
+    { "part": "Head", "regions": [
+      { "region": "Skull", "projections": [
+        { "proj": "AP skull",         "kv": 80, "mas": 25.0, "grid": true, "lut": "skull", "sid": 100, "coll": [20, 25], "det": [25, 30], "orient": "portrait", "subject": "headneck" },
+        { "proj": "Lateral skull",    "kv": 78, "mas": 20.0, "grid": true, "lut": "skull", "sid": 100, "coll": [22, 25], "det": [25, 30], "orient": "portrait", "subject": "headneck" } ] } ] }
+  ]
+}

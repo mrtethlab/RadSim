@@ -8,9 +8,11 @@ import { AttenuationEngine } from './core/engine.js';
 import { Detector } from './core/detector.js';
 import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
-import { loadModelFile, loadModelUrl } from './model/loader.js';
+import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
-import { muOverBins } from './core/voxelPhantom.js';
+import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
+import lutData from './data/luts.json';
+import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
@@ -282,6 +284,7 @@ async function setSubject(sub){
   if(sub==='hand'){
     S.subject='hand';
     S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scoutKv=80; S.ct.scoutMa=20;
+    S.ct.scoutTech=[{kv:80,ma:20},{kv:80,ma:20}];
     S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
     applyBackendOnly(false);
     showActive(null); applyHandView();
@@ -319,6 +322,7 @@ async function setSubject(sub){
   S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
   S.ct.isocentred=true; S.ct.tablePos=0; S.ct.tableY=0;
   S.ct.scoutKv=cfg.scoutKv; S.ct.scoutMa=cfg.scoutMa;
+  S.ct.scoutTech=[{kv:cfg.scoutKv,ma:cfg.scoutMa},{kv:cfg.scoutKv,ma:cfg.scoutMa}];
   // default x-ray kV to the model (thin extremities need far less than a torso)
   if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
   // backend-only models (large, no volume in the browser) MUST use the Python engine
@@ -378,8 +382,13 @@ function setDetOrient(o){ S.detOrient=o; applyDet(); }
    ============================================================================ */
 const S = {
   pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
+  objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
-  lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250,
+  lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
+  lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
+  showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
+  detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
+  imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
@@ -401,8 +410,10 @@ const S = {
     rotSpeed:0.5,              // seconds per gantry rotation
     scanLen:300,               // mm scout/scan length (from isocentre)
     scoutFovMM:180,            // scout/scan field of view (mm) — adapts to the subject (hand 180 / chest ~460)
-    scoutKv:80,                // scout topogram technique (kV)
+    scoutKv:80,                // scout topogram technique (kV) — default source
     scoutMa:20,                // scout topogram technique (mA)
+    // per-plane scout technique: index 0 = AP (scan plane 0°), 1 = Lateral (90°)
+    scoutTech:[{kv:80,ma:20},{kv:80,ma:20}],
     tablePos:0,                // mm; signed: +I (inferior) / -S (superior); isocentre zeroes it
     isoZ:0,                    // patient z recorded when the isocentre was set
     isocentred:false,
@@ -464,17 +475,23 @@ const $=id=>document.getElementById(id);
 
 /* pose -> external rotation of the hand about its long (z) axis.
    Negative rotation lifts the radial (thumb) side, i.e. external rotation. */
-function poseRot(){ return S.pose==='PA'?0 : S.pose==='OBL'?-Math.PI/4 : -Math.PI/2; }
+function poseRot(){ return 0; }   // retained for compatibility; object rotation now lives in S.objRot
 
-/* Base lift (cm, before OID) that rests the hand on the receptor for the current
-   pose. PA keeps the flat resting height (palm/fingers down, forearm allowed to
-   dip and get clipped). OBL/LAT rest the LOWEST rotated surface point on the
-   detector, so nothing clips through as the hand rolls onto its edge. */
-function baseLift(skin, bone, rot){
-  if(rot===0) return REST_LIFT;
-  const cosR=Math.cos(rot), sinR=Math.sin(rot);
+/* Object rotate/tilt: world rotation matrix (row-major 3x3) from the S.objRot euler
+   angles (degrees). Applied to BOTH the traced phantom + the 3D display so the two agree. */
+function objMat(){ const r=S.objRot, d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); }
+function isObjRotated(){ const r=S.objRot; return r.x||r.y||r.z; }
+function applyMat3(R,p){ return [R[0]*p[0]+R[1]*p[1]+R[2]*p[2], R[3]*p[0]+R[4]*p[1]+R[5]*p[2], R[6]*p[0]+R[7]*p[1]+R[8]*p[2]]; }
+function setGroupRot(grp,R){ const m=new THREE.Matrix4();
+  m.set(R[0],R[1],R[2],0, R[3],R[4],R[5],0, R[6],R[7],R[8],0, 0,0,0,1); grp.setRotationFromMatrix(m); }
+
+/* Base lift (cm, before OID) that rests the hand on the receptor after the object
+   rotation R: finds the lowest surface point of the rotated hand and lifts it so
+   nothing clips through the detector. */
+function baseLift(skin, bone, R){
+  if(!isObjRotated()) return REST_LIFT;
   let minY=Infinity;
-  const low=(p,r)=>{ const yr=p[0]*sinR + p[1]*cosR - r; if(yr<minY) minY=yr; };
+  const low=(p,r)=>{ const yr=applyMat3(R,p)[1]-r; if(yr<minY) minY=yr; };
   for(const c of skin){ const r1=c.r1!==undefined?c.r1:c.r, r2=c.r1!==undefined?c.r2:c.r; low(c.a,r1); low(c.b,r2); }
   for(const c of bone){ low(c.a,c.r1); low(c.b,c.r2); }
   return -minY + 0.05;   // +margin so the edge rests just above the receptor
@@ -494,26 +511,25 @@ function buildPhantom(){
   // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
   // CT patient offset (couch position / table height) so scout + recon sweep the real
   // anatomy. Uses the expanded BodyMaterials via its labelled volume.
+  const R=objMat();
   if(S.subject!=='hand' && S.voxelModel){
     const vm=S.voxelModel;
     const cx = S.mode==='ct' ? S.ct.patient.x : 0;
     const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
     const cz = S.mode==='ct' ? S.ct.patient.z : 0;
-    return vm.makePhantom([cx,cy,cz], voxelFlips());
+    return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
   }
   const ph=new Phantom();
-  const rot=poseRot();
-  const cosR=Math.cos(rot), sinR=Math.sin(rot);
   const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-  // x-ray: rest on the receptor (pose-aware) + OID. CT: sit at the table height
+  // x-ray: rest on the receptor (rotation-aware) + OID. CT: sit at the table height
   // (patientY), so the 3D model and the traced phantom share one vertical position.
-  const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,rot)+S.oid;
+  const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,R)+S.oid;
   // in CT the patient is offset from the gantry isocentre by the direction pad
   const cx = S.mode==='ct' ? S.ct.patient.x : 0;
   const cz = S.mode==='ct' ? S.ct.patient.z : 0;
-  function xf(p){                // rotate about long (z) axis, then lift, then CT offset
-    const x=p[0], y=p[1], z=p[2];
-    return [x*cosR - y*sinR + cx, x*sinR + y*cosR + liftY, z + cz];
+  function xf(p){                // rotate the object (about origin), then lift, then CT offset
+    const q=applyMat3(R,p);
+    return [q[0]+cx, q[1]+liftY, q[2]+cz];
   }
   for(const c of skin){
     if(c.r1!==undefined) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,'soft');
@@ -526,12 +542,12 @@ function buildPhantom(){
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
+  document.body.classList.toggle('subj-hand', S.subject==='hand');   // finger-spread control is hand-only
   // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips).
   // The voxel chest is placed by ctSyncScene instead, so skip the hand transforms.
   if(S.subject==='hand'){
-    three.handGroup.rotation.z = poseRot();
     const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-    three.handGroup.position.y = baseLift(skin,bone,poseRot())+S.oid;
+    three.handGroup.position.set(0, baseLift(skin,bone,objMat())+S.oid, 0);
   } else {
     three.handGroup.rotation.z = 0;
     if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);   // flips are mode-dependent
@@ -562,6 +578,12 @@ function syncScene(){
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
   updateDetector();                             // receptor size (25x30 / 35x43)
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
+  // object rotate/tilt (applies last, in both modes): rotate the visible object about
+  // its centre to match the traced phantom. Hand meshes ride handGroup; a voxel mesh
+  // is centred at its own origin so it rotates in place inside handGroup.
+  const R=objMat();
+  if(S.subject==='hand') setGroupRot(three.handGroup, R);
+  else if(three.chestGroup) setGroupRot(three.chestGroup, R);
 }
 
 /* Redraw the collimator cookie: bright rectangular aperture sized to the field
@@ -691,10 +713,12 @@ function setContent(c){
   const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
   const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
   const rcv=$('ctRecons'); if(rcv) rcv.classList.toggle('show', recons);
-  $('bigFilm').style.display=(img && S.hasImage && !scouts)?'block':'none';
+  const xrayImg=(img && S.hasImage && !scouts);
+  $('bigFilm').style.display=xrayImg?'block':'none';
   $('bignote').style.display=(img && !S.hasImage && !scouts)?'flex':'none';
   $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
-  if(img && S.hasImage && !scouts) renderRadiograph($('bigFilm'));
+  const ui=$('imgViewUI'); if(ui) ui.classList.toggle('show', xrayImg);   // meta + history strip (image view only)
+  if(xrayImg){ renderRadiograph($('bigFilm')); updateImageMeta(); renderImageStrip(); }
   if(slices) ctRenderViewer();
   if(recons) ctRenderRecons();
 }
@@ -707,15 +731,16 @@ function setBay3DEnabled(on){
 
 /* ---- Controls wiring ---- */
 function bind(){
-  // pose
-  $('poseSeg').addEventListener('click',e=>{
-    const b=e.target.closest('button'); if(!b)return;
-    [...$('poseSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
-    S.pose=b.dataset.pose; $('poseName').textContent=b.textContent.toUpperCase();
-    buildHandMeshes();   // thumb geometry is pose-dependent (LAT lays it flat)
-    resetPrep(); syncScene();
-  });
-  $('spread').addEventListener('input',e=>{ S.spread=e.target.value/100;
+  // object rotate / tilt (generic, any subject) — updates chip, phantom + 3D
+  const rotAxes=[['objRotX','x'],['objRotY','y'],['objRotZ','z']];
+  for(const [id,ax] of rotAxes){
+    $(id)?.addEventListener('input',e=>{ S.objRot[ax]=parseInt(e.target.value);
+      $(id+'v').textContent=S.objRot[ax]+'°'; resetPrep(); syncScene(); });
+  }
+  $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0};
+    for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
+    resetPrep(); syncScene(); });
+  $('spread')?.addEventListener('input',e=>{ S.spread=e.target.value/100;
     buildHandMeshes(); resetPrep(); });
   // sliders that only affect geometry (update chips + scene)
   const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ'];
@@ -744,10 +769,6 @@ function bind(){
   $('kv').addEventListener('input',e=>{S.kv=parseInt(e.target.value);refreshReadouts();});
   $('ma').addEventListener('input',e=>{S.ma=maSteps[e.target.value];refreshReadouts();});
   $('mas').addEventListener('input',e=>{S.mas=masSteps[e.target.value];refreshReadouts();});
-  // APR presets
-  $('apr').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
-    S.kv=parseInt(b.dataset.kv); S.mas=parseFloat(b.dataset.mas);
-    $('kv').value=S.kv; $('mas').value=nearestMasIdx(); refreshReadouts();});
   // rotor: latches on until an exposure completes
   $('rotor').addEventListener('click',toggleRotor);
   // exposure switch: press AND HOLD for the exposure time
@@ -768,6 +789,27 @@ function bind(){
   // display
   $('level').addEventListener('input',e=>{S.lev=parseInt(e.target.value); if(S.hasImage) drawFilm();});
   $('windo').addEventListener('input',e=>{S.win=parseInt(e.target.value); if(S.hasImage) drawFilm();});
+  // display histogram toggle (Simulation group) — controls both the x-ray + CT charts
+  const histTgl=$('histToggle');
+  if(histTgl){ histTgl.addEventListener('change',()=>{ S.showHist=histTgl.checked;
+    document.body.classList.toggle('hist-off', !S.showHist);
+    updateXrayHistogram(); ctRenderViewer?.(); }); }
+  // LUT/response-curve visibility (does NOT change the LUT shape — image is unaffected)
+  $('curveToggle')?.addEventListener('change',e=>{ S.showCurve=e.target.checked;
+    updateXrayHistogram(); ctRenderViewer?.(); });
+  // automatic rescaling (DR auto-ranging) — normalizes the VOI to the display range
+  $('rescaleToggle')?.addEventListener('change',e=>{ S.autoRescale=e.target.checked;
+    if(S.hasImage) drawFilm(); else updateXrayHistogram(); });
+  // DR detail (edge) enhancement — multiscale unsharp on the acquired image
+  $('detailToggle')?.addEventListener('change',e=>{ S.detailEnh=e.target.checked;
+    S._proc=null; if(S.hasImage) drawFilm(); });
+  // APR protocol picker
+  $('protocolBtn')?.addEventListener('click',openProtocolPopup);
+  $('protoPopClose')?.addEventListener('click',closeProtocolPopup);
+  $('protoPop')?.addEventListener('click',e=>{ if(e.target.id==='protoPop') closeProtocolPopup(); });
+  $('protoPopBody')?.addEventListener('click',e=>{ const b=e.target.closest('.proto-proj'); if(!b) return;
+    const p=findProtocol(b.dataset.part,b.dataset.proj); if(p){ applyProtocol(p,b.dataset.part); closeProtocolPopup(); } });
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeProtocolPopup(); });
   // bay options dropdown (top-right): toggle open, close on outside click / Esc
   const bayCtl=$('bayCtl'), bayBtn=$('bayMenuBtn');
   if(bayBtn){
@@ -784,8 +826,6 @@ function bind(){
   $('camSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCameraView(b.dataset.cam);});
   // CT camera: AP-PoV  <->  Lat-PoV
   $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
-  // render mode: soft-tissue anatomy  <->  skeleton (display only)
-  $('renderSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setHandView(b.dataset.hv);});
   // subject: analytic hand  <->  any voxel model
   $('subjectSel')?.addEventListener('change',e=>setSubject(e.target.value));
   // collimator light on/off
@@ -815,6 +855,17 @@ function bind(){
   $('flipV').addEventListener('click',()=>{ if(!S.hasImage)return; S.flipV=!S.flipV; $('flipV').classList.toggle('on',S.flipV); drawFilm();});
   $('imgReset').addEventListener('click',()=>{ S.imgRot=0;S.flipH=false;S.flipV=false;
     $('flipH').classList.remove('on');$('flipV').classList.remove('on'); if(S.hasImage) drawFilm();});
+  // image history: scroll the wheel over the Image view (or its strip) to step through
+  // the last 10 exposures; arrow keys work too when the image view is up.
+  const histWheel=(e)=>{ if(S.bayContent!=='image'||S.mode==='ct'||S.imgHistory.length<2) return;
+    e.preventDefault(); setActiveImage(S.histIdx + (e.deltaY>0?1:-1)); };
+  $('bigFilm')?.addEventListener('wheel',histWheel,{passive:false});
+  $('imgStrip')?.addEventListener('wheel',histWheel,{passive:false});
+  document.addEventListener('keydown',e=>{
+    if(S.bayContent!=='image'||S.mode==='ct'||S.imgHistory.length<2) return;
+    if(e.key==='ArrowLeft'){ e.preventDefault(); setActiveImage(S.histIdx-1); }
+    else if(e.key==='ArrowRight'){ e.preventDefault(); setActiveImage(S.histIdx+1); }
+  });
 }
 function nearestMasIdx(){ let bi=0,bd=1e9; masSteps.forEach((v,i)=>{const d=Math.abs(v-S.mas); if(d<bd){bd=d;bi=i;}}); return bi; }
 function nearestMaIdx(){ let bi=0,bd=1e9; maSteps.forEach((v,i)=>{const d=Math.abs(v-S.ma); if(d<bd){bd=d;bi=i;}}); return bi; }
@@ -950,6 +1001,7 @@ async function computeRadiograph(){
         muMat:muOverBins(spectrum.bins).map(r=>Array.from(r)),
         I0, refDist:100,
         coneD:fd, coneW:wAxis, coneL:lAxis, coneTw:tw, coneTl:tl,
+        rot: phantom.rot ? Array.from(phantom.rot) : null,
       });
     }catch(err){
       if(phantom.geometryOnly){   // no browser volume to fall back to
@@ -965,6 +1017,35 @@ async function computeRadiograph(){
       spectrum, I0, refDist:100,
       onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
     });
+  }
+
+  // ---- scatter radiation reaching the detector ----
+  // X-rays scattered in the patient add a diffuse fog to the receptor. The scatter-to-
+  // primary ratio (SPR) grows with the irradiated field area and the patient's
+  // attenuation — a large, thick body part (chest, abdomen) scatters a lot — and an
+  // anti-scatter grid strips most of it out (its whole purpose). Without scatter, a
+  // primary-only model reads big/thick body parts as underexposed. Scatter is generated
+  // in the patient BEFORE the grid, so compute it from the pre-grid primary, then let
+  // the grid attenuate it below.
+  const _t=(typeof window!=='undefined'&&window.__tune)||{};
+  // Physically-scaled scatter: SCAT_SPR_MAX ≈ max scatter-to-primary ratio for a big,
+  // thick field (no grid); SCAT_AREA0 = field half-saturation area (cm²); GRID_SCATTER =
+  // fraction of scatter a grid still passes (~15%). Kept modest so it adds realistic
+  // veiling glare (lowering contrast for large no-grid fields — the reason grids exist)
+  // WITHOUT washing the image out.
+  const SCAT_SPR_MAX=_t.spr??4.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
+  let scatterFog=0;
+  {
+    const distC=Math.hypot(source[0],source[1],source[2])||100, invSqC=(100*100)/(distC*distC);
+    let sumP=0, nF=0; for(let k=0;k<dose.length;k++){ if(mask[k]){ sumP+=dose[k]; nF++; } }
+    if(nF){
+      const meanP=sumP/nF, meanIncident=I0*invSqC;
+      const atten=Math.max(0,Math.min(1,1-meanP/(meanIncident||1)));     // 0 = air, ~1 = heavily attenuated
+      const areaCm2=S.collX*S.collZ, areaF=areaCm2/(areaCm2+SCAT_AREA0);  // saturates with field size
+      let spr=SCAT_SPR_MAX*areaF*atten;
+      if(S.gridOn) spr*=GRID_SCATTER;                                      // grid removes most scatter
+      scatterFog=spr*meanP;                                                // diffuse fog, added uniformly below
+    }
   }
 
   // ---- anti-scatter grid ----
@@ -986,14 +1067,12 @@ async function computeRadiograph(){
       dose[k]*= base*t;
     }
   }
+  // add the diffuse scatter fog (already grid-attenuated) onto the primary
+  if(scatterFog>0) for(let k=0;k<dose.length;k++) if(mask[k]) dose[k]+=scatterFog;
 
   const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask);
-  S.lastSignal=signal; S.nx=nx; S.ny=ny; S.mask=mask; S.hasImage=true;
-
-  S.eiTarget=250;
-  drawFilm();
+  pushImage(signal,nx,ny,mask,buildMeta(spectrum));   // -> active image + drawFilm + meta + strip
   updateDI(EI);
-  annotate(spectrum);
   if(S.bayContent==='image') setContent('image');
 
   $('prog').style.width='100%';
@@ -1028,8 +1107,7 @@ function drawError(cv){
 
 /* ---- render stored signal: crop to exposed field, window/level, invert,
         then apply rotation + flips. Renders to any target canvas. ---- */
-function computeCrop(){
-  const {nx,ny,mask}=S;
+function computeCrop(nx,ny,mask){
   let i0=nx,i1=-1,j0=ny,j1=-1;
   for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
     if(mask[j*nx+i]){ if(i<i0)i0=i; if(i>i1)i1=i; if(j<j0)j0=j; if(j>j1)j1=j; }
@@ -1037,13 +1115,26 @@ function computeCrop(){
   if(i1<i0){ i0=0;i1=nx-1;j0=0;j1=ny-1; }   // fallback: whole detector
   return {i0,i1,j0,j1};
 }
-function renderRadiograph(target){
-  const {lastSignal:sig,nx,mask}=S; if(!sig||!target) return;
-  const {i0,i1,j0,j1}=computeCrop();
+/* Render a radiograph to `target`. With no `entry` it draws the active image (S.last*);
+   pass a history entry to render that one (used for the review-strip thumbnails). */
+function renderRadiograph(target,entry){
+  const sig = entry? entry.sig : S.lastSignal;
+  const nx  = entry? entry.nx  : S.nx;
+  const ny  = entry? entry.ny  : S.ny;
+  const mask= entry? entry.mask: S.mask;
+  const subject = entry? entry.subject : S.activeSubject;
+  const rescale = entry? entry.rescale : S.rescale;   // auto-rescale VOI window for this image
+  if(!sig||!target) return;
+  const {i0,i1,j0,j1}=computeCrop(nx,ny,mask);
   const cw=i1-i0+1, ch=j1-j0+1;
   // open-field normalization for log display
   let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
-  const a=40, denom=Math.log(1+a), contrast=S.win/100, bright=S.lev/100;
+  const a=40, denom=Math.log(1+a);
+  // DR detail enhancement: use the cached enhanced base-tone map for the active full-res
+  // image; thumbnails (entry passed) render the plain log tone (cheap, detail not needed).
+  const _t=(typeof window!=='undefined'&&window.__tune)||{};
+  const enhOn=(_t.eOn!==undefined)?_t.eOn:S.detailEnh;
+  const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -1051,8 +1142,8 @@ function renderRadiograph(target){
     const k=(j0+j)*nx+(i0+i);
     let v;
     if(!mask[k]) v=0;
-    else { let t=sig[k]/mx; t=Math.log(1+a*t)/denom; v=1-t; }  // invert: bone->white
-    v=(v-0.5)*contrast+0.5+bright; v=Math.max(0,Math.min(1,v));
+    else { const base=baseArr? baseArr[k] : 1-Math.log(1+a*sig[k]/mx)/denom;
+      v=toneMap(rescaleTone(base, rescale)); }  // (enhanced) base -> auto-rescale -> LUT
     const g=Math.round(v*255), o=(j*cw+i)*4;
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
@@ -1061,10 +1152,12 @@ function renderRadiograph(target){
   // A per-subject hanging default is applied first, then the user's adjustments:
   //  - hand: fingertips (+z, the plate arrow) up -> 180° rotation. A rotation, NOT a
   //    vertical mirror, so left/right chirality is preserved.
-  //  - chest: shoulders (-z) are already up as recorded; mirror horizontally because
-  //    a PA projection is displayed as if facing the patient (L marker on the right).
-  const baseRot = S.subject!=='hand' ? 0 : 180;
-  const baseFlipH = S.subject!=='hand';
+  //  - voxel body (chest, etc.): the superior end is world +z, which the raw detector
+  //    mapping lands at the image BOTTOM, so flip vertically to hang it head-up; mirror
+  //    horizontally too because a PA projection is displayed as if facing the patient.
+  const baseRot = subject!=='hand' ? 0 : 180;
+  const baseFlipH = subject!=='hand';
+  const baseFlipV = subject!=='hand';
   const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
@@ -1073,14 +1166,229 @@ function renderRadiograph(target){
   tctx.save();
   tctx.translate(target.width/2, target.height/2);
   tctx.rotate(rot*Math.PI/180);
-  tctx.scale((baseFlipH!==S.flipH)?-1:1, S.flipV?-1:1);
+  tctx.scale((baseFlipH!==S.flipH)?-1:1, (baseFlipV!==S.flipV)?-1:1);
   tctx.drawImage(crop, -cw/2, -ch/2);
   tctx.restore();
 }
 function drawFilm(){
   renderRadiograph($('film'));
   if(S.bayContent==='image' && S.hasImage) renderRadiograph($('bigFilm'));
+  updateXrayHistogram();
 }
+
+/* ---- automatic rescaling (digital-radiography auto-ranging) ----
+   Real DR analyses the image histogram, finds the anatomy's values-of-interest (VOI)
+   and rescales those to a standard display range, so the image looks optimally exposed
+   regardless of over/under-exposure (the exposure index still reports the true dose).
+   Here: robust 1st–99th percentile window of the exposed-field base tones. */
+function computeRescale(sig,mask){
+  const _t=(typeof window!=='undefined'&&window.__tune)||{};
+  let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
+  // EXCLUDE the directly-exposed raw beam from the VOI window. The unattenuated beam sits
+  // at the dark end of the tone scale; if it is left in, its pixels pin the window's low
+  // end and the whole anatomy is crammed into a bright, flat band (washed-out chest). By
+  // dropping pixels brighter than `cut`, the window locks onto the anatomy so the well-
+  // penetrated lung fields stretch to dark and the mediastinum/spine to bright.
+  const cut=mx*(_t.rcut??0.72);
+  const a=40, denom=Math.log(1+a), NB=1024, hist=new Uint32Array(NB); let total=0;
+  for(let k=0;k<sig.length;k++){ if(!mask[k]||sig[k]>=cut) continue;   // skip direct exposure
+    let t=Math.log(1+a*sig[k]/mx)/denom, b=Math.round((1-t)*(NB-1));
+    hist[b<0?0:b>NB-1?NB-1:b]++; total++; }
+  if(!total) return null;
+  const pl=_t.rlo??0.05, ph=_t.rhi??0.01;   // clip darkest pl and brightest ph of the anatomy
+  let lo=0, hi=NB-1, acc=0;
+  for(let b=0;b<NB;b++){ acc+=hist[b]; if(acc>=total*pl){ lo=b; break; } }
+  acc=0; for(let b=NB-1;b>=0;b--){ acc+=hist[b]; if(acc>=total*ph){ hi=b; break; } }
+  return { lo: lo/(NB-1), hi: Math.max((lo+1)/(NB-1), hi/(NB-1)) };
+}
+
+/* ---- DR-style detail (edge) enhancement ------------------------------------
+   Real digital-radiography processing (Fuji MUSICA, Agfa, GE UNIQUE …) applies a
+   multi-frequency decomposition and boosts the mid-frequency structure band —
+   bony edges, vessels, the vertebral endplates seen faintly through the heart —
+   more than the fine quantum-mottle band, lifting low-contrast detail without
+   amplifying noise as strongly. Here: a two-band multiscale unsharp mask on the
+   log base tone. Split into fine (<r1), mid (r1..r2) and coarse (>r2) bands with
+   masked box blurs, then recombine with per-band gains (mid boosted, fine gentle).
+   Radii scale with the matrix so the effect is resolution-independent. Runs once
+   per acquired image (cached on the signal ref), never per window/level change. */
+function boxBlurMasked(src,mask,nx,ny,r){
+  if(r<1) return src.slice();
+  const tmp=new Float32Array(nx*ny), out=new Float32Array(nx*ny);
+  for(let y=0;y<ny;y++){ const row=y*nx; let sum=0,cnt=0;
+    for(let x=0;x<r&&x<nx;x++){ if(mask[row+x]){sum+=src[row+x];cnt++;} }
+    for(let x=0;x<nx;x++){ const add=x+r; if(add<nx&&mask[row+add]){sum+=src[row+add];cnt++;}
+      const rem=x-r-1; if(rem>=0&&mask[row+rem]){sum-=src[row+rem];cnt--;}
+      tmp[row+x]= cnt? sum/cnt : src[row+x]; } }
+  for(let x=0;x<nx;x++){ let sum=0,cnt=0;
+    for(let y=0;y<r&&y<ny;y++){ const k=y*nx+x; if(mask[k]){sum+=tmp[k];cnt++;} }
+    for(let y=0;y<ny;y++){ const add=y+r; if(add<ny&&mask[add*nx+x]){sum+=tmp[add*nx+x];cnt++;}
+      const rem=y-r-1; if(rem>=0&&mask[rem*nx+x]){sum-=tmp[rem*nx+x];cnt--;}
+      out[y*nx+x]= cnt? sum/cnt : tmp[y*nx+x]; } }
+  return out;
+}
+function processImage(sig,nx,ny,mask,mx){
+  const _t=(typeof window!=='undefined'&&window.__tune)||{};
+  const a=40, denom=Math.log(1+a);
+  const base=new Float32Array(nx*ny);
+  for(let k=0;k<sig.length;k++) base[k]= mask[k]? 1-Math.log(1+a*sig[k]/mx)/denom : 0;
+  const R=Math.max(nx,ny);
+  const r1=Math.max(1,Math.round((_t.eR1??0.006)*R));
+  const r2=Math.max(r1+1,Math.round((_t.eR2??0.030)*R));
+  const gMid=_t.eGmid??2.4, gFine=_t.eGfine??0.5;
+  const B1=boxBlurMasked(base,mask,nx,ny,r1);
+  const B2=boxBlurMasked(base,mask,nx,ny,r2);
+  const out=new Float32Array(nx*ny);
+  for(let k=0;k<base.length;k++){ if(!mask[k]){ out[k]=0; continue; }
+    const fine=base[k]-B1[k], mid=B1[k]-B2[k];
+    out[k]=B2[k]+gMid*mid+gFine*fine; }
+  return out;
+}
+/* Enhanced base-tone map for the active image, cached on the signal reference so
+   window/level and view switches don't recompute the blurs. */
+function activeProcessed(sig,nx,ny,mask,mx){
+  if(!S._proc || S._proc.sig!==sig) S._proc={sig, data:processImage(sig,nx,ny,mask,mx)};
+  return S._proc.data;
+}
+/* Apply auto-rescale (VOI stretch) to a base tone, using the given window. */
+function rescaleTone(x,rs){
+  if(!S.autoRescale || !rs) return x;
+  let r=(x-rs.lo)/(rs.hi-rs.lo); return r<0?0:r>1?1:r;
+}
+
+/* ---- display look-up table (LUT) ----
+   Map a (rescaled) display tone x∈[0,1] to output∈[0,1] via the current LUT: a DICOM
+   SIGMOID VOI LUT (out = 1/(1+exp(-4(x-c)/w))) when the LUT is a sigmoid, else a linear
+   window/level. Brightness shifts the centre, contrast scales the width. The LUT always
+   applies (the toggle now only shows/hides the curve on the histogram). */
+function toneMap(x){
+  const bright=S.lev/100, contrast=S.win/100;
+  if(S.lut && S.lut.sigmoid){
+    const c=S.lut.center - bright, w=Math.max(0.05, S.lut.width/contrast);
+    return 1/(1+Math.exp(-4*(x-c)/w));
+  }
+  const v=(x-0.5)*contrast+0.5+bright; return v<0?0:v>1?1:v;
+}
+/* Full display mapping for the histogram curve: rescale (VOI) then LUT. Uses the active
+   image's rescale window. */
+function displayCurve(x){ return toneMap(rescaleTone(x, S.rescale)); }
+
+/* ---- display histogram + LUT response curve ----
+   Draws a proper histogram (blue bars, axis ticks) of the image's base grey values,
+   overlaid with the current LUT/response curve and a dashed identity diagonal so the
+   sigmoid roll-off is visible. curveFn maps input tone [0,1] -> output [0,1]. */
+export function drawHistogram(canvas, hist, curveFn, xlabels){
+  if(!canvas) return;
+  const g=canvas.getContext('2d'), W=canvas.width, H=canvas.height;
+  const padL=3, padR=3, padT=4, padB=11, pw=W-padL-padR, ph=H-padT-padB;
+  g.clearRect(0,0,W,H);
+  g.fillStyle='#0a0f14'; g.fillRect(0,0,W,H);
+  // faint gridlines (quarters)
+  g.strokeStyle='rgba(120,150,175,.12)'; g.lineWidth=1;
+  for(let q=1;q<4;q++){ const gx=padL+pw*q/4; g.beginPath(); g.moveTo(gx,padT); g.lineTo(gx,padT+ph); g.stroke(); }
+  // histogram bars (blue), linear counts
+  let hmax=1; for(const v of hist) if(v>hmax) hmax=v;
+  const n=hist.length, bw=pw/n;
+  g.fillStyle='#5b83d6';
+  for(let x=0;x<n;x++){ const h=hist[x]/hmax*ph; if(h>0) g.fillRect(padL+x*bw, padT+ph-h, Math.max(1,bw), h); }
+  // response curve + identity diagonal — visibility toggled (shape is unchanged)
+  if(S.showCurve){
+    g.strokeStyle='rgba(200,215,230,.35)'; g.setLineDash([3,3]); g.lineWidth=1;
+    g.beginPath(); g.moveTo(padL,padT+ph); g.lineTo(padL+pw,padT); g.stroke(); g.setLineDash([]);
+    g.strokeStyle='#ffcf6b'; g.lineWidth=1.8; g.beginPath();
+    for(let x=0;x<=n;x++){ const out=Math.max(0,Math.min(1,curveFn(x/n)));
+      const px=padL+x/n*pw, py=padT+ph-out*ph; if(x===0) g.moveTo(px,py); else g.lineTo(px,py); }
+    g.stroke();
+  }
+  // axis baseline + x ticks (0 · mid · max) — 8-bit display scale
+  g.strokeStyle='rgba(150,175,195,.5)'; g.lineWidth=1;
+  g.beginPath(); g.moveTo(padL,padT+ph+0.5); g.lineTo(padL+pw,padT+ph+0.5); g.stroke();
+  const lab=xlabels||['0','128','255'];
+  g.fillStyle='rgba(150,175,195,.75)'; g.font='7px "Share Tech Mono",monospace'; g.textBaseline='top';
+  g.textAlign='left';   g.fillText(lab[0], padL, padT+ph+2);
+  g.textAlign='center'; g.fillText(lab[1], padL+pw/2, padT+ph+2);
+  g.textAlign='right';  g.fillText(lab[2], padL+pw, padT+ph+2);
+}
+/* 256-bin histogram of the inverted log signal (the base tone before window/level),
+   over the exposed field only — matches the mapping in renderRadiograph. */
+function xrayHistData(){
+  const {lastSignal:sig,mask}=S; if(!sig||!mask) return null;
+  let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
+  const a=40, denom=Math.log(1+a), hist=new Uint32Array(256);
+  for(let k=0;k<sig.length;k++){ if(!mask[k]) continue;
+    let t=sig[k]/mx; t=Math.log(1+a*t)/denom; let b=Math.round((1-t)*255);
+    hist[b<0?0:b>255?255:b]++; }
+  return hist;
+}
+function updateXrayHistogram(){
+  const canvas=$('xrayHist'); if(!canvas) return;
+  if(!S.showHist || !S.hasImage){ canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); return; }
+  const hist=xrayHistData(); if(!hist) return;
+  drawHistogram(canvas, hist, displayCurve);   // curve = auto-rescale (VOI) then LUT
+}
+
+/* ---- APR protocol picker ---------------------------------------------------
+   Protocols (data/protocols.json) set kVp/mAs (APR), the anti-scatter grid, the
+   display LUT, and optionally the subject model for a projection. Grouped body
+   part -> region -> projection in a popup. */
+function setGridUI(){
+  const v=$('gridStateV'); if(v) v.textContent=S.gridOn?'IN':'OUT';
+  const seg=$('gridSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',(b.dataset.grid==='on')===S.gridOn));
+}
+function findProtocol(part,proj){
+  const gr=protocolData.groups.find(g=>g.part===part); if(!gr) return null;
+  for(const rg of gr.regions){ const p=rg.projections.find(x=>x.proj===proj); if(p) return p; }
+  return null;
+}
+function setGridFocusUI(){
+  const v=$('gridFocusV'); if(v) v.textContent=S.gridFocus+' cm';
+  const seg=$('gridFocusSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',+b.dataset.focus===S.gridFocus));
+}
+function applyProtocol(p,part){
+  S.protocol={proj:p.proj, part};
+  S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas;
+  const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv;
+  const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
+  S.gridOn=!!p.grid; setGridUI();
+  S.lut=lutData.luts[p.lut]||lutData.luts.linear;
+  // per-exam target EI (real APR): the deviation index is judged against the exam's own
+  // target EiT, not a single number. Calibrated so a well-exposed exam reads DI≈0 with
+  // the IEC 62494-1 scale (EI 100 = 1 µGy). A well-exposed PA chest at 120 kVp / 2.5 mAs /
+  // grid / 180 cm reads ~300; higher-dose body/spine exams sit a little above that.
+  const EI_REGION_TARGET={ 'Chest':300, 'Abdomen / Pelvis':350, 'Spine':350, 'Head':250 };
+  S.eiTarget = p.targetEI ?? EI_REGION_TARGET[part] ?? 300;
+  // SID + focused-grid focal length (a focused grid is used at its focal distance)
+  if(p.sid){ S.sid=Math.max(20,Math.min(200,p.sid));
+    const sv=$('sidV'); if(sv) sv.textContent=S.sid+' cm';
+    const sr=$('sidRo'); if(sr) sr.innerHTML=S.sid+'<small>cm</small>';
+    S.gridFocus=S.sid; setGridFocusUI(); }
+  // receptor size + orientation FIRST (this re-caps the collimation sliders) …
+  if(p.det) setDetSize(p.det[0], p.det[1]);
+  if(p.orient) setDetOrient(p.orient);
+  // … then the collimated field (clamped to the receptor)
+  if(p.coll){ S.collX=Math.min(p.coll[0], S.detW); S.collZ=Math.min(p.coll[1], S.detH);
+    const cx=$('collX'), cz=$('collZ'); if(cx) cx.value=S.collX; if(cz) cz.value=S.collZ; }
+  updateGeomReadouts();
+  const pv=$('protocolV'); if(pv) pv.textContent=p.proj;
+  refreshReadouts();
+  // switch the subject model when the protocol targets one we have
+  if(p.subject && p.subject!==S.subject && (p.subject==='hand'||VOXEL_MODELS[p.subject])) setSubject(p.subject);
+  else { syncScene(); if(S.hasImage) drawFilm(); }
+}
+function openProtocolPopup(){
+  const pop=$('protoPop'), body=$('protoPopBody'); if(!pop||!body) return;
+  body.innerHTML=protocolData.groups.map(gr=>
+    '<div class="proto-part">'+gr.part+'</div>'+
+    gr.regions.map(rg=>
+      '<div class="proto-region"><div class="proto-rname">'+rg.region+'</div><div class="proto-projs">'+
+      rg.projections.map(p=>{ const cur=S.protocol&&S.protocol.part===gr.part&&S.protocol.proj===p.proj;
+        return '<button class="proto-proj'+(cur?' on':'')+'" data-part="'+gr.part+'" data-proj="'+p.proj+'">'
+          +p.proj+'<small>'+p.kv+' kVp · '+p.mas+' mAs'+(p.grid?' · grid':' · no grid')+'</small></button>'; }).join('')+
+      '</div></div>').join('')
+  ).join('');
+  pop.classList.add('show');
+}
+function closeProtocolPopup(){ $('protoPop')?.classList.remove('show'); }
 
 function updateDI(EI){
   const DI = 10*Math.log10(EI/S.eiTarget);
@@ -1091,12 +1399,60 @@ function updateDI(EI){
   $('eiV').className='v '+(Math.abs(DI)<=1?'ok':'');
 }
 
-function annotate(spec){
+/* Build the 4-corner image metadata for the CURRENT technique (shown on the big
+   Image view, not the small live monitor). */
+function buildMeta(spec){
   const subjName=(S.subject==='hand'?'HAND':(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase());
-  $('fnTL').textContent=subjName+' · '+S.pose;
-  $('fnTR').textContent=S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs';
-  $('fnBL').textContent='SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV';
-  $('fnBR').textContent='DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID');
+  return {
+    tl: subjName+' · '+S.pose,
+    tr: S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs',
+    bl: 'SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV',
+    br: 'DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID'),
+  };
+}
+
+/* ---- image history: keep the last 10 exposures, reviewable on the Image view ---- */
+const IMG_HISTORY_MAX=10;
+function pushImage(signal,nx,ny,mask,meta){
+  const rescale=computeRescale(signal,mask);   // auto-rescale VOI window, fixed at capture
+  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale});
+  while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
+  setActiveImage(S.imgHistory.length-1);
+}
+/* Point the render state at history[idx] and refresh the view + strip + meta. */
+function setActiveImage(idx){
+  if(!S.imgHistory.length){ S.histIdx=-1; S.hasImage=false; return; }
+  idx=Math.max(0,Math.min(S.imgHistory.length-1,idx));
+  const e=S.imgHistory[idx];
+  S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
+  S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true;
+  drawFilm();
+  updateImageMeta(); renderImageStrip();
+}
+/* Write the active image's metadata into the big Image-view corner overlays. */
+function updateImageMeta(){
+  const m=S.imgMeta||{};
+  const set=(id,v)=>{ const el=$(id); if(el) el.textContent=v||''; };
+  set('ivTL',m.tl); set('ivTR',m.tr); set('ivBL',m.bl); set('ivBR',m.br);
+}
+/* Render the thumbnail strip for the image history (x-ray Image view only). */
+function renderImageStrip(){
+  const strip=$('imgStrip'); if(!strip) return;
+  strip.innerHTML='';
+  S.imgHistory.forEach((e,i)=>{
+    const b=document.createElement('button');
+    b.className='imgthumb'+(i===S.histIdx?' on':'');
+    b.title=(e.meta?.tl||'')+'  ·  '+(e.meta?.tr||'');
+    const c=document.createElement('canvas'); renderRadiograph(c,e); // full oriented render
+    const t=document.createElement('canvas'); t.width=64; t.height=80;
+    const tg=t.getContext('2d'); tg.fillStyle='#000'; tg.fillRect(0,0,64,80);
+    const s=Math.min(64/c.width,80/c.height), w=c.width*s, h=c.height*s;
+    tg.drawImage(c,(64-w)/2,(80-h)/2,w,h);
+    b.appendChild(t);
+    const n=document.createElement('span'); n.className='imgthumb-n'; n.textContent=i+1; b.appendChild(n);
+    b.addEventListener('click',()=>setActiveImage(i));
+    strip.appendChild(b);
+  });
 }
 
 /* ---- compute backend (Python GPU) ---- */
@@ -1171,21 +1527,7 @@ function wireBackendToggles(){
   });
 }
 
-/* ---- custom model import (.glb) ---- */
-let modelGroup=null;
 function initExtras(){
-  const inp=$('loadModelInput');
-  $('loadModelBtn')?.addEventListener('click',()=>inp?.click());
-  inp?.addEventListener('change', async (e)=>{
-    const file=e.target.files[0]; if(!file) return;
-    try{
-      const grp=await loadModelFile(file);
-      if(modelGroup) three.scene.remove(modelGroup);
-      modelGroup=grp; three.scene.add(modelGroup);
-    }catch(err){ console.error('model load failed',err); alert('Could not load model: '+err.message); }
-    inp.value='';
-  });
-  $('clearModelBtn')?.addEventListener('click',()=>{ if(modelGroup){ three.scene.remove(modelGroup); modelGroup=null; } });
   wireBackendToggles();
   refreshComputeStatus();
 }
@@ -1198,5 +1540,5 @@ window.addEventListener('load',()=>{
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
-           refreshFilmViewer, compute });
+           refreshFilmViewer, compute, drawHistogram });
 });

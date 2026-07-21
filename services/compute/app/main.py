@@ -83,6 +83,7 @@ class VoxelProjectRequest(BaseModel):
     coneL: list[float]
     coneTw: float
     coneTl: float
+    rot: list[float] | None = None
 
 
 @app.post("/project/voxel")
@@ -105,6 +106,7 @@ class CTSlicesRequest(BaseModel):
     dfovR: float
     muArr: list[float]
     photons0: float
+    rot: list[float] | None = None
     kernel: str = "ramlak"      # 'ramlak' (quick preview) | 'shepp' (realistic detector)
 
 
@@ -130,6 +132,7 @@ class CTScoutRequest(BaseModel):
     binsW: list[float]
     muMat: list[list[float]]
     I0: float
+    rot: list[float] | None = None
 
 
 @app.post("/ct/scout")
