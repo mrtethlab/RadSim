@@ -943,10 +943,14 @@ function applyBoxDrag(gi, view, edge, s0, du, dv) {
     const half = clampV(raw, BOX_MIN / 2, Math.min(cen, 1 - cen));
     b.top = cen - half; b.bot = cen + half;
   } else {
-    // symmetric resize of the cross extent about the LOCKED centre (0.5)
+    // symmetric resize about the LOCKED centre (0.5). The AP (mediolateral) and LAT
+    // (anteroposterior) cross extents are LINKED to the same half-width, so widening one
+    // aspect widens the other by the same amount — the scan volume is a circular cylinder,
+    // never an ellipse.
     const raw = (edge === 'l' || edge === 't') ? 0.5 - (s0[CL] + crossD) : (s0[CR] + crossD) - 0.5;
     const half = clampV(raw, BOX_MIN / 2, 0.5);
-    b[CL] = 0.5 - half; b[CR] = 0.5 + half;
+    b.apL = 0.5 - half; b.apR = 0.5 + half;
+    b.latL = 0.5 - half; b.latR = 0.5 + half;
   }
 }
 
