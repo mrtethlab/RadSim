@@ -387,6 +387,7 @@ const S = {
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
   lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
   showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
+  detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
@@ -799,6 +800,9 @@ function bind(){
   // automatic rescaling (DR auto-ranging) — normalizes the VOI to the display range
   $('rescaleToggle')?.addEventListener('change',e=>{ S.autoRescale=e.target.checked;
     if(S.hasImage) drawFilm(); else updateXrayHistogram(); });
+  // DR detail (edge) enhancement — multiscale unsharp on the acquired image
+  $('detailToggle')?.addEventListener('change',e=>{ S.detailEnh=e.target.checked;
+    S._proc=null; if(S.hasImage) drawFilm(); });
   // APR protocol picker
   $('protocolBtn')?.addEventListener('click',openProtocolPopup);
   $('protoPopClose')?.addEventListener('click',closeProtocolPopup);
@@ -1128,6 +1132,11 @@ function renderRadiograph(target,entry){
   // open-field normalization for log display
   let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
   const a=40, denom=Math.log(1+a);
+  // DR detail enhancement: use the cached enhanced base-tone map for the active full-res
+  // image; thumbnails (entry passed) render the plain log tone (cheap, detail not needed).
+  const _t=(typeof window!=='undefined'&&window.__tune)||{};
+  const enhOn=(_t.eOn!==undefined)?_t.eOn:S.detailEnh;
+  const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -1135,7 +1144,8 @@ function renderRadiograph(target,entry){
     const k=(j0+j)*nx+(i0+i);
     let v;
     if(!mask[k]) v=0;
-    else { let t=sig[k]/mx; t=Math.log(1+a*t)/denom; v=toneMap(rescaleTone(1-t, rescale)); }  // invert -> auto-rescale -> LUT
+    else { const base=baseArr? baseArr[k] : 1-Math.log(1+a*sig[k]/mx)/denom;
+      v=toneMap(rescaleTone(base, rescale)); }  // (enhanced) base -> auto-rescale -> LUT
     const g=Math.round(v*255), o=(j*cw+i)*4;
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
@@ -1192,6 +1202,55 @@ function computeRescale(sig,mask){
   for(let b=0;b<NB;b++){ acc+=hist[b]; if(acc>=total*pl){ lo=b; break; } }
   acc=0; for(let b=NB-1;b>=0;b--){ acc+=hist[b]; if(acc>=total*ph){ hi=b; break; } }
   return { lo: lo/(NB-1), hi: Math.max((lo+1)/(NB-1), hi/(NB-1)) };
+}
+
+/* ---- DR-style detail (edge) enhancement ------------------------------------
+   Real digital-radiography processing (Fuji MUSICA, Agfa, GE UNIQUE …) applies a
+   multi-frequency decomposition and boosts the mid-frequency structure band —
+   bony edges, vessels, the vertebral endplates seen faintly through the heart —
+   more than the fine quantum-mottle band, lifting low-contrast detail without
+   amplifying noise as strongly. Here: a two-band multiscale unsharp mask on the
+   log base tone. Split into fine (<r1), mid (r1..r2) and coarse (>r2) bands with
+   masked box blurs, then recombine with per-band gains (mid boosted, fine gentle).
+   Radii scale with the matrix so the effect is resolution-independent. Runs once
+   per acquired image (cached on the signal ref), never per window/level change. */
+function boxBlurMasked(src,mask,nx,ny,r){
+  if(r<1) return src.slice();
+  const tmp=new Float32Array(nx*ny), out=new Float32Array(nx*ny);
+  for(let y=0;y<ny;y++){ const row=y*nx; let sum=0,cnt=0;
+    for(let x=0;x<r&&x<nx;x++){ if(mask[row+x]){sum+=src[row+x];cnt++;} }
+    for(let x=0;x<nx;x++){ const add=x+r; if(add<nx&&mask[row+add]){sum+=src[row+add];cnt++;}
+      const rem=x-r-1; if(rem>=0&&mask[row+rem]){sum-=src[row+rem];cnt--;}
+      tmp[row+x]= cnt? sum/cnt : src[row+x]; } }
+  for(let x=0;x<nx;x++){ let sum=0,cnt=0;
+    for(let y=0;y<r&&y<ny;y++){ const k=y*nx+x; if(mask[k]){sum+=tmp[k];cnt++;} }
+    for(let y=0;y<ny;y++){ const add=y+r; if(add<ny&&mask[add*nx+x]){sum+=tmp[add*nx+x];cnt++;}
+      const rem=y-r-1; if(rem>=0&&mask[rem*nx+x]){sum-=tmp[rem*nx+x];cnt--;}
+      out[y*nx+x]= cnt? sum/cnt : tmp[y*nx+x]; } }
+  return out;
+}
+function processImage(sig,nx,ny,mask,mx){
+  const _t=(typeof window!=='undefined'&&window.__tune)||{};
+  const a=40, denom=Math.log(1+a);
+  const base=new Float32Array(nx*ny);
+  for(let k=0;k<sig.length;k++) base[k]= mask[k]? 1-Math.log(1+a*sig[k]/mx)/denom : 0;
+  const R=Math.max(nx,ny);
+  const r1=Math.max(1,Math.round((_t.eR1??0.006)*R));
+  const r2=Math.max(r1+1,Math.round((_t.eR2??0.030)*R));
+  const gMid=_t.eGmid??2.4, gFine=_t.eGfine??0.5;
+  const B1=boxBlurMasked(base,mask,nx,ny,r1);
+  const B2=boxBlurMasked(base,mask,nx,ny,r2);
+  const out=new Float32Array(nx*ny);
+  for(let k=0;k<base.length;k++){ if(!mask[k]){ out[k]=0; continue; }
+    const fine=base[k]-B1[k], mid=B1[k]-B2[k];
+    out[k]=B2[k]+gMid*mid+gFine*fine; }
+  return out;
+}
+/* Enhanced base-tone map for the active image, cached on the signal reference so
+   window/level and view switches don't recompute the blurs. */
+function activeProcessed(sig,nx,ny,mask,mx){
+  if(!S._proc || S._proc.sig!==sig) S._proc={sig, data:processImage(sig,nx,ny,mask,mx)};
+  return S._proc.data;
 }
 /* Apply auto-rescale (VOI stretch) to a base tone, using the given window. */
 function rescaleTone(x,rs){
