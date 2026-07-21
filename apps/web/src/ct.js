@@ -713,10 +713,18 @@ async function scoutProjection(view) {
 function drawScout(cv, data, rowLimit) {
   if (!cv) return;
   const { dose, nw, nz, mn, mx } = data;
+  // The LATERAL scout is rotated 90° so the patient LONG axis (scan length, z) runs
+  // HORIZONTALLY (start/superior at the left, table feed = left→right) and the
+  // anterior-posterior depth runs vertically. The AP scout stays portrait (long axis
+  // vertical). This lets the reposition buttons read naturally: AP left/right = medio-
+  // lateral, LAT up/down = anterior/posterior, with the table-feed axis handled by the
+  // box drag in each view.
+  const rotated = cv.id === 'scoutLAT';
   const lim = rowLimit == null ? nz : Math.max(0, Math.min(nz, Math.round(rowLimit)));
-  if (cv.width !== nw || cv.height !== nz) { cv.width = nw; cv.height = nz; }
+  const outW = rotated ? nz : nw, outH = rotated ? nw : nz;
+  if (cv.width !== outW || cv.height !== outH) { cv.width = outW; cv.height = outH; }
   const g = cv.getContext('2d');
-  const img = g.createImageData(nw, nz);
+  const img = g.createImageData(outW, outH);
   const d8 = img.data;
   for (let k = 0; k < d8.length; k += 4) { d8[k] = d8[k + 1] = d8[k + 2] = 0; d8[k + 3] = 255; } // unscanned = black
   // Log (line-integral) display, like a real scout/DR system: gray ∝ ln(open/dose).
@@ -728,12 +736,13 @@ function drawScout(cv, data, rowLimit) {
   const floor = Math.max(mn, mx * 1e-12) || 1e-12;
   const pmax = data.pmax || Math.log(mx / floor) || 1;   // percentile window from scoutProjection
   const GAMMA = 1.4;                                  // film-like response: lungs dark, soft tissue mid-gray
-  for (let j = 0; j < lim; j++) {
-    const imgRow = j;                                // isocentre (row 0) at the top (= start)
-    for (let i = 0; i < nw; i++) {
+  for (let j = 0; j < lim; j++) {                    // j = scan-length index (0 = start/superior)
+    for (let i = 0; i < nw; i++) {                   // i = cross index (mediolateral AP / depth LAT)
       const p = Math.min(1, Math.log(mx / Math.max(dose[j * nw + i], floor)) / pmax);   // 0 open … 1 dense (clip white)
       const v = Math.round(255 * Math.pow(p, GAMMA));
-      const o = (imgRow * nw + i) * 4;
+      const ox = rotated ? j : i;                    // LAT: scan length → x (left = start)
+      const oy = rotated ? i : j;                    // LAT: depth → y ; AP: scan length → y (top = start)
+      const o = (oy * outW + ox) * 4;
       d8[o] = d8[o + 1] = d8[o + 2] = v;
     }
   }
@@ -759,9 +768,11 @@ function layoutScouts() {
   const hdrH = (hdr ? hdr.offsetHeight : 18) + 6;      // header + column inner gap
   const availW = Math.max(40, row.clientWidth - colGap);
   const availH = Math.max(40, row.clientHeight - hdrH); // the scoutrow's own height (table sits below)
-  const scale = Math.min(availW / (wAP + wLAT), availH / len);   // shared px per mm
-  const set = (cv, wmm) => { cv.style.width = (wmm * scale) + 'px'; cv.style.height = (len * scale) + 'px'; };
-  set(ap, wAP); set(lat, wLAT);
+  // AP is portrait (FOV wide × scan-length tall); the LATERAL is rotated to landscape
+  // (scan-length wide × FOV tall). One shared px/mm so the box locks the two views.
+  const scale = Math.min(availW / (wAP + len), availH / len);
+  ap.style.width = (wAP * scale) + 'px'; ap.style.height = (len * scale) + 'px';
+  lat.style.width = (len * scale) + 'px'; lat.style.height = (wLAT * scale) + 'px';
 }
 
 // keep the last scout data for later phases (scan box) to reuse the geometry/dims
@@ -821,6 +832,7 @@ function initScanBoxes() {
   buildGroupBoxes('wrapAP', 'ap');
   buildGroupBoxes('wrapLAT', 'lat');
   wireScanGroupTable();
+  wireReposButtons();
 }
 // one DOM box per group per scout (shown/positioned per group in renderScanBoxes)
 function buildGroupBoxes(wrapId, view) {
@@ -853,14 +865,21 @@ function renderScanBoxes() {
     el.classList.toggle('shown', shown);
     el.classList.toggle('active', gi === c.activeGroup);
     if (!shown) return;
-    const L = view === 'ap' ? g.box.apL : g.box.latL, R = view === 'ap' ? g.box.apR : g.box.latR;
-    el.style.left = (L * 100) + '%'; el.style.top = (g.box.top * 100) + '%';
-    el.style.width = ((R - L) * 100) + '%'; el.style.height = ((g.box.bot - g.box.top) * 100) + '%';
-    // per-slice dotted lines (spacing = interval), thickness in the label
+    // AP: scan length (top/bot) → vertical, cross axis (apL/apR) → horizontal.
+    // LAT (rotated): scan length (top/bot) → horizontal, depth (latL/latR) → vertical.
+    if (view === 'ap') {
+      el.style.left = (g.box.apL * 100) + '%'; el.style.width = ((g.box.apR - g.box.apL) * 100) + '%';
+      el.style.top = (g.box.top * 100) + '%'; el.style.height = ((g.box.bot - g.box.top) * 100) + '%';
+    } else {
+      el.style.left = (g.box.top * 100) + '%'; el.style.width = ((g.box.bot - g.box.top) * 100) + '%';
+      el.style.top = (g.box.latL * 100) + '%'; el.style.height = ((g.box.latR - g.box.latL) * 100) + '%';
+    }
+    // per-slice dotted lines (spacing = interval) run ACROSS the scan-length axis
     const sl = el.querySelector('.slices'), lenMM = groupScanLenMM(g);
     const period = lenMM > 0 ? (g.interval / lenMM) * 100 : 100;
     if (period >= 0.7 && g.interval > 0) {
-      sl.style.backgroundImage = 'repeating-linear-gradient(to bottom, var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
+      const dir = view === 'ap' ? 'to bottom' : 'to right';
+      sl.style.backgroundImage = 'repeating-linear-gradient(' + dir + ', var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
       sl.style.opacity = '0.55';
     } else { sl.style.backgroundImage = 'none'; }
     el.querySelector('.glbl').textContent = 'G' + (gi + 1) + ' · ' + fmtNum(g.sliceThk) + ' mm';
@@ -893,24 +912,69 @@ function wireScanBox(box, gi, view) {
     box.addEventListener('pointerup', onUp); box.addEventListener('pointercancel', onUp);
   });
 }
+// The box is LOCKED at the centre of the scout on the cross axis (mediolateral on AP,
+// depth on LAT) — cross repositioning is done by the reposition buttons, which move the
+// table. The box only MOVES along the table long axis (scan length), and RESIZES
+// symmetrically about its centre on either axis. Screen deltas map per view: on the
+// portrait AP the scan-length axis is vertical (dv); on the rotated-landscape LAT it is
+// horizontal (du).
 function applyBoxDrag(gi, view, edge, s0, du, dv) {
-  const b = grp(gi).box, L = view === 'ap' ? 'apL' : 'latL', R = view === 'ap' ? 'apR' : 'latR';
+  const b = grp(gi).box;
+  const CL = view === 'ap' ? 'apL' : 'latL', CR = view === 'ap' ? 'apR' : 'latR';
+  const scanD = view === 'ap' ? dv : du;    // delta along the scan-length axis (top/bot)
+  const crossD = view === 'ap' ? du : dv;   // delta along the cross axis (apL/apR | latL/latR)
+  const scanLo = view === 'ap' ? 't' : 'l', scanHi = view === 'ap' ? 'b' : 'r';
   if (!edge) {
-    const w = s0[R] - s0[L], nl = clampV(s0[L] + du, 0, 1 - w); b[L] = nl; b[R] = nl + w;
-    const h = s0.bot - s0.top, nt = clampV(s0.top + dv, 0, 1 - h); b.top = nt; b.bot = nt + h;
-  } else if (edge === 't' || edge === 'b') {
-    // symmetric about the box centre: dragging one long edge moves BOTH edges so the
-    // centre stays put (widen/lengthen/shorten from the middle).
+    // MOVE along the table long axis only; cross axis stays locked at centre.
+    const h = s0.bot - s0.top, nt = clampV(s0.top + scanD, 0, 1 - h);
+    b.top = nt; b.bot = nt + h;
+  } else if (edge === scanLo || edge === scanHi) {
+    // symmetric resize of the scan-length extent about the box centre
     const cen = (s0.top + s0.bot) / 2;
-    const raw = edge === 't' ? cen - (s0.top + dv) : (s0.bot + dv) - cen;
+    const raw = edge === scanLo ? cen - (s0.top + scanD) : (s0.bot + scanD) - cen;
     const half = clampV(raw, BOX_MIN / 2, Math.min(cen, 1 - cen));
     b.top = cen - half; b.bot = cen + half;
-  } else {   // 'l' | 'r' — symmetric about the box centre on the cross axis
-    const cen = (s0[L] + s0[R]) / 2;
-    const raw = edge === 'l' ? cen - (s0[L] + du) : (s0[R] + du) - cen;
-    const half = clampV(raw, BOX_MIN / 2, Math.min(cen, 1 - cen));
-    b[L] = cen - half; b[R] = cen + half;
+  } else {
+    // symmetric resize of the cross extent about the LOCKED centre (0.5)
+    const raw = (edge === 'l' || edge === 't') ? 0.5 - (s0[CL] + crossD) : (s0[CR] + crossD) - 0.5;
+    const half = clampV(raw, BOX_MIN / 2, 0.5);
+    b[CL] = 0.5 - half; b[CR] = 0.5 + half;
   }
+}
+
+// ---- scout reposition buttons ----------------------------------------------
+// The box is locked at the scout centre, so imaging an off-centre region means moving
+// the PATIENT: the buttons pan the scout image under the fixed box and set the scan-
+// centre offset (mm), which requires a table reposition to commit. AP buttons shift the
+// mediolateral centre (left/right); LATERAL buttons shift the anteroposterior centre
+// (up/down). The table-feed axis in each view is handled by dragging the box instead.
+const REPOS_STEP = { small: 5, large: 25 };   // mm per press (single vs double chevron)
+function nudgeRepos(axis, dir, big) {
+  const c = ctx.S.ct;
+  if (c.phase !== 'planning') return;
+  const step = (big ? REPOS_STEP.large : REPOS_STEP.small) * dir;
+  const lim = scoutFov() / 2;                 // keep the scan centre inside the scout FOV
+  if (axis === 'x') c.plan.targetX = clampV(c.plan.targetX + step, -lim, lim);
+  else c.plan.targetY = clampV(c.plan.targetY + step, -lim, lim);
+  updatePlan();
+}
+// Pan each scout so the (centred) box sits over the button-selected scan centre. AP pans
+// mediolaterally (horizontal); the rotated LATERAL pans anteroposteriorly (vertical).
+function applyScoutPan() {
+  const c = ctx.S.ct, fov = scoutFov() || 1;
+  const ax = -((c.plan.targetX - c.plan.committedX) / fov) * 100;
+  const ay = -((c.plan.targetY - c.plan.committedY) / fov) * 100;
+  const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
+  if (ap) ap.style.transform = 'translate(' + ax.toFixed(2) + '%, 0)';
+  if (lat) lat.style.transform = 'translate(0, ' + ay.toFixed(2) + '%)';
+}
+function wireReposButtons() {
+  const handler = (e) => {
+    const b = e.target.closest('button[data-repo]'); if (!b) return;
+    nudgeRepos(b.dataset.repo, +b.dataset.dir, b.dataset.big === '1');
+  };
+  ctx.$('reposAP')?.addEventListener('click', handler);
+  ctx.$('reposLAT')?.addEventListener('click', handler);
 }
 
 // Scans run sequentially, so the reposition before START is for the NEXT (first)
@@ -920,8 +984,10 @@ function updatePlan() {
   const set = (id, v) => { const el = ctx.$(id); if (el) el.textContent = v; };
   set('ctScanStartV', fmtTablePos(g.box.top * len) + ' mm');
   set('ctScanEndV', fmtTablePos(g.box.bot * len) + ' mm');
-  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * scoutFov();   // mediolateral offset (mm)
-  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * scoutFov(); // anteroposterior offset (mm)
+  // The scan box is locked at the scout centre on the cross axes; the mediolateral (X)
+  // and anteroposterior (Y) scan-centre offsets come from the reposition buttons
+  // (c.plan.targetX / targetY), which is what requires a table move.
+  applyScoutPan();
   updatePlanReady();
   renderScanGroups();
 }
@@ -1306,11 +1372,10 @@ async function runScan() {
   setHint('Scan complete — ' + S.ct.storage.length + ' scan(s) stored. Scroll the slices; ABORT to plan a new scan.');
 }
 
-// Auto-drive the couch to centre THIS group's box on the isocentre (mediolateral, then height).
+// Auto-drive the couch to the reposition-button target (mediolateral, then height). The
+// scan box is centred; the button-driven c.plan.targetX/targetY are the scan-centre offset.
 async function repositionForGroup(i, alive) {
-  const c = ctx.S.ct, g = grp(i);
-  c.plan.targetX = ((g.box.apL + g.box.apR) / 2 - 0.5) * scoutFov();    // mediolateral offset (mm)
-  c.plan.targetY = ((g.box.latL + g.box.latR) / 2 - 0.5) * scoutFov();  // anteroposterior offset (mm)
+  const c = ctx.S.ct;
   await animateCommit('committedX', c.plan.targetX, 1.0, alive);
   if (!alive()) return;
   await animateCommit('committedY', c.plan.targetY, 0.72, alive);
