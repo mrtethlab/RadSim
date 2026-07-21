@@ -8,7 +8,7 @@ import { AttenuationEngine } from './core/engine.js';
 import { Detector } from './core/detector.js';
 import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
-import { loadModelFile, loadModelUrl } from './model/loader.js';
+import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import lutData from './data/luts.json';
@@ -826,8 +826,6 @@ function bind(){
   $('camSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCameraView(b.dataset.cam);});
   // CT camera: AP-PoV  <->  Lat-PoV
   $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
-  // render mode: soft-tissue anatomy  <->  skeleton (display only)
-  $('renderSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setHandView(b.dataset.hv);});
   // subject: analytic hand  <->  any voxel model
   $('subjectSel')?.addEventListener('change',e=>setSubject(e.target.value));
   // collimator light on/off
@@ -1529,21 +1527,7 @@ function wireBackendToggles(){
   });
 }
 
-/* ---- custom model import (.glb) ---- */
-let modelGroup=null;
 function initExtras(){
-  const inp=$('loadModelInput');
-  $('loadModelBtn')?.addEventListener('click',()=>inp?.click());
-  inp?.addEventListener('change', async (e)=>{
-    const file=e.target.files[0]; if(!file) return;
-    try{
-      const grp=await loadModelFile(file);
-      if(modelGroup) three.scene.remove(modelGroup);
-      modelGroup=grp; three.scene.add(modelGroup);
-    }catch(err){ console.error('model load failed',err); alert('Could not load model: '+err.message); }
-    inp.value='';
-  });
-  $('clearModelBtn')?.addEventListener('click',()=>{ if(modelGroup){ three.scene.remove(modelGroup); modelGroup=null; } });
   wireBackendToggles();
   refreshComputeStatus();
 }

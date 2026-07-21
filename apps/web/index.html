@@ -130,13 +130,6 @@
           </div>
         </div>
         <div>
-          <div class="cl">Render</div>
-          <div class="segmini" id="renderSeg">
-            <button data-hv="soft" class="on">Anatomy</button>
-            <button data-hv="bone">Skeleton</button>
-          </div>
-        </div>
-        <div>
           <div class="cl">Subject</div>
           <select id="subjectSel" class="subjectsel">
             <option value="hand" selected>Hand (analytic)</option>
@@ -149,14 +142,6 @@
             <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
           </select>
           <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:4px; text-align:left; letter-spacing:.3px; max-width:190px"></div>
-        </div>
-        <div>
-          <div class="cl">Model <span id="computeDot" title="compute backend">○</span></div>
-          <div class="segmini">
-            <button id="loadModelBtn" type="button">Load .glb</button>
-            <button id="clearModelBtn" type="button">Clear</button>
-          </div>
-          <input id="loadModelInput" type="file" accept=".glb,.gltf" style="display:none"/>
         </div>
       </div>
     </div>
@@ -198,15 +183,19 @@
           <input type="range" id="ctScanLen" min="50" max="600" step="10" value="300">
           <div class="row" style="margin-top:10px"><div class="rl">Est. scan time</div>
             <div class="valchip green" id="ctExpTimeV">— s</div></div>
+        </div>
+      </div>
 
-          <div class="row" style="margin-top:12px"><div class="rl">CT detector</div>
+      <div class="grp ct-only" id="ctDetectorGrp">
+        <div class="lab">Detector</div>
+        <div class="bod">
+          <div class="row"><div class="rl">CT detector</div>
             <div class="valchip" id="ctDetModeV">128 ch · preview</div></div>
           <div class="seg" id="ctDetModeSeg">
             <button data-dm="quick" class="on">Quick</button>
             <button data-dm="realistic">Realistic</button>
           </div>
           <div class="note" style="margin-top:4px">Quick = 128-channel preview detector (pitch follows the recon FOV). Realistic = fixed 0.625&nbsp;mm DEL pitch across a 500&nbsp;mm scan FOV — 800 channels × 720 views, 512² matrix. Heavy: pair it with the Python GPU engine.</div>
-
         </div>
       </div>
 
@@ -385,7 +374,7 @@
 
   <!-- ============ GENERATOR CONSOLE + MONITOR ============ -->
   <div class="col">
-    <div class="hdr"><div class="t"><b>GENERATOR</b> / A1</div><div class="u" id="clock">STANDBY</div></div>
+    <div class="hdr"><div class="t"><b id="consoleLbl">GENERATOR</b> / A1</div><div class="u" id="clock">STANDBY</div></div>
     <div class="pad">
 
       <div class="readout xray-only">

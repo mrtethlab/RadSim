@@ -307,6 +307,8 @@ function applyMode(mode) {
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition' : 'Digit · Hand phantom';
   const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Scout window in CT
   if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Scout' : 'Image';
+  const consoleLbl = ctx.$('consoleLbl');    // x-ray generator vs CT console
+  if (consoleLbl) consoleLbl.textContent = mode === 'ct' ? 'CONSOLE' : 'GENERATOR';
   // A mode switch is a clean slate: tear down the CT scout workflow and any carried
   // view state so nothing from the other mode lingers (stale image, scout overlay,
   // tube-POV camera, Image view). Acquisition params + technique are user setup and
