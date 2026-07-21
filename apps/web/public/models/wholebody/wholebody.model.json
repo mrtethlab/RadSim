@@ -1,15 +1,15 @@
 {
   "name": "Whole body",
-  "source": "TotalSegmentator dataset (s1397) \u00b7 ground-truth segmentation",
+  "source": "VSD Full Body postmortem CT (subject z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
   "dims": [
-    302,
-    276,
-    547
+    256,
+    149,
+    779
   ],
   "spacing": [
-    1.5,
-    1.5,
-    1.5
+    2.0,
+    2.0,
+    2.0
   ],
   "order": "x-fastest: i = x + nx*(y + ny*z)",
   "volume": "wholebody.mat.bin",
@@ -189,23 +189,14 @@
     0,
     1,
     2,
-    5,
-    6,
     7,
-    8,
-    10,
-    11,
-    12,
-    13,
-    14,
-    15,
-    16,
     17,
     18,
     23
   ],
   "huReference": [
-    -1473,
-    3420
-  ]
+    -1024,
+    3071
+  ],
+  "backendOnly": false
 }

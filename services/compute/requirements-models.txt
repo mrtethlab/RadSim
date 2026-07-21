@@ -32,6 +32,32 @@
 # NB clinical whole-body CT spans vertex→pelvis, so the extremities are proximal
 # (shoulder/upper-arm, hip/femur); distal limbs need dedicated extremity CT.
 #
+# ---------------------------------------------------------------------------
+# TRUE head-to-toe whole body + distal extremities: the TotalSegmentator subset
+# above stops at the pelvis. Use the VSD Full Body collection instead — open
+# anonymized whole-body POSTMORTEM forensic CT (Bern/Zürich), already NIfTI,
+# CC BY-NC-SA (non-commercial; fine for this educational sim):
+#   https://zenodo.org/records/8270365   (DOI 10.5281/zenodo.8270364; 109 subjects)
+#   Direct per-subject: https://zenodo.org/records/8270365/files/<id>.zip?download=1
+# The z-prefixed ids (z033, z045, …) are single whole-body volumes; plain-numbered
+# ids are separate regional DICOM series. CAUTION: forensic positioning VARIES —
+# many subjects are flexed (folded hips/knees). Inspect first and pick an EXTENDED
+# supine subject (z045 = 45M, extended, arms abducted, 512×512×3117 @1.0/0.5mm,
+# 1558 mm head-to-feet is a good one):
+#   ./.venv/Scripts/python.exe -m app.inspect_vsd data/vsd/z045.zip data/vsd/z045 z045.png
+#   # squeeze the 4D NIfTI -> ct.nii.gz (see prep step inside), then segment IF the
+#   # torch/torchvision versions match (a mismatch -> "torchvision::nms does not
+#   # exist"; TS's NN then can't run). materialize() derives air/lung/fat/muscle/
+#   # bone/skin from HU ALONE, so a ZERO-label seg still yields a full attenuation
+#   # model (only organ mesh colours are lost):
+#   ./.venv/Scripts/python.exe -c "import nibabel as nib,numpy as np; c=nib.load('data/vsd/z045/ct.nii.gz'); nib.save(nib.Nifti1Image(np.zeros(c.shape[:3],np.uint8),c.affine),'data/vsd/z045/seg.nii')"
+#   ./.venv/Scripts/python.exe -m app.build_model --ct data/vsd/z045/ct.nii.gz \
+#     --seg data/vsd/z045/seg.nii --out ../../apps/web/public/models/wholebody \
+#     --name wholebody --region wholebody --spacing 2.0 --source "VSD Full Body (z045)"
+# TODO: extremity crops from the extended subject (LE: femur→feet z-window + single
+# leg; UE: abducted-arm bbox to the hand) + restore organ seg once torch/torchvision
+# is realigned.
+#
 # torch is installed separately (CPU wheel above) to avoid the CUDA build.
 SimpleITK>=2.3
 nibabel>=5.2
