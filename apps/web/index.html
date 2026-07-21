@@ -22,19 +22,21 @@
       <div class="scoutrow">
         <div class="scoutcol">
           <div class="scouthdr">AP SCOUT</div>
-          <div class="scoutwrap" id="wrapAP"><canvas id="scoutAP"></canvas></div>
-          <div class="reposrow" id="reposAP" title="Reposition mediolaterally (moves the table)">
-            <button data-repo="x" data-dir="-1" data-big="1" title="Left · large"><span class="chev">«</span></button>
-            <button data-repo="x" data-dir="-1" title="Left · small"><span class="chev">‹</span></button>
-            <button data-repo="x" data-dir="1" title="Right · small"><span class="chev">›</span></button>
-            <button data-repo="x" data-dir="1" data-big="1" title="Right · large"><span class="chev">»</span></button>
+          <div class="scoutwrap" id="wrapAP">
+            <div class="scoutfit" id="fitAP"><canvas id="scoutAP"></canvas></div>
+            <div class="reposcluster reposrow" id="reposAP" title="Reposition mediolaterally (moves the table)">
+              <button data-repo="x" data-dir="-1" data-big="1" title="Left · large"><span class="chev">«</span></button>
+              <button data-repo="x" data-dir="-1" title="Left · small"><span class="chev">‹</span></button>
+              <button data-repo="x" data-dir="1" title="Right · small"><span class="chev">›</span></button>
+              <button data-repo="x" data-dir="1" data-big="1" title="Right · large"><span class="chev">»</span></button>
+            </div>
           </div>
         </div>
         <div class="scoutcol">
           <div class="scouthdr">LATERAL SCOUT</div>
-          <div class="scoutlatwrap">
-            <div class="scoutwrap" id="wrapLAT"><canvas id="scoutLAT"></canvas></div>
-            <div class="reposcol" id="reposLAT" title="Reposition anteroposteriorly (moves the table)">
+          <div class="scoutwrap" id="wrapLAT">
+            <div class="scoutfit" id="fitLAT"><canvas id="scoutLAT"></canvas></div>
+            <div class="reposcluster reposcol" id="reposLAT" title="Reposition anteroposteriorly (moves the table)">
               <button data-repo="y" data-dir="-1" data-big="1" title="Anterior · large"><span class="chev vchev">«</span></button>
               <button data-repo="y" data-dir="-1" title="Anterior · small"><span class="chev vchev">‹</span></button>
               <button data-repo="y" data-dir="1" title="Posterior · small"><span class="chev vchev">›</span></button>

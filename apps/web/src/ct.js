@@ -741,7 +741,9 @@ function drawScout(cv, data, rowLimit) {
       const p = Math.min(1, Math.log(mx / Math.max(dose[j * nw + i], floor)) / pmax);   // 0 open … 1 dense (clip white)
       const v = Math.round(255 * Math.pow(p, GAMMA));
       const ox = rotated ? j : i;                    // LAT: scan length → x (left = start)
-      const oy = rotated ? i : j;                    // LAT: depth → y ; AP: scan length → y (top = start)
+      // LAT depth → y, flipped so the ANTERIOR side is at the top (posterior at the bottom
+      // for a supine patient); AP: scan length → y (top = start).
+      const oy = rotated ? (nw - 1 - i) : j;
       const o = (oy * outW + ox) * 4;
       d8[o] = d8[o + 1] = d8[o + 2] = v;
     }
@@ -760,19 +762,26 @@ function layoutScouts() {
   const row = box && box.querySelector('.scoutrow');
   const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
   if (!box || !row || !ap || !lat) return;
-  const len = ctx.S.ct.scanLen;                        // mm along the scan axis (both)
-  const wAP = scoutFov(), wLAT = scoutFov();
   const cs = getComputedStyle(row);
   const colGap = parseFloat(cs.columnGap || cs.gap) || 16;
   const hdr = box.querySelector('.scouthdr');
   const hdrH = (hdr ? hdr.offsetHeight : 18) + 6;      // header + column inner gap
   const availW = Math.max(40, row.clientWidth - colGap);
   const availH = Math.max(40, row.clientHeight - hdrH); // the scoutrow's own height (table sits below)
-  // AP is portrait (FOV wide × scan-length tall); the LATERAL is rotated to landscape
-  // (scan-length wide × FOV tall). One shared px/mm so the box locks the two views.
-  const scale = Math.min(availW / (wAP + len), availH / len);
-  ap.style.width = (wAP * scale) + 'px'; ap.style.height = (len * scale) + 'px';
-  lat.style.width = (len * scale) + 'px'; lat.style.height = (wLAT * scale) + 'px';
+  // Both scout windows are the SAME square (capped by the available height so they never
+  // clip into the scan-group table below). Each image (AP landscape, rotated LATERAL
+  // portrait) is letterboxed inside its square via .scoutfit, which the scan boxes are
+  // positioned within; the blank padding hosts the overlaid reposition buttons.
+  const S = Math.max(40, Math.floor(Math.min(availH, availW / 2)));
+  const place = (cv) => {
+    const wrap = cv.closest('.scoutwrap'), fit = cv.parentElement;
+    if (!wrap || !fit) return;
+    wrap.style.width = S + 'px'; wrap.style.height = S + 'px';
+    const ar = (cv.width || 1) / (cv.height || 1);   // native image aspect (already rotated for LAT)
+    let w = S, h = S / ar; if (h > S) { h = S; w = S * ar; }
+    fit.style.width = Math.round(w) + 'px'; fit.style.height = Math.round(h) + 'px';
+  };
+  place(ap); place(lat);
 }
 
 // keep the last scout data for later phases (scan box) to reuse the geometry/dims
@@ -829,8 +838,8 @@ function defaultGroups() {
 }
 
 function initScanBoxes() {
-  buildGroupBoxes('wrapAP', 'ap');
-  buildGroupBoxes('wrapLAT', 'lat');
+  buildGroupBoxes('fitAP', 'ap');
+  buildGroupBoxes('fitLAT', 'lat');
   wireScanGroupTable();
   wireReposButtons();
 }
@@ -840,7 +849,7 @@ function buildGroupBoxes(wrapId, view) {
   for (let gi = 0; gi < N_GROUPS; gi++) {
     const box = document.createElement('div');
     box.className = 'scanbox gc' + gi; box.dataset.group = gi; box.dataset.view = view;
-    box.innerHTML = '<div class="slices"></div><div class="glbl"></div>' +
+    box.innerHTML = '<div class="slices"></div>' +
       '<div class="xh xh-h"></div><div class="xh xh-v"></div>' +
       '<div class="eh eh-t" data-edge="t"></div><div class="eh eh-b" data-edge="b"></div>' +
       '<div class="eh eh-l" data-edge="l"></div><div class="eh eh-r" data-edge="r"></div>';
@@ -882,7 +891,6 @@ function renderScanBoxes() {
       sl.style.backgroundImage = 'repeating-linear-gradient(' + dir + ', var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
       sl.style.opacity = '0.55';
     } else { sl.style.backgroundImage = 'none'; }
-    el.querySelector('.glbl').textContent = 'G' + (gi + 1) + ' · ' + fmtNum(g.sliceThk) + ' mm';
   });
 }
 
