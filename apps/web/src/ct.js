@@ -898,10 +898,19 @@ function applyBoxDrag(gi, view, edge, s0, du, dv) {
   if (!edge) {
     const w = s0[R] - s0[L], nl = clampV(s0[L] + du, 0, 1 - w); b[L] = nl; b[R] = nl + w;
     const h = s0.bot - s0.top, nt = clampV(s0.top + dv, 0, 1 - h); b.top = nt; b.bot = nt + h;
-  } else if (edge === 't') b.top = clampV(s0.top + dv, 0, s0.bot - BOX_MIN);
-  else if (edge === 'b') b.bot = clampV(s0.bot + dv, s0.top + BOX_MIN, 1);
-  else if (edge === 'l') b[L] = clampV(s0[L] + du, 0, s0[R] - BOX_MIN);
-  else if (edge === 'r') b[R] = clampV(s0[R] + du, s0[L] + BOX_MIN, 1);
+  } else if (edge === 't' || edge === 'b') {
+    // symmetric about the box centre: dragging one long edge moves BOTH edges so the
+    // centre stays put (widen/lengthen/shorten from the middle).
+    const cen = (s0.top + s0.bot) / 2;
+    const raw = edge === 't' ? cen - (s0.top + dv) : (s0.bot + dv) - cen;
+    const half = clampV(raw, BOX_MIN / 2, Math.min(cen, 1 - cen));
+    b.top = cen - half; b.bot = cen + half;
+  } else {   // 'l' | 'r' — symmetric about the box centre on the cross axis
+    const cen = (s0[L] + s0[R]) / 2;
+    const raw = edge === 'l' ? cen - (s0[L] + du) : (s0[R] + du) - cen;
+    const half = clampV(raw, BOX_MIN / 2, Math.min(cen, 1 - cen));
+    b[L] = cen - half; b[R] = cen + half;
+  }
 }
 
 // Scans run sequentially, so the reposition before START is for the NEXT (first)
