@@ -174,18 +174,23 @@ def _region_bounds(region, lab, cmap, shape, spacing):
     return (max(0, zs.min() - mg), min(zN, zs.max() + mg + 1), 0, yN, 0, xN)
 
 
-def materialize(hu, lab, spacing):
+def materialize(hu, lab, spacing, body_restrict=None):
     """Assign a body-material id to every voxel of an (already-resampled) HU + label
-    volume. Returns (mat uint8, body mask). Reused by build() and build_highres."""
+    volume. Returns (mat uint8, body mask). Reused by build() and build_highres.
+    body_restrict: optional bool mask (e.g. TotalSegmentator's `body` task) to clip the
+    body to the patient envelope, removing the scanner table + external tubes/leads."""
     body = hu > -320
     body = ndi.binary_closing(body, iterations=2)
     body = ndi.binary_fill_holes(body)
+    if body_restrict is not None:
+        body &= body_restrict
     lbl, n = ndi.label(body)
     if n > 1:
         sizes = ndi.sum(np.ones_like(lbl), lbl, index=range(1, n + 1))
-        big = sizes.max()
-        keep = {i + 1 for i, s in enumerate(sizes) if s >= 0.25 * big}
-        body = np.isin(lbl, list(keep))
+        # keep ONLY the largest connected component — drops the scanner table/cradle and
+        # any disconnected external kit (tubes, leads, positioning aids) that the
+        # HU>-320 body mask would otherwise include (postmortem forensic CT is full of it).
+        body = lbl == (int(np.argmax(sizes)) + 1)
     body = ndi.binary_fill_holes(body)
 
     mat = np.full(hu.shape, AIR, dtype=np.uint8)
@@ -244,7 +249,7 @@ def write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source,
         _build_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"), mesh_step_mul)
 
 
-def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None):
+def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None):
     print(f"[1/4] loading + resampling to {spacing} mm iso …")
     ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
     seg = sitk.ReadImage(seg_path)
@@ -253,8 +258,21 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
     lab = sitk.GetArrayFromImage(seg).astype(np.int32)
     print(f"      grid {hu.shape[::-1]}  ({hu.size/1e6:.1f} M voxels)")
 
+    body_restrict = None
+    if body_path:
+        bimg = sitk.ReadImage(body_path)
+        bimg = sitk.Resample(bimg, ct, sitk.Transform(), sitk.sitkNearestNeighbor, 0, bimg.GetPixelID())
+        body_restrict = sitk.GetArrayFromImage(bimg) > 0
+        # the --fast body task under-covers the limbs; dilate + fill so the envelope
+        # comfortably contains the anatomy (no holes) while the table/leads — a larger
+        # air gap away — stay excluded.
+        r = max(2, int(round(7.0 / spacing)))
+        body_restrict = ndi.binary_dilation(body_restrict, iterations=r)
+        body_restrict = ndi.binary_fill_holes(body_restrict)
+        print(f"      body-envelope restrict (+{r}vox): {body_restrict.sum()/1e6:.0f} M voxels")
+
     print("[2/4] materials …")
-    mat, body = materialize(hu, lab, spacing)
+    mat, body = materialize(hu, lab, spacing, body_restrict=body_restrict)
 
     print("[3/4] region crop + tight body bbox …")
     if box is not None:
@@ -330,6 +348,9 @@ if __name__ == "__main__":
     ap.add_argument("--box", type=float, nargs=6, default=None,
                     metavar=("ZLO", "ZHI", "YLO", "YHI", "XLO", "XHI"),
                     help="explicit normalised crop [0,1], overrides --region (for noisy seg)")
+    ap.add_argument("--body", default=None,
+                    help="TotalSegmentator `body` task mask to clip to the patient envelope "
+                         "(removes the scanner table + external tubes/leads)")
     a = ap.parse_args()
     build(a.ct, a.seg, a.out, a.name, a.title or a.name, a.region, a.spacing,
-          mesh=not a.no_mesh, source=a.source, box=a.box)
+          mesh=not a.no_mesh, source=a.source, box=a.box, body_path=a.body)
