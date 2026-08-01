@@ -320,7 +320,7 @@ async function setSubject(sub){
   S.ct.scanLen=Math.round(ext[2]);
   const sl=$('ctScanLen'); if(sl){ sl.max=Math.max(600, S.ct.scanLen); sl.value=S.ct.scanLen; }
   S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
-  S.ct.isocentred=true; S.ct.tablePos=0; S.ct.tableY=0;
+  S.ct.isocentred=false; S.ct.tablePos=0; S.ct.tableY=0;   // require the zero button before scanning
   S.ct.scoutKv=cfg.scoutKv; S.ct.scoutMa=cfg.scoutMa;
   S.ct.scoutTech=[{kv:cfg.scoutKv,ma:cfg.scoutMa},{kv:cfg.scoutKv,ma:cfg.scoutMa}];
   // default x-ray kV to the model (thin extremities need far less than a torso)

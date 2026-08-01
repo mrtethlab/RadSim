@@ -259,17 +259,9 @@ export function ctSyncScene() {
 // lenU when the patient sits at isoZ, so at the current rest position the range is
 // offset by (patient.z − isoZ). Purely a usability aid (not physical).
 function updateScanMarkers() {
-  if (!scanMarkers) return;
-  const S = ctx.S, show = S.mode === 'ct';
-  scanMarkers.visible = show;
-  if (!show) return;
-  const lenU = S.ct.scanLen / MM_PER_UNIT, off = S.ct.patient.z - S.ct.isoZ;
-  const startZ = off, endZ = lenU + off, w = (scoutFov() / MM_PER_UNIT) * 1.1;
-  const start = scanMarkers.getObjectByName('start'), end = scanMarkers.getObjectByName('end'), arrow = scanMarkers.getObjectByName('arrow');
-  start.scale.set(w, 1, 1); start.position.set(0, ISO_Y, startZ);
-  end.scale.set(w, 1, 1); end.position.set(0, ISO_Y, endZ);
-  arrow.position.set(w / 2 + 3, ISO_Y, (startZ + endZ) / 2);
-  arrow.rotation.x = endZ >= startZ ? Math.PI / 2 : -Math.PI / 2;   // point toward the scan end
+  // scan start/end lines + direction arrow removed from the 3D view (kept as a no-op so
+  // the existing call sites don't need to change).
+  if (scanMarkers) scanMarkers.visible = false;
 }
 
 function wireModeToggle() {
@@ -322,13 +314,9 @@ function applyMode(mode) {
   // tube-POV camera, Image view). Acquisition params + technique are user setup and
   // deliberately persist.
   resetCTSession();
-  // the chest arrives pre-isocentred at its superior end so START sweeps the whole
-  // chest (the reset above wiped the defaults setSubject applied in the other mode);
-  // the hand still requires setting the isocentre manually.
-  if (mode === 'ct' && ctx.S.subject === 'chest' && ctx.S.voxelModel) {
-    ctx.S.ct.isoZ = (ctx.S.voxelModel.extentMM[2] / 2) / 10;
-    ctx.S.ct.isocentred = true;
-  }
+  // every subject must be zeroed (isocentre button) before scanning — start un-zeroed
+  ctx.S.ct.isocentred = false;
+  if (mode === 'ct' && ctx.S.voxelModel) ctx.S.ct.isoZ = (ctx.S.voxelModel.extentMM[2] / 2) / 10;
   if (mode === 'ct') ctx.setCTPov('ap');   // CT starts on the AP perspective
   else ctx.setCameraView('orbit');         // x-ray returns to free orbit
   ctx.setContent('3d');           // always land in the positioning view, never a stale image
@@ -362,8 +350,9 @@ function wireCTSettings() {
   // isocentre confirm — zero the table position reading (patient stays put)
   $('ctIsocentre')?.addEventListener('click', () => {
     S.ct.tablePos = 0; S.ct.isoZ = S.ct.patient.z; S.ct.isocentred = true;
-    setHint('Isocentre set. Acquire scouts to begin planning.');
+    setHint(S.ct.phase === 'planning' ? 'Table zeroed — ready to scan.' : 'Isocentre set. Acquire scouts to begin planning.');
     updateCTReadouts();
+    if (S.ct.phase === 'planning') updatePlan();   // clear the red numbers + enable the START flash
   });
   // Move to Scan — glide the couch to the scan-start location (scan-box top) so START
   // doesn't jump the table. Only meaningful once scouts are planned.
@@ -409,6 +398,15 @@ function updateCTReadouts() {
   }
   const th = Math.round(S.ct.tableY);   // nearest mm, no decimals
   set('ctTableHV', (th > 0 ? '+' : '') + th + ' mm' + (th === 0 ? ' · centred' : ''));
+  // scan start/end read RED until the table is zeroed (isocentre set)
+  ['ctScanStartV', 'ctScanEndV'].forEach((id) => { const el = $(id); if (el) el.classList.toggle('unzeroed', !S.ct.isocentred); });
+  $('ctIsocentre')?.classList.toggle('needzero', !S.ct.isocentred);
+}
+// one-shot emphasis on the isocentre button when a scan is attempted un-zeroed
+function flashIso() {
+  const b = ctx.$('ctIsocentre'); if (!b) return;
+  b.classList.remove('flashiso'); void b.offsetWidth; b.classList.add('flashiso');
+  setTimeout(() => b.classList.remove('flashiso'), 1400);
 }
 
 function setHint(t) { const el = ctx.$('ctHint'); if (el) el.textContent = t; }
@@ -450,6 +448,8 @@ function wireCTConsole() {
     if (S.subjectLoading) { setHint('Subject model still loading — try again in a moment.'); return; }
     if (S.ct.phase === 'idle') acquireScouts();
     else if (S.ct.phase === 'planning') {
+      // the table must be zeroed (isocentre set) before the scan can run
+      if (!S.ct.isocentred) { flashIso(); setHint('Zero the table first — press the isocentre button.'); return; }
       if (ctx.$('ctStart').classList.contains('flash')) runScan();
       else setHint('Reposition the table first (hold the orange TABLE button).');
     }
@@ -987,12 +987,12 @@ function applyBoxDrag(gi, view, edge, s0, du, dv) {
     // MOVE along the table long axis only; cross axis stays locked at centre.
     const h = s0.bot - s0.top, nt = clampV(s0.top + scanD, SCAN_LO, SCAN_HI - h);
     b.top = nt; b.bot = nt + h;
-  } else if (edge === scanLo || edge === scanHi) {
-    // symmetric resize of the scan-length extent about the box centre
-    const cen = (s0.top + s0.bot) / 2;
-    const raw = edge === scanLo ? cen - (s0.top + scanD) : (s0.bot + scanD) - cen;
-    const half = clampV(raw, BOX_MIN / 2, Math.min(cen - SCAN_LO, SCAN_HI - cen));
-    b.top = cen - half; b.bot = cen + half;
+  } else if (edge === scanLo) {
+    // scan-length edges move INDEPENDENTLY: extend the superior border without touching
+    // the inferior one (the cross-axis width, below, stays symmetric).
+    b.top = clampV(s0.top + scanD, SCAN_LO, s0.bot - BOX_MIN);
+  } else if (edge === scanHi) {
+    b.bot = clampV(s0.bot + scanD, s0.top + BOX_MIN, SCAN_HI);
   } else {
     // symmetric resize about the LOCKED centre (0.5). The AP (mediolateral) and LAT
     // (anteroposterior) cross extents are LINKED to the same half-width, so widening one
@@ -1144,8 +1144,8 @@ function renderScanGroups() {
     rows += '<tr class="sg-row gc' + gi + (gi === c.activeGroup ? ' active' : '') + '" data-group="' + gi + '">'
       + '<td>' + num + '</td>'
       + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle box on scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
-      + cell('sg-edit', 'start', fmtTablePos(g.box.top * c.scanLen))
-      + cell('sg-edit', 'end', fmtTablePos(g.box.bot * c.scanLen))
+      + cell('sg-edit' + (c.isocentred ? '' : ' unzeroed'), 'start', fmtTablePos(g.box.top * c.scanLen))
+      + cell('sg-edit' + (c.isocentred ? '' : ' unzeroed'), 'end', fmtTablePos(g.box.bot * c.scanLen))
       + cell('sg-calc', '', groupImages(g))
       + cell('sg-station', 'acq', detConfig(g))
       + cell('sg-station', 'acq', fmtNum(g.sliceThk) + ' mm')
@@ -1271,7 +1271,7 @@ function updatePlanReady() {
   const needX = Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH;
   const needY = Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH;
   const needMove = needX || needY;
-  ctx.$('ctStart')?.classList.toggle('flash', !needMove);
+  ctx.$('ctStart')?.classList.toggle('flash', !needMove && c.isocentred);   // not "ready" until zeroed
   ctx.$('ctTable')?.classList.toggle('flash', needMove);
   c.moveBlit = needMove ? (needX ? 'ap' : 'lat') : null;   // which PoV to mirror into the monitor
   const noexp = ctx.$('noexp');
