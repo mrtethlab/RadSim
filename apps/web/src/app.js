@@ -404,6 +404,7 @@ const S = {
   // ---- CT mode ----
   mode:'xray',                 // 'xray' | 'ct'
   ct:{
+    scanSound:'buzz',          // CT scan-exposure sound: 'buzz' (classic) | 'ctExposureS1'
     sliceThk:5,                // mm (station selector over discrete values)
     imgPerRotation:1,          // images reconstructed per gantry rotation
     pitch:1.0,                 // table travel per rotation / total collimation
@@ -810,16 +811,25 @@ function bind(){
   $('protoPopBody')?.addEventListener('click',e=>{ const b=e.target.closest('.proto-proj'); if(!b) return;
     const p=findProtocol(b.dataset.part,b.dataset.proj); if(p){ applyProtocol(p,b.dataset.part); closeProtocolPopup(); } });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeProtocolPopup(); });
-  // bay options dropdown (top-right): toggle open, close on outside click / Esc
-  const bayCtl=$('bayCtl'), bayBtn=$('bayMenuBtn');
-  if(bayBtn){
-    bayBtn.addEventListener('click',e=>{ e.stopPropagation();
-      const open=bayCtl.classList.toggle('open'); bayBtn.setAttribute('aria-expanded', open?'true':'false'); });
-    document.addEventListener('click',e=>{ if(bayCtl.classList.contains('open') && !bayCtl.contains(e.target)){
-      bayCtl.classList.remove('open'); bayBtn.setAttribute('aria-expanded','false'); }});
-    document.addEventListener('keydown',e=>{ if(e.key==='Escape' && bayCtl.classList.contains('open')){
-      bayCtl.classList.remove('open'); bayBtn.setAttribute('aria-expanded','false'); }});
+  // bay options (top-right): independent dropdowns (View Options, Sound Options).
+  const bayCtl=$('bayCtl');
+  const closeDrops=()=>document.querySelectorAll('#bayCtl .baydrop.open').forEach(d=>{
+    d.classList.remove('open'); d.querySelector('.baymenu-btn')?.setAttribute('aria-expanded','false'); });
+  document.querySelectorAll('#bayCtl .baymenu-btn').forEach(btn=>{
+    btn.addEventListener('click',e=>{ e.stopPropagation();
+      const drop=btn.closest('.baydrop'), willOpen=!drop.classList.contains('open');
+      closeDrops();
+      if(willOpen){ drop.classList.add('open'); btn.setAttribute('aria-expanded','true'); } });
+  });
+  if(bayCtl){
+    document.addEventListener('click',e=>{ if(!bayCtl.contains(e.target)) closeDrops(); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDrops(); });
   }
+  // CT scan-sound picker (Sound Options): select the scan-exposure sound + preview it
+  $('scanSoundSeg')?.addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b)return;
+    S.ct.scanSound=b.dataset.snd;
+    [...$('scanSoundSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.snd===S.ct.scanSound)); });
+  $('scanSoundPrev')?.addEventListener('click',e=>{ e.stopPropagation(); Sound.resume(); Sound.preview(S.ct.scanSound); });
   // bay content: 3D positioning  <->  large saved image
   $('contentSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b || b.disabled)return; setContent(b.dataset.c);});
   // camera: free orbit  <->  tube POV bird's-eye (x-ray)

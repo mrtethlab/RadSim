@@ -116,6 +116,7 @@
       <div class="imgstrip" id="imgStrip"></div>
     </div>
     <div class="bayctl" id="bayCtl">
+      <div class="baydrop" id="viewDrop">
       <button class="baymenu-btn" id="bayMenuBtn" type="button" aria-expanded="false" aria-controls="bayMenu">
         <span class="gear" aria-hidden="true">⚙</span> VIEW OPTIONS <span class="caret" aria-hidden="true">▾</span>
       </button>
@@ -158,6 +159,22 @@
             <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
           </select>
           <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:4px; text-align:left; letter-spacing:.3px; max-width:190px"></div>
+        </div>
+      </div>
+      </div>
+      <div class="baydrop ct-only" id="soundDrop">
+        <button class="baymenu-btn" id="soundMenuBtn" type="button" aria-expanded="false" aria-controls="soundMenu">
+          <span class="gear" aria-hidden="true">♪</span> SOUND OPTIONS <span class="caret" aria-hidden="true">▾</span>
+        </button>
+        <div class="baymenu" id="soundMenu" role="menu">
+          <div>
+            <div class="cl">CT scan sound</div>
+            <div class="segmini" id="scanSoundSeg">
+              <button data-snd="buzz" class="on">Classic</button>
+              <button data-snd="ctExposureS1">Scanner S1</button>
+            </div>
+            <button class="sndprev" id="scanSoundPrev" type="button">▶ Preview</button>
+          </div>
         </div>
       </div>
     </div>
@@ -239,9 +256,6 @@
               <button id="ctTableDown" class="thbtn" data-th="down" title="Table down (lower)"></button>
             </div>
           </div>
-          <button id="ctMoveScan" class="movescan" type="button" title="Glide the couch to the scan-start position">
-            <span class="msicon" id="ctMoveScanIcon"></span><span class="mslbl">Move to Scan</span>
-          </button>
         </div>
       </div>
 
@@ -446,6 +460,11 @@
           <button class="ctbtn table" id="ctTable" title="Move table"></button>
         </div>
         <div class="ctbtns-lab"><span>Abort</span><span>Start</span><span>Table</span></div>
+        <div class="ctbtns ctmove-row">
+          <span></span><span></span>
+          <button class="ctbtn table" id="ctMoveScan" title="Glide the couch to the scan-start position"><span id="ctMoveScanIcon"></span></button>
+        </div>
+        <div class="ctbtns-lab ctmove-lab"><span></span><span></span><span>Move to Scan</span></div>
         <div class="note" style="margin-top:8px; text-align:center" id="ctHint">Set the isocentre, then acquire scouts to plan the scan</div>
       </div>
     </div>

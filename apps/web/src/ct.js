@@ -288,7 +288,7 @@ function resetCTSession() {
   const c = ctx.S.ct;
   cancelScout();                  // stop any in-flight scout acquisition
   cancelScan();                   // stop any in-flight scan execution
-  stopGantrySpin(); setBusy(false); Sound.stopBuzz();
+  stopGantrySpin(); setBusy(false); Sound.stopScan();
   stopTableMove(); showScanBoxes(false); resetScanBox();
   ctx.ctLiveView(false);          // stop the tube-POV mirror if a build was running
   c.scoutsReady = false;
@@ -494,7 +494,7 @@ function showScouts(on) {
 function abortCT() {
   cancelScout();               // stop any in-flight scout acquisition
   cancelScan();                // stop any in-flight scan execution
-  stopGantrySpin(); setBusy(false); Sound.stopBuzz(); Sound.stopTableSound();
+  stopGantrySpin(); setBusy(false); Sound.stopScan(); Sound.stopTableSound();
   stopTableMove(); showScanBoxes(false);
   ctx.ctLiveView(false);       // drop the tube-POV mirror if a build was in progress
   ctx.S.ct.scoutsReady = false;
@@ -575,10 +575,10 @@ async function runScoutExposure(view, data, alive = () => true) {
   await sleep(1000);                                        // 1 s hold before the exposure
   if (!alive()) return;
   setHint(view + ' scout · scanning…');
-  Sound.startBuzz();
+  Sound.startScan(ctx.S.ct.scanSound);
   // stitch rows 0..t as the couch advances -> image builds in lockstep with travel
   await animateTableTravel(scoutScanTime() * 1000, (t) => drawScout(cv, data, t * data.nz), alive);
-  Sound.stopBuzz();
+  Sound.stopScan();
   if (!alive()) return;
   drawScout(cv, data);                                      // guarantee the final full frame
   setHint(view + ' scout · breathe normally.');
@@ -1425,7 +1425,7 @@ async function runScan() {
   } catch (err) {
     console.error('scan failed', err); setHint('Scan failed: ' + err.message);
   } finally {
-    stopGantrySpin(); Sound.stopBuzz(); Sound.stopTableSound();
+    stopGantrySpin(); Sound.stopScan(); Sound.stopTableSound();
   }
   if (!alive()) return;
   setBusy(false);
@@ -1489,11 +1489,11 @@ async function scanGroupExposure(g, i, alive) {
   await sleep(700); if (!alive()) return null;
   setHint('G' + (i + 1) + ' · acquiring…');
   startGantrySpin(g.rotSpeed);
-  Sound.startBuzz();
+  Sound.startScan(ctx.S.ct.scanSound);
   const recon = await reconstructSlices(g, alive,
     (f) => setHint('G' + (i + 1) + ' · acquiring… ' + Math.round(f * 100) + '%'),
     (si, nz, d, img, meta) => { moveCouchTo(d); drawScanPreview(img, meta, si, nz); });
-  Sound.stopBuzz(); stopGantrySpin();
+  Sound.stopScan(); stopGantrySpin();
   if (!alive() || !recon) return null;
   resetToIsocentre();
   setHint('G' + (i + 1) + ' · breathe normally.');
@@ -1701,7 +1701,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice) {
       done = true;
     } catch (err) {
       if (phantom.geometryOnly) {   // no browser volume — cannot reconstruct locally
-        setBusy(false); stopGantrySpin(); Sound.stopBuzz();
+        setBusy(false); stopGantrySpin(); Sound.stopScan();
         setHint('⚠ This model needs the Python GPU backend, which is not reachable.');
         return null;
       }
