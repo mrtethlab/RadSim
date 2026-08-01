@@ -224,9 +224,10 @@ export function ctSyncScene() {
     three.handGroup.position.x = S.ct.patient.x;
     three.handGroup.position.y = py;
     three.handGroup.position.z = S.ct.patient.z;
-    // pad sits at the patient's posterior surface: just under the hand, or at the back
-    // of the chest (its lower AP extent) so the isocentre still runs through mid-body.
-    const backDrop = (S.subject === 'chest' && S.voxelModel) ? (S.voxelModel.extentMM[1] / 2) / MM_PER_UNIT : 0.4;
+    // pad sits at the patient's posterior surface so the whole model rests ON the table
+    // (little/no clipping) while the isocentre still runs through mid-body: for a voxel
+    // model that's its lower AP extent (half its AP depth); the analytic hand uses ~0.4.
+    const backDrop = S.voxelModel ? (S.voxelModel.extentMM[1] / 2) / MM_PER_UNIT : 0.4;
     couch.position.y = py - backDrop;
     couch.position.z = 0;                               // base; animateTableTravel drives it
     // gantry + lasers stay fixed at the isocentre (only the couch + patient move)

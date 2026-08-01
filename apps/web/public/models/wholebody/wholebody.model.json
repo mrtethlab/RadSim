@@ -1,6 +1,6 @@
 {
   "name": "Whole body",
-  "source": "VSD Full Body postmortem CT (subject z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
+  "source": "VSD Full Body postmortem CT (z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
   "dims": [
     256,
     149,
@@ -189,7 +189,13 @@
     0,
     1,
     2,
+    6,
     7,
+    8,
+    10,
+    11,
+    15,
+    16,
     17,
     18,
     23

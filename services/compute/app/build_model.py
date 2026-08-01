@@ -249,7 +249,7 @@ def write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source,
         _build_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"), mesh_step_mul)
 
 
-def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None):
+def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None, flip=(0, 0, 0)):
     print(f"[1/4] loading + resampling to {spacing} mm iso …")
     ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
     seg = sitk.ReadImage(seg_path)
@@ -266,7 +266,7 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
         # the --fast body task under-covers the limbs; dilate + fill so the envelope
         # comfortably contains the anatomy (no holes) while the table/leads — a larger
         # air gap away — stay excluded.
-        r = max(2, int(round(7.0 / spacing)))
+        r = max(1, int(round(4.0 / spacing)))
         body_restrict = ndi.binary_dilation(body_restrict, iterations=r)
         body_restrict = ndi.binary_fill_holes(body_restrict)
         print(f"      body-envelope restrict (+{r}vox): {body_restrict.sum()/1e6:.0f} M voxels")
@@ -297,6 +297,16 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
     y0, y1 = max(0, ys.min() - pad), min(mat.shape[1], ys.max() + pad + 1)
     x0, x1 = max(0, xs.min() - pad), min(mat.shape[2], xs.max() + pad + 1)
     mat = mat[z0:z1, y0:y1, x0:x1]; hu_c = hu[z0:z1, y0:y1, x0:x1]
+
+    if flip and any(flip):
+        # bake anatomical axis flips into the stored volume + derived mesh so every model
+        # shares the app's display convention (index-0 = inferior / anterior / patient-R).
+        # VSD forensic scans store head-first, so they need a z flip to match the chest model.
+        if flip[2]: mat = mat[:, :, ::-1]; hu_c = hu_c[:, :, ::-1]   # x (lateral)
+        if flip[1]: mat = mat[:, ::-1, :]; hu_c = hu_c[:, ::-1, :]   # y (AP)
+        if flip[0]: mat = mat[::-1, :, :]; hu_c = hu_c[::-1, :, :]   # z (long/superior)
+        mat = np.ascontiguousarray(mat); hu_c = np.ascontiguousarray(hu_c)
+        print(f"      axis flip (z,y,x)={tuple(int(f) for f in flip)}")
 
     print("[4/4] writing volume …")
     write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source)
@@ -351,6 +361,9 @@ if __name__ == "__main__":
     ap.add_argument("--body", default=None,
                     help="TotalSegmentator `body` task mask to clip to the patient envelope "
                          "(removes the scanner table + external tubes/leads)")
+    ap.add_argument("--flip", type=int, nargs=3, default=(0, 0, 0), metavar=("Z", "Y", "X"),
+                    help="bake anatomical axis flips (z y x) into the volume+mesh, e.g. "
+                         "--flip 1 0 0 for VSD head-first scans")
     a = ap.parse_args()
     build(a.ct, a.seg, a.out, a.name, a.title or a.name, a.region, a.spacing,
-          mesh=not a.no_mesh, source=a.source, box=a.box, body_path=a.body)
+          mesh=not a.no_mesh, source=a.source, box=a.box, body_path=a.body, flip=a.flip)
