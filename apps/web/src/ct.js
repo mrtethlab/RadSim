@@ -305,8 +305,8 @@ function applyMode(mode) {
   if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition' : 'Digit · Hand phantom';
-  const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Scout window in CT
-  if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Scout' : 'Image';
+  const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Planning window in CT
+  if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Planning' : 'Image';
   const consoleLbl = ctx.$('consoleLbl');    // x-ray generator vs CT console
   if (consoleLbl) consoleLbl.textContent = mode === 'ct' ? 'CONSOLE' : 'GENERATOR';
   // A mode switch is a clean slate: tear down the CT scout workflow and any carried

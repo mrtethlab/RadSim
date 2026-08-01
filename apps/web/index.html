@@ -244,16 +244,25 @@
           <div class="row" style="margin-top:8px"><div class="rl">Scan end</div>
             <div class="valchip" id="ctScanEndV">I300.0 mm</div></div>
           <div class="ctpos">
-            <button id="ctIsocentre" class="ctisobtn" title="Set isocentre (zero table)"></button>
-            <div class="dpad" id="ctDpad">
-              <button class="dp up" data-dir="up" title="Table in">▲</button>
-              <button class="dp left" data-dir="left" title="Move left">◀</button>
-              <button class="dp right" data-dir="right" title="Move right">▶</button>
-              <button class="dp down" data-dir="down" title="Table out">▼</button>
+            <div class="ctposcol">
+              <button id="ctIsocentre" class="ctisobtn" title="Set isocentre (zero table)"></button>
+              <div class="ctposlab">Zero Table</div>
             </div>
-            <div class="thpad" id="ctTablePad">
-              <button id="ctTableUp" class="thbtn" data-th="up" title="Table up (raise)"></button>
-              <button id="ctTableDown" class="thbtn" data-th="down" title="Table down (lower)"></button>
+            <div class="ctposcol">
+              <div class="dpad" id="ctDpad">
+                <button class="dp up" data-dir="up" title="Table in">▲</button>
+                <button class="dp left" data-dir="left" title="Move left">◀</button>
+                <button class="dp right" data-dir="right" title="Move right">▶</button>
+                <button class="dp down" data-dir="down" title="Table out">▼</button>
+              </div>
+              <div class="ctposlab">Move</div>
+            </div>
+            <div class="ctposcol">
+              <div class="thpad" id="ctTablePad">
+                <button id="ctTableUp" class="thbtn" data-th="up" title="Table up (raise)"></button>
+                <button id="ctTableDown" class="thbtn" data-th="down" title="Table down (lower)"></button>
+              </div>
+              <div class="ctposlab">Height</div>
             </div>
           </div>
         </div>
