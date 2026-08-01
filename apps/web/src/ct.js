@@ -979,15 +979,19 @@ function applyBoxDrag(gi, view, edge, s0, du, dv) {
   const scanD = view === 'ap' ? dv : du;    // delta along the scan-length axis (top/bot)
   const crossD = view === 'ap' ? du : dv;   // delta along the cross axis (apL/apR | latL/latR)
   const scanLo = view === 'ap' ? 't' : 'l', scanHi = view === 'ap' ? 'b' : 'r';
+  // the scan box may be moved / lengthened BEYOND the scout image (into the blank
+  // margin): the scan start/end then extend past the scouted region. Cross axis stays
+  // locked to the scout centre.
+  const SCAN_LO = -0.6, SCAN_HI = 1.6;
   if (!edge) {
     // MOVE along the table long axis only; cross axis stays locked at centre.
-    const h = s0.bot - s0.top, nt = clampV(s0.top + scanD, 0, 1 - h);
+    const h = s0.bot - s0.top, nt = clampV(s0.top + scanD, SCAN_LO, SCAN_HI - h);
     b.top = nt; b.bot = nt + h;
   } else if (edge === scanLo || edge === scanHi) {
     // symmetric resize of the scan-length extent about the box centre
     const cen = (s0.top + s0.bot) / 2;
     const raw = edge === scanLo ? cen - (s0.top + scanD) : (s0.bot + scanD) - cen;
-    const half = clampV(raw, BOX_MIN / 2, Math.min(cen, 1 - cen));
+    const half = clampV(raw, BOX_MIN / 2, Math.min(cen - SCAN_LO, SCAN_HI - cen));
     b.top = cen - half; b.bot = cen + half;
   } else {
     // symmetric resize about the LOCKED centre (0.5). The AP (mediolateral) and LAT
@@ -1072,8 +1076,8 @@ function openFieldEditor(gi, act) {
   const done = () => { renderScanBoxes(); updatePlan(); };
   const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
   const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
-  if (act === 'start') type('Start location (mm inferior)', Math.round(g.box.top * len), (v) => { g.box.top = clampV(v / len, 0, g.box.bot - BOX_MIN); });
-  else if (act === 'end') type('End location (mm inferior)', Math.round(g.box.bot * len), (v) => { g.box.bot = clampV(v / len, g.box.top + BOX_MIN, 1); });
+  if (act === 'start') type('Start location (mm inferior)', Math.round(g.box.top * len), (v) => { g.box.top = clampV(v / len, -0.6, g.box.bot - BOX_MIN); });
+  else if (act === 'end') type('End location (mm inferior)', Math.round(g.box.bot * len), (v) => { g.box.bot = clampV(v / len, g.box.top + BOX_MIN, 1.6); });
   else if (act === 'interval') type('Slice interval (mm)', fmtNum(g.interval), (v) => { g.interval = clampV(v, 0.1, 50); });
   else if (act === 'tilt') type('Gantry tilt (degrees)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
