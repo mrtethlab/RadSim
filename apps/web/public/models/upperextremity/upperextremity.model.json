@@ -1,10 +1,10 @@
 {
   "name": "Upper extremity",
-  "source": "TotalSegmentator dataset (s1397) \u00b7 ground-truth segmentation",
+  "source": "VSD Full Body postmortem CT (z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
   "dims": [
-    88,
-    195,
-    120
+    99,
+    170,
+    457
   ],
   "spacing": [
     1.5,
@@ -191,12 +191,15 @@
     2,
     7,
     8,
+    10,
+    11,
     17,
     18,
     23
   ],
   "huReference": [
-    -1257,
-    2318
-  ]
+    -1024,
+    3071
+  ],
+  "backendOnly": false
 }

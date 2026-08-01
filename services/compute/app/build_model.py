@@ -244,7 +244,7 @@ def write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source,
         _build_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"), mesh_step_mul)
 
 
-def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source):
+def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None):
     print(f"[1/4] loading + resampling to {spacing} mm iso …")
     ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
     seg = sitk.ReadImage(seg_path)
@@ -257,7 +257,16 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
     mat, body = materialize(hu, lab, spacing)
 
     print("[3/4] region crop + tight body bbox …")
-    b = _region_bounds(region, lab, ts_class_map(), hu.shape, spacing)
+    if box is not None:
+        # explicit normalised crop (zlo,zhi,ylo,yhi,xlo,xhi in [0,1]) — used when the
+        # segmentation is too noisy for anchor-based crops (e.g. postmortem full-body
+        # scans, where a stray femur/humerus voxel wrecks a 3D bbox). z=0 is slice 0.
+        nz0, ny0, nx0 = hu.shape
+        b = (int(box[0]*nz0), int(box[1]*nz0), int(box[2]*ny0), int(box[3]*ny0),
+             int(box[4]*nx0), int(box[5]*nx0))
+        print(f"      box crop z[{b[0]}:{b[1]}] y[{b[2]}:{b[3]}] x[{b[4]}:{b[5]}]")
+    else:
+        b = _region_bounds(region, lab, ts_class_map(), hu.shape, spacing)
     if b != (0, hu.shape[0], 0, hu.shape[1], 0, hu.shape[2]):
         print(f"      region '{region}': z[{b[0]}:{b[1]}] y[{b[2]}:{b[3]}] x[{b[4]}:{b[5]}]")
     sl = (slice(b[0], b[1]), slice(b[2], b[3]), slice(b[4], b[5]))
@@ -318,6 +327,9 @@ if __name__ == "__main__":
     ap.add_argument("--spacing", type=float, default=1.0)
     ap.add_argument("--source", default="TotalSegmentator dataset · segmented with TotalSegmentator")
     ap.add_argument("--no-mesh", action="store_true")
+    ap.add_argument("--box", type=float, nargs=6, default=None,
+                    metavar=("ZLO", "ZHI", "YLO", "YHI", "XLO", "XHI"),
+                    help="explicit normalised crop [0,1], overrides --region (for noisy seg)")
     a = ap.parse_args()
     build(a.ct, a.seg, a.out, a.name, a.title or a.name, a.region, a.spacing,
-          mesh=not a.no_mesh, source=a.source)
+          mesh=not a.no_mesh, source=a.source, box=a.box)

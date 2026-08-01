@@ -54,9 +54,19 @@
 #   ./.venv/Scripts/python.exe -m app.build_model --ct data/vsd/z045/ct.nii.gz \
 #     --seg data/vsd/z045/seg.nii --out ../../apps/web/public/models/wholebody \
 #     --name wholebody --region wholebody --spacing 2.0 --source "VSD Full Body (z045)"
-# TODO: extremity crops from the extended subject (LE: femur→feet z-window + single
-# leg; UE: abducted-arm bbox to the hand) + restore organ seg once torch/torchvision
-# is realigned.
+# The --fast seg is too noisy on postmortem full-body scans for anchor-based bbox crops
+# (a stray femur/humerus voxel wrecks the 3D bbox), so build_model.py takes an explicit
+# normalised --box ZLO ZHI YLO YHI XLO XHI crop (overrides --region). For z045 (z=0 head
+# → z=1 feet; x=0..1 image left→right; arms abducted), these crops give the four models:
+#   WB=whole body ; CAP=thorax→pelvis (arms trimmed) ; LE=one leg hip→toes ; UE=one arm scapula→hand
+#   ./.venv/Scripts/python.exe -c "import nibabel as nib,numpy as np; c=nib.load('data/vsd/z045/ct.nii.gz'); nib.save(nib.Nifti1Image(np.zeros(c.shape[:3],np.uint8),c.affine),'data/vsd/z045/seg.nii')"  # zero seg if TS unavailable
+#   TS='./.venv/Scripts/TotalSegmentator.exe -i data/vsd/z045/ct.nii.gz -o data/vsd/z045/seg.nii --ml --fast'  # or real seg (needs matching torchvision)
+#   B='./.venv/Scripts/python.exe -m app.build_model --ct data/vsd/z045/ct.nii.gz --seg data/vsd/z045/seg.nii --source "VSD Full Body (z045)"'
+#   $B --out ../../apps/web/public/models/wholebody       --name wholebody       --region wholebody --spacing 2.0
+#   $B --out ../../apps/web/public/models/chestabdopelvis  --name chestabdopelvis --spacing 2.0 --box 0.04 0.46 0 1 0.16 0.84
+#   $B --out ../../apps/web/public/models/lowerextremity   --name lowerextremity  --spacing 1.5 --box 0.33 1.00 0 1 0.19 0.55
+#   $B --out ../../apps/web/public/models/upperextremity   --name upperextremity  --spacing 1.5 --box 0.00 0.44 0 1 0.00 0.29
+#   # eyeball any crop:  ./.venv/Scripts/python.exe -m app.mip_model ../../apps/web/public/models/<r> <r> out.png
 #
 # torch is installed separately (CPU wheel above) to avoid the CUDA build.
 #
