@@ -78,6 +78,12 @@ const SYM = {
              '<circle cx="7.3" cy="14.6" r="1.5" fill="currentColor"/>' +
              '<path class="stroke" d="M9.2 16 Q13 14 16.8 16"/>' +
              '<path class="stroke" d="M4.5 17.7 H19.5 M6.6 17.9 V20.8 M17.4 17.9 V20.8"/></svg>',
+  // MOVE TO SCAN: a reclining patient on the couch feeding right into the gantry (arrow)
+  moveScan: '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+            '<circle cx="5.4" cy="10" r="1.6" fill="currentColor"/>' +
+            '<path class="stroke" d="M7.4 11.5 Q10.6 9.7 13.4 11.5"/>' +
+            '<path class="stroke" d="M2.8 13.4 H14.4 M4.4 13.6 V16.2 M12.8 13.6 V16.2"/>' +
+            '<path class="stroke" d="M16.4 8.4 H21.4 M19.2 6.2 L21.6 8.4 L19.2 10.6"/></svg>',
 };
 
 export function initCT(context) {
@@ -200,6 +206,7 @@ function injectSymbols() {
   set('ctIsocentre', SYM.iso);
   set('ctTableUp', SYM.tableUp);
   set('ctTableDown', SYM.tableDown);
+  const msi = ctx.$('ctMoveScanIcon'); if (msi) msi.innerHTML = SYM.moveScan;
 }
 
 // Called by app.js at the end of syncScene(): show the CT rig or the x-ray rig.
@@ -357,6 +364,12 @@ function wireCTSettings() {
     S.ct.tablePos = 0; S.ct.isoZ = S.ct.patient.z; S.ct.isocentred = true;
     setHint('Isocentre set. Acquire scouts to begin planning.');
     updateCTReadouts();
+  });
+  // Move to Scan — glide the couch to the scan-start location (scan-box top) so START
+  // doesn't jump the table. Only meaningful once scouts are planned.
+  $('ctMoveScan')?.addEventListener('click', () => {
+    if (S.ct.phase !== 'planning') { setHint('Acquire scouts and plan a scan first.'); return; }
+    moveTableTo(grp(0).box.top * S.ct.scanLen);
   });
   // direction pad — nudge the patient/couch (10 mm/press); hold to auto-repeat
   const STEP = 1;                       // world unit per press (= 10 mm)
@@ -602,6 +615,39 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
       if (t < 1) requestAnimationFrame(step); else { apply(1); finish(); }
     })();
     setTimeout(() => { if (!done) { if (alive()) apply(1); finish(); } }, dur + 500);
+  });
+}
+
+// Glide the couch to a specific table position (mm) with the motor sound — used by the
+// "Move to Scan" button so pressing START doesn't jump the couch. Same mapping as the
+// travel animation (+tablePos feeds into the bore, -z).
+let movingToScan = false;
+function moveTableTo(targetMM, dur = 1100) {
+  const three = ctx.three, S = ctx.S;
+  if (movingToScan || S.ct.phase === 'scanning' || S.ct.phase === 'scouting') return Promise.resolve();
+  return new Promise(res => {
+    const startTP = S.ct.tablePos;
+    const startHandZ = three.handGroup.position.z, startCouchZ = couch.position.z;
+    const deltaU = (targetMM - startTP) / MM_PER_UNIT;
+    if (Math.abs(deltaU) < 1e-3) { res(); return; }
+    movingToScan = true;
+    ctx.Sound && ctx.Sound.startTableSound && ctx.Sound.startTableSound(1.0);
+    const t0 = performance.now(); let done = false;
+    const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
+    const finish = () => { if (done) return; done = true; ctx.Sound && ctx.Sound.stopTableSound && ctx.Sound.stopTableSound(); movingToScan = false; res(); };
+    const snap = (e) => {
+      const dz = -deltaU * e;
+      three.handGroup.position.z = startHandZ + dz; couch.position.z = startCouchZ + dz;
+      S.ct.tablePos = startTP + (targetMM - startTP) * e; updateCTReadouts();
+    };
+    (function step() {
+      if (done) return;
+      const t = Math.min(1, (performance.now() - t0) / dur);
+      snap(ease(t));
+      if (t < 1) requestAnimationFrame(step); else finish();
+    })();
+    // fallback if rAF is throttled (background tab): snap to the target, then finish
+    setTimeout(() => { if (!done) { snap(1); finish(); } }, dur + 600);
   });
 }
 
