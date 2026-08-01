@@ -209,11 +209,12 @@
       <div class="grp ct-only" id="ctSettings">
         <div class="lab">Scout planning</div>
         <div class="bod">
-          <!-- scout groups: AP (scan plane 0°) + Lateral (90°); click kV/mA to edit -->
+          <!-- protocol: sets predetermined scout start/end + isocentre landmark -->
+          <div class="row"><div class="rl">Protocol</div>
+            <button class="protobtn" id="ctProtocolBtn">Whole scout <span class="cv">▾</span></button></div>
+          <div class="protocur"><span id="ctProtocolName">Whole scout</span><span class="protoland" id="ctProtocolLand"></span></div>
+          <!-- scout groups: AP (scan plane 0°) + Lateral (90°); click start/end/kV/mA to edit -->
           <div class="scouttable" id="ctScoutTable"></div>
-          <div class="row" style="margin-top:10px"><div class="rl">Scan length</div>
-            <div class="valchip" id="ctScanLenV">300 mm</div></div>
-          <input type="range" id="ctScanLen" min="50" max="600" step="10" value="300">
           <div class="row" style="margin-top:10px"><div class="rl">Est. scan time</div>
             <div class="valchip green" id="ctExpTimeV">— s</div></div>
         </div>

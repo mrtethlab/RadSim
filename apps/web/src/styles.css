@@ -470,6 +470,17 @@ body.subj-hand .hand-only{display:flex}
 .protocur{display:flex; align-items:center; justify-content:space-between; gap:8px}
 .protocur .pl{font-family:var(--seg); font-size:9.5px; letter-spacing:.6px; color:var(--muted); text-transform:uppercase}
 .protochip{font-family:var(--disp); font-size:12.5px; color:var(--amber); text-align:right}
+/* CT protocol picker: current name + isocentre-landmark shorthand chip */
+.protobtn .cv{opacity:.7; margin-left:4px}
+#ctSettings .protocur{margin:6px 0 4px; gap:10px}
+#ctProtocolName{font-family:var(--disp); font-size:13px; color:var(--txt)}
+.protoland{font-family:var(--seg); font-size:11px; letter-spacing:1px; color:#ffd27a;
+  background:rgba(255,180,60,.12); border:1px solid rgba(255,180,60,.4); border-radius:4px;
+  padding:2px 7px; flex:none}
+.ctpop-stations.proto{flex-direction:column; flex-wrap:nowrap; max-width:340px; width:340px}
+.ctpop-stations.proto button{display:flex; align-items:center; justify-content:space-between;
+  width:100%; text-align:left; text-transform:none; letter-spacing:.3px}
+.ctpop-stations.proto button .protoland{pointer-events:none}
 /* APR protocol popup */
 .protopop{position:fixed; inset:0; z-index:200; display:none; align-items:center; justify-content:center;
   background:rgba(3,7,11,.72); backdrop-filter:blur(3px)}

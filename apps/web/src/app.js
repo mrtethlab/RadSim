@@ -283,14 +283,14 @@ async function setSubject(sub){
                            three.chestGroup=three.voxelMeshes[id]||null; };
   if(sub==='hand'){
     S.subject='hand';
-    S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scoutKv=80; S.ct.scoutMa=20;
+    S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scanStart=0; S.ct.protocol='whole';
+    S.ct.scoutKv=80; S.ct.scoutMa=20;
     S.ct.scoutTech=[{kv:80,ma:20},{kv:80,ma:20}];
     S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
     applyBackendOnly(false);
     showActive(null); applyHandView();
     if(hint) hint.textContent='Analytic hand phantom';
     if(sel) sel.value='hand';
-    const sl=$('ctScanLen'); if(sl) sl.value=S.ct.scanLen;
     syncScene(); return;
   }
   const cfg=VOXEL_MODELS[sub];
@@ -317,8 +317,7 @@ async function setSubject(sub){
   S.ct.scoutFovMM=Math.round(Math.max(ext[0], ext[1])+70);
   // default the scan to cover the WHOLE anatomy, pre-isocentred at the superior end
   // (scan runs superior→inferior). Tall models (whole body) need a longer scout.
-  S.ct.scanLen=Math.round(ext[2]);
-  const sl=$('ctScanLen'); if(sl){ sl.max=Math.max(600, S.ct.scanLen); sl.value=S.ct.scanLen; }
+  S.ct.scanLen=Math.round(ext[2]); S.ct.scanStart=0; S.ct.protocol='whole';
   S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
   S.ct.isocentred=false; S.ct.tablePos=0; S.ct.tableY=0;   // require the zero button before scanning
   S.ct.scoutKv=cfg.scoutKv; S.ct.scoutMa=cfg.scoutMa;
@@ -409,7 +408,9 @@ const S = {
     imgPerRotation:1,          // images reconstructed per gantry rotation
     pitch:1.0,                 // table travel per rotation / total collimation
     rotSpeed:0.5,              // seconds per gantry rotation
-    scanLen:300,               // mm scout/scan length (from isocentre)
+    scanLen:300,               // mm scout/scan length (top→bottom of the scout)
+    scanStart:0,               // mm; table position (landmark-relative) of the scout's superior edge — set by the protocol
+    protocol:'whole',          // selected CT protocol id (sets scanStart/scanLen + isocentre landmark)
     scoutFovMM:180,            // scout/scan field of view (mm) — adapts to the subject (hand 180 / chest ~460)
     scoutKv:80,                // scout topogram technique (kV) — default source
     scoutMa:20,                // scout topogram technique (mA)

@@ -38,6 +38,29 @@ const scanLenU = () => ctx.S.ct.scanLen / MM_PER_UNIT;             // scan lengt
 // to the nearest mm so only a .0 decimal is ever shown)
 function fmtTablePos(mm) { const r = Math.round(mm); return r > 0 ? 'I' + r.toFixed(1) : r < 0 ? 'S' + (-r).toFixed(1) : '0.0'; }
 
+// CT protocols. Each sets a predetermined scout range and an anatomical isocentring
+// landmark (GE convention). `start` is the table position (landmark-relative, mm) of
+// the scout's superior edge — negative = superior of the landmark; `len` is the scout
+// length. The landmark 2-char shorthand (SN/IC/XY/OM) is where the tech sets table 0,
+// so the scout start is usually NOT 0 (e.g. a CAP is set at the sternal notch, but the
+// coverage begins ~120 mm above it at the lung apices). `len:0` = use the full model.
+const LANDMARKS = { SN: 'Sternal notch', IC: 'Iliac crest', XY: 'Xiphoid', OM: 'Orbital margin' };
+const CT_PROTOCOLS = [
+  { id: 'whole',     name: 'Whole scout',              land: '',   start: 0,    len: 0 },
+  { id: 'cap',       name: 'Chest / Abdomen / Pelvis', land: 'SN', start: -120, len: 640 },
+  { id: 'chest',     name: 'Chest',                    land: 'SN', start: -60,  len: 340 },
+  { id: 'abdomen',   name: 'Abdomen',                  land: 'XY', start: -20,  len: 300 },
+  { id: 'abdpelvis', name: 'Abdomen / Pelvis',         land: 'XY', start: -20,  len: 440 },
+  { id: 'lspine',    name: 'Lumbar Spine',             land: 'IC', start: -180, len: 300 },
+  { id: 'head',      name: 'Head',                     land: 'OM', start: -20,  len: 180 },
+  { id: 'neck',      name: 'Neck',                     land: 'SN', start: -230, len: 260 },
+];
+const ctProtocol = (id) => CT_PROTOCOLS.find((p) => p.id === (id || ctx.S.ct.protocol)) || CT_PROTOCOLS[0];
+// scout's superior-edge table position (landmark-relative). Every displayed table
+// position is this offset + the physical scout coordinate; the recon geometry stays in
+// scout coordinates (0..scanLen), so this is purely a readout re-labelling.
+const scanStartMM = () => ctx.S.ct.scanStart || 0;
+
 // Button glyphs, drawn exactly to spec.
 const SYM = {
   // START: an equilateral diamond with a centre vertical line touching top & bottom vertices
@@ -339,9 +362,8 @@ function wireCTSettings() {
     else if (key === 'scoutMa') S.ct.scoutMa = Math.max(5, Math.min(200, S.ct.scoutMa + d));
     updateCTReadouts();
   });
-  // scan length (range). Changing it does NOT live-update a scout: like a real CT,
-  // re-scouting means ABORT then START (rescan) — table zero / isocentre persist.
-  $('ctScanLen')?.addEventListener('input', (e) => { S.ct.scanLen = parseFloat(e.target.value); updateCTReadouts(); updateScanMarkers(); });
+  // protocol picker — sets predetermined scout start/end + isocentre landmark
+  $('ctProtocolBtn')?.addEventListener('click', () => openProtocolPopup());
   // table height — raise / lower by 1 mm per press; hold to auto-repeat
   wireHoldRepeat($('ctTablePad'), 'button[data-th]', (b) => {
     S.ct.tableY = Math.max(-80, Math.min(80, S.ct.tableY + (b.dataset.th === 'up' ? 1 : -1)));
@@ -358,7 +380,7 @@ function wireCTSettings() {
   // doesn't jump the table. Only meaningful once scouts are planned.
   $('ctMoveScan')?.addEventListener('click', () => {
     if (S.ct.phase !== 'planning') { setHint('Acquire scouts and plan a scan first.'); return; }
-    moveTableTo(grp(0).box.top * S.ct.scanLen);
+    moveTableTo(scanStartMM() + grp(0).box.top * S.ct.scanLen);
   });
   // direction pad — nudge the patient/couch (10 mm/press); hold to auto-repeat
   const STEP = 1;                       // world unit per press (= 10 mm)
@@ -385,16 +407,17 @@ function scoutScanTime() { return ctx.S.ct.scanLen / SCOUT_SPEED_MMPS; }   // se
 function updateCTReadouts() {
   const { S, $ } = ctx;
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  renderProtocol();
   renderScoutTable();
-  set('ctScanLenV', S.ct.scanLen + ' mm');
   const et = scoutScanTime();
   set('ctExpTimeV', (et < 10 ? et.toFixed(1) : Math.round(et)) + ' s');
   set('ctTablePosV', fmtTablePos(S.ct.tablePos));
-  // Scan extent readouts. Before planning the scan runs isocentre (0.0) -> I(scan
-  // length); during planning updatePlan() drives these from the scan-box edges.
+  // Scan extent readouts. Before planning the scan spans the scout range (scanStart ->
+  // scanStart+length, both landmark-relative); during planning updatePlan() drives
+  // these from the scan-box edges.
   if (S.ct.phase !== 'planning') {
-    set('ctScanStartV', fmtTablePos(0) + ' mm');
-    set('ctScanEndV', fmtTablePos(S.ct.scanLen) + ' mm');
+    set('ctScanStartV', fmtTablePos(scanStartMM()) + ' mm');
+    set('ctScanEndV', fmtTablePos(scanStartMM() + S.ct.scanLen) + ' mm');
   }
   const th = Math.round(S.ct.tableY);   // nearest mm, no decimals
   set('ctTableHV', (th > 0 ? '+' : '') + th + ' mm' + (th === 0 ? ' · centred' : ''));
@@ -1043,10 +1066,10 @@ function wireReposButtons() {
 // Scans run sequentially, so the reposition before START is for the NEXT (first)
 // scan = group 1. Moving a later group's box does NOT require a table move.
 function updatePlan() {
-  const c = ctx.S.ct, g = grp(0), len = c.scanLen;
+  const c = ctx.S.ct, g = grp(0), len = c.scanLen, off = scanStartMM();
   const set = (id, v) => { const el = ctx.$(id); if (el) el.textContent = v; };
-  set('ctScanStartV', fmtTablePos(g.box.top * len) + ' mm');
-  set('ctScanEndV', fmtTablePos(g.box.bot * len) + ' mm');
+  set('ctScanStartV', fmtTablePos(off + g.box.top * len) + ' mm');
+  set('ctScanEndV', fmtTablePos(off + g.box.bot * len) + ' mm');
   // The scan box is locked at the scout centre on the cross axes; the mediolateral (X)
   // and anteroposterior (Y) scan-centre offsets come from the reposition buttons
   // (c.plan.targetX / targetY), which is what requires a table move.
@@ -1076,8 +1099,9 @@ function openFieldEditor(gi, act) {
   const done = () => { renderScanBoxes(); updatePlan(); };
   const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
   const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
-  if (act === 'start') type('Start location (mm inferior)', Math.round(g.box.top * len), (v) => { g.box.top = clampV(v / len, -0.6, g.box.bot - BOX_MIN); });
-  else if (act === 'end') type('End location (mm inferior)', Math.round(g.box.bot * len), (v) => { g.box.bot = clampV(v / len, g.box.top + BOX_MIN, 1.6); });
+  const off = scanStartMM();
+  if (act === 'start') type('Start location (table position, mm)', Math.round(off + g.box.top * len), (v) => { g.box.top = clampV((v - off) / len, -0.6, g.box.bot - BOX_MIN); });
+  else if (act === 'end') type('End location (table position, mm)', Math.round(off + g.box.bot * len), (v) => { g.box.bot = clampV((v - off) / len, g.box.top + BOX_MIN, 1.6); });
   else if (act === 'interval') type('Slice interval (mm)', fmtNum(g.interval), (v) => { g.interval = clampV(v, 0.1, 50); });
   else if (act === 'tilt') type('Gantry tilt (degrees)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
@@ -1106,13 +1130,16 @@ const SCOUT_PLANES = [{ label: 'AP', ang: 0 }, { label: 'Lateral', ang: 90 }];
 function renderScoutTable() {
   const cont = ctx.$('ctScoutTable'); if (!cont) return;
   const c = ctx.S.ct;
-  const start = fmtTablePos(0) + ' mm', end = fmtTablePos(c.scanLen) + ' mm';
+  // scout start/end are landmark-relative table positions; RED until the table is
+  // zeroed (the tech sets table 0 before the scout is meaningful). Click to edit.
+  const zc = c.isocentred ? '' : ' unzeroed';
+  const start = fmtTablePos(scanStartMM()) + ' mm', end = fmtTablePos(scanStartMM() + c.scanLen) + ' mm';
   const rows = SCOUT_PLANES.map((p, i) => {
     const t = c.scoutTech[i];
     return '<tr class="sg-row" data-plane="' + i + '">'
       + '<td><span class="sc-plane">' + p.ang + '°<small>' + p.label + '</small></span></td>'
-      + '<td><span class="sg-calc">' + start + '</span></td>'
-      + '<td><span class="sg-calc">' + end + '</span></td>'
+      + '<td><span class="sg-edit' + zc + '" data-act="start">' + start + '</span></td>'
+      + '<td><span class="sg-edit' + zc + '" data-act="end">' + end + '</span></td>'
       + '<td><span class="sg-edit" data-act="kv">' + t.kv + ' kV</span></td>'
       + '<td><span class="sg-edit" data-act="ma">' + t.ma + ' mA</span></td></tr>';
   }).join('');
@@ -1125,8 +1152,18 @@ function wireScoutTable() {
   cont.addEventListener('click', (e) => {
     const span = e.target.closest('.sg-edit'); if (!span) return;
     const row = span.closest('.sg-row'); const i = +row.dataset.plane, act = span.dataset.act;
-    const t = ctx.S.ct.scoutTech[i];
-    if (act === 'kv') openTypedPopup('Scout kV — ' + SCOUT_PLANES[i].label, t.kv, (v) => { t.kv = Math.max(70, Math.min(140, Math.round(v))); updateCTReadouts(); });
+    const c = ctx.S.ct, t = c.scoutTech[i];
+    if (act === 'start') openTypedPopup('Scout start (table position, mm)', Math.round(scanStartMM()), (v) => {
+      const nv = sanitizeNum(v, scanStartMM()), end = c.scanStart + c.scanLen;
+      c.scanStart = Math.min(nv, end - 50); c.scanLen = Math.round(end - c.scanStart); c.protocol = 'whole';
+      renderScanBoxes(); updateScanMarkers(); if (c.phase === 'planning') updatePlan(); updateCTReadouts();
+    });
+    else if (act === 'end') openTypedPopup('Scout end (table position, mm)', Math.round(scanStartMM() + c.scanLen), (v) => {
+      const nv = sanitizeNum(v, scanStartMM() + c.scanLen);
+      c.scanLen = Math.max(50, Math.round(nv - c.scanStart)); c.protocol = 'whole';
+      renderScanBoxes(); updateScanMarkers(); if (c.phase === 'planning') updatePlan(); updateCTReadouts();
+    });
+    else if (act === 'kv') openTypedPopup('Scout kV — ' + SCOUT_PLANES[i].label, t.kv, (v) => { t.kv = Math.max(70, Math.min(140, Math.round(v))); updateCTReadouts(); });
     else if (act === 'ma') openTypedPopup('Scout mA — ' + SCOUT_PLANES[i].label, t.ma, (v) => { t.ma = Math.max(5, Math.min(500, Math.round(v))); updateCTReadouts(); });
   });
 }
@@ -1144,8 +1181,8 @@ function renderScanGroups() {
     rows += '<tr class="sg-row gc' + gi + (gi === c.activeGroup ? ' active' : '') + '" data-group="' + gi + '">'
       + '<td>' + num + '</td>'
       + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle box on scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
-      + cell('sg-edit' + (c.isocentred ? '' : ' unzeroed'), 'start', fmtTablePos(g.box.top * c.scanLen))
-      + cell('sg-edit' + (c.isocentred ? '' : ' unzeroed'), 'end', fmtTablePos(g.box.bot * c.scanLen))
+      + cell('sg-edit', 'start', fmtTablePos(scanStartMM() + g.box.top * c.scanLen))
+      + cell('sg-edit', 'end', fmtTablePos(scanStartMM() + g.box.bot * c.scanLen))
       + cell('sg-calc', '', groupImages(g))
       + cell('sg-station', 'acq', detConfig(g))
       + cell('sg-station', 'acq', fmtNum(g.sliceThk) + ' mm')
@@ -1195,6 +1232,41 @@ function openStationPopup(label, list, cur, fmt, onSel) {
   pop.classList.add('show');
   inner.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { onSel(parseFloat(b.dataset.v)); close(); }));
   document.addEventListener('keydown', onKey, true);
+}
+// Protocol picker: choose a CT protocol (sets scout range + isocentre landmark).
+function openProtocolPopup() {
+  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
+  const cur = ctProtocol().id;
+  inner.innerHTML = '<div class="plt">CT protocol</div><div class="pl">Select a protocol:</div>'
+    + '<div class="ctpop-stations proto">' + CT_PROTOCOLS.map((p) =>
+        '<button data-v="' + p.id + '"' + (p.id === cur ? ' class="on"' : '') + '>'
+        + p.name + (p.land ? '<span class="protoland">' + p.land + '</span>' : '') + '</button>').join('')
+    + '</div><div class="phint"><b>[ESC]</b> to cancel</div>';
+  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  pop.classList.add('show');
+  inner.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { applyProtocol(b.dataset.v); close(); }));
+  document.addEventListener('keydown', onKey, true);
+}
+// Apply a protocol: set the scout range (landmark-relative start + length) and the
+// isocentre landmark, then reset the scan box and refresh. `len:0` = whole model.
+function applyProtocol(id) {
+  const c = ctx.S.ct, p = ctProtocol(id);
+  c.protocol = p.id;
+  if (p.id !== 'whole') { c.scanStart = p.start; c.scanLen = p.len; }
+  else { c.scanStart = 0; c.scanLen = ctx.S.voxelModel ? Math.round(ctx.S.voxelModel.extentMM[2]) : 300; }
+  resetScanBox();
+  renderScanBoxes(); updateScanMarkers();
+  if (c.phase === 'planning') updatePlan();
+  updateCTReadouts();
+}
+// Reflect the current protocol name + isocentre-landmark shorthand under the picker.
+function renderProtocol() {
+  const p = ctProtocol();
+  const btn = ctx.$('ctProtocolBtn'), name = ctx.$('ctProtocolName'), land = ctx.$('ctProtocolLand');
+  if (btn) btn.innerHTML = p.name + ' <span class="cv">&#9662;</span>';
+  if (name) name.textContent = p.name;
+  if (land) { land.textContent = p.land || ''; land.title = p.land ? LANDMARKS[p.land] : ''; land.style.display = p.land ? '' : 'none'; }
 }
 // Reference-style acquisition ("Select the desired Image Thickness") dialog. Edits a
 // working copy of the group's acquisition geometry and applies it on OK. Relationships:
