@@ -59,6 +59,14 @@
 # is realigned.
 #
 # torch is installed separately (CPU wheel above) to avoid the CUDA build.
+#
+# GPU note: if TotalSegmentator dies with "operator torchvision::nms does not exist",
+# torch and torchvision are a MISMATCHED pair (a stray PyPI torchvision expecting a
+# different torch). They MUST come from the same CUDA index and match. This box runs
+# torch 2.11.0+cu128 -> pair it with torchvision 0.26.0+cu128:
+#   ./.venv/Scripts/python.exe -m pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
+#     --index-url https://download.pytorch.org/whl/cu128
+# (the cu128 index's latest torchvision is the correct match for the installed torch.)
 SimpleITK>=2.3
 nibabel>=5.2
 scipy>=1.11
