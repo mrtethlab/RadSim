@@ -453,7 +453,7 @@ body.mode-ct .di{display:none}
 .ctscouts{display:none; position:absolute; inset:0; z-index:7; background:#050607;
   padding:40px 16px 12px; flex-direction:column; gap:12px}
 .ctscouts.show{display:flex}
-.scoutrow{display:flex; gap:16px; align-items:flex-start; justify-content:center; flex:1 1 50%; min-height:0}
+.scoutrow{display:flex; gap:16px; align-items:flex-start; justify-content:center; flex:1 1 auto; min-height:0}
 .scoutcol{display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0}
 .scouthdr{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:var(--cyan);
   text-transform:uppercase}
@@ -509,8 +509,9 @@ body.mode-ct .di{display:none}
 .gc2{--gc:rgba(90,230,140,.98);  --gcbg:rgba(70,220,120,.12)}
 .gc3{--gc:rgba(255,120,200,.98); --gcbg:rgba(255,110,195,.12)}
 
-/* ---- scan-group table (bottom half of the bay, horizontal scroll) ---- */
-.scangroups{flex:1 1 50%; min-height:0; overflow:auto; border:1px solid var(--edge2);
+/* ---- scan-group table (below the scouts, horizontal scroll) — capped so the scouts get most
+   of the height; each table scrolls internally when it has many rows. ---- */
+.scangroups{flex:0 1 auto; min-height:0; max-height:22vh; overflow:auto; border:1px solid var(--edge2);
   background:rgba(8,11,14,.9); border-radius:4px}
 .sg-table{border-collapse:collapse; width:100%; font-family:var(--disp); font-size:13px; white-space:nowrap}
 .sg-table th{position:sticky; top:0; z-index:1; background:#0c1218; color:var(--muted);
@@ -752,8 +753,8 @@ body.hist-off .histcanvas{display:none}
 /* recon windows: centred New/Select overlay (always on an empty window; on hover when filled) */
 .mpr-pane .rw-overlay{position:absolute; inset:0; z-index:3; display:flex; gap:10px; align-items:center;
   justify-content:center; background:rgba(0,0,0,.4)}
-.mpr-pane.filled .rw-overlay{display:none}
-.mpr-pane.filled:hover .rw-overlay{display:flex; background:rgba(0,0,0,.3)}
+.mpr-pane.filled .rw-overlay{display:none}   /* a displayed recon shows no overlay — use Clear window to reset it */
+.mpr-pane.selw{outline:2px solid var(--cyan); outline-offset:-2px}   /* window selected for scrolling */
 .rw-btn{font-family:var(--seg); font-size:11px; letter-spacing:.5px; padding:8px 12px; border-radius:4px; cursor:pointer;
   background:rgba(20,30,42,.94); border:1px solid var(--edge2); color:#cfe8f2}
 .rw-btn:hover{border-color:var(--cyan); color:#fff}

@@ -1054,14 +1054,23 @@ function renderReconBoxes() {
     el.querySelector('.rb-ind').innerHTML = reconIndicator(r.plane, view);
   });
 }
-// Plane indicators: sagittal → side-to-side arrow on AP + circled-X on LAT; coronal → the
-// opposite; transverse → none.
+// Plane indicators. The double-arrow points along the direction the recon's slices ADVANCE
+// (its through-plane axis) as seen in that scout; when that axis is perpendicular to the scout
+// it reads as a circled-X. Advance axis: transverse → I/S (z), coronal → A/P (y), sagittal → L/R (x).
+// Scout axes: AP scout → horizontal = L/R (x), vertical = I/S (z); LATERAL → horizontal = I/S (z),
+// vertical = A/P (y). So e.g. a coronal recon shows a VERTICAL (A/P) arrow on the lateral scout and
+// a circled-X on the AP scout; a transverse recon shows an I/S arrow on both (vertical on AP,
+// horizontal on lateral).
 const RB_ARROW = '<svg viewBox="0 0 40 16" width="34" height="14"><path fill="none" stroke="#ffcf7a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M8 8H32M8 8l4-4M8 8l4 4M32 8l-4-4M32 8l-4 4"/></svg>';
 const RB_XCIRC = '<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9" fill="none" stroke="#ffcf7a" stroke-width="2"/><path stroke="#ffcf7a" stroke-width="2" stroke-linecap="round" d="M8 8l8 8M16 8l-8 8"/></svg>';
+const rbArrow = (vert) => RB_ARROW.replace('<svg ', '<svg style="transform:rotate(' + (vert ? 90 : 0) + 'deg)" ');
 function reconIndicator(plane, view) {
-  const arrow = (plane === 'sagittal' && view === 'ap') || (plane === 'coronal' && view === 'lat');
-  const xc = (plane === 'sagittal' && view === 'lat') || (plane === 'coronal' && view === 'ap');
-  return arrow ? RB_ARROW : (xc ? RB_XCIRC : '');
+  const adv = plane === 'coronal' ? 'y' : plane === 'sagittal' ? 'x' : 'z';   // slice-advance axis
+  const H = view === 'ap' ? 'x' : 'z';   // this scout's horizontal axis
+  const V = view === 'ap' ? 'z' : 'y';   // this scout's vertical axis
+  if (adv === H) return rbArrow(false);  // arrow along the scout's horizontal
+  if (adv === V) return rbArrow(true);   // arrow along the scout's vertical
+  return RB_XCIRC;                        // advance axis is perpendicular to this scout
 }
 function wireReconBox(box, view) {
   box.addEventListener('pointerdown', (e) => {
@@ -3020,14 +3029,19 @@ function drawObliqueLine(g, scan, pane, map) {
 }
 
 // ---- interaction ----
-// Scroll ONE recon window through its slices — only that window re-renders (no linked reformat).
+// Scroll the SELECTED window(s) through their slices — only those windows re-render. If nothing is
+// selected, scroll the window under the cursor. (Select windows by clicking; shift/ctrl multi-select.)
 function onWinWheel(e, wi) {
   e.preventDefault(); const scan = mprScan(); if (!scan) return;
-  const recon = winRecon(wi); if (!recon) return;
-  const w = ctx.S.ct.mpr.wins[wi], a = winAxis(scan, recon), dir = e.deltaY > 0 ? 1 : -1;
-  w.pos = clampV((w.pos == null ? winMid(scan, recon) : w.pos) + dir * a.step, a.lo, a.hi);
-  drawReconWindow(scan, wi);
+  const m = ctx.S.ct.mpr, sel = (m.selw && m.selw.length) ? m.selw : [wi], dir = e.deltaY > 0 ? 1 : -1;
+  sel.forEach(i => {
+    const recon = winRecon(i); if (!recon) return;
+    const w = m.wins[i], a = winAxis(scan, recon);
+    w.pos = clampV((w.pos == null ? winMid(scan, recon) : w.pos) + dir * a.step, a.lo, a.hi);
+    drawReconWindow(scan, i);
+  });
 }
+function updateWinSel() { const sel = ctx.S.ct.mpr.selw || []; WINS.forEach(wi => { const p = ctx.$('mprWin_' + wi); if (p) p.classList.toggle('selw', sel.includes(wi)); }); }
 function evtToCanvas(e, cv) { const r = cv.getBoundingClientRect(); return { px: (e.clientX - r.left) * (cv.width / r.width), py: (e.clientY - r.top) * (cv.height / r.height) }; }
 
 function onPaneDown(e, pane, cv) {
@@ -3073,14 +3087,31 @@ function onPaneDown(e, pane, cv) {
 }
 
 function wireRecons() {
-  WINS.forEach(wi => { const cv = ctx.$('mprCanvas_' + wi); if (cv) cv.addEventListener('wheel', (e) => onWinWheel(e, wi), { passive: false }); });
+  WINS.forEach(wi => {
+    const cv = ctx.$('mprCanvas_' + wi); if (!cv) return;
+    cv.addEventListener('wheel', (e) => onWinWheel(e, wi), { passive: false });
+    cv.addEventListener('pointerdown', (e) => {            // click a filled window to select it for scrolling
+      if (!winRecon(wi)) return;                            // empty window → its overlay buttons handle it
+      const m = ctx.S.ct.mpr; m.selw = m.selw || [];
+      if (e.shiftKey || e.ctrlKey || e.metaKey) { const k = m.selw.indexOf(wi); if (k >= 0) m.selw.splice(k, 1); else m.selw.push(wi); }
+      else m.selw = [wi];
+      updateWinSel();
+    });
+  });
   ctx.$('ctMprGrid')?.addEventListener('click', (e) => {
     const nb = e.target.closest('.rw-new'), sb = e.target.closest('.rw-sel');
     if (nb) newReconForWindow(+nb.dataset.win);
     else if (sb) selectReconForWindow(+sb.dataset.win);
   });
-  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.wins = null; ctRenderRecons(); });
+  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.wins = null; ctx.S.ct.mpr.selw = []; ctRenderRecons(); });
   ctx.$('ctReconSave')?.addEventListener('click', saveReconStart);
+  ctx.$('ctReconClear')?.addEventListener('click', () => {
+    const scan = mprScan(); if (!scan) return;
+    const m = ctx.S.ct.mpr, sel = (m.selw || []).slice();
+    if (!sel.length) { setHint('Click a window to select it, then Clear window.'); return; }
+    sel.forEach(wi => { m.wins[wi] = null; }); m.selw = []; updateWinSel();
+    sel.forEach(wi => drawReconWindow(scan, wi));
+  });
   window.addEventListener('resize', () => { if (ctx.$('ctRecons')?.classList.contains('show')) { const s = mprScan(); if (s) WINS.forEach(wi => drawReconWindow(s, wi)); } });
 }
 // Small modal list picker (reuses the field-edit popup shell).
