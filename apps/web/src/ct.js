@@ -1693,11 +1693,14 @@ function applyTableCommit() {
 //   real scanner (no projection truncation). Heavy — meant for the Python GPU
 //   engine; the browser fallback works but crawls.
 const DET_MODES = {
-  quick:     { nDet: 384, nAngles: 360, gridN: 128, fixedPitch: false },
+  // zSub: z sub-planes across the slice sensitivity profile (finite slab thickness). >1 makes
+  // this a MULTI-slice recon — partial-volume in z + cross-slice artifact bleed. quick keeps it
+  // light (fast preview); realistic integrates the full SSP.
+  quick:     { nDet: 384, nAngles: 360, gridN: 128, fixedPitch: false, zSub: 3 },
   // photonBase: detected photons per channel per view at the reference technique —
   // clinical scale (~10^6-10^7), so the 512² image lands at a clinical ~10-15 HU noise;
   // the quick preview keeps the old (much lower) base tuned for its coarse grid.
-  realistic: { nDet: 888, nAngles: 1440, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 555, photonBase: 8e6 },
+  realistic: { nDet: 888, nAngles: 1440, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 555, photonBase: 8e6, zSub: 7 },
 };
 // Selectable scan field of view (the bore reconstruction circle); the rays integrate over
 // it, so the body must sit inside it or the projections truncate (→ cupping). GE-style set.
@@ -1992,8 +1995,29 @@ function buildKernel(ds, N, shepp) {
   return h;
 }
 
+// Slice sensitivity profile: z sub-plane offsets (world units) + weights across the recon slice
+// thickness. A real reconstructed slice integrates a finite z-slab (a Gaussian-ish SSP with tails
+// from z-collimation, focal-spot z-extent, cone angle and helical interpolation), so a structure
+// that only partly fills the slab is z-averaged (partial volume) and dense material centred in a
+// NEIGHBOURING slice still lies in this slice's SSP tail → its streaks bleed in. nSub=1 collapses
+// to a single infinitely-thin plane (single-slice / SSCT).
+const ONE_PLANE = [{ dz: 0, w: 1 }];
+function sliceProfile(thkU, nSub) {
+  if (!(nSub > 1) || !(thkU > 0)) return ONE_PLANE;
+  const sigma = thkU / 2.3548, span = 1.5 * thkU;          // FWHM = slice thickness; reach ~1.5× into neighbours
+  const prof = []; let sum = 0;
+  for (let i = 0; i < nSub; i++) {
+    const dz = -span + (2 * span) * i / (nSub - 1);
+    const w = Math.exp(-(dz * dz) / (2 * sigma * sigma));
+    prof.push({ dz, w }); sum += w;
+  }
+  for (const s of prof) s.w /= sum;                         // normalise (a uniform slab leaves T, so HU, unchanged)
+  return prof;
+}
+
 // Forward-project one slice at world plane z = z0 → sinogram [angle][detector].
-function projectSlice(phantom, z0, mu, photons0, geo) {
+// zprof (slice sensitivity profile) integrates a finite z-slab; omit for a thin single plane.
+function projectSlice(phantom, z0, mu, photons0, geo, zprof) {
   const cx = geo.cx, cy = geo.cy, RR = geo.rayR, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
   const halfDet = (nDet - 1) / 2;
   const sino = new Float32Array(nAng * nDet);
@@ -2001,30 +2025,40 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
   const muMat = poly ? mu.muMat : null, binW = poly ? mu.bins : null;
   const nb = poly ? binW.length : 0, nmat = poly ? muMat.length : 0, bhc = poly ? mu.bhc : null;
   const hid = poly ? new Int32Array(nmat) : null, hln = poly ? new Float64Array(nmat) : null;
+  const zp = (zprof && zprof.length) ? zprof : ONE_PLANE;   // z sub-planes across the slice thickness
+  const nzp = zp.length;
   for (let a = 0; a < nAng; a++) {
     const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th);
     const base = a * nDet;
     for (let k = 0; k < nDet; k++) {
       const r = (k - halfDet) * ds;
       // ray: origin at t = -rayR along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
-      const o = [cx + r * ct + RR * st, cy + r * st - RR * ct, z0];
+      const ox = cx + r * ct + RR * st, oy = cy + r * st - RR * ct;   // origin (x,y); z varies over the SSP sub-planes
       const d = [-st, ct, 0];
-      let p, Tr;
-      if (poly) {
-        // integrate transmission over the spectrum -> the measured line integral is
-        // beam-hardened (non-linear in path × μ), which is what streaks between metals
-        const L = phantom.trace(o, d, 2 * RR);
-        let nh = 0; for (let m = 1; m < nmat; m++) { const lm = L[m]; if (lm) { hid[nh] = m; hln[nh] = lm; nh++; } }
-        let T = 0;
-        for (let b = 0; b < nb; b++) { let e = 0; for (let j = 0; j < nh; j++) e += muMat[hid[j]][b] * hln[j]; T += binW[b] * Math.exp(-e); }
-        Tr = T; p = -Math.log(Math.max(T, 1e-300));
-      } else if (mu.voxel) {
-        const L = phantom.trace(o, d, 2 * RR), arr = mu.arr; p = 0; for (let m = 1; m < arr.length; m++) { const lm = L[m]; if (lm) p += arr[m] * lm; }
-        Tr = Math.exp(-p);
-      } else {
-        const { bone, soft, marrow } = phantom.trace(o, d, 2 * RR); p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow;
-        Tr = Math.exp(-p);
+      // Integrate TRANSMISSION over the slice sensitivity profile: the detector sums photons over
+      // the beam's finite z-thickness, so Tr = Σ w·exp(−∫μ) across sub-planes (average T, not p).
+      // Averaging pre-log is what makes a sliver of metal in an adjacent slab darken the whole ray
+      // → genuine cross-slice streak bleed, plus correct z partial-volume.
+      let Tr = 0;
+      for (let zi = 0; zi < nzp; zi++) {
+        const o = [ox, oy, z0 + zp[zi].dz];
+        let Ts;
+        if (poly) {
+          // beam-hardened transmission: integrate over the spectrum (non-linear in path × μ)
+          const L = phantom.trace(o, d, 2 * RR);
+          let nh = 0; for (let m = 1; m < nmat; m++) { const lm = L[m]; if (lm) { hid[nh] = m; hln[nh] = lm; nh++; } }
+          let T = 0;
+          for (let b = 0; b < nb; b++) { let e = 0; for (let j = 0; j < nh; j++) e += muMat[hid[j]][b] * hln[j]; T += binW[b] * Math.exp(-e); }
+          Ts = T;
+        } else if (mu.voxel) {
+          const L = phantom.trace(o, d, 2 * RR), arr = mu.arr; let pp = 0; for (let m = 1; m < arr.length; m++) { const lm = L[m]; if (lm) pp += arr[m] * lm; }
+          Ts = Math.exp(-pp);
+        } else {
+          const { bone, soft, marrow } = phantom.trace(o, d, 2 * RR); Ts = Math.exp(-(mu.soft * soft + mu.bone * bone + mu.marrow * marrow));
+        }
+        Tr += zp[zi].w * Ts;
       }
+      let p = -Math.log(Math.max(Tr, 1e-300));
       if (photons0 > 0) {                       // detector-domain quantum + electronic noise, with saturation clipping
         const Nfloor = photons0 * Math.exp(-SAT_P);   // detected photons at the saturation limit
         const Nexp = photons0 * Tr;                   // expected detected photons for this ray
@@ -2210,6 +2244,9 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   const { phantom, voxel, mu, muW, fovMM, sfovMM, positions, count, effE } = setup;
   const geo = reconGeo(fovMM, 0, ISO_Y, sfovMM);
   const photons0 = photonsFor(g, geo);
+  // Multi-slice: integrate each output slice over its z-thickness (slice sensitivity profile),
+  // giving partial-volume + cross-slice bleed. Realistic uses the full SSP; quick stays light.
+  const zprof = sliceProfile(g.sliceThk / MM_PER_UNIT, geo.m.zSub || 1);
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
   // slice is emitted via onSlice as it completes so the scan shows the images coming
@@ -2230,7 +2267,9 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
                      muArr: Array.from(mu.arr), photons0,
                      // polyenergetic beam-hardening data (so the GPU recon shows metal artifacts too)
                      binsW: mu.bins, muMat: mu.muMat.map(r => Array.from(r)),
-                     muWbins: Array.from(mu.muWbins), muWeff: mu.muWeff };
+                     muWbins: Array.from(mu.muWbins), muWeff: mu.muWeff,
+                     // slice sensitivity profile (multi-slice z-integration): [dz(world), weight]
+                     zProfile: zprof.map(s => [s.dz, s.w]) };
       const BATCH = 4;
       for (let s0 = 0; s0 < nz; s0 += BATCH) {
         if (!alive()) return null;
@@ -2260,7 +2299,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
     for (let si = 0; si < nz; si++) {
       if (!alive()) return null;
       const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
-      const sino = projectSlice(phantom, zw, mu, photons0, geo);
+      const sino = projectSlice(phantom, zw, mu, photons0, geo, zprof);
       const q = filterSino(sinoBlur(sino, geo.m), h, geo.ds, geo.m);
       const img = backproject(q, geo);
       vol.set(img, si * N * N);

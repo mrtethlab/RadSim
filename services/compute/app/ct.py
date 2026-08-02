@@ -122,6 +122,9 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
         bhc_x, bhc_y, bhc_slope = _build_bhc(binW,
             torch.tensor(p["muWbins"], dtype=torch.float32, device=DEVICE), float(p["muWeff"]))
     z0_list = [float(z) for z in p["z0List"]]
+    # slice sensitivity profile: (dz, weight) z sub-planes across the recon slice thickness.
+    # >1 entry → multi-slice z-integration (partial-volume + cross-slice bleed); mirrors ct.js.
+    zprofile = [(float(dz), float(w)) for dz, w in (p.get("zProfile") or [[0.0, 1.0]])]
     rot = rot_tensor(p.get("rot"))
 
     half_det = (n_det - 1) / 2.0
@@ -147,25 +150,31 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
 
     out = np.empty((len(z0_list), N, N), dtype=np.float32)
     for zi, z0 in enumerate(z0_list):
-        # ---- forward project: march all rays through the z0 plane ----
+        # ---- forward project: march all rays through the slice's z-slab ----
         # points (A, K, S, 2) is too big in one go for realistic mode; batch angles.
+        # The detector sums photons over the beam's finite z-thickness, so we integrate
+        # TRANSMISSION over the slice sensitivity profile (Tssp = Σ w·exp(-∫μ)) before -ln.
+        # Averaging pre-log gives partial-volume + cross-slice metal bleed. Mirrors ct.js.
         sino = torch.empty(n_ang, n_det, dtype=torch.float32, device=DEVICE)
         for a0 in range(0, n_ang, FWD_BATCH):
             a1 = min(n_ang, a0 + FWD_BATCH)
             pxr = ox[a0:a1].unsqueeze(2) + dx[a0:a1].unsqueeze(2) * ts        # (a, K, S)
             pyr = oy[a0:a1].unsqueeze(2) + dy[a0:a1].unsqueeze(2) * ts
-            pts = torch.stack([pxr, pyr, torch.full_like(pxr, z0)], dim=-1)   # (a, K, S, 3)
-            ids = sample_ids(vv, pts, center, rot)
-            if poly:
-                # accumulate transmission over spectral bins (loop over bins to keep the
-                # per-material (a,K,S) tensor small); p = -ln(Σ w_b · exp(-∫μ_b dl))
-                T = torch.zeros(a1 - a0, n_det, device=DEVICE)
-                for b in range(binW.shape[0]):
-                    e_b = (muMat[ids, b] * STEP).sum(dim=-1)                   # (a, K)
-                    T += binW[b] * torch.exp(-e_b)
-                sino[a0:a1] = -torch.log(T.clamp(min=1e-30))
-            else:
-                sino[a0:a1] = (mu[ids] * STEP).sum(dim=-1)
+            Tssp = torch.zeros(a1 - a0, n_det, device=DEVICE)                 # SSP-integrated transmission
+            for dz, wz in zprofile:
+                pts = torch.stack([pxr, pyr, torch.full_like(pxr, z0 + dz)], dim=-1)   # (a, K, S, 3)
+                ids = sample_ids(vv, pts, center, rot)
+                if poly:
+                    # transmission over spectral bins (loop over bins to keep the per-material
+                    # (a,K,S) tensor small); T = Σ w_b · exp(-∫μ_b dl)
+                    T = torch.zeros(a1 - a0, n_det, device=DEVICE)
+                    for b in range(binW.shape[0]):
+                        e_b = (muMat[ids, b] * STEP).sum(dim=-1)              # (a, K)
+                        T += binW[b] * torch.exp(-e_b)
+                else:
+                    T = torch.exp(-(mu[ids] * STEP).sum(dim=-1))
+                Tssp += wz * T
+            sino[a0:a1] = -torch.log(Tssp.clamp(min=1e-30))
         if photons0 > 0:
             # Detector-domain quantum + electronic noise with saturation clipping (mirrors
             # projectSlice in ct.js): photon-starved rays through metal floor at the detector
