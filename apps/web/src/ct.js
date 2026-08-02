@@ -498,6 +498,7 @@ function wireCTConsole() {
       acquireScouts();
     } else if (S.ct.phase === 'planning') {
       if (ctx.$('ctStart').classList.contains('flash')) runScan();
+      else if (ctx.$('ctTable').classList.contains('flash')) setHint('Reposition the table first (hold the orange TABLE button).');
       else setHint('Move the table to the scan start first — press the flashing MOVE TO SCAN button.');
     }
   });
@@ -1136,18 +1137,20 @@ function wireScanBox(box, gi, view) {
 // horizontal (du).
 function applyBoxDrag(gi, view, edge, s0, du, dv) {
   const b = grp(gi).box;
-  const CL = view === 'ap' ? 'apL' : 'latL', CR = view === 'ap' ? 'apR' : 'latR';
+  const CL = view === 'ap' ? 'apL' : 'latL', CR = view === 'ap' ? 'apR' : 'latR';   // this scout's cross axis
+  const OL = view === 'ap' ? 'latL' : 'apL', OR = view === 'ap' ? 'latR' : 'apR';   // the OTHER scout's cross axis
   const scanD = view === 'ap' ? dv : du;    // delta along the scan-length axis (top/bot)
   const crossD = view === 'ap' ? du : dv;   // delta along the cross axis (apL/apR | latL/latR)
   const scanLo = view === 'ap' ? 't' : 'l', scanHi = view === 'ap' ? 'b' : 'r';
-  // the scan box may be moved / lengthened BEYOND the scout image (into the blank
-  // margin): the scan start/end then extend past the scouted region. Cross axis stays
-  // locked to the scout centre.
-  const SCAN_LO = -0.6, SCAN_HI = 1.6;
+  // the scan box may be moved / lengthened BEYOND the scout image (into the blank margin): the
+  // scan start/end then extend past the scouted region.
+  const SCAN_LO = -0.6, SCAN_HI = 1.6, ge = isGE();
   if (!edge) {
-    // MOVE along the table long axis only; cross axis stays locked at centre.
+    // MOVE along the table long axis. On GE the box is also free on the cross axis (off-centre
+    // DFOV placement); on Canon/Toshiba the cross axis stays LOCKED at the scout centre.
     const h = s0.bot - s0.top, nt = clampV(s0.top + scanD, SCAN_LO, SCAN_HI - h);
     b.top = nt; b.bot = nt + h;
+    if (ge) { const w = s0[CR] - s0[CL], nl = clampV(s0[CL] + crossD, -0.15, 1.15 - w); b[CL] = nl; b[CR] = nl + w; }
   } else if (edge === scanLo) {
     // scan-length edges move INDEPENDENTLY: extend the superior border without touching
     // the inferior one (the cross-axis width, below, stays symmetric).
@@ -1155,15 +1158,16 @@ function applyBoxDrag(gi, view, edge, s0, du, dv) {
   } else if (edge === scanHi) {
     b.bot = clampV(s0.bot + scanD, s0.top + BOX_MIN, SCAN_HI);
   } else {
-    // symmetric resize about the LOCKED centre (0.5). The AP (mediolateral) and LAT
-    // (anteroposterior) cross extents are LINKED to the same half-width, so widening one
-    // aspect widens the other by the same amount — the scan volume is a circular cylinder,
-    // never an ellipse.
-    const raw = (edge === 'l' || edge === 't') ? 0.5 - (s0[CL] + crossD) : (s0[CR] + crossD) - 0.5;
+    // Cross-axis RESIZE, symmetric about the box centre. AP (mediolateral) and LAT (AP) extents
+    // are LINKED to one half-width (the scan volume is a circular cylinder, never an ellipse).
+    // Canon locks that centre at 0.5; GE keeps whatever off-centre position the box was dragged to.
+    const cAxis = ge ? (s0[CL] + s0[CR]) / 2 : 0.5, oAxis = ge ? (s0[OL] + s0[OR]) / 2 : 0.5;
+    const raw = (edge === 'l' || edge === 't') ? cAxis - (s0[CL] + crossD) : (s0[CR] + crossD) - cAxis;
     const half = clampV(raw, BOX_MIN / 2, 0.5);
-    b.apL = 0.5 - half; b.apR = 0.5 + half;
-    b.latL = 0.5 - half; b.latR = 0.5 + half;
+    b[CL] = cAxis - half; b[CR] = cAxis + half;
+    b[OL] = oAxis - half; b[OR] = oAxis + half;
   }
+  if (ge) renderScanGroups();   // refresh the DFOV-centre readout from the new box position
 }
 
 // ---- scout reposition buttons ----------------------------------------------
@@ -1278,11 +1282,25 @@ const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'SFOV', '
   'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time',
   'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
 // DFOV-centre offset from the SFOV centre (isocentre): anteroposterior + mediolateral (mm).
+// DFOV centre offset (mm) relative to the isocentre: +ml = patient-right, +ap = posterior.
+// GE reads it off the box position (off-centred by dragging); Canon reads the un-committed
+// reposition offset (the couch move carries the rest to the isocentre).
+function dfovOffsetMM(g) {
+  const c = ctx.S.ct;
+  if (c.vendor === 'ge') {
+    const sf = scoutFov();
+    return { ml: ((g.box.apL + g.box.apR) / 2 - 0.5) * sf, ap: ((g.box.latL + g.box.latR) / 2 - 0.5) * sf };
+  }
+  return { ml: (c.plan.targetX || 0) - (c.plan.committedX || 0), ap: (c.plan.targetY || 0) - (c.plan.committedY || 0) };
+}
 function dfovCenterStr(g) {
-  const c = ctx.S.ct, ml = c.plan.targetX || 0, ap = c.plan.targetY || 0;
+  const c = ctx.S.ct;
+  // Readout is the PLANNED scan-centre offset. GE reads the box position; Canon shows the
+  // dialed target (the couch move carries the patient there, so the residual would read 0).
+  const o = c.vendor === 'ge' ? dfovOffsetMM(g) : { ml: c.plan.targetX || 0, ap: c.plan.targetY || 0 };
   const f = (v, pos, neg) => (v >= 0 ? pos : neg) + Math.abs(v).toFixed(1);
-  // Patient perspective: a posterior scan centre (targetY > 0) reads P, anterior reads A.
-  return f(ap, 'P', 'A') + ' ' + f(ml, 'R', 'L');
+  // Patient perspective: a posterior scan centre reads P, anterior reads A; right R, left L.
+  return f(o.ap, 'P', 'A') + ' ' + f(o.ml, 'R', 'L');
 }
 
 // Scout planning table: AP (scan plane 0°) + Lateral (90°) as two scout groups.
@@ -1633,6 +1651,27 @@ export function ctApplyAcqMode() {
   renderScanBoxes(); renderScanGroups(); updatePlan();
 }
 
+const isGE = () => (ctx && ctx.S.ct.vendor) === 'ge';
+// Apply the vendor workflow to the UI: GE hides the reposition chevrons and the TABLE
+// (mediolateral/AP couch-move) button — the operator off-centres the DFOV by dragging the box
+// instead. Canon/Toshiba shows them (locked box + physical couch reposition). Switching vendors
+// clears any pending reposition so the two paradigms never mix.
+export function ctApplyVendor() {
+  if (!ctx) return;
+  const ge = isGE();
+  ['reposAP', 'reposLAT'].forEach(id => { const el = ctx.$(id); if (el) el.style.display = ge ? 'none' : ''; });
+  const tbl = ctx.$('ctTable'); if (tbl) tbl.style.display = ge ? 'none' : '';
+  const c = ctx.S.ct;
+  // GE never moves the couch cross-axis: drop any pending/committed reposition offset so it can't
+  // leak into the recon centring (which, in GE, comes purely from the box position).
+  if (ge) { c.plan.targetX = c.plan.targetY = c.plan.committedX = c.plan.committedY = 0; c.patient.x = 0; c.tableY = 0; }
+  else { for (const g of c.groups) { g.box.apL = 0.5 - (g.box.apR - g.box.apL) / 2; g.box.apR = 1 - g.box.apL;   // re-centre the box for the locked-box workflow
+                                     const hw = (g.box.latR - g.box.latL) / 2; g.box.latL = 0.5 - hw; g.box.latR = 0.5 + hw; } }
+  if (ctx.syncScene) { /* keep scene consistent if patient moved */ }
+  renderScanBoxes(); updatePlan();
+  ctx.refreshReadouts && ctx.refreshReadouts();
+}
+
 // Flash TABLE (orange) while the couch still needs to move; else flash START (green).
 // While a move is pending the DR monitor mirrors the axis' PoV — AP-PoV for the
 // mediolateral move, Lat-PoV for the anteroposterior (height) move.
@@ -1661,23 +1700,22 @@ function updateConsoleFlash() {
 }
 function updatePlanReady() {
   const c = ctx.S.ct;
-  const needX = Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH;
-  const needY = Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH;
+  // Canon/Toshiba: the couch physically carries the SFOV, so an un-committed mediolateral/AP
+  // reposition MUST be moved before scanning (sequence: reposition → Move to Scan → START).
+  // GE: the couch never moves cross-axis after the scout (the DFOV is off-centred in software),
+  // so there is no reposition step — START is gated only on the longitudinal Move-to-Scan.
+  const ge = c.vendor === 'ge';
+  const needX = !ge && Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH;
+  const needY = !ge && Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH;
   const needMove = needX || needY;
-  // The mediolateral/AP reposition is OPTIONAL: if the couch isn't physically recentred, the
-  // reconstruction targets the DFOV onto the planned scan centre (off-centre / targeted recon),
-  // so the slice is still centred on the anatomy. Holding TABLE still recentres the patient for
-  // realism (and, by committing the offset, hands centring back to the couch). Only the
-  // longitudinal Move-to-Scan gates START. Sequence: [optional reposition] → Move to Scan → START.
-  const needScanMove = !atMoveTarget();
-  const moving = needMove && tableV > 0.05;                    // couch actively repositioning
-  ctx.$('ctTable')?.classList.remove('flash');                // reposition is offered, never forced
+  const needScanMove = !needMove && !atMoveTarget();
+  ctx.$('ctTable')?.classList.toggle('flash', needMove);
   ctx.$('ctMoveScan')?.classList.toggle('flash', c.isocentred && needScanMove);
-  ctx.$('ctStart')?.classList.toggle('flash', c.isocentred && !needScanMove);
-  c.moveBlit = moving ? (needX ? 'ap' : 'lat') : null;        // mirror the PoV only while the motor turns
+  ctx.$('ctStart')?.classList.toggle('flash', c.isocentred && !needMove && !needScanMove);
+  c.moveBlit = needMove ? (needX ? 'ap' : 'lat') : null;      // which PoV to mirror into the monitor
   const noexp = ctx.$('noexp');
-  if (moving && noexp) noexp.style.display = 'none';
-  showTableReminder(moving, moving);   // only the "TABLE IS MOVING" banner while the motor turns; never a forced prompt
+  if (needMove && noexp) noexp.style.display = 'none';
+  showTableReminder(needMove, tableV > 0.05);
 }
 function showTableReminder(on, moving) {
   const el = ctx.$('ctReminder'); if (!el) return;
@@ -2348,15 +2386,15 @@ function scanSetup(g) {
     : { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
   const muW = voxel ? muWeff : mu.soft;          // HU reference (water for voxel, soft for hand)
   const fovMM = groupDFOV(g);                     // DFOV = scan box diameter
-  // Off-centre DFOV targeting: the reconstruction disc is centred on the TARGETED scan centre,
-  // not always the isocentre. Whatever part of the mediolateral/AP reposition offset has been
-  // realised by a table move (committed) already sits at the isocentre; the UN-committed residual
-  // is applied here as a recon-FOV offset — so the slice is centred on the anatomy the operator
-  // targeted even without moving the table (a real "off-centre / targeted recon"). targetY > 0 is
-  // posterior (−y); targetX > 0 is patient-right (+x).
-  const pl = ctx.S.ct.plan;
-  const cx = ((pl.targetX || 0) - (pl.committedX || 0)) / MM_PER_UNIT;
-  const cy = ISO_Y - ((pl.targetY || 0) - (pl.committedY || 0)) / MM_PER_UNIT;
+  // Off-centre DFOV targeting — the reconstruction disc centres on the planned scan centre, which
+  // each vendor expresses differently:
+  //   GE    → the box is dragged off-centre; its position IS the DFOV offset (couch never moves).
+  //   Canon → the box is locked; the reposition offset that hasn't been realised by a table move
+  //           (target − committed) is applied as the recon-FOV offset.
+  // (+x = patient-right, +y = anterior; a posterior/right centre reads P/R.)
+  const doff = dfovOffsetMM(g);
+  const cx = doff.ml / MM_PER_UNIT;
+  const cy = ISO_Y - doff.ap / MM_PER_UNIT;
   const off = scanStartMM();
   const startMM = off + g.box.top * ctx.S.ct.scanLen, endMM = off + g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
   const count = Math.max(1, Math.min(MAX_SLICES, groupImages(g)));   // one slice per planned image
