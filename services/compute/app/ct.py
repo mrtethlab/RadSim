@@ -122,9 +122,9 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
         bhc_x, bhc_y, bhc_slope = _build_bhc(binW,
             torch.tensor(p["muWbins"], dtype=torch.float32, device=DEVICE), float(p["muWeff"]))
     z0_list = [float(z) for z in p["z0List"]]
-    # slice sensitivity profile: (dz, weight) z sub-planes across the recon slice thickness.
-    # >1 entry → multi-slice z-integration (partial-volume + cross-slice bleed); mirrors ct.js.
-    zprofile = [(float(dz), float(w)) for dz, w in (p.get("zProfile") or [[0.0, 1.0]])]
+    # cone-beam rays: (k, weight) — k is the ray's z-slope (z-divergence set by the beam
+    # collimation). >1 entry → cone integration (cross-slice artifact bleed); mirrors ct.js.
+    cone_rays = [(float(k), float(w)) for k, w in (p.get("coneRays") or [[0.0, 1.0]])]
     rot = rot_tensor(p.get("rot"))
 
     half_det = (n_det - 1) / 2.0
@@ -150,19 +150,21 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
 
     out = np.empty((len(z0_list), N, N), dtype=np.float32)
     for zi, z0 in enumerate(z0_list):
-        # ---- forward project: march all rays through the slice's z-slab ----
+        # ---- forward project: march the cone's z-divergent rays through the slice ----
         # points (A, K, S, 2) is too big in one go for realistic mode; batch angles.
-        # The detector sums photons over the beam's finite z-thickness, so we integrate
-        # TRANSMISSION over the slice sensitivity profile (Tssp = Σ w·exp(-∫μ)) before -ln.
-        # Averaging pre-log gives partial-volume + cross-slice metal bleed. Mirrors ct.js.
+        # The detector sums photons over its z-rows, so we integrate TRANSMISSION over the cone
+        # rays (Tcone = Σ w·exp(-∫μ)) before -ln. Each ray tilts in z by slope k, centred on z0 at
+        # isocentre (ts = ray_r), so it sweeps off-plane material near the periphery → cross-slice
+        # metal bleed. Averaging pre-log makes a sliver of metal darken the ray. Mirrors ct.js.
         sino = torch.empty(n_ang, n_det, dtype=torch.float32, device=DEVICE)
         for a0 in range(0, n_ang, FWD_BATCH):
             a1 = min(n_ang, a0 + FWD_BATCH)
             pxr = ox[a0:a1].unsqueeze(2) + dx[a0:a1].unsqueeze(2) * ts        # (a, K, S)
             pyr = oy[a0:a1].unsqueeze(2) + dy[a0:a1].unsqueeze(2) * ts
-            Tssp = torch.zeros(a1 - a0, n_det, device=DEVICE)                 # SSP-integrated transmission
-            for dz, wz in zprofile:
-                pts = torch.stack([pxr, pyr, torch.full_like(pxr, z0 + dz)], dim=-1)   # (a, K, S, 3)
+            Tcone = torch.zeros(a1 - a0, n_det, device=DEVICE)                # cone-integrated transmission
+            for kz, wz in cone_rays:
+                zt = (z0 + kz * (ts - ray_r)).view(1, 1, -1).expand_as(pxr)   # (a, K, S) z tilted along the ray
+                pts = torch.stack([pxr, pyr, zt], dim=-1)                     # (a, K, S, 3)
                 ids = sample_ids(vv, pts, center, rot)
                 if poly:
                     # transmission over spectral bins (loop over bins to keep the per-material
@@ -173,8 +175,8 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
                         T += binW[b] * torch.exp(-e_b)
                 else:
                     T = torch.exp(-(mu[ids] * STEP).sum(dim=-1))
-                Tssp += wz * T
-            sino[a0:a1] = -torch.log(Tssp.clamp(min=1e-30))
+                Tcone += wz * T
+            sino[a0:a1] = -torch.log(Tcone.clamp(min=1e-30))
         if photons0 > 0:
             # Detector-domain quantum + electronic noise with saturation clipping (mirrors
             # projectSlice in ct.js): photon-starved rays through metal floor at the detector

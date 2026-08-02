@@ -1995,31 +1995,34 @@ function buildKernel(ds, N, shepp) {
   return h;
 }
 
-// Slice sensitivity profile: z sub-plane offsets (world units) + weights across the recon slice
-// thickness. A real reconstructed slice integrates a finite z-slab (a Gaussian-ish SSP with tails
-// from z-collimation, focal-spot z-extent, cone angle and helical interpolation), so a structure
-// that only partly fills the slab is z-averaged (partial volume) and dense material centred in a
-// NEIGHBOURING slice still lies in this slice's SSP tail → its streaks bleed in. nSub=1 collapses
-// to a single infinitely-thin plane (single-slice / SSCT).
-const ONE_PLANE = [{ dz: 0, w: 1 }];
-const SSP_FWHM_FACTOR = 1.0;   // SSP FWHM = factor × slice thickness
-const SSP_SPAN_FACTOR = 1.5;   // sample out to factor × FWHM
-function sliceProfile(thkU, nSub) {
-  if (!(nSub > 1) || !(thkU > 0)) return ONE_PLANE;
-  const fwhm = SSP_FWHM_FACTOR * thkU, sigma = fwhm / 2.3548, span = SSP_SPAN_FACTOR * fwhm;
+// Cone-beam z-divergence. The X-ray source is a point and the detector has multiple rows, so the
+// rays fan out in z (the "cone"). A ray belonging to reconstructed slice z0 is therefore TILTED in
+// z: it passes through z0 near isocentre but sweeps to z0 ± tanγ·(distance from iso) across the
+// field. A dense object OFF the z0 plane is thus crossed by the tilted rays and streaks into slice
+// z0 — strongest at the periphery (larger lever arm) and growing with the cone angle γ, where
+// tanγ = (beam collimation / 2) / SAD. This is the physical cause of cross-slice metal artifacts.
+// Returns cone rays as {k = z-slope, w = weight}; a single untilted ray (nSub=1 or no collimation)
+// collapses to the old single-slice (SSCT) geometry. A z-uniform object leaves every ray's
+// transmission unchanged, so HU and uniform regions are unaffected.
+const ONE_RAY = [{ k: 0, w: 1 }];
+const CT_SAD = 57.0;                 // source–axis distance, world units (570 mm)
+function coneProfile(collimU, nSub) {
+  if (!(nSub > 1) || !(collimU > 0)) return ONE_RAY;
+  const tanG = (collimU / 2) / CT_SAD;                     // cone half-angle tangent (from beam collimation)
   const prof = []; let sum = 0;
   for (let i = 0; i < nSub; i++) {
-    const dz = -span + (2 * span) * i / (nSub - 1);
-    const w = Math.exp(-(dz * dz) / (2 * sigma * sigma));
-    prof.push({ dz, w }); sum += w;
+    const zrow = -1 + 2 * i / (nSub - 1);                  // normalised detector row ∈ [-1, 1]
+    const k = zrow * tanG;                                 // ray z-slope for this row
+    const w = Math.exp(-(zrow * 1.5) * (zrow * 1.5) / 2);  // beam profile across the collimation (rolls off at the edges)
+    prof.push({ k, w }); sum += w;
   }
-  for (const s of prof) s.w /= sum;                         // normalise (a uniform slab leaves T, so HU, unchanged)
+  for (const s of prof) s.w /= sum;
   return prof;
 }
 
 // Forward-project one slice at world plane z = z0 → sinogram [angle][detector].
-// zprof (slice sensitivity profile) integrates a finite z-slab; omit for a thin single plane.
-function projectSlice(phantom, z0, mu, photons0, geo, zprof) {
+// cone (z-divergent rays) integrates the cone beam; omit for a single untilted ray.
+function projectSlice(phantom, z0, mu, photons0, geo, cone) {
   const cx = geo.cx, cy = geo.cy, RR = geo.rayR, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
   const halfDet = (nDet - 1) / 2;
   const sino = new Float32Array(nAng * nDet);
@@ -2027,23 +2030,25 @@ function projectSlice(phantom, z0, mu, photons0, geo, zprof) {
   const muMat = poly ? mu.muMat : null, binW = poly ? mu.bins : null;
   const nb = poly ? binW.length : 0, nmat = poly ? muMat.length : 0, bhc = poly ? mu.bhc : null;
   const hid = poly ? new Int32Array(nmat) : null, hln = poly ? new Float64Array(nmat) : null;
-  const zp = (zprof && zprof.length) ? zprof : ONE_PLANE;   // z sub-planes across the slice thickness
-  const nzp = zp.length;
+  const cn = (cone && cone.length) ? cone : ONE_RAY;        // cone rays (z-divergent) integrated per detector sample
+  const ncn = cn.length;
   for (let a = 0; a < nAng; a++) {
     const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th);
     const base = a * nDet;
     for (let k = 0; k < nDet; k++) {
       const r = (k - halfDet) * ds;
       // ray: origin at t = -rayR along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
-      const ox = cx + r * ct + RR * st, oy = cy + r * st - RR * ct;   // origin (x,y); z varies over the SSP sub-planes
-      const d = [-st, ct, 0];
-      // Integrate TRANSMISSION over the slice sensitivity profile: the detector sums photons over
-      // the beam's finite z-thickness, so Tr = Σ w·exp(−∫μ) across sub-planes (average T, not p).
-      // Averaging pre-log is what makes a sliver of metal in an adjacent slab darken the whole ray
-      // → genuine cross-slice streak bleed, plus correct z partial-volume.
+      const ox = cx + r * ct + RR * st, oy = cy + r * st - RR * ct;   // origin (x,y)
+      // Integrate TRANSMISSION over the cone's rays: the detector sums photons over its z-rows, so
+      // Tr = Σ w·exp(−∫μ) across the tilted rays (average T, not p). Each ray tilts in z by slope k,
+      // centred on z0 at isocentre (t = RR), so it sweeps off-plane material near the periphery.
+      // Averaging pre-log is what makes a sliver of metal on a tilted ray darken it → genuine
+      // cross-slice streak bleed that grows with radius and cone angle.
       let Tr = 0;
-      for (let zi = 0; zi < nzp; zi++) {
-        const o = [ox, oy, z0 + zp[zi].dz];
+      for (let ci = 0; ci < ncn; ci++) {
+        const kz = cn[ci].k;
+        const o = [ox, oy, z0 - kz * RR];               // centre the z-tilt on z0 at mid-ray (isocentre)
+        const d = [-st, ct, kz];                        // z-divergent ray direction
         let Ts;
         if (poly) {
           // beam-hardened transmission: integrate over the spectrum (non-linear in path × μ)
@@ -2058,7 +2063,7 @@ function projectSlice(phantom, z0, mu, photons0, geo, zprof) {
         } else {
           const { bone, soft, marrow } = phantom.trace(o, d, 2 * RR); Ts = Math.exp(-(mu.soft * soft + mu.bone * bone + mu.marrow * marrow));
         }
-        Tr += zp[zi].w * Ts;
+        Tr += cn[ci].w * Ts;
       }
       let p = -Math.log(Math.max(Tr, 1e-300));
       if (photons0 > 0) {                       // detector-domain quantum + electronic noise, with saturation clipping
@@ -2246,9 +2251,10 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   const { phantom, voxel, mu, muW, fovMM, sfovMM, positions, count, effE } = setup;
   const geo = reconGeo(fovMM, 0, ISO_Y, sfovMM);
   const photons0 = photonsFor(g, geo);
-  // Multi-slice: integrate each output slice over its z-thickness (slice sensitivity profile),
-  // giving partial-volume + cross-slice bleed. Realistic uses the full SSP; quick stays light.
-  const zprof = sliceProfile(g.sliceThk / MM_PER_UNIT, geo.m.zSub || 1);
+  // Cone-beam: integrate each slice over the z-divergent cone rays (set by the beam collimation),
+  // giving cross-slice artifact bleed that grows with radius + cone angle. Realistic samples the
+  // full cone; quick uses fewer rays. nSub=1 / no collimation → single untilted ray (SSCT).
+  const cone = coneProfile(g.beamColl / MM_PER_UNIT, geo.m.zSub || 1);
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
   // slice is emitted via onSlice as it completes so the scan shows the images coming
@@ -2270,8 +2276,8 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
                      // polyenergetic beam-hardening data (so the GPU recon shows metal artifacts too)
                      binsW: mu.bins, muMat: mu.muMat.map(r => Array.from(r)),
                      muWbins: Array.from(mu.muWbins), muWeff: mu.muWeff,
-                     // slice sensitivity profile (multi-slice z-integration): [dz(world), weight]
-                     zProfile: zprof.map(s => [s.dz, s.w]) };
+                     // cone-beam rays (z-divergence): [k = z-slope, weight]
+                     coneRays: cone.map(s => [s.k, s.w]) };
       const BATCH = 4;
       for (let s0 = 0; s0 < nz; s0 += BATCH) {
         if (!alive()) return null;
@@ -2301,7 +2307,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
     for (let si = 0; si < nz; si++) {
       if (!alive()) return null;
       const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
-      const sino = projectSlice(phantom, zw, mu, photons0, geo, zprof);
+      const sino = projectSlice(phantom, zw, mu, photons0, geo, cone);
       const q = filterSino(sinoBlur(sino, geo.m), h, geo.ds, geo.m);
       const img = backproject(q, geo);
       vol.set(img, si * N * N);
