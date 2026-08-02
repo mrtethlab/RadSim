@@ -27,6 +27,7 @@ from .gpu import DEVICE, get_volume, sample_ids, rot_tensor
 STEP = 0.05          # in-plane march step, world units (0.5 mm)
 FWD_BATCH = 16       # forward-projection angle batching ((a,K,S,3) points tensor)
 ANGLE_BATCH = 72     # backprojection angle batching (memory)
+SAT_P = 11.5         # detector saturation: max measurable line integral (mirrors ct.js)
 
 
 def _kernel(n_det: int, ds: float, kind: str, device) -> torch.Tensor:
@@ -134,8 +135,14 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
             else:
                 sino[a0:a1] = (mu[ids] * STEP).sum(dim=-1)
         if photons0 > 0:
-            nd = (photons0 * torch.exp(-sino)).clamp(min=1.0)                  # detected photons ∝ transmission
-            sino = (sino + torch.randn_like(sino) / nd.sqrt()).clamp(min=0.0)
+            # Detector-domain quantum + electronic noise with saturation clipping (mirrors
+            # projectSlice in ct.js): photon-starved rays through metal floor at the detector
+            # noise level and SATURATE at SAT_P rather than exploding into unbounded streaks.
+            nfloor = photons0 * math.exp(-SAT_P)                               # photons at the saturation limit
+            nexp = photons0 * torch.exp(-sino)                                 # expected detected photons
+            nd = nexp + torch.sqrt(nexp + nfloor * nfloor) * torch.randn_like(sino)
+            nd = nd.clamp(min=nfloor)                                          # clip below the noise floor -> saturates
+            sino = (-torch.log(nd / photons0)).clamp(min=0.0)
         if poly:
             sino = _apply_bhc(sino, bhc_x, bhc_y, bhc_slope)                   # water beam-hardening correction
         # ---- Ram-Lak filter (grouped 1D convolution over channels) ----

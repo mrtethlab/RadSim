@@ -1693,11 +1693,11 @@ function applyTableCommit() {
 //   real scanner (no projection truncation). Heavy — meant for the Python GPU
 //   engine; the browser fallback works but crawls.
 const DET_MODES = {
-  quick:     { nDet: 384, nAngles: 288, gridN: 128, fixedPitch: false },
+  quick:     { nDet: 384, nAngles: 360, gridN: 128, fixedPitch: false },
   // photonBase: detected photons per channel per view at the reference technique —
   // clinical scale (~10^6-10^7), so the 512² image lands at a clinical ~10-15 HU noise;
   // the quick preview keeps the old (much lower) base tuned for its coarse grid.
-  realistic: { nDet: 888, nAngles: 1160, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 555, photonBase: 8e6 },
+  realistic: { nDet: 888, nAngles: 1440, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 555, photonBase: 8e6 },
 };
 // Selectable scan field of view (the bore reconstruction circle); the rays integrate over
 // it, so the body must sit inside it or the projections truncate (→ cupping). GE-style set.
@@ -1717,6 +1717,12 @@ function defaultSfov() {
 const detMode = () => DET_MODES[ctx && ctx.S.ct.detMode] || DET_MODES.quick;
 const MAX_SLICES = 1024;          // safety cap only (the slice count follows the planned image count)
 const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slice/rot noise model)
+// Detector saturation: the largest line integral the readout can measure. Behind dense metal
+// almost no photons arrive; a real detector floors at its electronic-noise level rather than
+// reporting an ever-larger (uncapped) integral, so the projection SATURATES at this value.
+// Clipping here — instead of adding unbounded noise to p — keeps photon-starvation streaks
+// bounded and localised (strongest between metals, fading outward) like a clinical scan.
+const SAT_P = 11.5;               // ≈ e^-11.5 transmission floor
 
 // Reconstruction display field of view for a group = the scan box diameter (the box
 // represents a cylinder). The mediolateral width on the AP scout is the cylinder
@@ -2019,9 +2025,14 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
         const { bone, soft, marrow } = phantom.trace(o, d, 2 * RR); p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow;
         Tr = Math.exp(-p);
       }
-      if (photons0 > 0) {                       // quantum noise from finite detected photons (∝ transmission)
-        const Nd = Math.max(1, photons0 * Tr);
-        p += gaussian() / Math.sqrt(Nd);
+      if (photons0 > 0) {                       // detector-domain quantum + electronic noise, with saturation clipping
+        const Nfloor = photons0 * Math.exp(-SAT_P);   // detected photons at the saturation limit
+        const Nexp = photons0 * Tr;                   // expected detected photons for this ray
+        // Poisson (≈Normal for large N) quantum noise plus an electronic-noise term (Nfloor);
+        // the electronic term only matters once the ray is photon-starved.
+        let Nd = Nexp + Math.sqrt(Nexp + Nfloor * Nfloor) * gaussian();
+        if (Nd < Nfloor) Nd = Nfloor;                 // clip: can't read below the noise floor -> line integral saturates
+        p = -Math.log(Nd / photons0);                 // measured (noisy, saturated) line integral
         if (p < 0) p = 0;
       }
       if (bhc) p = bhc(p);                       // water beam-hardening correction (soft tissue linearised)
