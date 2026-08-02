@@ -403,7 +403,7 @@ const S = {
   // ---- CT mode ----
   mode:'xray',                 // 'xray' | 'ct'
   ct:{
-    scanSound:'buzz',          // CT scan-exposure sound: 'buzz' (classic) | 'ctExposureS1'
+    scanSound:'ctExposureS1',  // CT scan-exposure sound: 'buzz' (classic) | 'ctExposureS1' (scanner S1, default)
     sliceThk:5,                // mm (station selector over discrete values)
     imgPerRotation:1,          // images reconstructed per gantry rotation
     pitch:1.0,                 // table travel per rotation / total collimation

@@ -232,8 +232,11 @@ body.mode-ct .xray-only{display:none}
 
 /* CT patient-position row: physical isocentre button + direction pad */
 /* all Table-window controls share one glossy-BLUE console look, each with a label */
-.ctpos{display:flex; align-items:flex-start; justify-content:center; gap:20px; margin-top:12px}
-.ctposcol{display:flex; flex-direction:column; align-items:center; gap:6px}
+.ctpos{display:flex; align-items:flex-end; justify-content:center; gap:20px; margin-top:12px}
+.ctposcol{display:flex; flex-direction:column; align-items:center; gap:8px}
+/* fixed-height control band so the round Zero button sits vertically inline with the
+   taller direction pad / height pad, and all three labels bottom-align cleanly */
+.ctposctl{height:84px; display:flex; align-items:center; justify-content:center}
 .ctposlab{font-family:var(--seg); font-size:8.5px; letter-spacing:1.2px; color:var(--muted); text-transform:uppercase}
 .ctisobtn{width:58px; height:58px; border-radius:50%; padding:0; cursor:pointer; color:#eaf4ff;
   border:1px solid #0b1016;
@@ -244,6 +247,9 @@ body.mode-ct .xray-only{display:none}
 .ctisobtn .stroke{fill:none; stroke:currentColor; stroke-width:1.5; stroke-linejoin:round; stroke-linecap:round}
 .ctisobtn:hover{filter:brightness(1.08)}
 .ctisobtn:active{transform:translateY(1px); box-shadow:0 1px 2px rgba(0,0,0,.45), inset 0 1px 3px rgba(0,0,0,.35)}
+/* zeroing only makes sense during scouting — the button is disabled once scouts exist */
+.ctisobtn:disabled{opacity:.35; cursor:not-allowed; filter:grayscale(.4); box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.ctisobtn:disabled:hover{filter:grayscale(.4)}
 /* un-zeroed table: scan start/end read red, and the isocentre button asks to be pressed (blue) */
 .unzeroed{color:#ff5a5a !important}
 .ctisobtn.needzero{animation:isopulse 1.7s ease-in-out infinite}

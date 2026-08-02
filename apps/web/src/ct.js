@@ -371,16 +371,21 @@ function wireCTSettings() {
   });
   // isocentre confirm — zero the table position reading (patient stays put)
   $('ctIsocentre')?.addEventListener('click', () => {
+    if (S.ct.phase !== 'idle') return;   // zeroing only makes sense during scouting
     S.ct.tablePos = 0; S.ct.isoZ = S.ct.patient.z; S.ct.isocentred = true;
-    setHint(S.ct.phase === 'planning' ? 'Table zeroed — ready to scan.' : 'Isocentre set. Acquire scouts to begin planning.');
+    setHint('Isocentre set — table zeroed. Acquire scouts to begin planning.');
     updateCTReadouts();
-    if (S.ct.phase === 'planning') updatePlan();   // clear the red numbers + enable the START flash
   });
-  // Move to Scan — glide the couch to the scan-start location (scan-box top) so START
-  // doesn't jump the table. Only meaningful once scouts are planned.
+  // Move to Scan — glide the couch (momentum + motor sound) to the scan-start location
+  // so the table position equals the scan start. This move is REQUIRED before START:
+  // it flashes once the table is zeroed, and hands the flash to START on arrival.
   $('ctMoveScan')?.addEventListener('click', () => {
     if (S.ct.phase !== 'planning') { setHint('Acquire scouts and plan a scan first.'); return; }
-    moveTableTo(scanStartMM() + grp(0).box.top * S.ct.scanLen);
+    setHint('Moving the table to the scan start…');
+    moveTableTo(scanStartTablePos()).then(() => {
+      updatePlanReady();
+      setHint(atScanStart() ? 'Table at scan start — ready to scan.' : 'Table moving…');
+    });
   });
   // direction pad — nudge the patient/couch (10 mm/press); hold to auto-repeat
   const STEP = 1;                       // world unit per press (= 10 mm)
@@ -423,7 +428,8 @@ function updateCTReadouts() {
   set('ctTableHV', (th > 0 ? '+' : '') + th + ' mm' + (th === 0 ? ' · centred' : ''));
   // scan start/end read RED until the table is zeroed (isocentre set)
   ['ctScanStartV', 'ctScanEndV'].forEach((id) => { const el = $(id); if (el) el.classList.toggle('unzeroed', !S.ct.isocentred); });
-  $('ctIsocentre')?.classList.toggle('needzero', !S.ct.isocentred);
+  // the Zero Table button asks to be pressed only while scouting (idle) and un-zeroed
+  $('ctIsocentre')?.classList.toggle('needzero', !S.ct.isocentred && S.ct.phase === 'idle');
 }
 // one-shot emphasis on the isocentre button when a scan is attempted un-zeroed
 function flashIso() {
@@ -469,12 +475,14 @@ function wireCTConsole() {
     // a subject swap is still streaming its voxel model in — starting a scout now
     // would acquire with half-swapped geometry (wrong FOV/isocentre)
     if (S.subjectLoading) { setHint('Subject model still loading — try again in a moment.'); return; }
-    if (S.ct.phase === 'idle') acquireScouts();
-    else if (S.ct.phase === 'planning') {
-      // the table must be zeroed (isocentre set) before the scan can run
-      if (!S.ct.isocentred) { flashIso(); setHint('Zero the table first — press the isocentre button.'); return; }
+    if (S.ct.phase === 'idle') {
+      // the table must be zeroed (isocentre set) during scouting, before scouts run
+      if (!S.ct.isocentred) { flashIso(); setHint('Zero the table first — press the Zero Table button.'); return; }
+      acquireScouts();
+    } else if (S.ct.phase === 'planning') {
       if (ctx.$('ctStart').classList.contains('flash')) runScan();
-      else setHint('Reposition the table first (hold the orange TABLE button).');
+      else if (ctx.$('ctTable').classList.contains('flash')) setHint('Reposition the table first (hold the orange TABLE button).');
+      else setHint('Move the table to the scan start first — press the flashing MOVE TO SCAN button.');
     }
   });
   $('ctAbort')?.addEventListener('click', abortCT);
@@ -495,6 +503,10 @@ function setPhase(p) {
   // planning decides the flashing button from the plan; other phases flash nothing
   if (p === 'planning') { updatePlanReady(); }
   else { $('ctStart')?.classList.remove('flash'); $('ctTable')?.classList.remove('flash'); S.ct.moveBlit = null; showTableReminder(false); }
+  // zeroing the table only makes sense while scouting — once scouts are being/have been
+  // acquired the Zero Table button is disabled (and can no longer flash)
+  const iso = $('ctIsocentre');
+  if (iso) { iso.disabled = (p !== 'idle'); if (iso.disabled) iso.classList.remove('needzero', 'flashiso'); }
   const labels = { idle: 'CT · STANDBY', scout: 'CT · SCOUT', planning: 'CT · PLAN SCAN',
                    moving: 'CT · TABLE MOVE', scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
   const wt = $('ctWarnT'); if (wt) wt.textContent = labels[p] || 'CT';
@@ -1338,13 +1350,21 @@ function openAcqPopup(gi) {
 // Flash TABLE (orange) while the couch still needs to move; else flash START (green).
 // While a move is pending the DR monitor mirrors the axis' PoV — AP-PoV for the
 // mediolateral move, Lat-PoV for the anteroposterior (height) move.
+// Table position (mm) of the first scan group's superior edge — where "Move to Scan"
+// drives the couch. The scan can only START once the table is parked here.
+function scanStartTablePos() { return scanStartMM() + grp(0).box.top * ctx.S.ct.scanLen; }
+function atScanStart() { return Math.abs(ctx.S.ct.tablePos - scanStartTablePos()) <= 1.0; }
 function updatePlanReady() {
   const c = ctx.S.ct;
   const needX = Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH;
   const needY = Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH;
   const needMove = needX || needY;
-  ctx.$('ctStart')?.classList.toggle('flash', !needMove && c.isocentred);   // not "ready" until zeroed
+  // Sequence: reposition (lateral/height) → Move to Scan (longitudinal, to the scan
+  // start) → START. Exactly one button flashes at a time.
+  const needScanMove = !needMove && !atScanStart();
   ctx.$('ctTable')?.classList.toggle('flash', needMove);
+  ctx.$('ctMoveScan')?.classList.toggle('flash', c.isocentred && needScanMove);
+  ctx.$('ctStart')?.classList.toggle('flash', c.isocentred && !needMove && !needScanMove);
   c.moveBlit = needMove ? (needX ? 'ap' : 'lat') : null;   // which PoV to mirror into the monitor
   const noexp = ctx.$('noexp');
   if (needMove && noexp) noexp.style.display = 'none';         // the PoV blit fills the monitor

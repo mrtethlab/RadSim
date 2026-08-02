@@ -170,8 +170,8 @@
           <div>
             <div class="cl">CT scan sound</div>
             <div class="segmini" id="scanSoundSeg">
-              <button data-snd="buzz" class="on">Classic</button>
-              <button data-snd="ctExposureS1">Scanner S1</button>
+              <button data-snd="buzz">Classic</button>
+              <button data-snd="ctExposureS1" class="on">Scanner S1</button>
             </div>
             <button class="sndprev" id="scanSoundPrev" type="button">▶ Preview</button>
           </div>
@@ -246,23 +246,23 @@
             <div class="valchip" id="ctScanEndV">I300.0 mm</div></div>
           <div class="ctpos">
             <div class="ctposcol">
-              <button id="ctIsocentre" class="ctisobtn" title="Set isocentre (zero table)"></button>
+              <div class="ctposctl"><button id="ctIsocentre" class="ctisobtn" title="Set isocentre (zero table)"></button></div>
               <div class="ctposlab">Zero Table</div>
             </div>
             <div class="ctposcol">
-              <div class="dpad" id="ctDpad">
+              <div class="ctposctl"><div class="dpad" id="ctDpad">
                 <button class="dp up" data-dir="up" title="Table in">▲</button>
                 <button class="dp left" data-dir="left" title="Move left">◀</button>
                 <button class="dp right" data-dir="right" title="Move right">▶</button>
                 <button class="dp down" data-dir="down" title="Table out">▼</button>
-              </div>
+              </div></div>
               <div class="ctposlab">Move</div>
             </div>
             <div class="ctposcol">
-              <div class="thpad" id="ctTablePad">
+              <div class="ctposctl"><div class="thpad" id="ctTablePad">
                 <button id="ctTableUp" class="thbtn" data-th="up" title="Table up (raise)"></button>
                 <button id="ctTableDown" class="thbtn" data-th="down" title="Table down (lower)"></button>
-              </div>
+              </div></div>
               <div class="ctposlab">Height</div>
             </div>
           </div>
