@@ -479,7 +479,7 @@ body.subj-hand .hand-only{display:flex}
 /* CT protocol picker: current name + isocentre-landmark shorthand chip */
 .protobtn .cv{opacity:.7; margin-left:4px}
 #ctSettings .protocur{margin:6px 0 4px; gap:10px}
-#ctProtocolName{font-family:var(--disp); font-size:13px; color:var(--txt)}
+#ctProtocolName{font-family:var(--seg); font-size:10.5px; letter-spacing:.8px; color:var(--muted); text-transform:uppercase}
 .protoland{font-family:var(--seg); font-size:11px; letter-spacing:1px; color:#ffd27a;
   background:rgba(255,180,60,.12); border:1px solid rgba(255,180,60,.4); border-radius:4px;
   padding:2px 7px; flex:none}

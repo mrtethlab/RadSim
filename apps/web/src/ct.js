@@ -373,18 +373,23 @@ function wireCTSettings() {
   $('ctIsocentre')?.addEventListener('click', () => {
     if (S.ct.phase !== 'idle') return;   // zeroing only makes sense during scouting
     S.ct.tablePos = 0; S.ct.isoZ = S.ct.patient.z; S.ct.isocentred = true;
-    setHint('Isocentre set — table zeroed. Acquire scouts to begin planning.');
-    updateCTReadouts();
+    setHint('Table zeroed at the anatomic landmark — press MOVE TO SCAN to travel to the scout start.');
+    updateCTReadouts(); updateConsoleFlash();
   });
-  // Move to Scan — glide the couch (momentum + motor sound) to the scan-start location
-  // so the table position equals the scan start. This move is REQUIRED before START:
-  // it flashes once the table is zeroed, and hands the flash to START on arrival.
+  // Move to Scan — glide the couch (momentum + motor sound, mirrored into the monitor)
+  // to the scan-start location so the table position equals the scan start. REQUIRED
+  // before START in BOTH phases: the scout start while scouting (idle), the scan-box
+  // start while planning. It flashes once zeroed and hands the flash to START on arrival.
   $('ctMoveScan')?.addEventListener('click', () => {
-    if (S.ct.phase !== 'planning') { setHint('Acquire scouts and plan a scan first.'); return; }
+    const c = S.ct;
+    if (c.phase !== 'idle' && c.phase !== 'planning') { setHint('Zero the table, then move to the scan start.'); return; }
+    if (!c.isocentred) { flashIso(); setHint('Zero the table first — press the Zero Table button.'); return; }
     setHint('Moving the table to the scan start…');
-    moveTableTo(scanStartTablePos()).then(() => {
-      updatePlanReady();
-      setHint(atScanStart() ? 'Table at scan start — ready to scan.' : 'Table moving…');
+    moveTableTo(moveScanTarget()).then(() => {
+      updateConsoleFlash();
+      setHint(atMoveTarget()
+        ? (c.phase === 'idle' ? 'Table at scout start — press START to acquire scouts.' : 'Table at scan start — ready to scan.')
+        : 'Table moving…');
     });
   });
   // direction pad — nudge the patient/couch (10 mm/press); hold to auto-repeat
@@ -398,7 +403,7 @@ function wireCTSettings() {
       case 'right': p.x += STEP; break;
     }
     S.ct.isocentred = false;
-    ctx.syncScene(); updateCTReadouts();
+    ctx.syncScene(); updateCTReadouts(); updateConsoleFlash();
   });
 }
 
@@ -476,8 +481,9 @@ function wireCTConsole() {
     // would acquire with half-swapped geometry (wrong FOV/isocentre)
     if (S.subjectLoading) { setHint('Subject model still loading — try again in a moment.'); return; }
     if (S.ct.phase === 'idle') {
-      // the table must be zeroed (isocentre set) during scouting, before scouts run
+      // scout workflow: dpad → Zero Table → Move to Scan → START
       if (!S.ct.isocentred) { flashIso(); setHint('Zero the table first — press the Zero Table button.'); return; }
+      if (!atMoveTarget()) { setHint('Move the table to the scout start first — press the flashing MOVE TO SCAN button.'); return; }
       acquireScouts();
     } else if (S.ct.phase === 'planning') {
       if (ctx.$('ctStart').classList.contains('flash')) runScan();
@@ -500,9 +506,10 @@ function wireCTConsole() {
 function setPhase(p) {
   const { S, $ } = ctx;
   S.ct.phase = p;
-  // planning decides the flashing button from the plan; other phases flash nothing
-  if (p === 'planning') { updatePlanReady(); }
-  else { $('ctStart')?.classList.remove('flash'); $('ctTable')?.classList.remove('flash'); S.ct.moveBlit = null; showTableReminder(false); }
+  // idle + planning drive the Move-to-Scan / START flash from the table position;
+  // transient phases (scout/moving/scanning/done) flash nothing
+  if (p !== 'planning') { S.ct.moveBlit = null; showTableReminder(false); }
+  updateConsoleFlash();
   // zeroing the table only makes sense while scouting — once scouts are being/have been
   // acquired the Zero Table button is disabled (and can no longer flash)
   const iso = $('ctIsocentre');
@@ -637,7 +644,7 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
       const dz = -travelU * t;                         // travel into the bore (-z)
       three.handGroup.position.z = startHandZ + dz;
       couch.position.z = startCouchZ + dz;             // couch moves; gantry stays fixed
-      S.ct.tablePos = tpEnd * t;                       // live table position (mm)
+      S.ct.tablePos = scanStartMM() + tpEnd * t;       // live table position (landmark-relative)
       updateCTReadouts();
       if (onFrame) onFrame(t);
     };
@@ -666,10 +673,14 @@ function moveTableTo(targetMM, dur = 1100) {
     const deltaU = (targetMM - startTP) / MM_PER_UNIT;
     if (Math.abs(deltaU) < 1e-3) { res(); return; }
     movingToScan = true;
+    // mirror the couch glide into the DR monitor (lateral PoV) so the model is visibly
+    // moving even from the scan-planning (Image) view — same mechanism as TABLE reposition
+    S.ct.moveBlit = 'lat';
+    const noexp = ctx.$('noexp'); if (noexp) noexp.style.display = 'none';
     ctx.Sound && ctx.Sound.startTableSound && ctx.Sound.startTableSound(1.0);
     const t0 = performance.now(); let done = false;
     const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
-    const finish = () => { if (done) return; done = true; ctx.Sound && ctx.Sound.stopTableSound && ctx.Sound.stopTableSound(); movingToScan = false; res(); };
+    const finish = () => { if (done) return; done = true; ctx.Sound && ctx.Sound.stopTableSound && ctx.Sound.stopTableSound(); movingToScan = false; S.ct.moveBlit = null; res(); };
     const snap = (e) => {
       const dz = -deltaU * e;
       three.handGroup.position.z = startHandZ + dz; couch.position.z = startCouchZ + dz;
@@ -1270,15 +1281,16 @@ function applyProtocol(id) {
   resetScanBox();
   renderScanBoxes(); updateScanMarkers();
   if (c.phase === 'planning') updatePlan();
-  updateCTReadouts();
+  updateCTReadouts(); updateConsoleFlash();
 }
 // Reflect the current protocol name + isocentre-landmark shorthand under the picker.
 function renderProtocol() {
   const p = ctProtocol();
   const btn = ctx.$('ctProtocolBtn'), name = ctx.$('ctProtocolName'), land = ctx.$('ctProtocolLand');
   if (btn) btn.innerHTML = p.name + ' <span class="cv">&#9662;</span>';
-  if (name) name.textContent = p.name;
-  if (land) { land.textContent = p.land || ''; land.title = p.land ? LANDMARKS[p.land] : ''; land.style.display = p.land ? '' : 'none'; }
+  // caption reads "Anatomic Zero: <landmark shorthand>" (the table-0 landmark)
+  if (name) name.textContent = 'Anatomic Zero:';
+  if (land) { land.textContent = p.land || '—'; land.title = p.land ? LANDMARKS[p.land] : 'No preset landmark — zero anywhere'; land.style.display = ''; }
 }
 // Reference-style acquisition ("Select the desired Image Thickness") dialog. Edits a
 // working copy of the group's acquisition geometry and applies it on OK. Relationships:
@@ -1350,10 +1362,29 @@ function openAcqPopup(gi) {
 // Flash TABLE (orange) while the couch still needs to move; else flash START (green).
 // While a move is pending the DR monitor mirrors the axis' PoV — AP-PoV for the
 // mediolateral move, Lat-PoV for the anteroposterior (height) move.
-// Table position (mm) of the first scan group's superior edge — where "Move to Scan"
-// drives the couch. The scan can only START once the table is parked here.
+// Where "Move to Scan" drives the couch, per phase:
+//  · scouting (idle): the SCOUT start (scanStart, the topogram's superior edge)
+//  · planning:        the first scan group's superior edge (scanStart + box.top·len)
+// The next button (START) only unlocks once the table is parked at that position.
 function scanStartTablePos() { return scanStartMM() + grp(0).box.top * ctx.S.ct.scanLen; }
-function atScanStart() { return Math.abs(ctx.S.ct.tablePos - scanStartTablePos()) <= 1.0; }
+function moveScanTarget() { return ctx.S.ct.phase === 'planning' ? scanStartTablePos() : scanStartMM(); }
+function atMoveTarget() { return Math.abs(ctx.S.ct.tablePos - moveScanTarget()) <= 1.0; }
+// Drive the flashing console key for the current phase. Sequence:
+//  · idle:     Zero Table (needzero) → MOVE TO SCAN → START (acquire scouts)
+//  · planning: TABLE reposition → MOVE TO SCAN → START (run scan)
+function updateConsoleFlash() {
+  const c = ctx.S.ct;
+  if (c.phase === 'planning') { updatePlanReady(); return; }
+  const move = ctx.$('ctMoveScan'), start = ctx.$('ctStart'), table = ctx.$('ctTable');
+  table?.classList.remove('flash');
+  if (c.phase === 'idle') {
+    const atStart = atMoveTarget();
+    move?.classList.toggle('flash', c.isocentred && !atStart);   // flash only once zeroed
+    start?.classList.toggle('flash', c.isocentred && atStart);
+  } else {
+    move?.classList.remove('flash'); start?.classList.remove('flash');
+  }
+}
 function updatePlanReady() {
   const c = ctx.S.ct;
   const needX = Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH;
@@ -1361,7 +1392,7 @@ function updatePlanReady() {
   const needMove = needX || needY;
   // Sequence: reposition (lateral/height) → Move to Scan (longitudinal, to the scan
   // start) → START. Exactly one button flashes at a time.
-  const needScanMove = !needMove && !atScanStart();
+  const needScanMove = !needMove && !atMoveTarget();
   ctx.$('ctTable')?.classList.toggle('flash', needMove);
   ctx.$('ctMoveScan')?.classList.toggle('flash', c.isocentred && needScanMove);
   ctx.$('ctStart')?.classList.toggle('flash', c.isocentred && !needMove && !needScanMove);
