@@ -946,7 +946,8 @@ function groupExpTime(g) { const feed = Math.max(tableSpeedOf(g), 1e-3); return 
 
 function defaultGroups() {
   // detRows 16 × element 0.625 = 10 mm beam collimation; pitch 0.938 → 9.38 mm/rot.
-  const base = { detRows: 16, beamColl: 10, pitch: 0.938, rotSpeed: 0.5, sfovMM: 500 };   // Large Body SFOV default
+  const sf = defaultSfov();
+  const base = { detRows: 16, beamColl: 10, pitch: 0.938, rotSpeed: 0.5, sfovMM: sf.mm, sfovName: sf.name };
   return [
     { on: true,  vis: true, box: { top: 0.10, bot: 0.90, apL: 0.28, apR: 0.72, latL: 0.28, latR: 0.72 }, kv: 120, ma: 295, sliceThk: 5,    ...base, interval: 5,    tilt: 0, delay: 0 },
     { on: false, vis: true, box: { top: 0.14, bot: 0.50, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 2.5,  ...base, interval: 2.5,  tilt: 0, delay: 0 },
@@ -1009,6 +1010,22 @@ function renderScanBoxes() {
       sl.style.backgroundImage = 'repeating-linear-gradient(' + dir + ', var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
       sl.style.opacity = '0.55';
     } else { sl.style.backgroundImage = 'none'; }
+  });
+  renderSfovLines();
+}
+// Dark-purple dashed lines marking the SFOV lateral edges on both scouts (the SFOV has
+// infinite length along the scan axis). AP: vertical lines at the mediolateral edges;
+// LAT (rotated, z horizontal): horizontal lines at the AP-depth edges. Shown for the
+// active group while planning.
+function renderSfovLines() {
+  const c = ctx.S.ct, g = grp(c.activeGroup || 0);
+  const show = c.phase === 'planning' && !!(g && g.on);
+  const half = (g && g.sfovMM ? g.sfovMM / scoutFov() : 1) / 2;
+  document.querySelectorAll('#ctScouts .sfovline').forEach((el) => {
+    el.style.display = show ? 'block' : 'none';
+    if (!show) return;
+    const pos = ((el.classList.contains('l') ? 0.5 - half : 0.5 + half) * 100) + '%';
+    if (el.dataset.view === 'ap') el.style.left = pos; else el.style.top = pos;
   });
 }
 
@@ -1124,6 +1141,7 @@ function updatePlan() {
   applyScoutPan();
   updatePlanReady();
   renderScanGroups();
+  renderSfovLines();
 }
 
 // ---- scan-group table ---- (single click to edit / pick / toggle / delete)
@@ -1155,6 +1173,17 @@ function openFieldEditor(gi, act) {
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
   else if (act === 'ma') type('Tube current (mA)', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
   else if (act === 'delay') type('Scan delay (seconds)', g.delay, (v) => { g.delay = clampV(Math.round(v), 0, 600); });
+  else if (act === 'sfov') {
+    const cur = Math.max(0, SFOV_OPTIONS.findIndex((o) => o.name === (g.sfovName || 'Large Body')));
+    station('Scan field of view (SFOV)', SFOV_OPTIONS.map((o, i) => i), cur,
+      (i) => SFOV_OPTIONS[i].name + '  ·  ' + (SFOV_OPTIONS[i].mm / 10) + ' cm',
+      (i) => { const o = SFOV_OPTIONS[i]; g.sfovName = o.name; g.sfovMM = o.mm; clampDfovToSfov(g); });
+  }
+  else if (act === 'dfov') type('Display FOV (mm) — must fit in the ' + (g.sfovName || 'SFOV'), Math.round(groupDFOV(g)), (v) => {
+    const dfov = clampV(v, 20, g.sfovMM), w = clampV(dfov / scoutFov(), 0.04, 1.6);
+    const cx = (g.box.apL + g.box.apR) / 2, cy = (g.box.latL + g.box.latR) / 2;
+    g.box.apL = cx - w / 2; g.box.apR = cx + w / 2; g.box.latL = cy - w / 2; g.box.latR = cy + w / 2;
+  });
   else if (act === 'acq') openAcqPopup(gi);   // reference-style image-thickness dialog
   else if (act === 'rot') station('Rotation time (s / rot)', ROT_STATIONS, g.rotSpeed, (x) => x.toFixed(2) + ' s', (v) => { g.rotSpeed = v; });
   else { done(); }
@@ -1167,9 +1196,15 @@ function addGroup() {
 const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>';
 const EYE_CLOSED = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M3 10c2.2 2.9 5.6 4.6 9 4.6S18.8 12.9 21 10"/><path stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6 13.3l-1.6 2M12 15.1v2.4M18 13.3l1.6 2"/></svg>';
 const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff" d="M9 3l-1 1H4v2h16V4h-4l-1-1H9zM6 8l1.2 12.2c.1.9.9 1.8 1.9 1.8h5.8c1 0 1.8-.9 1.9-1.8L18 8H6zm4 2h1v9h-1v-9zm3 0h1v9h-1v-9z"/></svg>';
-const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'Total Images', 'Detector Config',
+const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'SFOV', 'DFOV', 'Total Images', 'Detector Config',
   'Helical Thickness', 'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time', 'Slice Interval',
   'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
+// DFOV-centre offset from the SFOV centre (isocentre): anteroposterior + mediolateral (mm).
+function dfovCenterStr(g) {
+  const c = ctx.S.ct, ml = c.plan.targetX || 0, ap = c.plan.targetY || 0;
+  const f = (v, pos, neg) => (v >= 0 ? pos : neg) + Math.abs(v).toFixed(1);
+  return f(ap, 'A', 'P') + ' ' + f(ml, 'R', 'L');
+}
 
 // Scout planning table: AP (scan plane 0°) + Lateral (90°) as two scout groups.
 // Simpler than the scan-group table (no slice/pitch) — start/end are shared (the
@@ -1231,6 +1266,8 @@ function renderScanGroups() {
       + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle box on scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
       + cell('sg-edit', 'start', fmtTablePos(scanStartMM() + g.box.top * c.scanLen))
       + cell('sg-edit', 'end', fmtTablePos(scanStartMM() + g.box.bot * c.scanLen))
+      + cell('sg-station', 'sfov', g.sfovName || sfovName(g.sfovMM))
+      + '<td><span class="sg-edit" data-act="dfov">' + Math.round(groupDFOV(g)) + ' mm</span><span class="sg-sub">' + dfovCenterStr(g) + '</span></td>'
       + cell('sg-calc', '', groupImages(g))
       + cell('sg-station', 'acq', detConfig(g))
       + cell('sg-station', 'acq', fmtNum(g.sliceThk) + ' mm')
@@ -1534,6 +1571,14 @@ const SFOV_OPTIONS = [
   { name: 'Large Body', mm: 500 }, { name: 'Extra Large Body', mm: 650 },
 ];
 const sfovName = (mm) => (SFOV_OPTIONS.find((s) => s.mm === mm) || { name: mm + ' mm' }).name;
+// Smallest (non-pediatric) SFOV that comfortably contains the model — so it's visible on
+// the scout rather than dwarfing a small subject.
+function defaultSfov() {
+  const ext = ctx && ctx.S.voxelModel ? ctx.S.voxelModel.extentMM : [200, 200, 200];
+  const need = Math.max(ext[0], ext[1]) + 20;
+  const opts = SFOV_OPTIONS.slice(1);   // skip Pediatric Head (a bowtie variant of Head)
+  return opts.find((s) => s.mm >= need) || opts[opts.length - 1];
+}
 const detMode = () => DET_MODES[ctx && ctx.S.ct.detMode] || DET_MODES.quick;
 const MAX_SLICES = 1024;          // safety cap only (the slice count follows the planned image count)
 const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slice/rot noise model)
@@ -1543,6 +1588,12 @@ const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slic
 // diameter — the direction in which neighbouring fingers are separated — so a box
 // drawn around a single finger reconstructs a small FOV that excludes the others.
 function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * scoutFov()); }
+// The DFOV (scan box diameter) must fit inside the SFOV — shrink the box about its centre if it exceeds it.
+function clampDfovToSfov(g) {
+  const maxW = g.sfovMM / scoutFov();
+  if (g.box.apR - g.box.apL > maxW) { const cx = (g.box.apL + g.box.apR) / 2; g.box.apL = cx - maxW / 2; g.box.apR = cx + maxW / 2; }
+  if (g.box.latR - g.box.latL > maxW) { const cy = (g.box.latL + g.box.latR) / 2; g.box.latL = cy - maxW / 2; g.box.latR = cy + maxW / 2; }
+}
 // Per-reconstruction geometry: display-FOV radius R (the back-projected region),
 // channel spacing ds, ray half-length rayR (how far the integration must reach —
 // the full scan FOV for the fixed-pitch detector), and the detector mode m.
