@@ -62,11 +62,16 @@
   body.theme-ge .valchip{background:#d7e0ea; color:#0c3350}
   body.theme-ge .valchip.cyanlit{background:#eae4a8; color:#3a2f06}   /* GE's pale-yellow value box */
   /* ---- GE visibility fixes: dark islands + light-on-light text that the bright bg hid ---- */
-  body.theme-ge .sg-table th{background:#96a8bc; color:#0f2c48; border-color:#7d92a8}   /* table header: light, dark text */
+  /* The scan + recon planning tables are dark workstation panels (.scangroups). Keep them dark and
+     re-declare the text vars to light values so cells, headers, sub-text and the group colour-coding
+     all read (GE's dark text would otherwise be near-invisible on the near-black table). */
+  body.theme-ge .scangroups{--txt:#e3ecf4; --muted:#a7bacb; --muted2:#8598aa; --cyan:#7fc8d8}
+  /* The SCOUT planning table sits on the light settings panel — only its header was hardcoded dark. */
+  body.theme-ge .scouttable .sg-table th{background:#96a8bc; color:#123a5e; border-color:#7d92a8}
   body.theme-ge .warn{background:#c3d1df; border-color:#7d92a8}                          /* console status strip → light */
   body.theme-ge .warn .wt{color:#2a3f54}
   body.theme-ge .lamp{background:#8a97a4; box-shadow:inset 0 0 4px rgba(0,0,0,.4)}        /* LED off state (visible on light) */
-  body.theme-ge .unzeroed{color:#c81f14 !important}                                       /* unzeroed start/end: deeper red */
+  body.theme-ge .unzeroed{color:#b01710 !important}                                       /* unzeroed start/end: deep red on light */
   body.theme-ge .note.warn{color:#c22b1e}
   body.theme-ge .protoland{color:#6e4e08}                                                 /* "— none —" placeholder */
   body.theme-ge .hdr .t b{color:#ffffff}                                                  /* header bold: white on the teal banner */
@@ -84,9 +89,13 @@
   body.theme-ge .help-def i{color:#9fb4c4}
   /* The CT image VIEWER is a black workstation surface (as on a real console) — its labels must
      stay light. Re-declare the text vars to light values inside it (and the dark bay-menu chip). */
-  body.theme-ge #ctSlices{--txt:#dfe8f0; --muted:#9fb4c4; --muted2:#708496; --cyan:#7fc8d8}
+  body.theme-ge #ctSlices,
+  body.theme-ge #ctRecons{--txt:#dfe8f0; --muted:#9fb4c4; --muted2:#708496; --cyan:#7fc8d8}   /* black workstation surfaces */
   body.theme-ge .baymenu-btn{color:#cdd8e2}
   body.theme-ge .baymenu-btn:hover{color:#ffffff}
+  /* toggle chips on the black recon surface have a light var(--panel2) bg → make them dark chips
+     so the (now light) label reads (the .on state keeps its blue highlight). */
+  body.theme-ge #ctRecons .mpr-tgl:not(.on), body.theme-ge #ctSlices .mpr-tgl:not(.on){background:#1c2733; border-color:#41505f}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{
