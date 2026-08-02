@@ -32,7 +32,7 @@ from scipy import ndimage as ndi
 # ---- material ids (MUST match BodyMaterials.LIST order in materials.js) ----
 AIR, LUNG, FAT, WATER, CSF, SIMPLE_FLUID, BILE, MUSCLE, BLOOD, CLOT, SOFT, \
     LIVER, SPLEEN, KIDNEY, PANCREAS, HEART, CARTILAGE, TRABECULAR, CORTICAL, \
-    ENAMEL, IODINE, CALCIF, STONE, SKIN, ALUMINUM, TITANIUM, STEEL, LEAD = range(28)
+    ENAMEL, IODINE, CALCIF, STONE, SKIN, ALUMINUM, TITANIUM, STEEL, LEAD, PLASTIC = range(29)
 
 LEGEND = [
     (AIR, "Air", -1000, 0x000000), (LUNG, "Lung", -700, 0x3a4a63),
@@ -49,6 +49,7 @@ LEGEND = [
     (STONE, "Kidney stone", 800, 0xd8cba0), (SKIN, "Skin", 30, 0xd8a07a),
     (ALUMINUM, "Aluminum", None, 0x9fb4c0), (TITANIUM, "Titanium", None, 0xb8c2cc),
     (STEEL, "Stainless steel", None, 0xd0d4d8), (LEAD, "Lead", None, 0x6a6f77),
+    (PLASTIC, "Acrylic", 120, 0x9fb6a8),
 ]
 
 BONE_PREFIX = ("vertebrae", "rib", "sternum", "scapula", "clavicula", "humerus",
