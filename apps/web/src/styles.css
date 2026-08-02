@@ -34,7 +34,21 @@
   body.theme-ge .hdr .t{color:#effbf7}
   body.theme-ge .hdr .t b, body.theme-ge .baytag .k{color:#0c3350}
   body.theme-ge .hdr .u{color:#d6efe8}
-  body.theme-ge .ctbtn{background:#e6edf4}
+  /* GE console buttons: raised bevel with a solid colour ring so they read on the light panel */
+  body.theme-ge .ctbtn{background:linear-gradient(180deg,#f6faff,#d4dfea);
+    box-shadow:0 2px 5px rgba(18,40,64,.4), inset 0 1px 0 rgba(255,255,255,.85), 0 0 0 1px rgba(18,40,64,.15)}
+  body.theme-ge .ctbtn:hover{box-shadow:0 3px 9px rgba(18,40,64,.5), 0 0 16px currentColor, inset 0 1px 0 rgba(255,255,255,.85)}
+  body.theme-ge .ctbtn:disabled{opacity:.4; box-shadow:0 1px 3px rgba(18,40,64,.25)}
+  /* GE flash: a bold pulsing SOLID ring + colour wash (not a soft glow) — stands out on the bright bg */
+  body.theme-ge .ctbtn.flash{animation:ctflashGE .8s ease-in-out infinite}
+  @keyframes ctflashGE{
+    0%,100%{box-shadow:0 2px 5px rgba(18,40,64,.4), 0 0 0 0 currentColor, inset 0 1px 0 rgba(255,255,255,.85);
+      background:linear-gradient(180deg,#f6faff,#d4dfea)}
+    50%{box-shadow:0 2px 7px rgba(18,40,64,.5), 0 0 0 6px currentColor, 0 0 18px currentColor, inset 0 1px 0 rgba(255,255,255,.7);
+      background:color-mix(in srgb, currentColor 30%, #eef4fb)}
+  }
+  /* GE warning lamp / reminder blink: give the blink a solid on/off swap so it's obvious on light */
+  body.theme-ge .warn.live .lamp{box-shadow:0 0 0 3px rgba(179,56,44,.35)}
   body.theme-ge .valchip{background:#d7e0ea; color:#0c3350}
   body.theme-ge .valchip.cyanlit{background:#eae4a8; color:#3a2f06}   /* GE's pale-yellow value box */
   *{box-sizing:border-box}
