@@ -448,6 +448,12 @@ function flashIso() {
 }
 
 function setHint(t) { const el = ctx.$('ctHint'); if (el) el.textContent = t; }
+// Reconstruction progress bar under the console hint. frac in [0,1]; null hides it.
+function setProgress(frac) {
+  const box = ctx.$('ctProg'), bar = ctx.$('ctProgBar'); if (!box || !bar) return;
+  if (frac == null) { box.style.display = 'none'; bar.style.width = '0%'; return; }
+  box.style.display = ''; bar.style.width = Math.round(Math.max(0, Math.min(1, frac)) * 100) + '%';
+}
 
 // Press-and-hold auto-repeat for a group of buttons: one step on press, then after
 // a short delay it repeats at a steady rate while held (so large adjustments don't
@@ -1784,7 +1790,7 @@ async function runScan() {
   } catch (err) {
     console.error('scan failed', err); setHint('Scan failed: ' + err.message);
   } finally {
-    stopGantrySpin(); Sound.stopScan(); Sound.stopTableSound();
+    stopGantrySpin(); Sound.stopScan(); Sound.stopTableSound(); setProgress(null);
   }
   if (!alive()) return;
   setBusy(false);
@@ -1898,20 +1904,22 @@ async function scanGroupExposure(g, i, alive) {
   await animateHelicalScan(g, setup, alive);
   Sound.stopScan(); stopGantrySpin();          // acquisition finished; the gantry stops
   if (!alive()) { showPreviewBadge(false); return null; }
+  // The scan MOTION is done — the patient can breathe normally now, while the computer
+  // reconstructs in the background (the slices view is withheld until processing completes).
+  resetToIsocentre();
+  Sound.play('breathNormal');
   // 2) THEN the full-quality reconstruction resolves the images — the PREVIEW badge stays up
-  //    (viewer is still showing the degraded preview) until the resolved slices are ready.
-  setHint('G' + (i + 1) + ' · reconstructing…');
+  //    (viewer is still showing the degraded preview) until the resolved slices are ready. A
+  //    progress bar under the console tracks the reconstruction.
+  setHint('G' + (i + 1) + ' · reconstructing…'); setProgress(0);
   const recon = await reconstructSlices(g, alive,
-    (f) => setHint('G' + (i + 1) + ' · reconstructing… ' + Math.round(f * 100) + '%'), null, setup);
+    (f) => { setHint('G' + (i + 1) + ' · reconstructing… ' + Math.round(f * 100) + '%'); setProgress(f); }, null, setup);
+  setProgress(null);
   if (!alive() || !recon) { showPreviewBadge(false); return null; }
   // reveal the fully resolved final slice (clears the PREVIEW badge)
   drawScanPreview(recon.slices[recon.nz - 1].mu,
     { gridN: recon.gridN, fovMM: recon.fovMM, muWater: recon.muWater }, recon.nz - 1, recon.nz, false);
-  resetToIsocentre();
-  setHint('G' + (i + 1) + ' · breathe normally.');
-  Sound.play('breathNormal');
   const entry = storeScan(g, i, recon);
-  await sleep(Math.min(1800, (Sound.duration('breathNormal') || 1.6) * 1000));
   return entry;
 }
 
