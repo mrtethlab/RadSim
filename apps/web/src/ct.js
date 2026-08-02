@@ -328,6 +328,7 @@ function applyMode(mode) {
   ctx.S.mode = mode;
   document.body.classList.toggle('mode-ct', mode === 'ct');
   document.body.classList.toggle('mode-xray', mode !== 'ct');
+  ctApplyColorTheme();                            // x-ray drops any vendor theme; CT re-applies it
   const bar = ctx.$('modeBar');
   if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
@@ -1665,6 +1666,17 @@ export function ctApplyAcqMode() {
 }
 
 const isGE = () => (ctx && ctx.S.ct.vendor) === 'ge';
+// Apply the colour scheme to the whole app. In CT mode with the vendor scheme, the interface adopts
+// the selected vendor's console palette (GE light-blue / Canon dark-grey); otherwise (generic scheme
+// OR x-ray mode) the default palette is used — x-ray is never re-themed.
+export function ctApplyColorTheme() {
+  if (!ctx) return;
+  const c = ctx.S.ct, ct = ctx.S.mode === 'ct', vendorScheme = (c.colorSchema || 'vendor') !== 'generic';
+  const theme = (ct && vendorScheme) ? ('theme-' + (c.vendor === 'ge' ? 'ge' : 'canon')) : null;
+  const b = document.body.classList;
+  b.remove('theme-ge', 'theme-canon');
+  if (theme) b.add(theme);
+}
 // Apply the vendor workflow to the UI: GE hides the reposition chevrons and the TABLE
 // (mediolateral/AP couch-move) button — the operator off-centres the DFOV by dragging the box
 // instead. Canon/Toshiba shows them (locked box + physical couch reposition). Switching vendors
@@ -1705,6 +1717,7 @@ export function ctApplyVendor() {
                                      const hw = (g.box.latR - g.box.latL) / 2; g.box.latL = 0.5 - hw; g.box.latR = 0.5 + hw; } }
   if (ctx.syncScene) { /* keep scene consistent if patient moved */ }
   renderScanBoxes(); updatePlan();
+  ctApplyColorTheme();                            // GE ↔ Canon may switch the vendor palette
   ctx.refreshReadouts && ctx.refreshReadouts();
 }
 

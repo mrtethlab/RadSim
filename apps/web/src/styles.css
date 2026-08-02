@@ -8,6 +8,35 @@
     --seg:'Share Tech Mono', ui-monospace, monospace;
     --disp:'Barlow Condensed', 'Arial Narrow', sans-serif;
   }
+  /* ===== Vendor colour schemes (CT interface only; applied via body.theme-*) ===== */
+  /* Canon / Toshiba — dark near-black console with neutral grey panels + steel-blue accent */
+  body.theme-canon{
+    --bg:#0a0b0d; --bg2:#131519; --panel:#1e2127; --panel2:#282c33;
+    --edge:#333840; --edge2:#464c56;
+    --cyan:#7ab6e6; --cyan-dim:#2c5670;
+    --amber:#e0a63a; --amber-dim:#6e5320;
+    --txt:#e9edf1; --muted:#9aa3ad; --muted2:#6a727c;
+  }
+  body.theme-canon .hdr{background:linear-gradient(180deg,#1b1e23,#15171b)}
+  body.theme-canon .bay{background:linear-gradient(180deg,#090a0c,#050506)}
+  /* GE — light blue-grey console with navy text, teal header banner + amber selection */
+  body.theme-ge{
+    --bg:#7e93a8; --bg2:#8ea2b5; --panel:#b0becd; --panel2:#c6d2de;
+    --edge:#66809b; --edge2:#54708c;
+    --cyan:#123a5e; --cyan-dim:#3a6ea5;
+    --amber:#9c6f08; --amber-dim:#e9dd8c;
+    --green:#2c7a44; --red:#b3382c;
+    --txt:#101f2d; --muted:#33475b; --muted2:#4a627c;
+    background:var(--bg);
+  }
+  body.theme-ge .bay{background:linear-gradient(180deg,#a6b6c7,#8a9db0)}
+  body.theme-ge .hdr{background:linear-gradient(180deg,#3f9080,#357d6d); border-bottom-color:#2a5f52}
+  body.theme-ge .hdr .t{color:#effbf7}
+  body.theme-ge .hdr .t b, body.theme-ge .baytag .k{color:#0c3350}
+  body.theme-ge .hdr .u{color:#d6efe8}
+  body.theme-ge .ctbtn{background:#e6edf4}
+  body.theme-ge .valchip{background:#d7e0ea; color:#0c3350}
+  body.theme-ge .valchip.cyanlit{background:#eae4a8; color:#3a2f06}   /* GE's pale-yellow value box */
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{

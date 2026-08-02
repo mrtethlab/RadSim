@@ -15,7 +15,7 @@ import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
-import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor } from './ct.js';
+import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme } from './ct.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -470,6 +470,9 @@ const S = {
     // moves A/P–L/R after scout); 'canon' = box locked to isocentre + reposition chevrons that
     // physically move the table to place the SFOV. Set under Interface options.
     vendor:'ge',
+    // Colour scheme: 'vendor' = the CT interface adopts the selected vendor's console colours
+    // (GE light-blue / Canon dark-grey); 'generic' = the app's default scheme. X-ray is never themed.
+    colorSchema:'vendor',
     detMode:'quick',           // 'quick' (128-ch preview) | 'realistic' (fixed 0.625mm DEL, 512² recon)
     // linked 2x2 MPR workstation: one cross-reference position drives all four panes
     mpr:{ scanId:null, cur:null, reconId:null, wl:60, ww:800, sel:'axial', thk:5, interval:5, algo:'standard', mar:false, obShow:true,
@@ -1602,7 +1605,23 @@ function wireBackendToggles(){
     updateVendorNote();
     ctApplyVendor();
   });
+  // Colour-scheme toggle (vendor-specific vs generic) — CT interface only.
+  $('ctSchemaSeg')?.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    S.ct.colorSchema=b.dataset.schema;
+    [...$('ctSchemaSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.schema===S.ct.colorSchema));
+    updateSchemaNote();
+    ctApplyColorTheme();
+  });
   updateVendorNote();
+  updateSchemaNote();
+}
+// Describe the selected colour scheme.
+function updateSchemaNote(){
+  const el=$('ctSchemaNote'); if(!el) return;
+  el.textContent = S.ct.colorSchema==='generic'
+    ? 'Generic: the app’s default console colours.'
+    : 'Vendor-specific: the CT interface adopts the selected vendor’s console colours (X-ray is unchanged).';
 }
 // Describe the selected vendor workflow.
 function updateVendorNote(){
