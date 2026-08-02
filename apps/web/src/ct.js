@@ -1841,7 +1841,7 @@ function scanAnimSeconds(g) { return Math.max(2.5, Math.min(18, groupExpTime(g))
 function previewReconSlice(setup, si, geo, h, photons0) {
   const zw = setup.positions[si] / MM_PER_UNIT;
   const sino = projectSlice(setup.phantom, zw, setup.mu, photons0, geo);
-  const q = filterSino(apertureBlur(sino, geo.m), h, geo.ds, geo.m);
+  const q = filterSino(sinoBlur(sino, geo.m), h, geo.ds, geo.m);
   return backproject(q, geo);
 }
 
@@ -2042,20 +2042,35 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
   return sino;
 }
 
-// Detector aperture + focal-spot blur: convolve each view along the channel axis with a small
-// Gaussian (σ ≈ one detector element). A real detector integrates over a finite channel width
-// and the focal spot has finite size, so the sampled projections are band-limited. Our
-// infinitely-thin, point-sampled rays are NOT band-limited, so razor-sharp metal edges let the
-// ramp filter amplify frequencies up to the channel Nyquist, which backprojects into a fine
-// peripheral streak crosshatch that real scanners don't show. Restoring the physical band limit
-// here smooths that crosshatch while leaving the broad low-frequency inter-metal bands intact.
-const APERTURE_SIGMA = 0.75;                 // detector/focal-spot aperture, in channels
-function apertureBlur(sino, m) {
-  const s = APERTURE_SIGMA; if (s <= 0) return sino;
-  const rad = Math.max(1, Math.ceil(3 * s));
+// Sinogram band-limiting from the finite X-ray source + detector aperture. Our recon rays are
+// infinitely thin ideal samples, so metal edges are razor-sharp and the ramp filter amplifies
+// them to the sampling Nyquist, backprojecting into a rigid streak crosshatch that real scanners
+// never show. Two physical apertures band-limit a real acquisition; we restore both:
+//
+//   • RADIAL (channel axis) — the detector element integrates over a finite channel width and
+//     the focal spot has finite size in-plane. Softens each streak's width. (APERTURE_SIGMA)
+//   • AZIMUTHAL (view axis) — the tube fires continuously while the gantry rotates, so each
+//     "view" integrates over a small rotation increment, and the focal spot has azimuthal
+//     extent. This smears each streak across a RANGE of angles, so a sharp backprojected line
+//     becomes a soft fan — turning the discrete crosshatch into the feathery, pointed "sun-ray"
+//     streaks characteristic of real metal artifacts. (AZIMUTH_SIGMA)
+//
+// The blurs are low-frequency-preserving, so the broad inter-metal dark bands stay intact and
+// there is no meaningful resolution loss (σ ≈ detector element size at iso).
+const APERTURE_SIGMA = 1.0;                  // radial aperture, in channels
+const AZIMUTH_SIGMA  = 1.6;                  // azimuthal aperture, in views (feathers streaks)
+
+function gaussWeights(sigma) {
+  const rad = Math.max(1, Math.ceil(3 * sigma));
   const w = new Float64Array(2 * rad + 1); let sum = 0;
-  for (let n = -rad; n <= rad; n++) { const v = Math.exp(-(n * n) / (2 * s * s)); w[n + rad] = v; sum += v; }
+  for (let n = -rad; n <= rad; n++) { const v = Math.exp(-(n * n) / (2 * sigma * sigma)); w[n + rad] = v; sum += v; }
   for (let i = 0; i < w.length; i++) w[i] /= sum;
+  return { w, rad };
+}
+// Blur the sinogram along the channel axis (radial detector/focal-spot aperture).
+function apertureBlur(sino, m) {
+  if (APERTURE_SIGMA <= 0) return sino;
+  const { w, rad } = gaussWeights(APERTURE_SIGMA);
   const N = m.nDet, out = new Float32Array(sino.length);
   for (let a = 0; a < m.nAngles; a++) {
     const base = a * N;
@@ -2067,6 +2082,22 @@ function apertureBlur(sino, m) {
   }
   return out;
 }
+// Blur the sinogram along the view axis (azimuthal source/rotation aperture) → feathery fans.
+function azimuthalBlur(sino, m) {
+  if (AZIMUTH_SIGMA <= 0) return sino;
+  const { w, rad } = gaussWeights(AZIMUTH_SIGMA);
+  const N = m.nDet, A = m.nAngles, out = new Float32Array(sino.length);
+  for (let a = 0; a < A; a++) {
+    for (let k = 0; k < N; k++) {
+      let acc = 0;
+      for (let n = -rad; n <= rad; n++) { let aa = a + n; if (aa < 0) aa = 0; else if (aa >= A) aa = A - 1; acc += sino[aa * N + k] * w[n + rad]; }
+      out[a * N + k] = acc;
+    }
+  }
+  return out;
+}
+// Both apertures, applied before the ramp filter.
+function sinoBlur(sino, m) { return azimuthalBlur(apertureBlur(sino, m), m); }
 
 // Convolve each projection view with the ramp filter.
 function filterSino(sino, h, ds, m) {
@@ -2164,8 +2195,13 @@ function scanSetup(g) {
 // Detected photons per sinogram sample for a given geometry. The quick detector is the
 // noise reference; more views split the same tube output into smaller buckets. The
 // realistic detector's finer channels pair with its apodized (Shepp-Logan) kernel.
+// Tube fluence rises ~kVp² at fixed mAs, so higher kVp delivers more photons → fewer
+// photon-starved (metal) rays. Together with the harder spectrum (less beam hardening +
+// better metal penetration, handled in scanSetup), this reproduces the clinical result
+// that raising kVp reduces metal artifacts.
 function photonsFor(g, geo) {
   return (geo.m.photonBase || PHOTON_BASE) * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5)
+    * Math.pow(g.kv / 120, 2)                              // fluence ∝ kVp² (120 kVp = reference)
     * (DET_MODES.quick.nAngles / geo.m.nAngles);
 }
 
@@ -2225,7 +2261,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
       if (!alive()) return null;
       const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
       const sino = projectSlice(phantom, zw, mu, photons0, geo);
-      const q = filterSino(apertureBlur(sino, geo.m), h, geo.ds, geo.m);
+      const q = filterSino(sinoBlur(sino, geo.m), h, geo.ds, geo.m);
       const img = backproject(q, geo);
       vol.set(img, si * N * N);
       if (onSlice) onSlice(si, nz, positions[si], img, meta);

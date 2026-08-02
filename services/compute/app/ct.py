@@ -27,26 +27,39 @@ from .gpu import DEVICE, get_volume, sample_ids, rot_tensor
 STEP = 0.05          # in-plane march step, world units (0.5 mm)
 FWD_BATCH = 16       # forward-projection angle batching ((a,K,S,3) points tensor)
 ANGLE_BATCH = 72     # backprojection angle batching (memory)
-SAT_P = 11.5         # detector saturation: max measurable line integral (mirrors ct.js)
-APERTURE_SIGMA = 0.75  # detector/focal-spot aperture in channels (mirrors ct.js apertureBlur)
+SAT_P = 11.5           # detector saturation: max measurable line integral (mirrors ct.js)
+APERTURE_SIGMA = 1.0   # radial (channel) aperture in channels (mirrors ct.js)
+AZIMUTH_SIGMA = 1.6    # azimuthal (view) aperture in views (mirrors ct.js) — feathers streaks
 
 
-def _aperture_blur(sino: torch.Tensor, n_det: int) -> torch.Tensor:
-    """Blur each view along the channel axis with a small Gaussian (σ ≈ one detector element).
-    A real detector integrates over a finite channel width and the focal spot has finite size,
-    so the sampled projections are band-limited; our infinitely-thin rays are not, letting the
-    ramp filter amplify razor-sharp metal edges into a fine peripheral streak crosshatch that
-    real scanners don't show. Restoring the band limit smooths that crosshatch while leaving the
-    broad low-frequency inter-metal bands intact. Mirrors apertureBlur() in ct.js."""
-    s = APERTURE_SIGMA
-    if s <= 0:
-        return sino
-    rad = max(1, math.ceil(3 * s))
-    n = torch.arange(-rad, rad + 1, device=sino.device, dtype=torch.float32)
-    w = torch.exp(-(n * n) / (2 * s * s))
-    w = (w / w.sum()).view(1, 1, -1)
-    x = torch.nn.functional.pad(sino.unsqueeze(1), (rad, rad), mode="replicate")  # replicate edge channels
-    return torch.nn.functional.conv1d(x, w).squeeze(1)
+def _gauss1d(sigma: float, device) -> tuple[torch.Tensor, int]:
+    rad = max(1, math.ceil(3 * sigma))
+    n = torch.arange(-rad, rad + 1, device=device, dtype=torch.float32)
+    w = torch.exp(-(n * n) / (2 * sigma * sigma))
+    return (w / w.sum()).view(1, 1, -1), rad
+
+
+def _sino_blur(sino: torch.Tensor) -> torch.Tensor:
+    """Band-limit the sinogram from the finite source + detector apertures (mirrors sinoBlur in
+    ct.js). Our recon rays are infinitely thin, so metal edges are razor-sharp and the ramp
+    filter amplifies them to Nyquist, giving a rigid streak crosshatch real scanners don't show.
+    Two apertures restore the physical band limit:
+      • RADIAL (channel axis) — finite detector element + in-plane focal spot; softens streaks.
+      • AZIMUTHAL (view axis)  — the tube fires while the gantry rotates, so each view integrates
+        over a small rotation increment (plus azimuthal focal-spot extent), smearing each streak
+        across a range of angles → sharp backprojected lines become soft fans = the feathery,
+        pointed 'sun-ray' streaks of real metal artifacts.
+    Both are low-frequency-preserving, so the broad inter-metal dark bands and overall resolution
+    are unaffected. sino is (n_ang, n_det)."""
+    if APERTURE_SIGMA > 0:                                                     # channel axis
+        w, rad = _gauss1d(APERTURE_SIGMA, sino.device)
+        x = torch.nn.functional.pad(sino.unsqueeze(1), (rad, rad), mode="replicate")
+        sino = torch.nn.functional.conv1d(x, w).squeeze(1)
+    if AZIMUTH_SIGMA > 0:                                                      # view axis
+        w, rad = _gauss1d(AZIMUTH_SIGMA, sino.device)
+        x = torch.nn.functional.pad(sino.t().unsqueeze(1), (rad, rad), mode="replicate")
+        sino = torch.nn.functional.conv1d(x, w).squeeze(1).t()
+    return sino
 
 
 def _kernel(n_det: int, ds: float, kind: str, device) -> torch.Tensor:
@@ -164,7 +177,7 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
             sino = (-torch.log(nd / photons0)).clamp(min=0.0)
         if poly:
             sino = _apply_bhc(sino, bhc_x, bhc_y, bhc_slope)                   # water beam-hardening correction
-        sino = _aperture_blur(sino, n_det)                                     # detector/focal-spot band limit (kills peripheral streak crosshatch)
+        sino = _sino_blur(sino)                                                # source/detector band limit → feathery streaks, no crosshatch
         # ---- Ram-Lak filter (grouped 1D convolution over channels) ----
         q = torch.nn.functional.conv1d(sino.unsqueeze(1), h, padding=n_det - 1).squeeze(1) * ds
         # ---- back-project ----
