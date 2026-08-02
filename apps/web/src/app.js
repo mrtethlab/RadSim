@@ -270,11 +270,14 @@ const VOXEL_MODELS = {
 function prepVoxelMesh(grp, translucent){
   grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
     if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
-    // phantom shell/fill (acrylic, water) render see-through so the interior rods show
+    // phantom shell/fill (acrylic, water) render see-through so the interior rods show;
+    // the lead rods stay solid + metallic and draw on top of the translucent fill
     const clear = translucent && /acrylic|water/i.test(o.name);
+    const metal = translucent && /lead|metal/i.test(o.name);
     const ms=Array.isArray(o.material)?o.material:[o.material];
     for(const m of ms){ if(m){ m.metalness=0; m.roughness=0.95; m.flatShading=false;
       if(clear){ m.transparent=true; m.depthWrite=false; m.opacity=/water/i.test(o.name)?0.22:0.16; m.side=THREE.DoubleSide; o.castShadow=false; o.renderOrder=1; }
+      else if(metal){ m.transparent=false; m.opacity=1; m.metalness=0.85; m.roughness=0.35; m.color.setHex(0x8a9099); o.renderOrder=2; }
       m.needsUpdate=true; } } } });
 }
 
@@ -288,7 +291,7 @@ async function setSubject(sub){
                            three.chestGroup=three.voxelMeshes[id]||null; };
   if(sub==='hand'){
     S.subject='hand';
-    S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scanStart=0; S.ct.protocol='whole';
+    S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scanStart=-150; S.ct.protocol='whole';
     S.ct.scoutKv=80; S.ct.scoutMa=20;
     S.ct.scoutTech=[{kv:80,ma:20},{kv:80,ma:20}];
     S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
@@ -322,7 +325,10 @@ async function setSubject(sub){
   S.ct.scoutFovMM=Math.round(Math.max(ext[0], ext[1])+70);
   // default the scan to cover the WHOLE anatomy, pre-isocentred at the superior end
   // (scan runs superior→inferior). Tall models (whole body) need a longer scout.
-  S.ct.scanLen=Math.round(ext[2]); S.ct.scanStart=0; S.ct.protocol='whole';
+  // whole scout: the model rests centred at the crosshair (table 0 = model centre), so the
+  // scan range must be CENTRED on it — scanStart = −len/2 — to image the whole model
+  // (positions [−len/2 … +len/2]). scanStart=0 would only cover the inferior half + air.
+  S.ct.scanLen=Math.round(ext[2]); S.ct.scanStart=-Math.round(ext[2]/2); S.ct.protocol='whole';
   S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=(ext[2]/2)/10;
   S.ct.isocentred=false; S.ct.tablePos=0; S.ct.tableY=0;   // require the zero button before scanning
   S.ct.scoutKv=cfg.scoutKv; S.ct.scoutMa=cfg.scoutMa;

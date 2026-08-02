@@ -946,7 +946,7 @@ function groupExpTime(g) { const feed = Math.max(tableSpeedOf(g), 1e-3); return 
 
 function defaultGroups() {
   // detRows 16 × element 0.625 = 10 mm beam collimation; pitch 0.938 → 9.38 mm/rot.
-  const base = { detRows: 16, beamColl: 10, pitch: 0.938, rotSpeed: 0.5 };
+  const base = { detRows: 16, beamColl: 10, pitch: 0.938, rotSpeed: 0.5, sfovMM: 500 };   // Large Body SFOV default
   return [
     { on: true,  vis: true, box: { top: 0.10, bot: 0.90, apL: 0.28, apR: 0.72, latL: 0.28, latR: 0.72 }, kv: 120, ma: 295, sliceThk: 5,    ...base, interval: 5,    tilt: 0, delay: 0 },
     { on: false, vis: true, box: { top: 0.14, bot: 0.50, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 2.5,  ...base, interval: 2.5,  tilt: 0, delay: 0 },
@@ -1302,7 +1302,7 @@ function applyProtocol(id) {
   const c = ctx.S.ct, p = ctProtocol(id);
   c.protocol = p.id;
   if (p.id !== 'whole') { c.scanStart = p.start; c.scanLen = p.len; }
-  else { c.scanStart = 0; c.scanLen = ctx.S.voxelModel ? Math.round(ctx.S.voxelModel.extentMM[2]) : 300; }
+  else { const L = ctx.S.voxelModel ? Math.round(ctx.S.voxelModel.extentMM[2]) : 300; c.scanStart = -Math.round(L / 2); c.scanLen = L; }
   resetScanBox();
   renderScanBoxes(); updateScanMarkers();
   if (c.phase === 'planning') updatePlan();
@@ -1521,12 +1521,19 @@ function applyTableCommit() {
 //   real scanner (no projection truncation). Heavy — meant for the Python GPU
 //   engine; the browser fallback works but crawls.
 const DET_MODES = {
-  quick:     { nDet: 128, nAngles: 128, gridN: 128, fixedPitch: false },
+  quick:     { nDet: 384, nAngles: 288, gridN: 128, fixedPitch: false },
   // photonBase: detected photons per channel per view at the reference technique —
   // clinical scale (~10^6-10^7), so the 512² image lands at a clinical ~10-15 HU noise;
   // the quick preview keeps the old (much lower) base tuned for its coarse grid.
-  realistic: { nDet: 800, nAngles: 720, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 500, photonBase: 8e6 },
+  realistic: { nDet: 888, nAngles: 1160, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 555, photonBase: 8e6 },
 };
+// Selectable scan field of view (the bore reconstruction circle); the rays integrate over
+// it, so the body must sit inside it or the projections truncate (→ cupping). GE-style set.
+const SFOV_OPTIONS = [
+  { name: 'Pediatric Head', mm: 250 }, { name: 'Head', mm: 250 }, { name: 'Small Body', mm: 320 },
+  { name: 'Large Body', mm: 500 }, { name: 'Extra Large Body', mm: 650 },
+];
+const sfovName = (mm) => (SFOV_OPTIONS.find((s) => s.mm === mm) || { name: mm + ' mm' }).name;
 const detMode = () => DET_MODES[ctx && ctx.S.ct.detMode] || DET_MODES.quick;
 const MAX_SLICES = 1024;          // safety cap only (the slice count follows the planned image count)
 const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slice/rot noise model)
@@ -1539,12 +1546,17 @@ function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * scoutFov())
 // Per-reconstruction geometry: display-FOV radius R (the back-projected region),
 // channel spacing ds, ray half-length rayR (how far the integration must reach —
 // the full scan FOV for the fixed-pitch detector), and the detector mode m.
-function reconGeoM(fovMM, cx, cy, m) {
-  const R = (fovMM / MM_PER_UNIT) / 2;
-  if (m.fixedPitch) return { fovMM, R, rayR: (m.sfovMM / MM_PER_UNIT) / 2, ds: m.chanMM / MM_PER_UNIT, cx, cy, m };
-  return { fovMM, R, rayR: R, ds: (R * 2) / m.nDet, cx, cy, m };
+// Recon geometry. The RAYS integrate over the SFOV (not the DFOV) so anything inside the
+// SFOV is fully captured — the DFOV only sets the reconstructed/back-projected circle.
+// If rays stopped at the DFOV, a body wider than a small DFOV would be truncated → cupping.
+function reconGeoM(fovMM, cx, cy, m, sfovMM) {
+  const R = (fovMM / MM_PER_UNIT) / 2;                              // DFOV radius (backprojected region)
+  const detSpan = m.fixedPitch ? m.nDet * m.chanMM : sfovMM;       // physical detector width (mm)
+  const rayR = (Math.min(sfovMM, detSpan) / MM_PER_UNIT) / 2;      // ray half-length = SFOV/2 (capped by the detector)
+  const ds = m.fixedPitch ? m.chanMM / MM_PER_UNIT : (rayR * 2) / m.nDet;   // channel spacing spans the SFOV
+  return { fovMM, R, rayR, ds, cx, cy, m };
 }
-function reconGeo(fovMM, cx, cy) { return reconGeoM(fovMM, cx, cy, detMode()); }
+function reconGeo(fovMM, cx, cy, sfovMM) { return reconGeoM(fovMM, cx, cy, detMode(), sfovMM || 500); }
 // Low-res detector used for the live scan PREVIEW (deliberately coarse so previews are
 // cheap and visibly degraded; the full recon replaces them afterwards).
 const PREVIEW_DET = { nDet: 96, nAngles: 60, gridN: 96, fixedPitch: false };
@@ -1648,7 +1660,7 @@ function previewReconSlice(setup, si, geo, h, photons0) {
 function animateHelicalScan(g, setup, alive) {
   const nz = setup.count, T = scanAnimSeconds(g) * 1000;
   const canPreview = !setup.phantom.geometryOnly;   // backend-only models have no browser volume to preview
-  const pgeo = canPreview ? reconGeoM(setup.fovMM, 0, ISO_Y, PREVIEW_DET) : null;
+  const pgeo = canPreview ? reconGeoM(setup.fovMM, 0, ISO_Y, PREVIEW_DET, setup.sfovMM) : null;
   const ph = canPreview ? buildKernel(pgeo.ds, pgeo.m.nDet, pgeo.m.fixedPitch) : null;
   const pPhotons = canPreview ? photonsFor(g, pgeo) : 0;
   const pmeta = { gridN: PREVIEW_DET.gridN, fovMM: setup.fovMM, muWater: setup.muW };
@@ -1924,7 +1936,7 @@ function scanSetup(g) {
   const count = Math.max(1, Math.min(MAX_SLICES, groupImages(g)));   // one slice per planned image
   const positions = [];
   for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
-  return { effE, phantom, voxel, mu, muW, fovMM, positions, count };
+  return { effE, phantom, voxel, mu, muW, fovMM, sfovMM: g.sfovMM || 500, positions, count };
 }
 // Detected photons per sinogram sample for a given geometry. The quick detector is the
 // noise reference; more views split the same tube output into smaller buckets. The
@@ -1936,8 +1948,8 @@ function photonsFor(g, geo) {
 
 async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   setup = setup || scanSetup(g);
-  const { phantom, voxel, mu, muW, fovMM, positions, count, effE } = setup;
-  const geo = reconGeo(fovMM, 0, ISO_Y);
+  const { phantom, voxel, mu, muW, fovMM, sfovMM, positions, count, effE } = setup;
+  const geo = reconGeo(fovMM, 0, ISO_Y, sfovMM);
   const photons0 = photonsFor(g, geo);
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
