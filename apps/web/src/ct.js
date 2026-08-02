@@ -1359,6 +1359,7 @@ function renderScanGroups() {
 // ---- recon planning table (per scan group; up to N_RECONS reconstructions) ----
 const N_RECONS = 10;
 const RP_PLANES = [{ v: 'transverse', l: 'Transverse' }, { v: 'sagittal', l: 'Sagittal' }, { v: 'coronal', l: 'Coronal' }];
+const RP_PLANE_PANE = { transverse: 'axial', sagittal: 'sagittal', coronal: 'coronal' };  // recon plane → MPR pane
 const RP_ALGOS = [{ v: 'standard', l: 'Average' }, { v: 'mip', l: 'MiP' }, { v: 'minip', l: 'MiniP' }, { v: 'edge', l: 'Edge Enh' }, { v: 'blur', l: 'Blur' }];
 const RP_HEADERS = ['Recon', 'Plane', 'Thickness', 'Interval', 'WW', 'WL', 'Algorithm', 'MAR', 'Sub Start', 'Sub End'];
 const rpPlaneLabel = (p) => (RP_PLANES.find((x) => x.v === p) || { l: p }).l;
@@ -2414,10 +2415,18 @@ function storeScan(g, i, recon) {
     gridN: recon.gridN, fovMM: recon.fovMM, muWater: recon.muWater, effE: recon.effE, slices: recon.slices,
     // full volume + geometry for multiplanar resampling
     vol: recon.vol, nz: recon.nz, z0: recon.z0, dz: recon.dz, centerY: recon.centerY,
-    // planned reconstructions (Phase 3/4). One default transverse recon at the box DFOV.
-    nextReconId: 2,
-    recons: [{ id: 1, name: 'Axial', plane: 'axial', dfov: recon.fovMM, offRL: 0, offAP: 0,
-               thk: Math.max(g.sliceThk, el), interval: g.interval, algo: 'standard', mar: false, minThk: el }],
+    // Store EVERY planned reconstruction from the group's recon table (plane / thickness /
+    // interval / algorithm / MAR / window / sub-range), so each is available to view later.
+    // They reformat the one stored transverse volume (like a real MPR workstation).
+    recons: groupRecons(g).map((r, k) => ({
+      id: k + 1,
+      name: rpPlaneLabel(r.plane) + ' · ' + fmtNum(Math.max(r.thk, el)) + ' mm · ' + rpAlgoLabel(r.algo) + (r.mar ? ' · MAR' : ''),
+      plane: r.plane, pane: RP_PLANE_PANE[r.plane] || 'axial',
+      dfov: recon.fovMM, offRL: 0, offAP: 0,
+      thk: Math.max(r.thk, el), interval: r.interval, algo: r.algo, mar: !!r.mar,
+      ww: r.ww, wl: r.wl, subTop: r.subTop, subBot: r.subBot, minThk: el,
+    })),
+    nextReconId: groupRecons(g).length + 1,
   };
   S.ct.storage.push(entry);
   enforceStorageLimit();
@@ -2745,6 +2754,14 @@ export function ctRenderRecons() {
   const S = ctx.S, grid = ctx.$('ctMprGrid'), sel = ctx.$('ctReconScanSel'); if (!grid) return;
   const scan = mprScan();
   if (sel) { sel.innerHTML = S.ct.storage.map(s => '<option value="' + s.id + '"' + (scan && s.id === scan.id ? ' selected' : '') + '>' + s.label + '</option>').join(''); sel.disabled = !S.ct.storage.length; }
+  // recon picker: the planned reconstructions stored with this scan group
+  const rp = ctx.$('ctReconPick');
+  if (rp) {
+    const list = (scan && scan.recons) || [];
+    if (list.length && !list.some(r => r.id === S.ct.mpr.reconId)) S.ct.mpr.reconId = list[0].id;
+    rp.innerHTML = list.map(r => '<option value="' + r.id + '"' + (r.id === S.ct.mpr.reconId ? ' selected' : '') + '>' + r.name + '</option>').join('');
+    rp.disabled = !list.length;
+  }
   const empty = ctx.$('ctMprEmpty');
   if (!scan) { if (empty) empty.style.display = 'flex'; PANES.forEach(p => { const c = ctx.$('mprCanvas_' + p); if (c) { c.width = c.height = 2; c.getContext('2d').clearRect(0, 0, 2, 2); } }); return; }
   if (empty) empty.style.display = 'none';
@@ -2906,7 +2923,18 @@ function wireRecons() {
       m.ob.view = pane; m.ob.cu = ab.cu; m.ob.cv = ab.cv; m.ob.ang = 0; clampOb(scan); m.sel = 'oblique'; ctRenderRecons();
     });
   });
-  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.cur = null; ctRenderRecons(); });
+  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.cur = null; ctx.S.ct.mpr.reconId = null; ctRenderRecons(); });
+  // pick one of the scan group's planned reconstructions → apply its plane/thickness/algo/MAR/window
+  ctx.$('ctReconPick')?.addEventListener('change', (e) => {
+    const scan = mprScan(); if (!scan) return;
+    const r = (scan.recons || []).find(x => x.id === +e.target.value); if (!r) return;
+    const m = ctx.S.ct.mpr;
+    m.reconId = r.id; m.sel = r.pane || 'axial';
+    m.thk = Math.max(r.minThk || 0.625, r.thk || m.thk);
+    m.algo = r.algo || 'standard'; m.mar = !!r.mar;
+    if (r.wl != null) m.wl = r.wl; if (r.ww != null) m.ww = r.ww;
+    ctRenderRecons();
+  });
   ctx.$('ctMprAlgo')?.addEventListener('change', (e) => { ctx.S.ct.mpr.algo = e.target.value; ctRenderRecons(); });
   ctx.$('ctMprThk')?.addEventListener('change', (e) => { const s = mprScan(); const mn = s ? scanMinThk(s) : 0.625; ctx.S.ct.mpr.thk = Math.max(mn, sanitizeNum(e.target.value, ctx.S.ct.mpr.thk)); ctRenderRecons(); });
   ctx.$('ctMprMar')?.addEventListener('click', () => { ctx.S.ct.mpr.mar = !ctx.S.ct.mpr.mar; ctRenderRecons(); });
