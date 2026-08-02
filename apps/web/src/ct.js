@@ -259,7 +259,10 @@ export function ctSyncScene() {
     // model that's its lower AP extent (half its AP depth); the analytic hand uses ~0.4.
     const backDrop = S.voxelModel ? (S.voxelModel.extentMM[1] / 2) / MM_PER_UNIT : 0.4;
     couch.position.y = py - backDrop;
-    couch.position.z = 0;                               // base; animateTableTravel drives it
+    // the patient LIES ON the couch — they are one rigid body: the couch tracks the
+    // patient in x (lateral) and z (in/out) so they always move together.
+    couch.position.x = S.ct.patient.x;
+    couch.position.z = S.ct.patient.z;
     // gantry + lasers stay fixed at the isocentre (only the couch + patient move)
     gantry.position.set(0, 0, 0);
     laserTop.position.set(0, ISO_Y + BORE_R + 8, 0); laserTop.target.position.set(0, ISO_Y, 0);
@@ -395,12 +398,12 @@ function wireCTSettings() {
   // direction pad — nudge the patient/couch (10 mm/press); hold to auto-repeat
   const STEP = 1;                       // world unit per press (= 10 mm)
   wireHoldRepeat($('ctDpad'), 'button[data-dir]', (b) => {
-    const p = S.ct.patient, dmm = STEP * MM_PER_UNIT;
+    const p = S.ct.patient, dmm = STEP * MM_PER_UNIT, xLim = maxPatientX();
     switch (b.dataset.dir) {
       case 'up':    p.z -= STEP; S.ct.tablePos += dmm; break;   // table into the gantry (+I)
       case 'down':  p.z += STEP; S.ct.tablePos -= dmm; break;   // table out (-S)
-      case 'left':  p.x -= STEP; break;
-      case 'right': p.x += STEP; break;
+      case 'left':  p.x = Math.max(-xLim, p.x - STEP); break;   // clamp so the couch clears the bore
+      case 'right': p.x = Math.min(xLim, p.x + STEP); break;
     }
     S.ct.isocentred = false;
     ctx.syncScene(); updateCTReadouts(); updateConsoleFlash();
@@ -559,7 +562,7 @@ async function acquireScouts() {
   const alive = () => tok === scoutToken;
   setPhase('scout');                  // greys out the 3D view; scout window owns the bay
   setConsoleEnabled(false);
-  resetToIsocentre();                 // compute the scouts from the isocentre position
+  resetToScanStart();                 // compute the scouts from the SCOUT START (not the isocentre)
   let ap, lat;
   try {
     ap = await scoutProjection('AP');
@@ -592,6 +595,8 @@ async function acquireScouts() {
   setConsoleEnabled(true);
 }
 
+// Table-position ↔ patient-z mapping (after zeroing, tablePos = (isoZ − patient.z)·MM).
+function tablePosToPatientZ(tp) { return ctx.S.ct.isoZ - tp / MM_PER_UNIT; }
 // Put the patient/couch back at the isocentre (table 0) before an acquisition.
 function resetToIsocentre() {
   const { S } = ctx;
@@ -599,6 +604,26 @@ function resetToIsocentre() {
   S.ct.tablePos = 0;
   ctx.syncScene();               // applies patient.z, resets the bed
   updateCTReadouts();
+}
+// Position the patient/couch at the SCOUT start (the topogram's superior edge) so the
+// scout physically begins there (e.g. S120 above a sternal-notch zero), not at the
+// isocentre. This is why Move to Scan must run before the scout is acquired.
+function resetToScanStart() {
+  const { S } = ctx;
+  S.ct.patient.z = tablePosToPatientZ(scanStartMM());
+  S.ct.tablePos = scanStartMM();
+  ctx.syncScene();
+  updateCTReadouts();
+}
+// Largest lateral (x) offset that keeps the couch clear of the bore wall: the bore is a
+// cylinder of radius BORE_R about the isocentre; at the couch's height the horizontal
+// clearance is √(BORE_R² − Δy²), and the couch half-width + a margin must fit inside it.
+function backDropU() { return ctx.S.voxelModel ? (ctx.S.voxelModel.extentMM[1] / 2) / MM_PER_UNIT : 0.4; }
+function maxPatientX() {
+  const COUCH_HALF = 25, MARGIN = 1.5;                 // couch rail half-width (world units)
+  const yc = ctPatientY() - backDropU();               // couch surface height
+  const clr = Math.sqrt(Math.max(0, BORE_R * BORE_R - (ISO_Y - yc) * (ISO_Y - yc)));
+  return Math.max(0, clr - COUCH_HALF - MARGIN);
 }
 
 // One animated acquisition: breathe-in, 1s hold, exposure (buzz + table travel
@@ -608,7 +633,7 @@ async function runScoutExposure(view, data, alive = () => true) {
   const cv = ctx.$(view === 'AP' ? 'scoutAP' : 'scoutLAT');
   ctx.setCTPov(view === 'AP' ? 'ap' : 'lat');   // watch each pass from its own perspective
   Sound.resume();
-  resetToIsocentre();
+  resetToScanStart();                                      // each pass begins at the scout start
   drawScout(cv, data, 0);                                   // start from a blank field
   setHint(view + ' scout · breathe in and hold…');
   Sound.play('breathIn');
@@ -636,14 +661,15 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
   return new Promise(res => {
     const three = ctx.three, S = ctx.S;
     const travelU = scanLenU();                        // world units to travel
-    const startHandZ = three.handGroup.position.z, startCouchZ = couch.position.z;
+    const startPatZ = S.ct.patient.z;                  // begins at the scout start (Move to Scan put it there)
     const tpEnd = S.ct.scanLen;                        // mm, inferior (+I)
     const t0 = performance.now();
     let done = false;
     const apply = (t) => {
       const dz = -travelU * t;                         // travel into the bore (-z)
-      three.handGroup.position.z = startHandZ + dz;
-      couch.position.z = startCouchZ + dz;             // couch moves; gantry stays fixed
+      S.ct.patient.z = startPatZ + dz;                 // patient + couch feed as one rigid body
+      three.handGroup.position.z = S.ct.patient.z;
+      couch.position.z = S.ct.patient.z;               // gantry stays fixed
       S.ct.tablePos = scanStartMM() + tpEnd * t;       // live table position (landmark-relative)
       updateCTReadouts();
       if (onFrame) onFrame(t);
@@ -660,18 +686,16 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
   });
 }
 
-// Glide the couch to a specific table position (mm) with the motor sound — used by the
-// "Move to Scan" button so pressing START doesn't jump the couch. Same mapping as the
-// travel animation (+tablePos feeds into the bore, -z).
+// Glide the patient+couch to a specific table position (mm) with the motor sound — used
+// by "Move to Scan". Drives patient.z (the single source of truth), so the physical
+// position actually changes (the scout/scan then begins there); the couch tracks it.
 let movingToScan = false;
 function moveTableTo(targetMM, dur = 1100) {
   const three = ctx.three, S = ctx.S;
   if (movingToScan || S.ct.phase === 'scanning' || S.ct.phase === 'scouting') return Promise.resolve();
   return new Promise(res => {
-    const startTP = S.ct.tablePos;
-    const startHandZ = three.handGroup.position.z, startCouchZ = couch.position.z;
-    const deltaU = (targetMM - startTP) / MM_PER_UNIT;
-    if (Math.abs(deltaU) < 1e-3) { res(); return; }
+    const startPatZ = S.ct.patient.z, endPatZ = tablePosToPatientZ(targetMM);
+    if (Math.abs(endPatZ - startPatZ) < 1e-3) { res(); return; }
     movingToScan = true;
     // mirror the couch glide into the DR monitor (lateral PoV) so the model is visibly
     // moving even from the scan-planning (Image) view — same mechanism as TABLE reposition
@@ -682,9 +706,9 @@ function moveTableTo(targetMM, dur = 1100) {
     const ease = (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2);
     const finish = () => { if (done) return; done = true; ctx.Sound && ctx.Sound.stopTableSound && ctx.Sound.stopTableSound(); movingToScan = false; S.ct.moveBlit = null; res(); };
     const snap = (e) => {
-      const dz = -deltaU * e;
-      three.handGroup.position.z = startHandZ + dz; couch.position.z = startCouchZ + dz;
-      S.ct.tablePos = startTP + (targetMM - startTP) * e; updateCTReadouts();
+      S.ct.patient.z = startPatZ + (endPatZ - startPatZ) * e;
+      three.handGroup.position.z = S.ct.patient.z; couch.position.z = S.ct.patient.z;   // patient + couch move as one
+      S.ct.tablePos = (S.ct.isoZ - S.ct.patient.z) * MM_PER_UNIT; updateCTReadouts();
     };
     (function step() {
       if (done) return;
@@ -1628,9 +1652,10 @@ async function scanGroupExposure(g, i, alive) {
 
 // Step the couch (bed + patient) to a table position (mm inferior) as its slice is acquired.
 function moveCouchTo(d) {
-  const three = ctx.three, S = ctx.S, isoZ = S.ct.isoZ, dz = -(d / MM_PER_UNIT);
+  const three = ctx.three, S = ctx.S;
+  S.ct.patient.z = tablePosToPatientZ(d);              // patient + couch step together
   S.ct.tablePos = d;
-  three.handGroup.position.z = isoZ + dz; couch.position.z = dz;
+  three.handGroup.position.z = S.ct.patient.z; couch.position.z = S.ct.patient.z;
   updateCTReadouts();
 }
 
@@ -1779,7 +1804,10 @@ async function reconstructSlices(g, alive, onProgress, onSlice) {
   const muW = voxel ? BodyMaterials.muWater(effE) : mu.soft;   // HU reference (water for voxel, soft for hand)
   const fovMM = groupDFOV(g);                     // DFOV = scan box diameter (box centre reposed to isocentre)
   const geo = reconGeo(fovMM, 0, ISO_Y);
-  const startMM = g.box.top * ctx.S.ct.scanLen, endMM = g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
+  // slice table positions are landmark-relative (scanStart + box fraction · length) so the
+  // recon reconstructs exactly the anatomy the box selects on the (scanStart-offset) scout
+  const off = scanStartMM();
+  const startMM = off + g.box.top * ctx.S.ct.scanLen, endMM = off + g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
   const count = Math.max(1, Math.min(MAX_SLICES, groupImages(g)));   // one slice per planned image
   const positions = [];
   for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
