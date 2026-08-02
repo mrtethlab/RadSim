@@ -2033,13 +2033,13 @@ function moveCouchTo(d) {
 // the axial viewer's window; the render loop leaves #film alone while scanning.
 function drawScanPreview(mu, meta, si, count, preview) {
   const f = ctx.$('film'); if (!f) return;
-  const N = meta.gridN, muW = meta.muWater, v = ctx.S.ct.viewer, c = N / 2, R2 = c * c;
+  const N = meta.gridN, muW = meta.muWater, v = ctx.S.ct.viewer;
   if (f.width !== N || f.height !== N) { f.width = N; f.height = N; }
   const g = f.getContext('2d'), im = g.createImageData(N, N), d8 = im.data;
   for (let iy = 0; iy < N; iy++) { const sy = N - 1 - iy;
     for (let ix = 0; ix < N; ix++) {
-      const o = (iy * N + ix) * 4, dx = ix - c + 0.5, dy = sy - c + 0.5;
-      let val; if (dx * dx + dy * dy > R2) val = 0; else { const hu = 1000 * (mu[sy * N + ix] - muW) / muW; val = Math.round(255 * huToGray(hu, v.wl, v.ww)); }
+      const o = (iy * N + ix) * 4, m = mu[sy * N + ix];       // NaN = outside the reconstructed disc → black
+      const val = Number.isNaN(m) ? 0 : Math.round(255 * huToGray(1000 * (m - muW) / muW, v.wl, v.ww));
       d8[o] = d8[o + 1] = d8[o + 2] = val; d8[o + 3] = 255;
     } }
   g.putImageData(im, 0, 0);
@@ -2269,11 +2269,13 @@ function backproject(q, geo) {
   const halfDet = (nDet - 1) / 2;
   const img = new Float32Array(N * N);
   const px2world = (i) => (-R + (i + 0.5) * (2 * R / N));   // pixel centre → world offset from FOV centre
-  // Reconstruct the FULL display-FOV square (the framed box), not just the inscribed circle:
-  // clip only at the SFOV radius, where the rays actually run out of data. Otherwise anatomy in
-  // the box corners is framed but clipped ("the DFOV contains it but it clips"). The rays already
-  // integrate over the SFOV, so the corners have valid data as long as they sit inside it.
-  const R2 = geo.rayR * geo.rayR;
+  // The reconstructed image is a CIRCLE, not a masked square: back-projection only reconstructs
+  // the disc where every view has data. That disc is the DFOV (the chosen reconstruction circle,
+  // radius R), capped by the SFOV (rayR) if a larger DFOV than the measured field was requested.
+  // Pixels outside it are never reconstructed — they are marked NaN ("no data") below, and every
+  // consumer renders no-data as black. The circular view is thus a RESULT of the reconstruction,
+  // not a cosmetic overlay. (The rays still integrate the full SFOV, so no truncation cupping.)
+  const clipR = Math.min(R, geo.rayR), R2 = clipR * clipR;
   for (let a = 0; a < nAng; a++) {
     const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th), base = a * nDet;
     for (let iy = 0; iy < N; iy++) {
@@ -2290,7 +2292,13 @@ function backproject(q, geo) {
     }
   }
   const scale = Math.PI / nAng;
-  for (let i = 0; i < img.length; i++) img[i] *= scale;
+  for (let iy = 0; iy < N; iy++) {
+    const wy = px2world(iy), rowo = iy * N;
+    for (let ix = 0; ix < N; ix++) {
+      const wx = px2world(ix);
+      img[rowo + ix] = (wx * wx + wy * wy > R2) ? NaN : img[rowo + ix] * scale;   // outside the disc = not reconstructed
+    }
+  }
   return img;
 }
 
@@ -2507,15 +2515,14 @@ function drawSliceToCanvas(cv, scan, sl, wl, ww) {
   const N = scan.gridN, muW = scan.muWater;
   if (cv.width !== N || cv.height !== N) { cv.width = N; cv.height = N; }
   const g = cv.getContext('2d'), im = g.createImageData(N, N), d = im.data;
-  const c = N / 2, R2 = c * c;
   for (let iy = 0; iy < N; iy++) {
     const srcY = N - 1 - iy;                     // flip so +world-y is at the top of the image
     for (let ix = 0; ix < N; ix++) {
       const o = (iy * N + ix) * 4;
-      const dx = ix - c + 0.5, dy = srcY - c + 0.5;
-      let val;
-      if (dx * dx + dy * dy > R2) val = 0;       // circular FOV (reconstruction cylinder)
-      else { const mu = sl.mu[srcY * N + ix]; const hu = 1000 * (mu - muW) / muW; val = Math.round(255 * huToGray(hu, wl, ww)); }
+      const mu = sl.mu[srcY * N + ix];
+      // NaN = outside the reconstructed disc (never back-projected) → black. The circular field
+      // of view is the shape of the reconstructed data itself, not a mask drawn over a square.
+      const val = Number.isNaN(mu) ? 0 : Math.round(255 * huToGray(1000 * (mu - muW) / muW, wl, ww));
       d[o] = d[o + 1] = d[o + 2] = val; d[o + 3] = 255;
     }
   }
@@ -2576,11 +2583,11 @@ export function ctRenderViewer() {
 function updateCtHistogram(scan, sl, wl, ww) {
   const cv = ctx.$('ctHist'); if (!cv || !ctx.drawHistogram) return;
   if (!ctx.S.showHist || !scan || !sl) { cv.getContext('2d').clearRect(0, 0, cv.width, cv.height); return; }
-  const N = scan.gridN, muW = scan.muWater, c = N / 2, R2 = c * c;
+  const N = scan.gridN, muW = scan.muWater;
   const HLO = -1000, HHI = 2000, span = HHI - HLO, hist = new Uint32Array(256);
   for (let iy = 0; iy < N; iy++) for (let ix = 0; ix < N; ix++) {
-    const dx = ix - c + 0.5, dy = iy - c + 0.5; if (dx * dx + dy * dy > R2) continue;
-    const hu = 1000 * (sl.mu[iy * N + ix] - muW) / muW;
+    const mu = sl.mu[iy * N + ix]; if (Number.isNaN(mu)) continue;   // outside the reconstructed disc
+    const hu = 1000 * (mu - muW) / muW;
     let b = Math.round((hu - HLO) / span * 255); hist[b < 0 ? 0 : b > 255 ? 255 : b]++;
   }
   const lo = wl - ww / 2;
@@ -2625,9 +2632,9 @@ function slab(scan, axis, x, yrel, d, ns, step, algo) {
     if (isNaN(v)) continue;
     if (algo === 'mip') acc = Math.max(acc, v); else if (algo === 'minip') acc = Math.min(acc, v); else { acc += v; cnt++; }
   }
-  if (algo === 'mip') return acc === -Infinity ? 0 : acc;
-  if (algo === 'minip') return acc === Infinity ? 0 : acc;
-  return cnt ? acc / cnt : 0;
+  if (algo === 'mip') return acc === -Infinity ? NaN : acc;
+  if (algo === 'minip') return acc === Infinity ? NaN : acc;
+  return cnt ? acc / cnt : NaN;                     // no reconstructed samples in the slab → no data
 }
 // Shared volume geometry for the linked MPR grid: in-plane pixel size, the z-extent,
 // and the isotropic vertical pixel count for the coronal/sagittal (x/y-z) reformats.
@@ -2679,7 +2686,7 @@ function paneImage(scan, pane, cur, prm) {
         if (isNaN(val)) continue;
         if (prm.algo === 'mip') acc = Math.max(acc, val); else if (prm.algo === 'minip') acc = Math.min(acc, val); else { acc += val; cnt++; }
       }
-      data[j * w + i] = prm.algo === 'mip' ? (acc === -Infinity ? 0 : acc) : prm.algo === 'minip' ? (acc === Infinity ? 0 : acc) : (cnt ? acc / cnt : 0);
+      data[j * w + i] = prm.algo === 'mip' ? (acc === -Infinity ? NaN : acc) : prm.algo === 'minip' ? (acc === Infinity ? NaN : acc) : (cnt ? acc / cnt : NaN);
     }
   }
   if (prm.algo === 'blur') data = filter2D(data, w, h, 'blur');
@@ -2691,11 +2698,14 @@ function paneImage(scan, pane, cur, prm) {
 function filter2D(src, w, h, kind) {
   const out = new Float32Array(w * h);
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const v = src[y * w + x];
+    if (Number.isNaN(v)) { out[y * w + x] = NaN; continue; }          // keep no-data holes
     let s = 0, n = 0;
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-      const yy = y + dy, xx = x + dx; if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue; s += src[yy * w + xx]; n++;
+      const yy = y + dy, xx = x + dx; if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue;
+      const u = src[yy * w + xx]; if (Number.isNaN(u)) continue; s += u; n++;
     }
-    const blur = s / n, v = src[y * w + x];
+    const blur = n ? s / n : v;
     out[y * w + x] = kind === 'blur' ? blur : v + 0.9 * (v - blur);   // edge = unsharp mask
   }
   return out;
@@ -2705,12 +2715,13 @@ function filter2D(src, w, h, kind) {
 function applyMAR(data, w, h, muW) {
   const cap = muW * 2.6;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    const i = y * w + x; if (data[i] <= cap) continue;
+    const i = y * w + x; if (Number.isNaN(data[i]) || data[i] <= cap) continue;
     let s = 0, n = 0;
     for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
-      const yy = y + dy, xx = x + dx; if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue; s += Math.min(data[yy * w + xx], cap); n++;
+      const yy = y + dy, xx = x + dx; if (yy < 0 || yy >= h || xx < 0 || xx >= w) continue;
+      const u = data[yy * w + xx]; if (Number.isNaN(u)) continue; s += Math.min(u, cap); n++;
     }
-    data[i] = 0.5 * cap + 0.5 * (s / n);
+    if (n) data[i] = 0.5 * cap + 0.5 * (s / n);
   }
 }
 function drawReconData(cv, res, muW, wl, ww) {
@@ -2718,7 +2729,8 @@ function drawReconData(cv, res, muW, wl, ww) {
   if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
   const g = cv.getContext('2d'), im = g.createImageData(w, h), d8 = im.data;
   for (let i = 0; i < data.length; i++) {
-    const hu = 1000 * (data[i] - muW) / muW, v = Math.round(255 * huToGray(hu, wl, ww)), o = i * 4;
+    const m = data[i], o = i * 4;                 // NaN = outside the reconstructed disc → black
+    const v = Number.isNaN(m) ? 0 : Math.round(255 * huToGray(1000 * (m - muW) / muW, wl, ww));
     d8[o] = d8[o + 1] = d8[o + 2] = v; d8[o + 3] = 255;
   }
   g.putImageData(im, 0, 0);

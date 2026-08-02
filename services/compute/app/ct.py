@@ -147,9 +147,12 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     # backprojection grid over the DISPLAY FOV
     px = (-dfov_r + (torch.arange(N, device=DEVICE, dtype=torch.float32) + 0.5) * (2 * dfov_r / N))
     wy, wx = torch.meshgrid(px, px, indexing="ij")             # (N, N); wy rows = iy
-    # reconstruct the FULL display-FOV square (the framed box), clipping only at the SFOV radius
-    # where the rays run out of data — so anatomy in the box corners isn't clipped (mirrors ct.js).
-    in_fov = (wx * wx + wy * wy) <= ray_r * ray_r
+    # The reconstructed image is a CIRCLE, not a masked square: back-projection reconstructs only
+    # the disc where every view has data — the DFOV (radius dfov_r), capped by the SFOV (ray_r) if
+    # a larger DFOV than the measured field was requested. Outside → not reconstructed → NaN (the
+    # client renders no-data as black). The circular view is a RESULT of the recon (mirrors ct.js).
+    disc_r = min(dfov_r, ray_r)
+    in_fov = (wx * wx + wy * wy) <= disc_r * disc_r
 
     out = np.empty((len(z0_list), N, N), dtype=np.float32)
     for zi, z0 in enumerate(z0_list):
@@ -210,7 +213,7 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
             v1 = torch.gather(rows, 1, (k0c + 1).reshape(a1 - a0, -1)).reshape(a1 - a0, N, N)
             img += ((v0 * (1 - f) + v1 * f) * ok).sum(dim=0)
         img *= math.pi / n_ang
-        img[~in_fov] = 0.0
+        img[~in_fov] = float("nan")               # outside the reconstructed disc = no data
         out[zi] = img.cpu().numpy()
     return out
 
