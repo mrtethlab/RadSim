@@ -2012,17 +2012,22 @@ function buildKernel(ds, N, shepp) {
 // Returns cone rays as {k = z-slope, w = weight}; a single untilted ray (nSub=1 or no collimation)
 // collapses to the old single-slice (SSCT) geometry. A z-uniform object leaves every ray's
 // transmission unchanged, so HU and uniform regions are unaffected.
-const ONE_RAY = [{ k: 0, w: 1 }];
+const ONE_RAY = [{ k: 0, dz: 0, w: 1 }];
 const CT_SAD = 57.0;                 // source–axis distance, world units (570 mm)
-function coneProfile(collimU, nSub) {
-  if (!(nSub > 1) || !(collimU > 0)) return ONE_RAY;
-  const tanG = (collimU / 2) / CT_SAD;                     // cone half-angle tangent (from beam collimation)
+// Each detector row contributes both a z-OFFSET (across the reconstructed slice thickness →
+// partial-volume z-averaging) and a z-TILT (the cone divergence → cross-slice bleed). thkU sets
+// the slice thickness; collimU (beam collimation) sets the cone angle. Returns rays {k, dz, w}.
+function coneProfile(collimU, thkU, nSub) {
+  const halfThk = thkU > 0 ? thkU / 2 : 0;                 // reconstructed slice half-thickness
+  const tanG = collimU > 0 ? (collimU / 2) / CT_SAD : 0;   // cone half-angle tangent
+  if (!(nSub > 1) || (halfThk === 0 && tanG === 0)) return ONE_RAY;
   const prof = []; let sum = 0;
   for (let i = 0; i < nSub; i++) {
     const zrow = -1 + 2 * i / (nSub - 1);                  // normalised detector row ∈ [-1, 1]
-    const k = zrow * tanG;                                 // ray z-slope for this row
-    const w = Math.exp(-(zrow * 1.5) * (zrow * 1.5) / 2);  // beam profile across the collimation (rolls off at the edges)
-    prof.push({ k, w }); sum += w;
+    const k = zrow * tanG;                                 // z-slope (cone tilt → cross-slice bleed)
+    const dz = zrow * halfThk;                             // z-offset (slice thickness → partial volume)
+    const w = Math.exp(-(zrow * 1.5) * (zrow * 1.5) / 2);  // beam profile across the collimation
+    prof.push({ k, dz, w }); sum += w;
   }
   for (const s of prof) s.w /= sum;
   return prof;
@@ -2055,7 +2060,7 @@ function projectSlice(phantom, z0, mu, photons0, geo, cone) {
       let Tr = 0;
       for (let ci = 0; ci < ncn; ci++) {
         const kz = cn[ci].k;
-        const o = [ox, oy, z0 - kz * RR];               // centre the z-tilt on z0 at mid-ray (isocentre)
+        const o = [ox, oy, z0 + cn[ci].dz - kz * RR];   // slice-thickness offset + cone tilt centred on z0 at iso
         const d = [-st, ct, kz];                        // z-divergent ray direction
         let Ts;
         if (poly) {
@@ -2271,7 +2276,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   const mu = bh ? setup.mu : { ...setup.mu, muMat: null, bhc: null };   // strip poly data when beam hardening is off
   const geo = reconGeo(fovMM, 0, ISO_Y, sfovMM);
   const photons0 = feat.quantumNoise ? photonsFor(g, geo) : 0;
-  const cone = feat.coneBeam ? coneProfile(g.beamColl / MM_PER_UNIT, geo.m.zSub || 1) : ONE_RAY;
+  const cone = feat.coneBeam ? coneProfile(g.beamColl / MM_PER_UNIT, g.sliceThk / MM_PER_UNIT, geo.m.zSub || 1) : ONE_RAY;
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
   // slice is emitted via onSlice as it completes so the scan shows the images coming
@@ -2290,8 +2295,8 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
                      kernel: geo.m.fixedPitch ? 'shepp' : 'ramlak',
                      rot: phantom.rot ? Array.from(phantom.rot) : null,
                      muArr: Array.from(mu.arr), photons0,
-                     // cone-beam rays (z-divergence): [k = z-slope, weight]; ONE_RAY when cone beam is off
-                     coneRays: cone.map(s => [s.k, s.w]),
+                     // cone rays: [k = z-slope (cone tilt), dz = z-offset (slice thickness), weight]
+                     coneRays: cone.map(s => [s.k, s.dz, s.w]),
                      focalBlur: blurOn };
       // polyenergetic beam-hardening data (only when the feature is on → GPU takes the poly path)
       if (bh) { base.binsW = mu.bins; base.muMat = mu.muMat.map(r => Array.from(r));

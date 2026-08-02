@@ -122,9 +122,9 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
         bhc_x, bhc_y, bhc_slope = _build_bhc(binW,
             torch.tensor(p["muWbins"], dtype=torch.float32, device=DEVICE), float(p["muWeff"]))
     z0_list = [float(z) for z in p["z0List"]]
-    # cone-beam rays: (k, weight) — k is the ray's z-slope (z-divergence set by the beam
-    # collimation). >1 entry → cone integration (cross-slice artifact bleed); mirrors ct.js.
-    cone_rays = [(float(k), float(w)) for k, w in (p.get("coneRays") or [[0.0, 1.0]])]
+    # cone rays: (k, dz, weight) — k = z-slope (cone tilt → cross-slice bleed), dz = z-offset
+    # (across the reconstructed slice thickness → partial volume). Mirrors ct.js coneProfile.
+    cone_rays = [(float(k), float(dz), float(w)) for k, dz, w in (p.get("coneRays") or [[0.0, 0.0, 1.0]])]
     focal_blur = bool(p.get("focalBlur", True))        # detector/focal-spot blur (feathery streaks) toggle
     rot = rot_tensor(p.get("rot"))
 
@@ -165,8 +165,8 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
             pxr = ox[a0:a1].unsqueeze(2) + dx[a0:a1].unsqueeze(2) * ts        # (a, K, S)
             pyr = oy[a0:a1].unsqueeze(2) + dy[a0:a1].unsqueeze(2) * ts
             Tcone = torch.zeros(a1 - a0, n_det, device=DEVICE)                # cone-integrated transmission
-            for kz, wz in cone_rays:
-                zt = (z0 + kz * (ts - ray_r)).view(1, 1, -1).expand_as(pxr)   # (a, K, S) z tilted along the ray
+            for kz, dz, wz in cone_rays:
+                zt = (z0 + dz + kz * (ts - ray_r)).view(1, 1, -1).expand_as(pxr)  # slice-thickness offset + cone tilt
                 pts = torch.stack([pxr, pyr, zt], dim=-1)                     # (a, K, S, 3)
                 ids = sample_ids(vv, pts, center, rot)
                 if poly:
