@@ -749,6 +749,20 @@ body.hist-off .histcanvas{display:none}
 .mpr-tgl{background:var(--panel2); border:1px solid var(--edge2); color:var(--muted); font-family:var(--seg);
   font-size:10px; letter-spacing:.5px; padding:6px 10px; border-radius:3px; cursor:pointer}
 .mpr-tgl.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
+/* recon windows: centred New/Select overlay (always on an empty window; on hover when filled) */
+.mpr-pane .rw-overlay{position:absolute; inset:0; z-index:3; display:flex; gap:10px; align-items:center;
+  justify-content:center; background:rgba(0,0,0,.4)}
+.mpr-pane.filled .rw-overlay{display:none}
+.mpr-pane.filled:hover .rw-overlay{display:flex; background:rgba(0,0,0,.3)}
+.rw-btn{font-family:var(--seg); font-size:11px; letter-spacing:.5px; padding:8px 12px; border-radius:4px; cursor:pointer;
+  background:rgba(20,30,42,.94); border:1px solid var(--edge2); color:#cfe8f2}
+.rw-btn:hover{border-color:var(--cyan); color:#fff}
+/* recon page bottom bar (Save recon + scan-group selector) + Phase-2 planner slot */
+.recon-bottom{flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:4px 4px 2px}
+.reconplan-live{flex:0 0 auto}
+.reconplan-live:empty{display:none}
+/* slice-viewer: scan-group selector row at the bottom */
+.slbottom{margin-top:2px}
 
 /* ---- CT image-storage panel (right column) ---- */
 .cttoggle{display:flex; align-items:center; gap:9px; cursor:pointer; font-size:13.5px; color:var(--txt)}

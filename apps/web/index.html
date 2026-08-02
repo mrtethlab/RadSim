@@ -53,7 +53,6 @@
     <div class="ctslices" id="ctSlices">
       <div class="slhdr">
         <div class="sltitle">CROSS-SECTIONAL VIEWER · TRANSVERSE</div>
-        <select id="ctScanSel" class="slsel" title="Stored scan"></select>
       </div>
       <div class="slmain">
         <div class="slcanvaswrap">
@@ -79,36 +78,31 @@
             <button data-wl="-600" data-ww="1500">Lung</button>
           </div>
         </div>
-      </div>
-    </div>
-    <!-- CT reconstruction: linked 2x2 multiplanar workstation -->
-    <div class="ctrecons" id="ctRecons">
-      <div class="mpr-grid" id="ctMprGrid">
-        <div class="mpr-pane" id="mprPane_coronal" data-pane="coronal"><canvas id="mprCanvas_coronal"></canvas><div class="mpr-lbl"></div></div>
-        <div class="mpr-pane" id="mprPane_sagittal" data-pane="sagittal"><canvas id="mprCanvas_sagittal"></canvas><div class="mpr-lbl"></div></div>
-        <div class="mpr-pane" id="mprPane_axial" data-pane="axial"><canvas id="mprCanvas_axial"></canvas><div class="mpr-lbl"></div></div>
-        <div class="mpr-pane" id="mprPane_oblique" data-pane="oblique"><canvas id="mprCanvas_oblique"></canvas><div class="mpr-lbl"></div></div>
-        <div class="mpr-empty" id="ctMprEmpty">No scans stored — run a scan first, then plan reconstructions here.</div>
-      </div>
-      <div class="mpr-bar">
-        <select id="ctReconScanSel" class="slsel" title="Stored scan"></select>
-        <span class="sllab">Recon</span>
-        <select id="ctReconPick" class="slsel" title="Planned reconstruction from this scan group"></select>
-        <span class="sllab">Algo</span>
-        <select id="ctMprAlgo" class="slsel">
-          <option value="standard">Average</option><option value="edge">Edge</option><option value="blur">Blur</option><option value="mip">MIP</option><option value="minip">MinIP</option>
-        </select>
-        <span class="sllab">Thk</span><input id="ctMprThk" class="mpr-num" type="text" value="5"><span class="sllab" style="min-width:0">mm</span>
-        <button id="ctMprMar" class="mpr-tgl" type="button">MAR OFF</button>
-        <button id="ctMprObl" class="mpr-tgl on" type="button">OBLIQUE ON</button>
-        <span class="sllab">Level</span><input type="range" id="ctReconWL" min="-1000" max="2000" value="60">
-        <span class="sllab">Window</span><input type="range" id="ctReconWW" min="1" max="4000" value="800">
-        <div class="segmini" id="ctReconWLPresets">
-          <button data-wl="43" data-ww="80">Brain</button>
-          <button data-wl="60" data-ww="400">Soft</button>
-          <button data-wl="500" data-ww="2000">Bone</button>
+        <div class="slrow slbottom">
+          <span class="sllab">Scan group</span>
+          <select id="ctScanSel" class="slsel" title="Stored scan / group"></select>
         </div>
       </div>
+    </div>
+    <!-- CT reconstruction: 4 independent recon windows (each shows a pre-computed reconstruction) -->
+    <div class="ctrecons" id="ctRecons">
+      <div class="mpr-grid" id="ctMprGrid">
+        <div class="mpr-pane" id="mprWin_0" data-win="0"><canvas id="mprCanvas_0"></canvas><div class="mpr-lbl"></div>
+          <div class="rw-overlay"><button class="rw-btn rw-new" data-win="0">＋ New recon</button><button class="rw-btn rw-sel" data-win="0">☰ Select recon</button></div></div>
+        <div class="mpr-pane" id="mprWin_1" data-win="1"><canvas id="mprCanvas_1"></canvas><div class="mpr-lbl"></div>
+          <div class="rw-overlay"><button class="rw-btn rw-new" data-win="1">＋ New recon</button><button class="rw-btn rw-sel" data-win="1">☰ Select recon</button></div></div>
+        <div class="mpr-pane" id="mprWin_2" data-win="2"><canvas id="mprCanvas_2"></canvas><div class="mpr-lbl"></div>
+          <div class="rw-overlay"><button class="rw-btn rw-new" data-win="2">＋ New recon</button><button class="rw-btn rw-sel" data-win="2">☰ Select recon</button></div></div>
+        <div class="mpr-pane" id="mprWin_3" data-win="3"><canvas id="mprCanvas_3"></canvas><div class="mpr-lbl"></div>
+          <div class="rw-overlay"><button class="rw-btn rw-new" data-win="3">＋ New recon</button><button class="rw-btn rw-sel" data-win="3">☰ Select recon</button></div></div>
+        <div class="mpr-empty" id="ctMprEmpty">No scans stored — run a scan first, then plan reconstructions here.</div>
+      </div>
+      <div class="recon-bottom">
+        <button id="ctReconSave" class="mpr-tgl" type="button" title="Save a window's reconstruction to this scan group">Save recon</button>
+        <span class="sllab">Scan group</span>
+        <select id="ctReconScanSel" class="slsel" title="Stored scan / group"></select>
+      </div>
+      <div class="reconplan-live" id="ctReconPlanLive"></div>
     </div>
     <div class="ctpop" id="ctPop"><div class="ctpop-inner" id="ctPopInner"></div></div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>

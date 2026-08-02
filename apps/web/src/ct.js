@@ -2862,17 +2862,41 @@ function arrow(g, x, y, dx, dy, W) {                 // small arrowhead at (x,y)
 function mprScan() { const S = ctx.S; return S.ct.storage.find(s => s.id === S.ct.mpr.scanId) || S.ct.storage[S.ct.storage.length - 1] || null; }
 const PLANE_LABEL = { axial: 'AXIAL', coronal: 'CORONAL', sagittal: 'SAGITTAL', oblique: 'OBLIQUE' };
 const PLANE_COLOR = { x: '#3b82f6', y: '#22c55e', z: '#f5a623' };   // sagittal(x)=blue, coronal(y)=green, axial(z)=orange
-const PANES = ['coronal', 'sagittal', 'axial', 'oblique'];
+const WINS = [0, 1, 2, 3];                                    // four independent recon windows
 const algoLabel = (a) => (RECON_ALGOS.find(x => x[0] === a) || RECON_ALGOS[0])[1];
 const scanMinThk = (scan) => (scan.recons && scan.recons[0] ? scan.recons[0].minThk : scan.params.acqThk) || 0.625;
 
+// The recon object currently shown in window wi (saved or newly-created), or null (empty window).
+function winRecon(wi) { const w = ctx.S.ct.mpr.wins[wi]; return (w && w.recon) || null; }
+// Scroll axis + range (mm) for a recon's plane: which cross-reference coord its slices step along.
+function winAxis(scan, recon) {
+  const g = mprGeom(scan);
+  if (recon.pane === 'coronal') return { axis: 'y', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || scan.dz, 0.5) };
+  if (recon.pane === 'sagittal') return { axis: 'x', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || scan.dz, 0.5) };
+  return { axis: 'z', lo: g.z0, hi: g.z0 + g.zExt, step: Math.max(recon.interval || scan.dz, scan.dz) };   // axial
+}
+const winMid = (scan, recon) => { const a = winAxis(scan, recon); return (a.lo + a.hi) / 2; };
+// Build a cross-reference point for a window's current scroll position (the other axes centred).
+function winCur(scan, recon, pos) {
+  const g = mprGeom(scan), cur = { x: 0, y: 0, z: g.z0 + (scan.nz - 1) * scan.dz / 2 };
+  cur[winAxis(scan, recon).axis] = pos; return cur;
+}
+function winPosLabel(recon, pos) {
+  if (recon.pane === 'coronal') return 'A/P ' + (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
+  if (recon.pane === 'sagittal') return 'R/L ' + (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
+  return fmtTablePos(pos) + ' mm';
+}
+// Populate the four windows for a freshly-viewed scan: window 0 = the first planned reconstruction;
+// if the group also planned a coronal / sagittal recon, show those in windows 1 / 2. No cross-
+// referencing between windows — each is an independent static view (scroll re-renders only itself).
 function initMprForScan(scan) {
-  const m = ctx.S.ct.mpr, g = mprGeom(scan);
+  const m = ctx.S.ct.mpr, recons = scan.recons || [];
   m.scanId = scan.id;
-  m.cur = { x: 0, y: 0, z: scan.z0 + (scan.nz - 1) * scan.dz / 2 };
-  m.thk = scan.recons && scan.recons[0] ? scan.recons[0].thk : scan.params.sliceThk;
-  m.interval = scan.params.interval; m.algo = 'standard'; m.mar = false; m.sel = 'axial';
-  m.ob = { view: 'axial', ang: 0, cu: 0, cv: 0, fov: Math.max(20, g.fov * 0.85) };
+  const bind = (r) => r ? { recon: r, pos: winMid(scan, r), saved: true } : null;
+  const first = recons[0] || null;
+  const coronal = recons.find(r => r.pane === 'coronal' && r !== first) || null;
+  const sagittal = recons.find(r => r.pane === 'sagittal' && r !== first) || null;
+  m.wins = [bind(first), bind(coronal), bind(sagittal), null];
 }
 // ---- true-oblique plane geometry ----
 const v3add = (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -2917,62 +2941,42 @@ export function ctRenderRecons() {
   const S = ctx.S, grid = ctx.$('ctMprGrid'), sel = ctx.$('ctReconScanSel'); if (!grid) return;
   const scan = mprScan();
   if (sel) { sel.innerHTML = S.ct.storage.map(s => '<option value="' + s.id + '"' + (scan && s.id === scan.id ? ' selected' : '') + '>' + s.label + '</option>').join(''); sel.disabled = !S.ct.storage.length; }
-  // recon picker: the planned reconstructions stored with this scan group
-  const rp = ctx.$('ctReconPick');
-  if (rp) {
-    const list = (scan && scan.recons) || [];
-    if (list.length && !list.some(r => r.id === S.ct.mpr.reconId)) S.ct.mpr.reconId = list[0].id;
-    rp.innerHTML = list.map(r => '<option value="' + r.id + '"' + (r.id === S.ct.mpr.reconId ? ' selected' : '') + '>' + r.name + '</option>').join('');
-    rp.disabled = !list.length;
-  }
   const empty = ctx.$('ctMprEmpty');
-  if (!scan) { if (empty) empty.style.display = 'flex'; PANES.forEach(p => { const c = ctx.$('mprCanvas_' + p); if (c) { c.width = c.height = 2; c.getContext('2d').clearRect(0, 0, 2, 2); } }); return; }
+  if (!scan) {
+    if (empty) empty.style.display = 'flex';
+    WINS.forEach(wi => { const c = ctx.$('mprCanvas_' + wi); if (c) { c.width = c.height = 2; c.getContext('2d').clearRect(0, 0, 2, 2); } const p = ctx.$('mprWin_' + wi); if (p) p.classList.remove('filled'); });
+    return;
+  }
   if (empty) empty.style.display = 'none';
-  if (S.ct.mpr.scanId !== scan.id || !S.ct.mpr.cur) initMprForScan(scan);
+  if (S.ct.mpr.scanId !== scan.id || !Array.isArray(S.ct.mpr.wins)) initMprForScan(scan);
   S.ct.mpr.scanId = scan.id;
-  updateMprBar(scan);
-  PANES.forEach(p => drawPane(scan, p));
+  WINS.forEach(wi => drawReconWindow(scan, wi));
 }
-function updateMprBar(scan) {
-  const m = ctx.S.ct.mpr;
-  const al = ctx.$('ctMprAlgo'); if (al && al.value !== m.algo) al.value = m.algo;
-  const tk = ctx.$('ctMprThk'); if (tk && document.activeElement !== tk) tk.value = fmtNum(m.thk);
-  const mar = ctx.$('ctMprMar'); if (mar) { mar.classList.toggle('on', m.mar); mar.textContent = m.mar ? 'MAR ON' : 'MAR OFF'; }
-  const obl = ctx.$('ctMprObl'); if (obl) { obl.classList.toggle('on', m.obShow); obl.textContent = m.obShow ? 'OBLIQUE ON' : 'OBLIQUE OFF'; }
-  const opane = ctx.$('mprPane_oblique'); if (opane) opane.style.visibility = m.obShow ? 'visible' : 'hidden';
-  const wl = ctx.$('ctReconWL'), ww = ctx.$('ctReconWW'); if (wl) wl.value = m.wl; if (ww) ww.value = m.ww;
-}
-function paneLabelPos(scan, pane) {
-  const c = ctx.S.ct.mpr.cur;
-  if (pane === 'coronal') return 'A/P ' + (c.y >= 0 ? '+' : '') + Math.round(c.y) + ' mm';
-  if (pane === 'sagittal') return 'R/L ' + (c.x >= 0 ? '+' : '') + Math.round(c.x) + ' mm';
-  if (pane === 'oblique') { const ob = ctx.S.ct.mpr.ob; return PLANE_LABEL[ob.view] + ' ∠' + Math.round(ob.ang * 180 / Math.PI) + '° · DFOV ' + (ob.fov / 10).toFixed(1) + ' cm'; }
-  return fmtTablePos(c.z) + ' mm';
-}
+// Render one recon window: its bound recon reformatted ONCE at the window's scroll position — a
+// static view, nothing else re-renders. Empty windows show their New / Select overlay (via CSS).
 let _off = null;
-function drawPane(scan, pane) {
-  const paneEl = ctx.$('mprPane_' + pane), cv = ctx.$('mprCanvas_' + pane); if (!cv || !paneEl) return;
-  const m = ctx.S.ct.mpr, prm = { thk: m.thk, interval: m.interval, algo: m.algo, mar: m.mar, ob: m.ob };
+function drawReconWindow(scan, wi) {
+  const paneEl = ctx.$('mprWin_' + wi), cv = ctx.$('mprCanvas_' + wi); if (!cv || !paneEl) return;
+  const recon = winRecon(wi), w = ctx.S.ct.mpr.wins[wi];
   const rect = cv.getBoundingClientRect(), W = Math.max(2, Math.round(rect.width)), H = Math.max(2, Math.round(rect.height));
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
   const g = cv.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-  const img = paneImage(scan, pane, m.cur, prm);
+  paneEl.classList.toggle('filled', !!recon);
+  const lbl = paneEl.querySelector('.mpr-lbl');
+  if (!recon) { if (lbl) lbl.textContent = ''; return; }
+  if (w.pos == null) w.pos = winMid(scan, recon);
+  const pane = recon.pane || 'axial';
+  const prm = { thk: Math.max(recon.minThk || 0.625, recon.thk || 5), interval: recon.interval, algo: recon.algo || 'standard', mar: !!recon.mar };
+  const img = paneImage(scan, pane, winCur(scan, recon, w.pos), prm);
   if (!_off) _off = document.createElement('canvas');
   if (_off.width !== img.w || _off.height !== img.h) { _off.width = img.w; _off.height = img.h; }
   const octx = _off.getContext('2d'), oi = octx.createImageData(img.w, img.h), d8 = oi.data, muW = scan.muWater;
-  for (let i = 0; i < img.data.length; i++) { const hu = 1000 * (img.data[i] - muW) / muW, val = Math.round(255 * huToGray(hu, m.wl, m.ww)), o = i * 4; d8[o] = d8[o + 1] = d8[o + 2] = val; d8[o + 3] = 255; }
+  const wl = recon.wl != null ? recon.wl : 60, ww = recon.ww != null ? recon.ww : 800;
+  for (let i = 0; i < img.data.length; i++) { const v = img.data[i]; const val = Number.isNaN(v) ? 0 : Math.round(255 * huToGray(1000 * (v - muW) / muW, wl, ww)); const o = i * 4; d8[o] = d8[o + 1] = d8[o + 2] = val; d8[o + 3] = 255; }
   octx.putImageData(oi, 0, 0);
   const map = paneMapping(scan, pane, cv);
   g.imageSmoothingEnabled = true; g.drawImage(_off, map.dx, map.dy, map.dw, map.dh);
-  const cur = m.cur;
-  if (pane === 'coronal') { refLine(g, 'v', map.dX(cur.x), map.dy, map.dh, PLANE_COLOR.x); refLine(g, 'h', map.dY(cur.z), map.dx, map.dw, PLANE_COLOR.z); }
-  else if (pane === 'sagittal') { refLine(g, 'v', map.dX(cur.y), map.dy, map.dh, PLANE_COLOR.y); refLine(g, 'h', map.dY(cur.z), map.dx, map.dw, PLANE_COLOR.z); }
-  else if (pane === 'axial') { refLine(g, 'v', map.dX(cur.x), map.dy, map.dh, PLANE_COLOR.x); refLine(g, 'h', map.dY(cur.y), map.dx, map.dw, PLANE_COLOR.y); }
-  else if (pane === 'oblique') { g.save(); g.strokeStyle = '#eef4fb'; g.globalAlpha = .45; refLine(g, 'v', map.dx + map.dw / 2, map.dy, map.dh, '#eef4fb'); refLine(g, 'h', map.dy + map.dh / 2, map.dx, map.dw, '#eef4fb'); g.restore(); }
-  if (m.obShow && pane === m.ob.view && pane !== 'oblique') drawObliqueLine(g, scan, pane, map);   // localizer on its anchor view
-  paneEl.classList.toggle('sel', m.sel === pane);
-  const lbl = paneEl.querySelector('.mpr-lbl');
-  if (lbl) lbl.textContent = PLANE_LABEL[pane] + '  ·  ' + paneLabelPos(scan, pane) + '  ·  ' + fmtNum(m.thk) + 'mm  ·  ' + algoLabel(m.algo) + (m.mar ? ' · MAR' : '') + '  ·  W/L ' + Math.round(m.ww) + '/' + Math.round(m.wl);
+  if (lbl) lbl.textContent = PLANE_LABEL[pane] + '  ·  ' + winPosLabel(recon, w.pos) + '  ·  ' + fmtNum(prm.thk) + 'mm  ·  ' + algoLabel(prm.algo) + (prm.mar ? ' · MAR' : '') + (w.saved === false ? '  ·  UNSAVED' : '') + '  ·  W/L ' + Math.round(ww) + '/' + Math.round(wl);
 }
 // Cross-reference line across the image with a slice-order arrow in the margin.
 function refLine(g, dir, pos, off0, len, color) {
@@ -3016,20 +3020,13 @@ function drawObliqueLine(g, scan, pane, map) {
 }
 
 // ---- interaction ----
-let _mprRAF = null;
-function renderMprThrottled() { if (_mprRAF) return; _mprRAF = requestAnimationFrame(() => { _mprRAF = null; const s = mprScan(); if (s) PANES.forEach(p => drawPane(s, p)); }); }
-function clampAxis(v, scan) { return clampV(v, -scan.fovMM / 2, scan.fovMM / 2); }
-function clampZ(v, scan) { const g = mprGeom(scan); return clampV(v, g.z0, g.z0 + g.zExt); }
-
-function onPaneWheel(e, pane) {
+// Scroll ONE recon window through its slices — only that window re-renders (no linked reformat).
+function onWinWheel(e, wi) {
   e.preventDefault(); const scan = mprScan(); if (!scan) return;
-  const m = ctx.S.ct.mpr, dir = e.deltaY > 0 ? 1 : -1, step = Math.max(m.interval, 0.5);
-  m.sel = pane;
-  if (pane === 'coronal') m.cur.y = clampAxis(m.cur.y + dir * step, scan);
-  else if (pane === 'sagittal') m.cur.x = clampAxis(m.cur.x + dir * step, scan);
-  else if (pane === 'axial') m.cur.z = clampZ(m.cur.z + dir * step, scan);
-  else { const th = m.ob.ang; m.ob.cu += dir * step * -Math.sin(th); m.ob.cv += dir * step * Math.cos(th); clampOb(scan); }   // oblique: move along the plane normal
-  renderMprThrottled();
+  const recon = winRecon(wi); if (!recon) return;
+  const w = ctx.S.ct.mpr.wins[wi], a = winAxis(scan, recon), dir = e.deltaY > 0 ? 1 : -1;
+  w.pos = clampV((w.pos == null ? winMid(scan, recon) : w.pos) + dir * a.step, a.lo, a.hi);
+  drawReconWindow(scan, wi);
 }
 function evtToCanvas(e, cv) { const r = cv.getBoundingClientRect(); return { px: (e.clientX - r.left) * (cv.width / r.width), py: (e.clientY - r.top) * (cv.height / r.height) }; }
 
@@ -3076,40 +3073,63 @@ function onPaneDown(e, pane, cv) {
 }
 
 function wireRecons() {
-  PANES.forEach(pane => {
-    const cv = ctx.$('mprCanvas_' + pane); if (!cv) return;
-    cv.addEventListener('pointerdown', (e) => onPaneDown(e, pane, cv));
-    cv.addEventListener('wheel', (e) => onPaneWheel(e, pane), { passive: false });
-    if (pane !== 'oblique') cv.addEventListener('dblclick', (e) => {   // re-anchor the oblique plane onto this view
-      const scan = mprScan(); if (!scan) return; const map = paneMapping(scan, pane, cv), { px, py } = evtToCanvas(e, cv);
-      const ab = obClickAB(scan, pane, map, px, py), m = ctx.S.ct.mpr;
-      m.ob.view = pane; m.ob.cu = ab.cu; m.ob.cv = ab.cv; m.ob.ang = 0; clampOb(scan); m.sel = 'oblique'; ctRenderRecons();
-    });
+  WINS.forEach(wi => { const cv = ctx.$('mprCanvas_' + wi); if (cv) cv.addEventListener('wheel', (e) => onWinWheel(e, wi), { passive: false }); });
+  ctx.$('ctMprGrid')?.addEventListener('click', (e) => {
+    const nb = e.target.closest('.rw-new'), sb = e.target.closest('.rw-sel');
+    if (nb) newReconForWindow(+nb.dataset.win);
+    else if (sb) selectReconForWindow(+sb.dataset.win);
   });
-  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.cur = null; ctx.S.ct.mpr.reconId = null; ctRenderRecons(); });
-  // pick one of the scan group's planned reconstructions → apply its plane/thickness/algo/MAR/window
-  ctx.$('ctReconPick')?.addEventListener('change', (e) => {
-    const scan = mprScan(); if (!scan) return;
-    const r = (scan.recons || []).find(x => x.id === +e.target.value); if (!r) return;
-    const m = ctx.S.ct.mpr;
-    m.reconId = r.id; m.sel = r.pane || 'axial';
-    m.thk = Math.max(r.minThk || 0.625, r.thk || m.thk);
-    m.algo = r.algo || 'standard'; m.mar = !!r.mar;
-    if (r.wl != null) m.wl = r.wl; if (r.ww != null) m.ww = r.ww;
-    ctRenderRecons();
+  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.wins = null; ctRenderRecons(); });
+  ctx.$('ctReconSave')?.addEventListener('click', saveReconStart);
+  window.addEventListener('resize', () => { if (ctx.$('ctRecons')?.classList.contains('show')) { const s = mprScan(); if (s) WINS.forEach(wi => drawReconWindow(s, wi)); } });
+}
+// Small modal list picker (reuses the field-edit popup shell).
+function reconPopup(title, items, onPick) {
+  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
+  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); close(); } };
+  inner.innerHTML = '<div class="plt">' + title + '</div><div class="ctpop-stations">'
+    + items.map((it, i) => '<button data-i="' + i + '">' + it.label + '</button>').join('')
+    + '</div><div class="phint"><b>[ESC]</b> to cancel</div>';
+  inner.querySelectorAll('.ctpop-stations button').forEach(b => b.addEventListener('click', () => { const it = items[+b.dataset.i]; close(); onPick(it); }));
+  pop.classList.add('show'); document.addEventListener('keydown', onKey, true);
+}
+// Bind an already-planned reconstruction of this scan group to a window.
+function selectReconForWindow(wi) {
+  const scan = mprScan(); if (!scan) return;
+  const recons = scan.recons || [];
+  if (!recons.length) { setHint('No reconstructions in this scan group yet — use “New recon”.'); return; }
+  reconPopup('Select reconstruction', recons.map(r => ({ label: r.name, r })), (it) => {
+    ctx.S.ct.mpr.wins[wi] = { recon: it.r, pos: winMid(scan, it.r), saved: true };
+    drawReconWindow(scan, wi);
   });
-  ctx.$('ctMprAlgo')?.addEventListener('change', (e) => { ctx.S.ct.mpr.algo = e.target.value; ctRenderRecons(); });
-  ctx.$('ctMprThk')?.addEventListener('change', (e) => { const s = mprScan(); const mn = s ? scanMinThk(s) : 0.625; ctx.S.ct.mpr.thk = Math.max(mn, sanitizeNum(e.target.value, ctx.S.ct.mpr.thk)); ctRenderRecons(); });
-  ctx.$('ctMprMar')?.addEventListener('click', () => { ctx.S.ct.mpr.mar = !ctx.S.ct.mpr.mar; ctRenderRecons(); });
-  ctx.$('ctMprObl')?.addEventListener('click', () => { ctx.S.ct.mpr.obShow = !ctx.S.ct.mpr.obShow; ctRenderRecons(); });
-  const wl = ctx.$('ctReconWL'), ww = ctx.$('ctReconWW');
-  wl?.addEventListener('input', () => { ctx.S.ct.mpr.wl = parseInt(wl.value, 10); renderMprThrottled(); });
-  ww?.addEventListener('input', () => { ctx.S.ct.mpr.ww = parseInt(ww.value, 10); renderMprThrottled(); });
-  ctx.$('ctReconWLPresets')?.addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-wl]'); if (!b) return;
-    const m = ctx.S.ct.mpr; m.wl = +b.dataset.wl; m.ww = +b.dataset.ww; if (wl) wl.value = m.wl; if (ww) ww.value = m.ww; ctRenderRecons();
+}
+// Create a new (unsaved) reconstruction for a window — pick a plane; params default to the group's
+// minimum thickness / standard algorithm. (Phase 2 will add the interactive planner box + table.)
+function newReconForWindow(wi) {
+  const scan = mprScan(); if (!scan) return;
+  const el = scanMinThk(scan);
+  const planes = [{ label: 'Axial (transverse)', v: 'transverse' }, { label: 'Coronal', v: 'coronal' }, { label: 'Sagittal', v: 'sagittal' }];
+  reconPopup('New reconstruction — plane', planes, (p) => {
+    const rid = scan.nextReconId || ((scan.recons || []).length + 1); scan.nextReconId = rid + 1;
+    const rec = { id: rid, plane: p.v, pane: RP_PLANE_PANE[p.v] || 'axial',
+      name: rpPlaneLabel(p.v) + ' · ' + fmtNum(Math.max(el, 5)) + ' mm · ' + algoLabel('standard'),
+      dfov: scan.fovMM, offRL: 0, offAP: 0, thk: Math.max(el, 5), interval: 5, algo: 'standard', mar: false, ww: 800, wl: 60, subTop: 0, subBot: 1, minThk: el };
+    ctx.S.ct.mpr.wins[wi] = { recon: rec, pos: winMid(scan, rec), saved: false };
+    drawReconWindow(scan, wi);
   });
-  window.addEventListener('resize', () => { if (ctx.$('ctRecons')?.classList.contains('show')) renderMprThrottled(); });
+}
+// Save a window's (unsaved) reconstruction into the scan group's recon list.
+function saveReconStart() {
+  const scan = mprScan(); if (!scan) return;
+  const opts = WINS.filter(wi => { const w = ctx.S.ct.mpr.wins[wi]; return w && w.recon && w.saved === false; })
+    .map(wi => ({ label: 'Window ' + (wi + 1) + ' — ' + winRecon(wi).name, wi }));
+  if (!opts.length) { setHint('No unsaved reconstruction in any window.'); return; }
+  reconPopup('Save which window’s recon to this scan group?', opts, (it) => {
+    const w = ctx.S.ct.mpr.wins[it.wi]; if (!w || !w.recon) return;
+    scan.recons = scan.recons || []; if (!scan.recons.includes(w.recon)) scan.recons.push(w.recon);
+    w.saved = true; drawReconWindow(scan, it.wi); setHint('Reconstruction saved to the scan group.');
+  });
 }
 
 // ---- busy state (grey controls during a scan) ----
