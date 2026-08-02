@@ -1180,8 +1180,12 @@ function nudgeRepos(axis, dir, big) {
 // mediolaterally (horizontal); the rotated LATERAL pans anteroposteriorly (vertical).
 function applyScoutPan() {
   const c = ctx.S.ct, fov = scoutFov() || 1;
-  const ax = -((c.plan.targetX - c.plan.committedX) / fov) * 100;
-  const ay = -((c.plan.targetY - c.plan.committedY) / fov) * 100;
+  // Pan so the centred box (the dashed cross-line) always sits over the anatomy that the
+  // isocentre will image at the current scan-centre offset — i.e. the target, not the delta
+  // still to travel. After Move-to-Scan the couch has physically brought that anatomy to the
+  // iso, so the scout's centre line then matches the 3D lateral crosshair.
+  const ax = -(c.plan.targetX / fov) * 100;
+  const ay = -(c.plan.targetY / fov) * 100;
   const ap = ctx.$('scoutAP'), lat = ctx.$('scoutLAT');
   if (ap) ap.style.transform = 'translate(' + ax.toFixed(2) + '%, 0)';
   if (lat) lat.style.transform = 'translate(0, ' + ay.toFixed(2) + '%)';
@@ -1247,8 +1251,8 @@ function openFieldEditor(gi, act) {
       (i) => SFOV_OPTIONS[i].name + '  ·  ' + (SFOV_OPTIONS[i].mm / 10) + ' cm',
       (i) => { const o = SFOV_OPTIONS[i]; g.sfovName = o.name; g.sfovMM = o.mm; clampDfovToSfov(g); });
   }
-  else if (act === 'dfov') type('Display FOV (mm) — must fit in the ' + (g.sfovName || 'SFOV'), Math.round(groupDFOV(g)), (v) => {
-    const dfov = clampV(v, 20, g.sfovMM), w = clampV(dfov / scoutFov(), 0.04, 1.6);
+  else if (act === 'dfov') type('Display FOV (cm) — must fit in the ' + (g.sfovName || 'SFOV'), (groupDFOV(g) / 10).toFixed(1), (v) => {
+    const dfov = clampV(v * 10, 20, g.sfovMM), w = clampV(dfov / scoutFov(), 0.04, 1.6);   // cm → mm
     const cx = (g.box.apL + g.box.apR) / 2, cy = (g.box.latL + g.box.latR) / 2;
     g.box.apL = cx - w / 2; g.box.apR = cx + w / 2; g.box.latL = cy - w / 2; g.box.latR = cy + w / 2;
   });
@@ -1271,7 +1275,8 @@ const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'SFOV', '
 function dfovCenterStr(g) {
   const c = ctx.S.ct, ml = c.plan.targetX || 0, ap = c.plan.targetY || 0;
   const f = (v, pos, neg) => (v >= 0 ? pos : neg) + Math.abs(v).toFixed(1);
-  return f(ap, 'A', 'P') + ' ' + f(ml, 'R', 'L');
+  // Patient perspective: a posterior scan centre (targetY > 0) reads P, anterior reads A.
+  return f(ap, 'P', 'A') + ' ' + f(ml, 'R', 'L');
 }
 
 // Scout planning table: AP (scan plane 0°) + Lateral (90°) as two scout groups.
@@ -1335,7 +1340,7 @@ function renderScanGroups() {
       + cell('sg-edit', 'start', fmtTablePos(scanStartMM() + g.box.top * c.scanLen))
       + cell('sg-edit', 'end', fmtTablePos(scanStartMM() + g.box.bot * c.scanLen))
       + cell('sg-station', 'sfov', g.sfovName || sfovName(g.sfovMM))
-      + '<td><span class="sg-edit" data-act="dfov">' + Math.round(groupDFOV(g)) + ' mm</span><span class="sg-sub">' + dfovCenterStr(g) + '</span></td>'
+      + '<td><span class="sg-edit" data-act="dfov">' + (groupDFOV(g) / 10).toFixed(1) + ' cm</span><span class="sg-sub">' + dfovCenterStr(g) + '</span></td>'
       + cell('sg-calc', '', groupImages(g))
       + cell('sg-station', 'acq', detConfig(g))
       + cell('sg-station', 'acq', fmtNum(g.sliceThk) + ' mm')
@@ -1737,7 +1742,11 @@ function advanceTable(dt) {
 function applyTableCommit() {
   const c = ctx.S.ct;
   c.patient.x = -c.plan.committedX / MM_PER_UNIT;     // lateral: move patient opposite the box offset to centre it
-  c.tableY = -c.plan.committedY;                      // height: table compensates the AP offset
+  // Height: a POSTERIOR scan centre (targetY > 0) means the region of interest is toward the
+  // patient's back, which sits BELOW the isocentre — so the couch must rise to bring it up to
+  // the iso (table height = +offset). Negating this moved the patient the wrong way (posterior
+  // box → table down → anterior imaged).
+  c.tableY = c.plan.committedY;
   ctx.syncScene();
   updateCTReadouts();
 }
@@ -2501,7 +2510,7 @@ function updateViewerInfo(scan, sl) {
   el.innerHTML =
     '<span>SLICE ' + (v.slice + 1) + ' / ' + scan.slices.length + '</span>' +
     '<span>' + fmtTablePos(sl.d) + ' mm</span>' +
-    '<span>DFOV ' + Math.round(scan.fovMM) + ' mm · ' + scan.params.sliceThk + ' mm · ' + scan.params.kv + ' kV</span>' +
+    '<span>DFOV ' + (scan.fovMM / 10).toFixed(1) + ' cm · ' + scan.params.sliceThk + ' mm · ' + scan.params.kv + ' kV</span>' +
     '<span>WL ' + Math.round(v.wl) + ' / WW ' + Math.round(v.ww) + ' HU</span>';
 }
 
@@ -2783,7 +2792,7 @@ function paneLabelPos(scan, pane) {
   const c = ctx.S.ct.mpr.cur;
   if (pane === 'coronal') return 'A/P ' + (c.y >= 0 ? '+' : '') + Math.round(c.y) + ' mm';
   if (pane === 'sagittal') return 'R/L ' + (c.x >= 0 ? '+' : '') + Math.round(c.x) + ' mm';
-  if (pane === 'oblique') { const ob = ctx.S.ct.mpr.ob; return PLANE_LABEL[ob.view] + ' ∠' + Math.round(ob.ang * 180 / Math.PI) + '° · DFOV ' + Math.round(ob.fov) + ' mm'; }
+  if (pane === 'oblique') { const ob = ctx.S.ct.mpr.ob; return PLANE_LABEL[ob.view] + ' ∠' + Math.round(ob.ang * 180 / Math.PI) + '° · DFOV ' + (ob.fov / 10).toFixed(1) + ' cm'; }
   return fmtTablePos(c.z) + ' mm';
 }
 let _off = null;
