@@ -229,7 +229,7 @@
             <button data-dm="quick" class="on">Quick</button>
             <button data-dm="realistic">Realistic</button>
           </div>
-          <div class="note" style="margin-top:4px">Quick = 128-channel preview detector (pitch follows the recon FOV). Realistic = fixed 0.625&nbsp;mm DEL pitch across a 500&nbsp;mm scan FOV — 800 channels × 720 views, 512² matrix. Heavy: pair it with the Python GPU engine.</div>
+          <div class="note warn" id="ctDetWarn" style="margin-top:4px; display:none">⚠ Realistic reconstruction is computationally heavy — expect long processing times. A detected GPU (Python compute engine) is strongly recommended.</div>
         </div>
       </div>
 
@@ -238,7 +238,7 @@
         <div class="bod">
           <div class="row"><div class="rl">Table position</div>
             <div class="valchip cyanlit" id="ctTablePosV">0.0</div></div>
-          <div class="row" style="margin-top:10px"><div class="rl">Table height <small>iso align</small></div>
+          <div class="row" style="margin-top:10px"><div class="rl">Table height</div>
             <div class="valchip" id="ctTableHV">0 mm</div></div>
           <div class="row" style="margin-top:10px"><div class="rl">Scan start</div>
             <div class="valchip" id="ctScanStartV">0.0 mm</div></div>
@@ -390,7 +390,7 @@
               <button data-be="local" class="on">Browser</button>
               <button data-be="python" disabled>Python GPU</button>
             </div>
-            <div class="note" style="margin-top:4px">Python GPU offloads voxel-model ray-casting to the compute backend. The analytic hand always computes in-browser. Start it with: <b>uvicorn app.main:app --port 8000</b> in services/compute.</div>
+            <div class="note" id="computeNoteX" style="margin-top:4px"></div>
           </div>
           <div class="ct-only">
             <div class="row"><div class="rl">Compute engine</div>
@@ -399,7 +399,7 @@
               <button data-be="local" class="on">Browser</button>
               <button data-be="python" disabled>Python GPU</button>
             </div>
-            <div class="note" style="margin-top:4px">Python GPU offloads voxel-model scout + reconstruction to the compute backend.</div>
+            <div class="note" id="computeNoteCT" style="margin-top:4px"></div>
           </div>
           <label class="cttoggle xray-only" style="margin-top:12px"><input type="checkbox" id="rescaleToggle" checked>
             <span>Automatic rescaling <small style="color:var(--muted)">(DR auto-ranging)</small></span></label>
@@ -479,7 +479,7 @@
       </div>
     </div>
 
-    <div class="hdr"><div class="t"><b>IMAGE</b> / VIEWER</div><div class="u">DR&nbsp;flat&nbsp;panel</div></div>
+    <div class="hdr"><div class="t"><b>IMAGE</b> / VIEWER</div></div>
     <div class="monitor">
       <canvas id="film" width="330" height="440"></canvas>
       <div class="noexp" id="noexp">NO IMAGE ACQUIRED</div>

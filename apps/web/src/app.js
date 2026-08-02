@@ -1497,10 +1497,23 @@ async function refreshComputeStatus(){
   }
   return on;
 }
+// Description under the compute-engine selector — changes with the selected engine.
+const COMPUTE_NOTES={
+  xray:{ local:'Ray-casting runs in the browser (CPU). Switch to Python GPU to offload voxel-model projections to the compute backend.',
+         python:'Voxel-model ray-casting is offloaded to the Python GPU backend. The analytic hand always computes in-browser.' },
+  ct:{   local:'Scout + reconstruction run in the browser (CPU). Switch to Python GPU to offload them to the compute backend.',
+         python:'Scout + reconstruction are offloaded to the Python GPU backend.' },
+};
+function updateComputeNote(mode){
+  const el=$(mode==='xray'?'computeNoteX':'computeNoteCT'); if(!el) return;
+  const val=mode==='xray'?S.xrayBackend:S.ct.backend;
+  el.textContent=(COMPUTE_NOTES[mode]||{})[val]||'';
+}
 function setBackend(mode,val){
   if(mode==='xray') S.xrayBackend=val; else S.ct.backend=val;
   const seg=$(mode==='xray'?'backendSegX':'backendSegCT');
   if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.be===val));
+  updateComputeNote(mode);
 }
 /* A backend-only model has no volume in the browser, so it can ONLY render via the
    Python GPU engine — force it in both modes and lock out the Browser toggle. */
@@ -1535,12 +1548,20 @@ function wireBackendToggles(){
     S.ct.detMode=b.dataset.dm;
     [...$('ctDetModeSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.dm===S.ct.detMode));
     const v=$('ctDetModeV'); if(v) v.textContent=S.ct.detMode==='realistic'?'800 ch · 0.625 mm':'128 ch · preview';
+    updateDetWarn();
   });
+}
+// The Realistic-detector compute warning shows only when Realistic is selected.
+function updateDetWarn(){
+  const w=$('ctDetWarn'); if(w) w.style.display=(S.ct.detMode==='realistic')?'':'none';
 }
 
 function initExtras(){
   wireBackendToggles();
+  updateComputeNote('xray'); updateComputeNote('ct'); updateDetWarn();
   refreshComputeStatus();
+  // poll the backend so the Python GPU button enables/greys out as it connects/drops
+  setInterval(refreshComputeStatus, 5000);
 }
 
 /* ---- boot ---- */
