@@ -103,7 +103,8 @@ def _apply_bhc(pv, xs, ys, slope):
 def recon_slices(p: dict[str, Any]) -> np.ndarray:
     vv = get_volume(p["model"], p["flips"])
     center = p["center"]
-    cx, cy = float(p["cx"]), float(p["cy"])            # recon centre (world)
+    cx, cy = float(p["cx"]), float(p["cy"])            # DFOV (recon grid) centre (world)
+    ocx, ocy = float(p.get("ocx", 0.0)), float(p.get("ocy", 0.0))   # DFOV-centre offset from the isocentre
     n_det = int(p["nDet"]); n_ang = int(p["nAngles"]); N = int(p["gridN"])
     ds = float(p["ds"])                                # channel spacing (world units)
     ray_r = float(p["rayR"])                           # ray half-length (covers the object)
@@ -133,9 +134,11 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     ct, st = torch.cos(th), torch.sin(th)              # (A,)
     r = (torch.arange(n_det, device=DEVICE, dtype=torch.float32) - half_det) * ds  # (K,)
 
-    # ray origins/directions per (angle, channel): o = c + r*e_r + rayR*e_t, d = -e_t
-    ox = cx + r.unsqueeze(0) * ct.unsqueeze(1) + ray_r * st.unsqueeze(1)      # (A, K)
-    oy = cy + r.unsqueeze(0) * st.unsqueeze(1) - ray_r * ct.unsqueeze(1)
+    # ray origins/directions per (angle, channel): fanned from the SFOV centre (the ISOCENTRE,
+    # = DFOV centre minus its offset), NOT the DFOV centre. o = sc + r*e_r + rayR*e_t, d = -e_t
+    sx, sy = cx - ocx, cy - ocy
+    ox = sx + r.unsqueeze(0) * ct.unsqueeze(1) + ray_r * st.unsqueeze(1)      # (A, K)
+    oy = sy + r.unsqueeze(0) * st.unsqueeze(1) - ray_r * ct.unsqueeze(1)
     dx = -st.unsqueeze(1).expand(-1, n_det)
     dy = ct.unsqueeze(1).expand(-1, n_det)
 
@@ -147,12 +150,12 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     # backprojection grid over the DISPLAY FOV
     px = (-dfov_r + (torch.arange(N, device=DEVICE, dtype=torch.float32) + 0.5) * (2 * dfov_r / N))
     wy, wx = torch.meshgrid(px, px, indexing="ij")             # (N, N); wy rows = iy
-    # The reconstructed image is a CIRCLE, not a masked square: back-projection reconstructs only
-    # the disc where every view has data — the DFOV (radius dfov_r), capped by the SFOV (ray_r) if
-    # a larger DFOV than the measured field was requested. Outside → not reconstructed → NaN (the
-    # client renders no-data as black). The circular view is a RESULT of the recon (mirrors ct.js).
-    disc_r = min(dfov_r, ray_r)
-    in_fov = (wx * wx + wy * wy) <= disc_r * disc_r
+    # The reconstructed image is a CIRCLE. A pixel is valid only inside BOTH the DFOV disc (radius
+    # dfov_r, centred on the DFOV centre) AND the SFOV (radius ray_r, centred on the ISOCENTRE — the
+    # measured field). wx/wy are DFOV-relative; +ocx/+ocy makes them isocentre-relative. An off-centre
+    # DFOV that pokes past the SFOV is NaN there (never scanned). Mirrors ct.js backproject.
+    wxi, wyi = wx + ocx, wy + ocy
+    in_fov = ((wx * wx + wy * wy) <= dfov_r * dfov_r) & ((wxi * wxi + wyi * wyi) <= ray_r * ray_r)
 
     out = np.empty((len(z0_list), N, N), dtype=np.float32)
     for zi, z0 in enumerate(z0_list):
@@ -202,8 +205,8 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
         img = torch.zeros(N, N, dtype=torch.float32, device=DEVICE)
         for a0 in range(0, n_ang, ANGLE_BATCH):
             a1 = min(n_ang, a0 + ANGLE_BATCH)
-            kf = (wx.unsqueeze(0) * ct[a0:a1, None, None]
-                  + wy.unsqueeze(0) * st[a0:a1, None, None]) / ds + half_det  # (a, N, N)
+            kf = (wxi.unsqueeze(0) * ct[a0:a1, None, None]
+                  + wyi.unsqueeze(0) * st[a0:a1, None, None]) / ds + half_det  # (a, N, N); detector coord is isocentre-relative
             k0 = torch.floor(kf).long()
             f = kf - k0.float()
             ok = (k0 >= 0) & (k0 < n_det - 1)

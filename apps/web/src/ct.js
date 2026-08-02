@@ -1093,7 +1093,7 @@ function wireReconBox(box, view) {
 // active group while planning.
 function renderSfovLines() {
   const c = ctx.S.ct, g = grp(c.activeGroup || 0);
-  const show = c.phase === 'planning' && !!(g && g.on);
+  const show = !!(g && g.sfovMM);                 // the SFOV edges are always marked on the scouts
   const half = (g && g.sfovMM ? g.sfovMM / scoutFov() : 1) / 2;
   document.querySelectorAll('#ctScouts .sfovline').forEach((el) => {
     el.style.display = show ? 'block' : 'none';
@@ -1259,10 +1259,12 @@ function openFieldEditor(gi, act) {
     const cur = Math.max(0, SFOV_OPTIONS.findIndex((o) => o.name === (g.sfovName || 'Large Body')));
     station('Scan field of view (SFOV)', SFOV_OPTIONS.map((o, i) => i), cur,
       (i) => SFOV_OPTIONS[i].name + '  ·  ' + (SFOV_OPTIONS[i].mm / 10) + ' cm',
-      (i) => { const o = SFOV_OPTIONS[i]; g.sfovName = o.name; g.sfovMM = o.mm; clampDfovToSfov(g); });
+      (i) => { const o = SFOV_OPTIONS[i]; g.sfovName = o.name; g.sfovMM = o.mm; });   // DFOV may now exceed the SFOV → warned, not auto-shrunk
   }
-  else if (act === 'dfov') type('Display FOV (cm) — must fit in the ' + (g.sfovName || 'SFOV'), (groupDFOV(g) / 10).toFixed(1), (v) => {
-    const dfov = clampV(v * 10, 20, g.sfovMM), w = clampV(dfov / scoutFov(), 0.04, 1.6);   // cm → mm
+  else if (act === 'dfov') type('Display FOV (cm)', (groupDFOV(g) / 10).toFixed(1), (v) => {
+    // A DFOV larger than the SFOV is allowed (it just reconstructs black beyond the measured field,
+    // and the table flags it) — cap only at the scout width.
+    const dfov = clampV(v * 10, 20, scoutFov()), w = clampV(dfov / scoutFov(), 0.04, 1.6);   // cm → mm
     const cx = (g.box.apL + g.box.apR) / 2, cy = (g.box.latL + g.box.latR) / 2;
     g.box.apL = cx - w / 2; g.box.apR = cx + w / 2; g.box.latL = cy - w / 2; g.box.latR = cy + w / 2;
   });
@@ -1301,6 +1303,14 @@ function dfovCenterStr(g) {
   const f = (v, pos, neg) => (v >= 0 ? pos : neg) + Math.abs(v).toFixed(1);
   // Patient perspective: a posterior scan centre reads P, anterior reads A; right R, left L.
   return f(o.ap, 'P', 'A') + ' ' + f(o.ml, 'R', 'L');
+}
+// True when the DFOV disc is not fully contained by the SFOV (measured) circle → the recon will
+// have un-scanned black beyond the SFOV. GE: the off-centre box can poke past the isocentre SFOV.
+// Canon: the couch carries the offset, so only an oversized DFOV (diameter > SFOV) matters.
+function dfovOutOfSfov(g) {
+  const sfovR = (g.sfovMM || 500) / 2, dfovR = groupDFOV(g) / 2;
+  if (ctx.S.ct.vendor === 'ge') { const o = dfovOffsetMM(g); return Math.hypot(o.ml, o.ap) + dfovR > sfovR + 0.5; }
+  return dfovR > sfovR + 0.5;
 }
 
 // Scout planning table: AP (scan plane 0°) + Lateral (90°) as two scout groups.
@@ -1363,7 +1373,10 @@ function renderScanGroups() {
       + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle scan lines on the scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
       + cell('sg-edit', 'start', fmtTablePos(scanStartMM() + g.box.top * c.scanLen))
       + cell('sg-edit', 'end', fmtTablePos(scanStartMM() + g.box.bot * c.scanLen))
-      + cell('sg-station', 'sfov', g.sfovName || sfovName(g.sfovMM))
+      + '<td><span class="sg-station' + (dfovOutOfSfov(g) ? ' sfov-warn' : '') + '" data-act="sfov">'
+        + (g.sfovName || sfovName(g.sfovMM))
+        + (dfovOutOfSfov(g) ? ' <span class="sfov-ico" title="DFOV extends beyond the SFOV — anatomy outside the measured field is not scanned">⚠</span>' : '')
+        + '</span></td>'
       + '<td><span class="sg-edit" data-act="dfov">' + (groupDFOV(g) / 10).toFixed(1) + ' cm</span><span class="sg-sub">' + dfovCenterStr(g) + '</span></td>'
       + cell('sg-calc', '', groupImages(g))
       + cell('sg-station', 'acq', detConfig(g))
@@ -1893,7 +1906,11 @@ function reconGeoM(fovMM, cx, cy, m, sfovMM) {
   const detSpan = m.fixedPitch ? m.nDet * m.chanMM : sfovMM;       // physical detector width (mm)
   const rayR = (Math.min(sfovMM, detSpan) / MM_PER_UNIT) / 2;      // ray half-length = SFOV/2 (capped by the detector)
   const ds = m.fixedPitch ? m.chanMM / MM_PER_UNIT : (rayR * 2) / m.nDet;   // channel spacing spans the SFOV
-  return { fovMM, R, rayR, ds, cx, cy, m };
+  // The SFOV (measured circle) is ALWAYS centred on the isocentre — the gantry rotates about it.
+  // The DFOV (cx, cy) can be off-centre (GE targeted recon). ocx/ocy = DFOV-centre offset from the
+  // isocentre, so back-projection can clip the recon to BOTH the DFOV disc and the isocentre SFOV.
+  const sx = 0, sy = ISO_Y;
+  return { fovMM, R, rayR, ds, cx, cy, sx, sy, ocx: cx - sx, ocy: cy - sy, m };
 }
 function reconGeo(fovMM, cx, cy, sfovMM) { return reconGeoM(fovMM, cx, cy, detMode(), sfovMM || 500); }
 // Low-res detector used for the live scan PREVIEW (deliberately coarse so previews are
@@ -2194,7 +2211,10 @@ function coneProfile(collimU, thkU, nSub) {
 // Forward-project one slice at world plane z = z0 → sinogram [angle][detector].
 // cone (z-divergent rays) integrates the cone beam; omit for a single untilted ray.
 function projectSlice(phantom, z0, mu, photons0, geo, cone) {
-  const cx = geo.cx, cy = geo.cy, RR = geo.rayR, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
+  // Rays fan out from the SFOV centre (the isocentre), NOT the DFOV centre — the measured field is
+  // always centred on the rotation axis. An off-centre DFOV is handled purely in back-projection.
+  const cx = (geo.sx != null ? geo.sx : geo.cx), cy = (geo.sy != null ? geo.sy : geo.cy);
+  const RR = geo.rayR, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
   const halfDet = (nDet - 1) / 2;
   const sino = new Float32Array(nAng * nDet);
   const poly = mu.voxel && mu.muMat;             // polyenergetic (beam-hardening) path for voxel models
@@ -2330,22 +2350,24 @@ function backproject(q, geo) {
   const N = geo.m.gridN, R = geo.R, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
   const halfDet = (nDet - 1) / 2;
   const img = new Float32Array(N * N);
-  const px2world = (i) => (-R + (i + 0.5) * (2 * R / N));   // pixel centre → world offset from FOV centre
-  // The reconstructed image is a CIRCLE, not a masked square: back-projection only reconstructs
-  // the disc where every view has data. That disc is the DFOV (the chosen reconstruction circle,
-  // radius R), capped by the SFOV (rayR) if a larger DFOV than the measured field was requested.
-  // Pixels outside it are never reconstructed — they are marked NaN ("no data") below, and every
-  // consumer renders no-data as black. The circular view is thus a RESULT of the reconstruction,
-  // not a cosmetic overlay. (The rays still integrate the full SFOV, so no truncation cupping.)
-  const clipR = Math.min(R, geo.rayR), R2 = clipR * clipR;
+  const px2world = (i) => (-R + (i + 0.5) * (2 * R / N));   // pixel centre → offset from the DFOV centre
+  // The reconstructed image is a CIRCLE, not a masked square. A pixel is reconstructed only where it
+  // sits inside BOTH: the DFOV disc (radius R, centred on the DFOV centre) AND the SFOV (radius rayR,
+  // centred on the ISOCENTRE — the measured field). ocx/ocy = the DFOV-centre offset from the
+  // isocentre, so an off-centre (GE) DFOV that pokes past the SFOV shows black there — that anatomy
+  // was never scanned, so the recon literally has no data for it. Pixels outside are marked NaN and
+  // every consumer renders no-data as black. (Rays still integrate the full SFOV → no cupping.)
+  const dfovR2 = R * R, sfovR2 = geo.rayR * geo.rayR, ocx = geo.ocx || 0, ocy = geo.ocy || 0;
   for (let a = 0; a < nAng; a++) {
     const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th), base = a * nDet;
     for (let iy = 0; iy < N; iy++) {
-      const wy = px2world(iy), rowo = iy * N;
+      const gy = px2world(iy), rowo = iy * N, wyi = gy + ocy;
       for (let ix = 0; ix < N; ix++) {
-        const wx = px2world(ix);
-        if (wx * wx + wy * wy > R2) continue;
-        const kf = (wx * ct + wy * st) / ds + halfDet;
+        const gx = px2world(ix);
+        if (gx * gx + gy * gy > dfovR2) continue;              // outside the DFOV disc
+        const wxi = gx + ocx;
+        if (wxi * wxi + wyi * wyi > sfovR2) continue;          // outside the measured SFOV (isocentre-centred)
+        const kf = (wxi * ct + wyi * st) / ds + halfDet;       // detector coord is relative to the isocentre
         const k0 = Math.floor(kf);
         if (k0 < 0 || k0 >= nDet - 1) continue;
         const f = kf - k0;
@@ -2355,10 +2377,11 @@ function backproject(q, geo) {
   }
   const scale = Math.PI / nAng;
   for (let iy = 0; iy < N; iy++) {
-    const wy = px2world(iy), rowo = iy * N;
+    const gy = px2world(iy), rowo = iy * N, wyi = gy + ocy;
     for (let ix = 0; ix < N; ix++) {
-      const wx = px2world(ix);
-      img[rowo + ix] = (wx * wx + wy * wy > R2) ? NaN : img[rowo + ix] * scale;   // outside the disc = not reconstructed
+      const gx = px2world(ix), wxi = gx + ocx;
+      const inFov = (gx * gx + gy * gy <= dfovR2) && (wxi * wxi + wyi * wyi <= sfovR2);
+      img[rowo + ix] = inFov ? img[rowo + ix] * scale : NaN;   // outside DFOV∩SFOV = not reconstructed
     }
   }
   return img;
@@ -2468,7 +2491,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
       const center = [(phantom.min[0] + phantom.max[0]) / 2, (phantom.min[1] + phantom.max[1]) / 2,
                       (phantom.min[2] + phantom.max[2]) / 2];
       const base = { model: ctx.S.subject, flips: Array.from(phantom.flip, Boolean), center,
-                     cx: geo.cx, cy: geo.cy, nDet: geo.m.nDet, nAngles: geo.m.nAngles, gridN: N,
+                     cx: geo.cx, cy: geo.cy, ocx: geo.ocx, ocy: geo.ocy, nDet: geo.m.nDet, nAngles: geo.m.nAngles, gridN: N,
                      ds: geo.ds, rayR: geo.rayR, dfovR: geo.R,
                      kernel: geo.m.fixedPitch ? 'shepp' : 'ramlak',
                      rot: phantom.rot ? Array.from(phantom.rot) : null,
