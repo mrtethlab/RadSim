@@ -436,6 +436,9 @@ const S = {
     patient:{x:0, z:0},        // patient/couch offset from the gantry isocentre
     tableY:0,                  // table height (mm); 0 = patient centred at the isocentre
     patientY:6,                // patient world-y for the current table height (set by ct.js)
+    // Physics-simulation features (each adds recon cost). Default OFF (fast quick preview);
+    // selecting the Realistic detector turns them all ON. Toggled under the Detector window.
+    features:{ beamHardening:false, coneBeam:false, focalBlur:false, quantumNoise:false },
     pov:'ap',                  // CT camera perspective: 'ap' (top) | 'lat' (90° around the bore)
     liveView:false,            // true while a scout build mirrors tube-POV into #film
     scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
@@ -1562,16 +1565,38 @@ function wireBackendToggles(){
     S.ct.detMode=b.dataset.dm;
     [...$('ctDetModeSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.dm===S.ct.detMode));
     const v=$('ctDetModeV'); if(v) v.textContent=S.ct.detMode==='realistic'?'800 ch · 0.625 mm':'128 ch · preview';
+    // Realistic turns every physics feature ON; Quick turns them all OFF (fast preview).
+    const on=S.ct.detMode==='realistic';
+    S.ct.features={ beamHardening:on, coneBeam:on, focalBlur:on, quantumNoise:on };
+    syncFeatureToggles();
+    updateDetWarn();
+  });
+  // Individual physics-feature toggles (override the per-mode defaults).
+  $('ctDetFeat')?.addEventListener('change',e=>{
+    const cb=e.target.closest('input[data-feat]'); if(!cb) return;
+    S.ct.features[cb.dataset.feat]=cb.checked;
     updateDetWarn();
   });
 }
-// The Realistic-detector compute warning shows only when Realistic is selected.
+// Reflect S.ct.features onto the toggle checkboxes.
+function syncFeatureToggles(){
+  const f=S.ct.features||{};
+  document.querySelectorAll('#ctDetFeat input[data-feat]').forEach(cb=>{ cb.checked=!!f[cb.dataset.feat]; });
+}
+// Warn about processing time whenever any heavy feature is enabled; call out Realistic + GPU.
 function updateDetWarn(){
-  const w=$('ctDetWarn'); if(w) w.style.display=(S.ct.detMode==='realistic')?'':'none';
+  const w=$('ctDetWarn'); if(!w) return;
+  const f=S.ct.features||{}, heavy=f.beamHardening||f.coneBeam||f.focalBlur;
+  if(!heavy && S.ct.detMode!=='realistic'){ w.style.display='none'; return; }
+  w.style.display='';
+  w.innerHTML = S.ct.detMode==='realistic'
+    ? '⚠ Realistic reconstruction with these physics features is heavy — expect long processing times. A detected GPU (Python compute engine) is strongly recommended.'
+    : '⚠ The enabled physics features increase processing time. Turn them off for the fastest previews.';
 }
 
 function initExtras(){
   wireBackendToggles();
+  syncFeatureToggles();
   updateComputeNote('xray'); updateComputeNote('ct'); updateDetWarn();
   refreshComputeStatus();
   // poll the backend so the Python GPU button enables/greys out as it connects/drops

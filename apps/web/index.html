@@ -230,7 +230,14 @@
             <button data-dm="quick" class="on">Quick</button>
             <button data-dm="realistic">Realistic</button>
           </div>
-          <div class="note warn" id="ctDetWarn" style="margin-top:4px; display:none">⚠ Realistic reconstruction is computationally heavy — expect long processing times. A detected GPU (Python compute engine) is strongly recommended.</div>
+          <div class="detfeat" id="ctDetFeat">
+            <div class="detfeat-lab">Physics simulation <span class="detfeat-hint">— each adds processing time</span></div>
+            <label class="ftog"><input type="checkbox" data-feat="beamHardening"><span>Beam hardening<small>polyenergetic — metal / bone artifacts</small></span></label>
+            <label class="ftog"><input type="checkbox" data-feat="coneBeam"><span>Cone beam (MSCT)<small>z-divergent rays — cross-slice bleed</small></span></label>
+            <label class="ftog"><input type="checkbox" data-feat="focalBlur"><span>Focal-spot blur<small>feathery streaks, no crosshatch</small></span></label>
+            <label class="ftog"><input type="checkbox" data-feat="quantumNoise"><span>Quantum noise<small>photon statistics + saturation</small></span></label>
+          </div>
+          <div class="note warn" id="ctDetWarn" style="margin-top:4px; display:none"></div>
         </div>
       </div>
 

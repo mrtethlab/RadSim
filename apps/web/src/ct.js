@@ -2248,13 +2248,18 @@ function photonsFor(g, geo) {
 
 async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   setup = setup || scanSetup(g);
-  const { phantom, voxel, mu, muW, fovMM, sfovMM, positions, count, effE } = setup;
+  const { phantom, voxel, muW, fovMM, sfovMM, positions, count, effE } = setup;
+  // Physics features are individually toggleable (Detector window). Each adds recon cost:
+  //   beamHardening → polyenergetic projection (× spectral bins); off = monochromatic.
+  //   coneBeam      → z-divergent cone rays (× zSub); off = a single untilted ray (SSCT).
+  //   focalBlur     → aperture + azimuthal sinogram blur (feathery streaks); off = skipped.
+  //   quantumNoise  → photon statistics + saturation clipping; off = noiseless (photons0 = 0).
+  const feat = ctx.S.ct.features || {};
+  const bh = !!feat.beamHardening, blurOn = !!feat.focalBlur;
+  const mu = bh ? setup.mu : { ...setup.mu, muMat: null, bhc: null };   // strip poly data when beam hardening is off
   const geo = reconGeo(fovMM, 0, ISO_Y, sfovMM);
-  const photons0 = photonsFor(g, geo);
-  // Cone-beam: integrate each slice over the z-divergent cone rays (set by the beam collimation),
-  // giving cross-slice artifact bleed that grows with radius + cone angle. Realistic samples the
-  // full cone; quick uses fewer rays. nSub=1 / no collimation → single untilted ray (SSCT).
-  const cone = coneProfile(g.beamColl / MM_PER_UNIT, geo.m.zSub || 1);
+  const photons0 = feat.quantumNoise ? photonsFor(g, geo) : 0;
+  const cone = feat.coneBeam ? coneProfile(g.beamColl / MM_PER_UNIT, geo.m.zSub || 1) : ONE_RAY;
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
   // slice is emitted via onSlice as it completes so the scan shows the images coming
@@ -2273,11 +2278,12 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
                      kernel: geo.m.fixedPitch ? 'shepp' : 'ramlak',
                      rot: phantom.rot ? Array.from(phantom.rot) : null,
                      muArr: Array.from(mu.arr), photons0,
-                     // polyenergetic beam-hardening data (so the GPU recon shows metal artifacts too)
-                     binsW: mu.bins, muMat: mu.muMat.map(r => Array.from(r)),
-                     muWbins: Array.from(mu.muWbins), muWeff: mu.muWeff,
-                     // cone-beam rays (z-divergence): [k = z-slope, weight]
-                     coneRays: cone.map(s => [s.k, s.w]) };
+                     // cone-beam rays (z-divergence): [k = z-slope, weight]; ONE_RAY when cone beam is off
+                     coneRays: cone.map(s => [s.k, s.w]),
+                     focalBlur: blurOn };
+      // polyenergetic beam-hardening data (only when the feature is on → GPU takes the poly path)
+      if (bh) { base.binsW = mu.bins; base.muMat = mu.muMat.map(r => Array.from(r));
+                base.muWbins = Array.from(mu.muWbins); base.muWeff = mu.muWeff; }
       const BATCH = 4;
       for (let s0 = 0; s0 < nz; s0 += BATCH) {
         if (!alive()) return null;
@@ -2308,7 +2314,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
       if (!alive()) return null;
       const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
       const sino = projectSlice(phantom, zw, mu, photons0, geo, cone);
-      const q = filterSino(sinoBlur(sino, geo.m), h, geo.ds, geo.m);
+      const q = filterSino(blurOn ? sinoBlur(sino, geo.m) : sino, h, geo.ds, geo.m);
       const img = backproject(q, geo);
       vol.set(img, si * N * N);
       if (onSlice) onSlice(si, nz, positions[si], img, meta);

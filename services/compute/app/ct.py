@@ -125,6 +125,7 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     # cone-beam rays: (k, weight) — k is the ray's z-slope (z-divergence set by the beam
     # collimation). >1 entry → cone integration (cross-slice artifact bleed); mirrors ct.js.
     cone_rays = [(float(k), float(w)) for k, w in (p.get("coneRays") or [[0.0, 1.0]])]
+    focal_blur = bool(p.get("focalBlur", True))        # detector/focal-spot blur (feathery streaks) toggle
     rot = rot_tensor(p.get("rot"))
 
     half_det = (n_det - 1) / 2.0
@@ -188,7 +189,8 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
             sino = (-torch.log(nd / photons0)).clamp(min=0.0)
         if poly:
             sino = _apply_bhc(sino, bhc_x, bhc_y, bhc_slope)                   # water beam-hardening correction
-        sino = _sino_blur(sino)                                                # source/detector band limit → feathery streaks, no crosshatch
+        if focal_blur:
+            sino = _sino_blur(sino)                                            # source/detector band limit → feathery streaks, no crosshatch
         # ---- Ram-Lak filter (grouped 1D convolution over channels) ----
         q = torch.nn.functional.conv1d(sino.unsqueeze(1), h, padding=n_det - 1).squeeze(1) * ds
         # ---- back-project ----

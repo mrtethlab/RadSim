@@ -147,6 +147,15 @@
 
   .note{color:var(--muted); font-size:12px; line-height:1.5; letter-spacing:.2px}
   .note.warn{color:#ff6b6b}
+
+  /* CT physics-feature toggles (under the Detector window) */
+  .detfeat{margin-top:8px; display:flex; flex-direction:column; gap:6px}
+  .detfeat-lab{font-family:var(--disp); font-size:11px; letter-spacing:1px; text-transform:uppercase; color:var(--muted)}
+  .detfeat-hint{color:var(--muted2); text-transform:none; letter-spacing:0; font-size:10.5px}
+  .ftog{display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:12.5px; color:var(--txt)}
+  .ftog input{margin-top:2px; accent-color:var(--cyan); cursor:pointer; flex:0 0 auto}
+  .ftog span{display:flex; flex-direction:column; line-height:1.3}
+  .ftog small{color:var(--muted2); font-size:10.5px}
   .kbd{font-family:var(--seg); background:#0a0d10; border:1px solid var(--edge2); padding:1px 6px;
     border-radius:3px; color:var(--cyan); font-size:11px}
   .mini{display:flex; gap:6px; flex-wrap:wrap; margin-top:8px}
