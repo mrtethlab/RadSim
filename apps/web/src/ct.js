@@ -368,6 +368,7 @@ function wireCTSettings() {
   });
   // protocol picker — sets predetermined scout start/end + isocentre landmark
   $('ctProtocolBtn')?.addEventListener('click', () => openProtocolPopup());
+  $('ctScanHelp')?.addEventListener('click', () => openScanHelp());
   // table height — raise / lower by 1 mm per press; hold to auto-repeat
   wireHoldRepeat($('ctTablePad'), 'button[data-th]', (b) => {
     S.ct.tableY = Math.max(-80, Math.min(80, S.ct.tableY + (b.dataset.th === 'up' ? 1 : -1)));
@@ -1502,6 +1503,63 @@ function renderProtocol() {
 // Selecting a Speed keeps the current pitch and changes the collimation when that speed
 // maps to another valid collimation (shown darker blue); otherwise it keeps the
 // collimation and changes the pitch (lighter). Helical (reconstructed) thickness is
+// Help popup: explains beam collimation vs detector element vs slice thickness vs interval,
+// with a labelled z-axis diagram, so the terms in the scan/recon plan are unambiguous.
+function openScanHelp() {
+  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
+  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  // ---- z-axis diagram ----
+  const rows = 16, bx = 70, bw = 300, cw = bw / rows, by = 58, bh = 30;
+  let cells = '';
+  for (let i = 0; i < rows; i++) {
+    cells += '<rect x="' + (bx + i * cw) + '" y="' + by + '" width="' + cw + '" height="' + bh +
+      '" fill="' + (i === 8 ? '#2aa7c2' : '#1d3a45') + '" stroke="#0c1418" stroke-width="0.6"/>';
+  }
+  // reconstructed slices: boxes of "thickness", spaced by "interval"
+  const sy = 176, sh = 34, thkW = 46, gap = 12, sx = 70;
+  let slabs = '';
+  for (let i = 0; i < 4; i++) {
+    const x = sx + i * (thkW + gap);
+    slabs += '<rect x="' + x + '" y="' + sy + '" width="' + thkW + '" height="' + sh +
+      '" rx="2" fill="#26506e" stroke="#4a90c0" stroke-width="1.2"/>';
+  }
+  const svg =
+    '<svg class="help-svg" viewBox="0 0 420 264" xmlns="http://www.w3.org/2000/svg">' +
+    '<style>.hl{fill:#cfe8f2;font:11px system-ui}.hs{fill:#8fa3b0;font:9.5px system-ui}.hn{fill:#ffcf7a;font:9.5px system-ui}</style>' +
+    // Section 1 — beam collimation
+    '<text x="20" y="40" class="hl">① Beam collimation — the X-ray beam width along z, per rotation</text>' +
+    cells +
+    '<rect x="' + (bx + 8 * cw) + '" y="' + by + '" width="' + cw + '" height="' + bh + '" fill="none" stroke="#ffcf7a" stroke-width="1.6"/>' +
+    '<line x1="' + bx + '" y1="' + (by + bh + 7) + '" x2="' + (bx + bw) + '" y2="' + (by + bh + 7) + '" stroke="#8fa3b0" stroke-width="1"/>' +
+    '<text x="' + (bx + bw / 2) + '" y="' + (by + bh + 20) + '" class="hs" text-anchor="middle">16 detector rows × 0.625 mm element = 10 mm collimation</text>' +
+    '<text x="' + (bx + 8 * cw + cw / 2) + '" y="' + (by - 6) + '" class="hn" text-anchor="middle">1 element = thinnest slice</text>' +
+    // Section 2 — reconstructed slices
+    '<text x="20" y="158" class="hl">② Reconstructed slices — the images you scroll through</text>' +
+    slabs +
+    '<line x1="' + sx + '" y1="' + (sy + sh + 8) + '" x2="' + (sx + thkW) + '" y2="' + (sy + sh + 8) + '" stroke="#4a90c0" stroke-width="1.2"/>' +
+    '<text x="' + (sx + thkW / 2) + '" y="' + (sy + sh + 20) + '" class="hs" text-anchor="middle">thickness</text>' +
+    '<line x1="' + (sx + thkW / 2) + '" y1="' + (sy - 8) + '" x2="' + (sx + thkW + gap + thkW / 2) + '" y2="' + (sy - 8) + '" stroke="#ffcf7a" stroke-width="1.2" marker-start="url(#a)" marker-end="url(#a)"/>' +
+    '<text x="' + (sx + thkW + gap / 2) + '" y="' + (sy - 12) + '" class="hn" text-anchor="middle">interval</text>' +
+    '<defs><marker id="a" markerWidth="6" markerHeight="6" refX="3" refY="3" orient="auto"><path d="M0 3 L6 1 L6 5 Z" fill="#ffcf7a"/></marker></defs>' +
+    // z axis
+    '<line x1="20" y1="252" x2="400" y2="252" stroke="#5a6a75" stroke-width="1"/><path d="M400 252 l-7 -3 l0 6 Z" fill="#5a6a75"/>' +
+    '<text x="20" y="246" class="hs">patient long axis (z):  Superior → Inferior</text>' +
+    '</svg>';
+  const def = (t, d) => '<div class="help-def"><b>' + t + '</b>' + d + '</div>';
+  inner.innerHTML = '<div class="help-pop"><div class="help-title">CT scan parameters</div>' + svg +
+    '<div class="help-defs">' +
+    def('Beam collimation', ' — the total z-width of the X-ray beam per rotation = <i>detector rows × element</i> (e.g. 16 × 0.625 = 10 mm). Wider covers faster but widens the cone (more cross-slice artifact).') +
+    def('Detector element / acquisition thickness', ' — collimation ÷ rows. This is the <i>thinnest</i> slice you can reconstruct.') +
+    def('Slice thickness ( = helical thickness)', ' — the z-thickness of each reconstructed image; can be anything from the detector element upward. Thicker = less noise but more partial-volume averaging (blur in z); thinner = more detail, more noise. "Helical thickness" is just the reconstructed slice thickness for a helical scan.') +
+    def('Slice interval', ' — the z-distance between reconstructed slice centres. Interval = thickness → contiguous; interval &lt; thickness → overlapping; interval &gt; thickness → gaps between slices.') +
+    def('Pitch', ' — table travel per rotation ÷ collimation. Pitch &gt; 1 stretches the helix (faster, less dose); &lt; 1 overlaps it (more dose, less helical artifact).') +
+    '</div><div class="acq-actions"><button class="acq-ok">Got it</button></div></div>';
+  inner.querySelector('.acq-ok').addEventListener('click', close);
+  document.addEventListener('keydown', onKey, true);
+  pop.classList.add('show');
+}
+
 // independent but can't be thinner than the detector element.
 function openAcqPopup(gi) {
   const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
