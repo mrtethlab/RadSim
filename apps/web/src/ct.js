@@ -1661,6 +1661,29 @@ export function ctApplyVendor() {
   const ge = isGE();
   ['reposAP', 'reposLAT'].forEach(id => { const el = ctx.$(id); if (el) el.style.display = ge ? 'none' : ''; });
   const tbl = ctx.$('ctTable'); if (tbl) tbl.style.display = ge ? 'none' : '';
+  // Console layout. Canon: TABLE (couch reposition) on the top button row, Move-to-Scan on the
+  // row below. GE: no couch reposition, so Move-to-Scan (pill-shaped) takes the TABLE slot on the
+  // top row and the second row is dropped.
+  const con = ctx.$('ctConsole');
+  if (con) {
+    con.classList.toggle('ge', ge);
+    const row1 = con.querySelector('.ctbtns'), moveRow = con.querySelector('.ctmove-row');
+    const moveLab = con.querySelector('.ctmove-lab'), moveBtn = ctx.$('ctMoveScan');
+    const lab3 = con.querySelectorAll('.ctbtns-lab > span')[2];
+    if (ge) {
+      if (moveBtn && row1 && moveBtn.parentElement !== row1) row1.appendChild(moveBtn);   // move into the TABLE slot
+      moveBtn && moveBtn.classList.add('pill');
+      if (moveRow) moveRow.style.display = 'none';
+      if (moveLab) moveLab.style.display = 'none';
+      if (lab3) lab3.textContent = 'Move to Scan';
+    } else {
+      if (moveBtn && moveRow && moveBtn.parentElement !== moveRow) moveRow.appendChild(moveBtn);
+      moveBtn && moveBtn.classList.remove('pill');
+      if (moveRow) moveRow.style.display = '';
+      if (moveLab) moveLab.style.display = '';
+      if (lab3) lab3.textContent = 'Table';
+    }
+  }
   const c = ctx.S.ct;
   // GE never moves the couch cross-axis: drop any pending/committed reposition offset so it can't
   // leak into the recon centring (which, in GE, comes purely from the box position).

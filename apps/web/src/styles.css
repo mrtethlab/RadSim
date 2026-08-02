@@ -263,6 +263,10 @@ body.mode-ct .xray-only{display:none}
 .ctbtn.start{width:84px; height:84px; color:var(--green)}
 .ctbtn.abort{width:66px; height:66px; color:var(--red)}
 .ctbtn.table{width:66px; height:66px; color:var(--amber)}
+/* GE: Move-to-Scan takes the TABLE slot as a pill (same amber look, elongated). The top row's
+   third column widens to fit it. ID+class specificity to beat the base #ctMoveScan size. */
+#ctMoveScan.pill{justify-self:stretch; width:auto; height:46px; border-radius:999px}
+#ctConsole.ge .ctbtns, #ctConsole.ge .ctbtns-lab{grid-template-columns:1fr 1.3fr 1.7fr}
 .ctbtn:hover{box-shadow:0 0 18px currentColor}
 .ctbtn:active{transform:scale(.94)}
 .ctbtn:disabled{opacity:.32; cursor:not-allowed; box-shadow:none}
