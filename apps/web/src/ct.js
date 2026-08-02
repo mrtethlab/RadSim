@@ -245,6 +245,7 @@ export function ctSyncScene() {
   if (three.det) three.det.visible = !isCT;           // hide the flat-panel detector in CT
   if (three.detMarks) three.detMarks.visible = !isCT; // and its corner brackets
   if (three.detArrow) three.detArrow.visible = !isCT; // and the hang-direction arrow
+  if (three.tube) three.tube.visible = !isCT;         // hide the x-ray tube head (CT has its own gantry tube)
   three.handGroup.rotation.y = 0;      // head-first only — no patient flip
   if (isCT) {
     const py = ctPatientY();
@@ -1792,6 +1793,10 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
   const cx = geo.cx, cy = geo.cy, RR = geo.rayR, ds = geo.ds, nDet = geo.m.nDet, nAng = geo.m.nAngles;
   const halfDet = (nDet - 1) / 2;
   const sino = new Float32Array(nAng * nDet);
+  const poly = mu.voxel && mu.muMat;             // polyenergetic (beam-hardening) path for voxel models
+  const muMat = poly ? mu.muMat : null, binW = poly ? mu.bins : null;
+  const nb = poly ? binW.length : 0, nmat = poly ? muMat.length : 0, bhc = poly ? mu.bhc : null;
+  const hid = poly ? new Int32Array(nmat) : null, hln = poly ? new Float64Array(nmat) : null;
   for (let a = 0; a < nAng; a++) {
     const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th);
     const base = a * nDet;
@@ -1800,14 +1805,28 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
       // ray: origin at t = -rayR along the integration axis e_t = (-sin, cos); offset r along e_r = (cos, sin)
       const o = [cx + r * ct + RR * st, cy + r * st - RR * ct, z0];
       const d = [-st, ct, 0];
-      let p;
-      if (mu.voxel) { const L = phantom.trace(o, d, 2 * RR), arr = mu.arr; p = 0; for (let m = 1; m < arr.length; m++) { const lm = L[m]; if (lm) p += arr[m] * lm; } }
-      else { const { bone, soft, marrow } = phantom.trace(o, d, 2 * RR); p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow; }
-      if (photons0 > 0) {                       // quantum noise from finite detected photons
-        const Nd = Math.max(1, photons0 * Math.exp(-p));
+      let p, Tr;
+      if (poly) {
+        // integrate transmission over the spectrum -> the measured line integral is
+        // beam-hardened (non-linear in path × μ), which is what streaks between metals
+        const L = phantom.trace(o, d, 2 * RR);
+        let nh = 0; for (let m = 1; m < nmat; m++) { const lm = L[m]; if (lm) { hid[nh] = m; hln[nh] = lm; nh++; } }
+        let T = 0;
+        for (let b = 0; b < nb; b++) { let e = 0; for (let j = 0; j < nh; j++) e += muMat[hid[j]][b] * hln[j]; T += binW[b] * Math.exp(-e); }
+        Tr = T; p = -Math.log(Math.max(T, 1e-300));
+      } else if (mu.voxel) {
+        const L = phantom.trace(o, d, 2 * RR), arr = mu.arr; p = 0; for (let m = 1; m < arr.length; m++) { const lm = L[m]; if (lm) p += arr[m] * lm; }
+        Tr = Math.exp(-p);
+      } else {
+        const { bone, soft, marrow } = phantom.trace(o, d, 2 * RR); p = mu.soft * soft + mu.bone * bone + mu.marrow * marrow;
+        Tr = Math.exp(-p);
+      }
+      if (photons0 > 0) {                       // quantum noise from finite detected photons (∝ transmission)
+        const Nd = Math.max(1, photons0 * Tr);
         p += gaussian() / Math.sqrt(Nd);
         if (p < 0) p = 0;
       }
+      if (bhc) p = bhc(p);                       // water beam-hardening correction (soft tissue linearised)
       sino[base + k] = p;
     }
   }
@@ -1859,13 +1878,46 @@ function backproject(q, geo) {
 // and reused by both the live preview and the full-quality recon so they sweep the same
 // anatomy. slice table positions are landmark-relative (scanStart + box fraction · length)
 // so the recon reconstructs exactly the anatomy the box selects on the scout.
+// Water beam-hardening correction: build C(p_poly) → p_mono so a pure-water path is
+// linearised (removes cupping for soft tissue). Bone and especially METAL have a very
+// different spectral response, so C mis-corrects them → the projections are inconsistent
+// and FBP throws the characteristic dark bands + streaks between dense objects. This is
+// the same "water correction" a real scanner applies, and why real CT shows metal
+// artifacts but not soft-tissue cupping.
+function buildWaterBHC(binW, muWbins, muWeff) {
+  const n = 320, Lmax = 60;                      // up to 60 cm of water (a large body)
+  const xs = new Float64Array(n), ys = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const L = Lmax * i / (n - 1);
+    let T = 0; for (let b = 0; b < binW.length; b++) T += binW[b] * Math.exp(-muWbins[b] * L);
+    xs[i] = -Math.log(Math.max(T, 1e-300));      // measured (hardened) integral for water path L
+    ys[i] = muWeff * L;                          // ideal monochromatic integral
+  }
+  const slope = (ys[n - 1] - ys[n - 2]) / Math.max(xs[n - 1] - xs[n - 2], 1e-9);
+  return (p) => {
+    if (p <= xs[0]) return Math.max(0, p);
+    if (p >= xs[n - 1]) return ys[n - 1] + slope * (p - xs[n - 1]);   // extrapolate (bone/metal)
+    let lo = 0, hi = n - 1; while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] <= p) lo = m; else hi = m; }
+    const t = (p - xs[lo]) / (xs[hi] - xs[lo]); return ys[lo] + t * (ys[hi] - ys[lo]);
+  };
+}
+
 function scanSetup(g) {
-  const spec = Spectrum.make(g.kv), effE = spec.meanE;
+  const spec = Spectrum.make(g.kv), bins = spec.bins, effE = spec.meanE;
   const phantom = ctx.buildPhantom();            // built at the committed table position (patient.z = isoZ)
   const voxel = !!phantom.voxel;                 // chest (voxel/BodyMaterials) vs hand (analytic)
-  const mu = voxel ? { voxel: true, arr: muAtEnergy(effE) }
-                   : { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
-  const muW = voxel ? BodyMaterials.muWater(effE) : mu.soft;   // HU reference (water for voxel, soft for hand)
+  const muWeff = BodyMaterials.muWater(effE);
+  // Voxel subjects use a POLYENERGETIC forward projection (integrate transmission over the
+  // spectrum) + the water beam-hardening correction, so beam hardening emerges. The
+  // analytic hand stays monochromatic (no metal, keep its old calibration). `arr` is the
+  // monochromatic table still sent to the GPU backend.
+  const binW = bins.map(b => b.w);
+  const muWbins = voxel ? bins.map(b => BodyMaterials.muWater(b.E)) : null;
+  const mu = voxel
+    ? { voxel: true, arr: muAtEnergy(effE), bins: binW, muMat: muOverBins(bins), muWbins, muWeff,
+        bhc: buildWaterBHC(binW, muWbins, muWeff) }
+    : { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
+  const muW = voxel ? muWeff : mu.soft;          // HU reference (water for voxel, soft for hand)
   const fovMM = groupDFOV(g);                     // DFOV = scan box diameter (box centre reposed to isocentre)
   const off = scanStartMM();
   const startMM = off + g.box.top * ctx.S.ct.scanLen, endMM = off + g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
@@ -1904,7 +1956,10 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
                      ds: geo.ds, rayR: geo.rayR, dfovR: geo.R,
                      kernel: geo.m.fixedPitch ? 'shepp' : 'ramlak',
                      rot: phantom.rot ? Array.from(phantom.rot) : null,
-                     muArr: Array.from(mu.arr), photons0 };
+                     muArr: Array.from(mu.arr), photons0,
+                     // polyenergetic beam-hardening data (so the GPU recon shows metal artifacts too)
+                     binsW: mu.bins, muMat: mu.muMat.map(r => Array.from(r)),
+                     muWbins: Array.from(mu.muWbins), muWeff: mu.muWeff };
       const BATCH = 4;
       for (let s0 = 0; s0 < nz; s0 += BATCH) {
         if (!alive()) return null;

@@ -42,6 +42,30 @@ def _kernel(n_det: int, ds: float, kind: str, device) -> torch.Tensor:
     return h
 
 
+def _build_bhc(binW, muWbins, muWeff, Lmax=60.0, n=320):
+    """Water beam-hardening correction LUT: C(p_poly) → p_mono for a water path. Linearises
+    soft tissue; bone/metal (different spectral response) stay mis-corrected → artifacts."""
+    L = torch.linspace(0.0, Lmax, n, device=DEVICE)
+    T = (binW[None, :] * torch.exp(-muWbins[None, :] * L[:, None])).sum(dim=1)   # (n,)
+    xs = -torch.log(T.clamp(min=1e-30))
+    ys = muWeff * L
+    slope = ((ys[-1] - ys[-2]) / (xs[-1] - xs[-2]).clamp(min=1e-9))
+    return xs, ys, slope
+
+
+def _apply_bhc(pv, xs, ys, slope):
+    shp = pv.shape
+    f = pv.flatten()
+    idx = torch.searchsorted(xs, f).clamp(1, xs.shape[0] - 1)
+    x0, x1 = xs[idx - 1], xs[idx]
+    y0, y1 = ys[idx - 1], ys[idx]
+    t = (f - x0) / (x1 - x0).clamp(min=1e-9)
+    out = y0 + t * (y1 - y0)
+    out = torch.where(f >= xs[-1], ys[-1] + slope * (f - xs[-1]), out)          # extrapolate (bone/metal)
+    out = torch.where(f <= xs[0], f.clamp(min=0.0), out)
+    return out.reshape(shp)
+
+
 @torch.no_grad()
 def recon_slices(p: dict[str, Any]) -> np.ndarray:
     vv = get_volume(p["model"], p["flips"])
@@ -54,6 +78,16 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     mu = torch.tensor(p["muArr"], dtype=torch.float32, device=DEVICE)
     mu[0] = 0.0                                        # air
     photons0 = float(p["photons0"])
+    # polyenergetic beam-hardening path (voxel models): integrate transmission over the
+    # spectrum so beam hardening emerges (dark bands between dense/metal objects), then
+    # apply the water beam-hardening correction. Mirrors the browser projectSlice.
+    poly = p.get("binsW") is not None
+    if poly:
+        binW = torch.tensor(p["binsW"], dtype=torch.float32, device=DEVICE)          # (nb,)
+        muMat = torch.tensor(p["muMat"], dtype=torch.float32, device=DEVICE)          # (nmat, nb)
+        muMat[0] = 0.0
+        bhc_x, bhc_y, bhc_slope = _build_bhc(binW,
+            torch.tensor(p["muWbins"], dtype=torch.float32, device=DEVICE), float(p["muWeff"]))
     z0_list = [float(z) for z in p["z0List"]]
     rot = rot_tensor(p.get("rot"))
 
@@ -89,10 +123,21 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
             pyr = oy[a0:a1].unsqueeze(2) + dy[a0:a1].unsqueeze(2) * ts
             pts = torch.stack([pxr, pyr, torch.full_like(pxr, z0)], dim=-1)   # (a, K, S, 3)
             ids = sample_ids(vv, pts, center, rot)
-            sino[a0:a1] = (mu[ids] * STEP).sum(dim=-1)
+            if poly:
+                # accumulate transmission over spectral bins (loop over bins to keep the
+                # per-material (a,K,S) tensor small); p = -ln(Σ w_b · exp(-∫μ_b dl))
+                T = torch.zeros(a1 - a0, n_det, device=DEVICE)
+                for b in range(binW.shape[0]):
+                    e_b = (muMat[ids, b] * STEP).sum(dim=-1)                   # (a, K)
+                    T += binW[b] * torch.exp(-e_b)
+                sino[a0:a1] = -torch.log(T.clamp(min=1e-30))
+            else:
+                sino[a0:a1] = (mu[ids] * STEP).sum(dim=-1)
         if photons0 > 0:
-            nd = (photons0 * torch.exp(-sino)).clamp(min=1.0)
+            nd = (photons0 * torch.exp(-sino)).clamp(min=1.0)                  # detected photons ∝ transmission
             sino = (sino + torch.randn_like(sino) / nd.sqrt()).clamp(min=0.0)
+        if poly:
+            sino = _apply_bhc(sino, bhc_x, bhc_y, bhc_slope)                   # water beam-hardening correction
         # ---- Ram-Lak filter (grouped 1D convolution over channels) ----
         q = torch.nn.functional.conv1d(sino.unsqueeze(1), h, padding=n_det - 1).squeeze(1) * ds
         # ---- back-project ----

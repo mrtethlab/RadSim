@@ -180,15 +180,13 @@
       </div>
     </div>
     <div class="baytag">
-      <div class="k">RADSIM · POSITIONING BAY</div>
-      <div class="s">Digit · Hand phantom</div>
+      <div class="k">RadSim</div>
     </div>
-    <div class="hint">drag&nbsp;·&nbsp;orbit&nbsp;&nbsp;|&nbsp;&nbsp;wheel&nbsp;·&nbsp;zoom&nbsp;&nbsp;|&nbsp;&nbsp;tube&nbsp;pov&nbsp;=&nbsp;bird's&nbsp;eye</div>
   </div>
 
   <!-- ============ POSITIONING CONTROLS ============ -->
   <div class="col">
-    <div class="hdr"><div class="t"><b>POSITION</b> / SETUP</div><div class="u">geometry</div></div>
+    <div class="hdr"><div class="t"><b>POSITION</b> / SETUP</div></div>
     <div class="pad">
 
       <div class="grp">
@@ -346,7 +344,7 @@
             <button data-res="std" class="on">Std</button>
             <button data-res="high">High</button>
           </div>
-          <div class="note" style="margin-top:4px">Quick = coarse draft preview (~1 mm px, fast compute). Low/Std/High = true DR matrices ray-cast at native resolution.</div>
+          <div class="note warn" id="resWarn" style="margin-top:4px; display:none">⚠ Full-resolution ray-casting is computationally heavy — expect long processing times. A detected GPU (Python compute engine) is strongly recommended.</div>
         </div>
       </div>
 

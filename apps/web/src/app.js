@@ -267,11 +267,15 @@ const VOXEL_MODELS = {
    exported GLB carries PBR defaults (metalness 1), no shadow flags and NO normals
    (GLTFLoader falls back to flat shading, which breaks the spot-light cookie
    projection — the light field floods the whole mesh unmasked). */
-function prepVoxelMesh(grp){
+function prepVoxelMesh(grp, translucent){
   grp.traverse(o=>{ if(o.isMesh){ o.castShadow=true; o.receiveShadow=true;
     if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    // phantom shell/fill (acrylic, water) render see-through so the interior rods show
+    const clear = translucent && /acrylic|water/i.test(o.name);
     const ms=Array.isArray(o.material)?o.material:[o.material];
-    for(const m of ms){ if(m){ m.metalness=0; m.roughness=0.95; m.flatShading=false; m.needsUpdate=true; } } } });
+    for(const m of ms){ if(m){ m.metalness=0; m.roughness=0.95; m.flatShading=false;
+      if(clear){ m.transparent=true; m.depthWrite=false; m.opacity=/water/i.test(o.name)?0.22:0.16; m.side=THREE.DoubleSide; o.castShadow=false; o.renderOrder=1; }
+      m.needsUpdate=true; } } } });
 }
 
 /* Switch the scan subject between the analytic hand and any voxel model. Models
@@ -305,7 +309,7 @@ async function setSubject(sub){
       S.voxelCache[sub]=vm;
       if(vm.meshUrl){
         const grp=await loadModelUrl(vm.meshUrl);
-        prepVoxelMesh(grp);
+        prepVoxelMesh(grp, sub==='metalphantom');
         grp.visible=false; three.handGroup.add(grp); three.voxelMeshes[sub]=grp;
       }
     }catch(err){ console.error(sub+' load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
@@ -354,6 +358,8 @@ function applyDet(){
   S.detNx=nx; S.detNy=ny;
   const dv=$('detSizeV'); if(dv) dv.textContent=S.detW+'×'+S.detH+' cm';
   const rv=$('resV'); if(rv) rv.textContent=nx+'×'+ny;
+  // full-resolution (Low/Std/High) ray-casting is heavy — show the compute warning
+  const rw=$('resWarn'); if(rw) rw.style.display = (S.resolution==='quick') ? 'none' : '';
   const os=$('detOrientSeg'); if(os)[...os.children].forEach(b=>b.classList.toggle('on',b.dataset.orient===S.detOrient));
   // the light field can open to the full detector: cap the collimation sliders at the receptor size
   const cx=$('collX'), cz=$('collZ');
@@ -954,7 +960,7 @@ function finishExposure(success){
   S.prepped=false; $('rotor').classList.remove('on'); $('fire').disabled=true; $('fire').classList.remove('armed');
   if(success){
     $('clock').textContent='ACQUIRING';
-    computeRadiograph().then(()=>{ S.exposing=false; $('clock').textContent='IMAGE READY'; });
+    computeRadiograph().then(()=>{ S.exposing=false; $('clock').textContent=''; });
   } else {
     S.exposing=false;
     $('clock').textContent='EXPOSURE TERMINATED';

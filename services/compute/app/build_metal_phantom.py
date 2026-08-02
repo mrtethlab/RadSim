@@ -33,12 +33,13 @@ def _build_phantom_mesh(mat, spacing, path, step=2):
     nz, ny, nx = mat.shape
     centre = np.array([nx, ny, nz]) * spacing / 2.0
     scene = trimesh.Scene()
+    # node names carry the material so the frontend can make acrylic + water translucent
     groups = [
-        (mat == PLASTIC, (0x9f, 0xb6, 0xa8, 90)),    # acrylic shell — translucent
-        (mat == WATER,   (0x2f, 0x6f, 0xb0, 70)),    # water fill — translucent blue
-        (mat == LEAD,    (0x53, 0x57, 0x5e, 255)),   # lead pillars — solid dark
+        ("acrylic", mat == PLASTIC, (0x9f, 0xb6, 0xa8, 90)),    # acrylic shell — translucent
+        ("water",   mat == WATER,   (0x2f, 0x6f, 0xb0, 70)),    # water fill — translucent blue
+        ("lead",    mat == LEAD,    (0x53, 0x57, 0x5e, 255)),   # lead pillars — solid dark
     ]
-    for mask, rgba in groups:
+    for nm, mask, rgba in groups:
         if mask.sum() < 200:
             continue
         vol = ndi.binary_closing(mask, iterations=1).astype(np.float32)
@@ -49,7 +50,7 @@ def _build_phantom_mesh(mat, spacing, path, step=2):
         v = np.column_stack([verts[:, 2], verts[:, 1], verts[:, 0]]) * spacing - centre
         m = trimesh.Trimesh(vertices=v, faces=faces, process=False)
         m.visual.vertex_colors = np.tile(np.array(rgba, np.uint8), (len(v), 1))
-        scene.add_geometry(m)
+        scene.add_geometry(m, node_name=nm, geom_name=nm)
     scene.export(path)
     print(f"      wrote {path}")
 
