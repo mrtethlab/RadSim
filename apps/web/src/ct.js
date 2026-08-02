@@ -498,7 +498,6 @@ function wireCTConsole() {
       acquireScouts();
     } else if (S.ct.phase === 'planning') {
       if (ctx.$('ctStart').classList.contains('flash')) runScan();
-      else if (ctx.$('ctTable').classList.contains('flash')) setHint('Reposition the table first (hold the orange TABLE button).');
       else setHint('Move the table to the scan start first — press the flashing MOVE TO SCAN button.');
     }
   });
@@ -1665,18 +1664,20 @@ function updatePlanReady() {
   const needX = Math.abs(c.plan.targetX - c.plan.committedX) > MOVE_THRESH;
   const needY = Math.abs(c.plan.targetY - c.plan.committedY) > MOVE_THRESH;
   const needMove = needX || needY;
-  // Sequence: reposition (lateral/height) → Move to Scan (longitudinal, to the scan
-  // start) → START. Exactly one button flashes at a time.
-  const needScanMove = !needMove && !atMoveTarget();
-  ctx.$('ctTable')?.classList.toggle('flash', needMove);
+  // The mediolateral/AP reposition is OPTIONAL: if the couch isn't physically recentred, the
+  // reconstruction targets the DFOV onto the planned scan centre (off-centre / targeted recon),
+  // so the slice is still centred on the anatomy. Holding TABLE still recentres the patient for
+  // realism (and, by committing the offset, hands centring back to the couch). Only the
+  // longitudinal Move-to-Scan gates START. Sequence: [optional reposition] → Move to Scan → START.
+  const needScanMove = !atMoveTarget();
+  const moving = needMove && tableV > 0.05;                    // couch actively repositioning
+  ctx.$('ctTable')?.classList.remove('flash');                // reposition is offered, never forced
   ctx.$('ctMoveScan')?.classList.toggle('flash', c.isocentred && needScanMove);
-  ctx.$('ctStart')?.classList.toggle('flash', c.isocentred && !needMove && !needScanMove);
-  c.moveBlit = needMove ? (needX ? 'ap' : 'lat') : null;   // which PoV to mirror into the monitor
+  ctx.$('ctStart')?.classList.toggle('flash', c.isocentred && !needScanMove);
+  c.moveBlit = moving ? (needX ? 'ap' : 'lat') : null;        // mirror the PoV only while the motor turns
   const noexp = ctx.$('noexp');
-  if (needMove && noexp) noexp.style.display = 'none';         // the PoV blit fills the monitor
-  // when no move is pending, LEAVE the last PoV frame frozen in the monitor (don't
-  // revert to NO IMAGE) — it persists until abort/reset/mode-switch clears it.
-  showTableReminder(needMove, tableV > 0.05);                  // "moving" only while the motor is actually turning
+  if (moving && noexp) noexp.style.display = 'none';
+  showTableReminder(moving, moving);   // only the "TABLE IS MOVING" banner while the motor turns; never a forced prompt
 }
 function showTableReminder(on, moving) {
   const el = ctx.$('ctReminder'); if (!el) return;
@@ -1945,7 +1946,7 @@ function previewReconSlice(setup, si, geo, h, mu) {
 function animateHelicalScan(g, setup, alive) {
   const nz = setup.count, T = scanAnimSeconds(g) * 1000;
   const canPreview = !setup.phantom.geometryOnly;   // backend-only models have no browser volume to preview
-  const pgeo = canPreview ? reconGeoM(setup.fovMM, 0, ISO_Y, PREVIEW_DET, setup.sfovMM) : null;
+  const pgeo = canPreview ? reconGeoM(setup.fovMM, setup.cx || 0, (setup.cy != null ? setup.cy : ISO_Y), PREVIEW_DET, setup.sfovMM) : null;
   const ph = canPreview ? buildKernel(pgeo.ds, pgeo.m.nDet, pgeo.m.fixedPitch) : null;
   const pmu = canPreview ? { ...setup.mu, muMat: null, bhc: null } : null;   // monochromatic (cheap preview)
   const pmeta = { gridN: PREVIEW_DET.gridN, fovMM: setup.fovMM, muWater: setup.muW };
@@ -2346,13 +2347,22 @@ function scanSetup(g) {
         bhc: buildWaterBHC(binW, muWbins, muWeff) }
     : { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
   const muW = voxel ? muWeff : mu.soft;          // HU reference (water for voxel, soft for hand)
-  const fovMM = groupDFOV(g);                     // DFOV = scan box diameter (box centre reposed to isocentre)
+  const fovMM = groupDFOV(g);                     // DFOV = scan box diameter
+  // Off-centre DFOV targeting: the reconstruction disc is centred on the TARGETED scan centre,
+  // not always the isocentre. Whatever part of the mediolateral/AP reposition offset has been
+  // realised by a table move (committed) already sits at the isocentre; the UN-committed residual
+  // is applied here as a recon-FOV offset — so the slice is centred on the anatomy the operator
+  // targeted even without moving the table (a real "off-centre / targeted recon"). targetY > 0 is
+  // posterior (−y); targetX > 0 is patient-right (+x).
+  const pl = ctx.S.ct.plan;
+  const cx = ((pl.targetX || 0) - (pl.committedX || 0)) / MM_PER_UNIT;
+  const cy = ISO_Y - ((pl.targetY || 0) - (pl.committedY || 0)) / MM_PER_UNIT;
   const off = scanStartMM();
   const startMM = off + g.box.top * ctx.S.ct.scanLen, endMM = off + g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
   const count = Math.max(1, Math.min(MAX_SLICES, groupImages(g)));   // one slice per planned image
   const positions = [];
   for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
-  return { effE, phantom, voxel, mu, muW, fovMM, sfovMM: g.sfovMM || 500, positions, count };
+  return { effE, phantom, voxel, mu, muW, fovMM, cx, cy, sfovMM: g.sfovMM || 500, positions, count };
 }
 // Detected photons per sinogram sample for a given geometry. The quick detector is the
 // noise reference; more views split the same tube output into smaller buckets. The
@@ -2381,7 +2391,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   // fullRecon off → reconstruct at the coarse PREVIEW detector (real-time, low quality) instead
   // of the selected detector; keeps the scan feeling instant when only a quick look is needed.
   const recMode = feat.fullRecon === false ? QUICK_RT : detMode();
-  const geo = reconGeoM(fovMM, 0, ISO_Y, recMode, sfovMM);
+  const geo = reconGeoM(fovMM, setup.cx || 0, (setup.cy != null ? setup.cy : ISO_Y), recMode, sfovMM);
   const photons0 = feat.quantumNoise ? photonsFor(g, geo) : 0;
   const cone = feat.coneBeam ? coneProfile(g.beamColl / MM_PER_UNIT, groupBaseThk(g) / MM_PER_UNIT, geo.m.zSub || 1) : ONE_RAY;
   // Reconstruct the full transverse stack into one contiguous volume so it can be
@@ -2448,7 +2458,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   }
   const slices = positions.map((d, i) => ({ d, mu: vol.subarray(i * N * N, (i + 1) * N * N) }));
   const dz = nz > 1 ? (positions[nz - 1] - positions[0]) / (nz - 1) : groupBaseInterval(g);
-  return { slices, vol, nz, gridN: N, fovMM, z0: positions[0], dz, centerY: ISO_Y, muWater: muW, effE };
+  return { slices, vol, nz, gridN: N, fovMM, z0: positions[0], dz, centerY: geo.cy, muWater: muW, effE };
 }
 
 // ---- image storage ----
