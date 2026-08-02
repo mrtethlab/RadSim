@@ -451,6 +451,7 @@ const S = {
       { on:false, vis:true, box:{ top:0.30, bot:0.70, apL:0.40, apR:0.60, latL:0.40, latR:0.60 }, kv:120, ma:295, sliceThk:5,    detRows:16, beamColl:10, pitch:0.938, rotSpeed:0.5, interval:5,    tilt:0, delay:0 },
     ],
     activeGroup:0,             // the group currently being edited (drives the reposition plan)
+    activeRecon:-1,            // selected recon within the active group (-1 = none; hides scan lines when >=0)
     plan:{ targetX:0, targetY:0, committedX:0, committedY:0 },   // required vs applied table move (mm)
     moveBlit:null,             // 'ap'|'lat'|null: mirror this PoV into the monitor during a table move
     // ---- Phase 5/6: scan execution, reconstruction + image storage ----

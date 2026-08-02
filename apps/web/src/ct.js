@@ -959,6 +959,7 @@ function defaultGroups() {
 function initScanBoxes() {
   buildGroupBoxes('fitAP', 'ap');
   buildGroupBoxes('fitLAT', 'lat');
+  document.querySelectorAll('#ctScouts .reconbox').forEach((el) => wireReconBox(el, el.dataset.view));
   wireScanGroupTable();
   wireReconPlan();
   wireReposButtons();
@@ -988,11 +989,12 @@ function resetScanBox() {
 // Position + style every group box on both scouts, with per-slice dotted lines.
 function renderScanBoxes() {
   const c = ctx.S.ct;
+  const reconSel = (c.activeRecon != null && c.activeRecon >= 0);
   document.querySelectorAll('#ctScouts .scanbox').forEach((el) => {
     const gi = +el.dataset.group, view = el.dataset.view, g = grp(gi);
-    const shown = g.on && g.vis;
+    const shown = g.on && gi === c.activeGroup;   // only the SELECTED scan group's box shows
     el.classList.toggle('shown', shown);
-    el.classList.toggle('active', gi === c.activeGroup);
+    el.classList.toggle('active', shown);
     if (!shown) return;
     // AP: scan length (top/bot) → vertical, cross axis (apL/apR) → horizontal.
     // LAT (rotated): scan length (top/bot) → horizontal, depth (latL/latR) → vertical.
@@ -1003,16 +1005,73 @@ function renderScanBoxes() {
       el.style.left = (g.box.top * 100) + '%'; el.style.width = ((g.box.bot - g.box.top) * 100) + '%';
       el.style.top = (g.box.latL * 100) + '%'; el.style.height = ((g.box.latR - g.box.latL) * 100) + '%';
     }
-    // per-slice dotted lines (spacing = interval) run ACROSS the scan-length axis
+    // per-slice dotted scan lines — toggled by the group's Show button; hidden while a
+    // recon is selected (reduce clutter)
     const sl = el.querySelector('.slices'), lenMM = groupScanLenMM(g);
     const period = lenMM > 0 ? (g.interval / lenMM) * 100 : 100;
-    if (period >= 0.7 && g.interval > 0) {
+    if (g.vis && !reconSel && period >= 0.7 && g.interval > 0) {
       const dir = view === 'ap' ? 'to bottom' : 'to right';
       sl.style.backgroundImage = 'repeating-linear-gradient(' + dir + ', var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
       sl.style.opacity = '0.55';
     } else { sl.style.backgroundImage = 'none'; }
   });
+  renderReconBoxes();
   renderSfovLines();
+}
+// The active recon's sub-area box within the active scan group — draggable (move + resize
+// along the scan axis) like the scan box, with a plane indicator (↔ / ⊗) in the middle.
+function renderReconBoxes() {
+  const c = ctx.S.ct, g = grp(c.activeGroup || 0);
+  const recons = (g && g.on && c.phase === 'planning') ? groupRecons(g) : null;
+  const r = (recons && c.activeRecon != null && c.activeRecon >= 0) ? recons[c.activeRecon] : null;
+  document.querySelectorAll('#ctScouts .reconbox').forEach((el) => {
+    el.classList.toggle('shown', !!r);
+    if (!r) return;
+    const view = el.dataset.view;
+    const gT = g.box.top, gB = g.box.bot, t0 = gT + r.subTop * (gB - gT), t1 = gT + r.subBot * (gB - gT);
+    if (view === 'ap') {
+      el.style.left = (g.box.apL * 100) + '%'; el.style.width = ((g.box.apR - g.box.apL) * 100) + '%';
+      el.style.top = (t0 * 100) + '%'; el.style.height = ((t1 - t0) * 100) + '%';
+    } else {
+      el.style.left = (t0 * 100) + '%'; el.style.width = ((t1 - t0) * 100) + '%';
+      el.style.top = (g.box.latL * 100) + '%'; el.style.height = ((g.box.latR - g.box.latL) * 100) + '%';
+    }
+    el.querySelector('.rb-ind').innerHTML = reconIndicator(r.plane, view);
+  });
+}
+// Plane indicators: sagittal → side-to-side arrow on AP + circled-X on LAT; coronal → the
+// opposite; transverse → none.
+const RB_ARROW = '<svg viewBox="0 0 40 16" width="34" height="14"><path fill="none" stroke="#ffcf7a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M8 8H32M8 8l4-4M8 8l4 4M32 8l-4-4M32 8l-4 4"/></svg>';
+const RB_XCIRC = '<svg viewBox="0 0 24 24" width="20" height="20"><circle cx="12" cy="12" r="9" fill="none" stroke="#ffcf7a" stroke-width="2"/><path stroke="#ffcf7a" stroke-width="2" stroke-linecap="round" d="M8 8l8 8M16 8l-8 8"/></svg>';
+function reconIndicator(plane, view) {
+  const arrow = (plane === 'sagittal' && view === 'ap') || (plane === 'coronal' && view === 'lat');
+  const xc = (plane === 'sagittal' && view === 'lat') || (plane === 'coronal' && view === 'ap');
+  return arrow ? RB_ARROW : (xc ? RB_XCIRC : '');
+}
+function wireReconBox(box, view) {
+  box.addEventListener('pointerdown', (e) => {
+    const c = ctx.S.ct, g = grp(c.activeGroup || 0);
+    if (c.phase !== 'planning' || !g || !g.on || c.activeRecon == null || c.activeRecon < 0) return;
+    const r = groupRecons(g)[c.activeRecon]; if (!r) return;
+    const rect = box.parentElement.getBoundingClientRect();
+    const edge = e.target.classList.contains('eh') ? e.target.dataset.edge : null;
+    const gspan = Math.max(1e-3, g.box.bot - g.box.top);
+    const s = { x: e.clientX, y: e.clientY, subTop: r.subTop, subBot: r.subBot };
+    try { box.setPointerCapture(e.pointerId); } catch (_) {}
+    e.preventDefault(); e.stopPropagation();
+    const scanLo = view === 'ap' ? 't' : 'l', scanHi = view === 'ap' ? 'b' : 'r';
+    const onMove = (ev) => {
+      const du = (ev.clientX - s.x) / rect.width, dv = (ev.clientY - s.y) / rect.height;
+      const d = ((view === 'ap' ? dv : du)) / gspan;   // delta in group-fraction units
+      const MIN = 0.03;
+      if (!edge) { const h = s.subBot - s.subTop, nt = clampV(s.subTop + d, 0, 1 - h); r.subTop = nt; r.subBot = nt + h; }
+      else if (edge === scanLo) r.subTop = clampV(s.subTop + d, 0, r.subBot - MIN);
+      else if (edge === scanHi) r.subBot = clampV(s.subBot + d, r.subTop + MIN, 1);
+      renderReconBoxes(); renderReconPlan();
+    };
+    const onUp = () => { try { box.releasePointerCapture(e.pointerId); } catch (_) {} box.removeEventListener('pointermove', onMove); box.removeEventListener('pointerup', onUp); box.removeEventListener('pointercancel', onUp); };
+    box.addEventListener('pointermove', onMove); box.addEventListener('pointerup', onUp); box.addEventListener('pointercancel', onUp);
+  });
 }
 // Dark-purple dashed lines marking the SFOV lateral edges on both scouts (the SFOV has
 // infinite length along the scan axis). AP: vertical lines at the mediolateral edges;
@@ -1035,7 +1094,7 @@ function renderSfovLines() {
 // boxes stay axis-aligned rectangles.
 function wireScanBox(box, gi, view) {
   box.addEventListener('pointerdown', (e) => {
-    if (ctx.S.ct.phase !== 'planning' || !grp(gi).on || !grp(gi).vis) return;
+    if (ctx.S.ct.phase !== 'planning' || !grp(gi).on || gi !== ctx.S.ct.activeGroup) return;
     ctx.S.ct.activeGroup = gi;
     const rect = box.parentElement.getBoundingClientRect();
     const edge = e.target.classList.contains('eh') ? e.target.dataset.edge : null;
@@ -1158,7 +1217,7 @@ function wireScanGroupTable() {
     const el = e.target.closest('[data-act]');
     if (el) { openFieldEditor(+el.closest('tr').dataset.group, el.dataset.act); return; }
     const row = e.target.closest('tr[data-group]');
-    if (row) { ctx.S.ct.activeGroup = +row.dataset.group; renderScanBoxes(); updatePlan(); }
+    if (row) { ctx.S.ct.activeGroup = +row.dataset.group; ctx.S.ct.activeRecon = -1; renderScanBoxes(); updatePlan(); }
   });
 }
 function openFieldEditor(gi, act) {
@@ -1265,7 +1324,7 @@ function renderScanGroups() {
       : '<span class="sg-num">' + (gi + 1) + '</span>';
     rows += '<tr class="sg-row gc' + gi + (gi === c.activeGroup ? ' active' : '') + '" data-group="' + gi + '">'
       + '<td>' + num + '</td>'
-      + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle box on scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
+      + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle scan lines on the scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
       + cell('sg-edit', 'start', fmtTablePos(scanStartMM() + g.box.top * c.scanLen))
       + cell('sg-edit', 'end', fmtTablePos(scanStartMM() + g.box.bot * c.scanLen))
       + cell('sg-station', 'sfov', g.sfovName || sfovName(g.sfovMM))
@@ -1307,7 +1366,7 @@ function renderReconPlan() {
   const recons = groupRecons(g), len = c.scanLen, off = scanStartMM();
   const gTop = off + g.box.top * len, gBot = off + g.box.bot * len, span = gBot - gTop;
   const cell = (cls, act, txt) => '<td><span class="' + cls + '" data-act="' + act + '">' + txt + '</span></td>';
-  const ari = c.activeRecon || 0;
+  const ari = (c.activeRecon == null ? -1 : c.activeRecon);   // -1 = none selected
   let rows = '';
   recons.forEach((r, ri) => {
     const num = ri > 0
@@ -1330,26 +1389,26 @@ function renderReconPlan() {
   cont.innerHTML = '<div class="rp-title">Recon planning — scan group ' + (gi + 1) + '  ·  ' + recons.length + '/' + N_RECONS + '</div>'
     + '<table class="sg-table"><thead><tr>' + RP_HEADERS.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>'
     + rows + '</tbody></table>' + (canAdd ? '<button class="sg-add rp-add">+ Add recon</button>' : '');
-  renderReconSub();
+  renderReconBoxes();
 }
 function wireReconPlan() {
   const cont = ctx.$('ctReconPlan'); if (!cont) return;
   cont.addEventListener('click', (e) => {
     const c = ctx.S.ct, g = grp(c.activeGroup || 0); if (!g || !g.on) return;
-    const recons = groupRecons(g);
-    if (e.target.closest('.rp-add')) { if (recons.length < N_RECONS) { recons.push(defaultRecon()); c.activeRecon = recons.length - 1; renderReconPlan(); } return; }
+    const recons = groupRecons(g), refresh = () => { renderReconPlan(); renderScanBoxes(); };
+    if (e.target.closest('.rp-add')) { if (recons.length < N_RECONS) { recons.push(defaultRecon()); c.activeRecon = recons.length - 1; refresh(); } return; }
     const del = e.target.closest('.sg-num.del');
-    if (del) { const ri = +del.closest('tr').dataset.recon; if (ri > 0) { recons.splice(ri, 1); c.activeRecon = Math.min(c.activeRecon || 0, recons.length - 1); renderReconPlan(); } return; }
+    if (del) { const ri = +del.closest('tr').dataset.recon; if (ri > 0) { recons.splice(ri, 1); c.activeRecon = -1; refresh(); } return; }
     const ed = e.target.closest('[data-act]'), row = e.target.closest('tr[data-recon]');
-    if (row) c.activeRecon = +row.dataset.recon;
-    if (ed) editRecon(+ed.closest('tr').dataset.recon, ed.dataset.act); else renderReconPlan();
+    if (row) c.activeRecon = +row.dataset.recon;   // selecting a recon hides the scan lines
+    if (ed) editRecon(+ed.closest('tr').dataset.recon, ed.dataset.act); else refresh();
   });
 }
 function editRecon(ri, act) {
   const c = ctx.S.ct, g = grp(c.activeGroup || 0), r = groupRecons(g)[ri]; if (!r) return;
   c.activeRecon = ri;
   const len = c.scanLen, off = scanStartMM(), gTop = off + g.box.top * len, span = (off + g.box.bot * len) - gTop;
-  const done = () => renderReconPlan();
+  const done = () => { renderReconPlan(); renderScanBoxes(); };
   const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
   const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
   if (act === 'rp-plane') station('Recon plane', RP_PLANES.map((p, i) => i), RP_PLANES.findIndex((p) => p.v === r.plane), (i) => RP_PLANES[i].l, (i) => { r.plane = RP_PLANES[i].v; });
@@ -1362,26 +1421,6 @@ function editRecon(ri, act) {
   else if (act === 'rp-substart') type('Recon sub-area start (table position, mm)', Math.round(gTop + r.subTop * span), (v) => { r.subTop = clampV((v - gTop) / span, 0, r.subBot - 0.02); });
   else if (act === 'rp-subend') type('Recon sub-area end (table position, mm)', Math.round(gTop + r.subBot * span), (v) => { r.subBot = clampV((v - gTop) / span, r.subTop + 0.02, 1); });
   else done();
-}
-// Orange dashed band on the scouts showing the active recon's sub-area (within the group)
-// — only when it is a genuine sub-region, not the full group.
-function renderReconSub() {
-  const c = ctx.S.ct, g = grp(c.activeGroup || 0);
-  const r = g && g.on ? groupRecons(g)[c.activeRecon || 0] : null;
-  const partial = r && !(r.subTop <= 0.001 && r.subBot >= 0.999) && c.phase === 'planning';
-  document.querySelectorAll('#ctScouts .reconsub').forEach((el) => {
-    el.style.display = partial ? 'block' : 'none';
-    if (!partial) return;
-    // group box on the scout (fractions of the scout) → the sub-area is a slice of it
-    const t0 = g.box.top + r.subTop * (g.box.bot - g.box.top), t1 = g.box.top + r.subBot * (g.box.bot - g.box.top);
-    if (el.dataset.view === 'ap') {   // scan length is vertical on the AP scout
-      el.style.left = (g.box.apL * 100) + '%'; el.style.width = ((g.box.apR - g.box.apL) * 100) + '%';
-      el.style.top = (t0 * 100) + '%'; el.style.height = ((t1 - t0) * 100) + '%';
-    } else {                          // scan length is horizontal on the (rotated) lateral scout
-      el.style.left = (t0 * 100) + '%'; el.style.width = ((t1 - t0) * 100) + '%';
-      el.style.top = (g.box.latL * 100) + '%'; el.style.height = ((g.box.latR - g.box.latL) * 100) + '%';
-    }
-  });
 }
 
 // Modal field-edit popup: blurs the screen; must be confirmed (Enter) or cancelled
