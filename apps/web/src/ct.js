@@ -2422,6 +2422,8 @@ function updateMprBar(scan) {
   const al = ctx.$('ctMprAlgo'); if (al && al.value !== m.algo) al.value = m.algo;
   const tk = ctx.$('ctMprThk'); if (tk && document.activeElement !== tk) tk.value = fmtNum(m.thk);
   const mar = ctx.$('ctMprMar'); if (mar) { mar.classList.toggle('on', m.mar); mar.textContent = m.mar ? 'MAR ON' : 'MAR OFF'; }
+  const obl = ctx.$('ctMprObl'); if (obl) { obl.classList.toggle('on', m.obShow); obl.textContent = m.obShow ? 'OBLIQUE ON' : 'OBLIQUE OFF'; }
+  const opane = ctx.$('mprPane_oblique'); if (opane) opane.style.visibility = m.obShow ? 'visible' : 'hidden';
   const wl = ctx.$('ctReconWL'), ww = ctx.$('ctReconWW'); if (wl) wl.value = m.wl; if (ww) ww.value = m.ww;
 }
 function paneLabelPos(scan, pane) {
@@ -2451,7 +2453,7 @@ function drawPane(scan, pane) {
   else if (pane === 'sagittal') { refLine(g, 'v', map.dX(cur.y), map.dy, map.dh, PLANE_COLOR.y); refLine(g, 'h', map.dY(cur.z), map.dx, map.dw, PLANE_COLOR.z); }
   else if (pane === 'axial') { refLine(g, 'v', map.dX(cur.x), map.dy, map.dh, PLANE_COLOR.x); refLine(g, 'h', map.dY(cur.y), map.dx, map.dw, PLANE_COLOR.y); }
   else if (pane === 'oblique') { g.save(); g.strokeStyle = '#eef4fb'; g.globalAlpha = .45; refLine(g, 'v', map.dx + map.dw / 2, map.dy, map.dh, '#eef4fb'); refLine(g, 'h', map.dy + map.dh / 2, map.dx, map.dw, '#eef4fb'); g.restore(); }
-  if (pane === m.ob.view && pane !== 'oblique') drawObliqueLine(g, scan, pane, map);   // localizer on its anchor view
+  if (m.obShow && pane === m.ob.view && pane !== 'oblique') drawObliqueLine(g, scan, pane, map);   // localizer on its anchor view
   paneEl.classList.toggle('sel', m.sel === pane);
   const lbl = paneEl.querySelector('.mpr-lbl');
   if (lbl) lbl.textContent = PLANE_LABEL[pane] + '  ·  ' + paneLabelPos(scan, pane) + '  ·  ' + fmtNum(m.thk) + 'mm  ·  ' + algoLabel(m.algo) + (m.mar ? ' · MAR' : '') + '  ·  W/L ' + Math.round(m.ww) + '/' + Math.round(m.wl);
@@ -2477,15 +2479,23 @@ function obClickAB(scan, pane, map, px, py) {
 // LINE. Drawn with end handles (grab to rotate + scale) and a short normal tick (the
 // direction the oblique slices advance). Scrolling the BR pane moves it along the normal.
 function drawObliqueLine(g, scan, pane, map) {
-  const ob = ctx.S.ct.mpr.ob, c = Math.cos(ob.ang), s = Math.sin(ob.ang), hl = ob.fov / 2;
-  const e1 = obDisp(scan, pane, map, ob.cu + c * hl, ob.cv + s * hl);
+  const m = ctx.S.ct.mpr, ob = m.ob, c = Math.cos(ob.ang), s = Math.sin(ob.ang), hl = ob.fov / 2;
+  const halfW = Math.max(4, m.thk / 2);                    // slab half-width (mm) shown as the box depth
+  // corners of the oblique SLAB box (length = FOV along the plane, width = slab thickness)
+  const corner = (u, v) => obDisp(scan, pane, map, ob.cu + c * u - s * v, ob.cv + s * u + c * v);
+  const p1 = corner(hl, halfW), p2 = corner(hl, -halfW), p3 = corner(-hl, -halfW), p4 = corner(-hl, halfW);
+  const e1 = obDisp(scan, pane, map, ob.cu + c * hl, ob.cv + s * hl);   // current-slice line ends
   const e2 = obDisp(scan, pane, map, ob.cu - c * hl, ob.cv - s * hl);
-  const c0 = obDisp(scan, pane, map, ob.cu, ob.cv);
   const nt = obDisp(scan, pane, map, ob.cu - s * ob.fov * 0.16, ob.cv + c * ob.fov * 0.16);   // normal tick
-  g.save(); g.strokeStyle = '#f2d06b'; g.fillStyle = '#f2d06b'; g.lineWidth = 1.7;
-  line(g, e1[0], e1[1], e2[0], e2[1]);
-  line(g, c0[0], c0[1], nt[0], nt[1]);
-  [e1, e2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
+  g.save();
+  // teal box (like the scan-planning box)
+  g.strokeStyle = '#35c6d6'; g.fillStyle = 'rgba(53,198,214,0.12)'; g.lineWidth = 1.6;
+  g.beginPath(); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.lineTo(p3[0], p3[1]); g.lineTo(p4[0], p4[1]); g.closePath(); g.fill(); g.stroke();
+  line(g, corner(0, 0)[0], corner(0, 0)[1], nt[0], nt[1]);   // normal tick (slice-advance direction)
+  // red line marking the currently displayed oblique slice
+  g.strokeStyle = '#ff4d4d'; g.lineWidth = 1.6; line(g, e1[0], e1[1], e2[0], e2[1]);
+  // end handles (grab to rotate + scale)
+  g.fillStyle = '#35c6d6'; [e1, e2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
   g.restore();
 }
 
@@ -2564,6 +2574,7 @@ function wireRecons() {
   ctx.$('ctMprAlgo')?.addEventListener('change', (e) => { ctx.S.ct.mpr.algo = e.target.value; ctRenderRecons(); });
   ctx.$('ctMprThk')?.addEventListener('change', (e) => { const s = mprScan(); const mn = s ? scanMinThk(s) : 0.625; ctx.S.ct.mpr.thk = Math.max(mn, sanitizeNum(e.target.value, ctx.S.ct.mpr.thk)); ctRenderRecons(); });
   ctx.$('ctMprMar')?.addEventListener('click', () => { ctx.S.ct.mpr.mar = !ctx.S.ct.mpr.mar; ctRenderRecons(); });
+  ctx.$('ctMprObl')?.addEventListener('click', () => { ctx.S.ct.mpr.obShow = !ctx.S.ct.mpr.obShow; ctRenderRecons(); });
   const wl = ctx.$('ctReconWL'), ww = ctx.$('ctReconWW');
   wl?.addEventListener('input', () => { ctx.S.ct.mpr.wl = parseInt(wl.value, 10); renderMprThrottled(); });
   ww?.addEventListener('input', () => { ctx.S.ct.mpr.ww = parseInt(ww.value, 10); renderMprThrottled(); });
