@@ -1841,7 +1841,7 @@ function scanAnimSeconds(g) { return Math.max(2.5, Math.min(18, groupExpTime(g))
 function previewReconSlice(setup, si, geo, h, photons0) {
   const zw = setup.positions[si] / MM_PER_UNIT;
   const sino = projectSlice(setup.phantom, zw, setup.mu, photons0, geo);
-  const q = filterSino(sino, h, geo.ds, geo.m);
+  const q = filterSino(apertureBlur(sino, geo.m), h, geo.ds, geo.m);
   return backproject(q, geo);
 }
 
@@ -2042,6 +2042,32 @@ function projectSlice(phantom, z0, mu, photons0, geo) {
   return sino;
 }
 
+// Detector aperture + focal-spot blur: convolve each view along the channel axis with a small
+// Gaussian (σ ≈ one detector element). A real detector integrates over a finite channel width
+// and the focal spot has finite size, so the sampled projections are band-limited. Our
+// infinitely-thin, point-sampled rays are NOT band-limited, so razor-sharp metal edges let the
+// ramp filter amplify frequencies up to the channel Nyquist, which backprojects into a fine
+// peripheral streak crosshatch that real scanners don't show. Restoring the physical band limit
+// here smooths that crosshatch while leaving the broad low-frequency inter-metal bands intact.
+const APERTURE_SIGMA = 0.75;                 // detector/focal-spot aperture, in channels
+function apertureBlur(sino, m) {
+  const s = APERTURE_SIGMA; if (s <= 0) return sino;
+  const rad = Math.max(1, Math.ceil(3 * s));
+  const w = new Float64Array(2 * rad + 1); let sum = 0;
+  for (let n = -rad; n <= rad; n++) { const v = Math.exp(-(n * n) / (2 * s * s)); w[n + rad] = v; sum += v; }
+  for (let i = 0; i < w.length; i++) w[i] /= sum;
+  const N = m.nDet, out = new Float32Array(sino.length);
+  for (let a = 0; a < m.nAngles; a++) {
+    const base = a * N;
+    for (let k = 0; k < N; k++) {
+      let acc = 0;
+      for (let n = -rad; n <= rad; n++) { let kk = k + n; if (kk < 0) kk = 0; else if (kk >= N) kk = N - 1; acc += sino[base + kk] * w[n + rad]; }
+      out[base + k] = acc;
+    }
+  }
+  return out;
+}
+
 // Convolve each projection view with the ramp filter.
 function filterSino(sino, h, ds, m) {
   const N = m.nDet, out = new Float32Array(m.nAngles * N);
@@ -2199,7 +2225,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
       if (!alive()) return null;
       const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
       const sino = projectSlice(phantom, zw, mu, photons0, geo);
-      const q = filterSino(sino, h, geo.ds, geo.m);
+      const q = filterSino(apertureBlur(sino, geo.m), h, geo.ds, geo.m);
       const img = backproject(q, geo);
       vol.set(img, si * N * N);
       if (onSlice) onSlice(si, nz, positions[si], img, meta);
