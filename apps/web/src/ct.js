@@ -307,7 +307,7 @@ function resetCTSession() {
   cancelScout();                  // stop any in-flight scout acquisition
   cancelScan();                   // stop any in-flight scan execution
   stopGantrySpin(); setBusy(false); Sound.stopScan();
-  stopTableMove(); showScanBoxes(false); resetScanBox();
+  stopTableMove(); showScanBoxes(false); resetScanBox(); showPreviewBadge(false);
   ctx.ctLiveView(false);          // stop the tube-POV mirror if a build was running
   c.scoutsReady = false;
   c.liveView = false;
@@ -540,7 +540,7 @@ function abortCT() {
   cancelScout();               // stop any in-flight scout acquisition
   cancelScan();                // stop any in-flight scan execution
   stopGantrySpin(); setBusy(false); Sound.stopScan(); Sound.stopTableSound();
-  stopTableMove(); showScanBoxes(false);
+  stopTableMove(); showScanBoxes(false); showPreviewBadge(false);
   ctx.ctLiveView(false);       // drop the tube-POV mirror if a build was in progress
   ctx.S.ct.scoutsReady = false;
   setPhase('idle');            // re-enables the 3D view
@@ -1538,11 +1538,15 @@ function groupDFOV(g) { return Math.max(2, (g.box.apR - g.box.apL) * scoutFov())
 // Per-reconstruction geometry: display-FOV radius R (the back-projected region),
 // channel spacing ds, ray half-length rayR (how far the integration must reach —
 // the full scan FOV for the fixed-pitch detector), and the detector mode m.
-function reconGeo(fovMM, cx, cy) {
-  const m = detMode(), R = (fovMM / MM_PER_UNIT) / 2;
+function reconGeoM(fovMM, cx, cy, m) {
+  const R = (fovMM / MM_PER_UNIT) / 2;
   if (m.fixedPitch) return { fovMM, R, rayR: (m.sfovMM / MM_PER_UNIT) / 2, ds: m.chanMM / MM_PER_UNIT, cx, cy, m };
   return { fovMM, R, rayR: R, ds: (R * 2) / m.nDet, cx, cy, m };
 }
+function reconGeo(fovMM, cx, cy) { return reconGeoM(fovMM, cx, cy, detMode()); }
+// Low-res detector used for the live scan PREVIEW (deliberately coarse so previews are
+// cheap and visibly degraded; the full recon replaces them afterwards).
+const PREVIEW_DET = { nDet: 96, nAngles: 60, gridN: 96, fixedPitch: false };
 
 let scanToken = 0;                // invalidates an in-flight scan on abort / mode switch
 function cancelScan() { scanToken++; }
@@ -1623,12 +1627,53 @@ async function scanDelay(sec, alive) {
   }
 }
 
-// One group's exposure: breathe-in, then the helical acquisition — the transverse
-// slices are reconstructed one by one and shown coming up live in the DR image viewer
-// as the couch advances to each slice position (gantry spinning), then store +
-// breathe-normal. The reconstruction itself paces the acquisition.
+// Physical acquisition time for a group (seconds), clamped to a watchable range. Set by
+// the scan geometry only — table feed = pitch × collimation (detector rows × element) per
+// rotation, over the scan length — NOT by how long reconstruction takes.
+function scanAnimSeconds(g) { return Math.max(2.5, Math.min(18, groupExpTime(g))); }
+
+// One slice of a fast, low-resolution preview reconstruction (browser engine).
+function previewReconSlice(setup, si, geo, h, photons0) {
+  const zw = setup.positions[si] / MM_PER_UNIT;
+  const sino = projectSlice(setup.phantom, zw, setup.mu, photons0, geo);
+  const q = filterSino(sino, h, geo.ds, geo.m);
+  return backproject(q, geo);
+}
+
+// Time-paced helical acquisition: advance the couch through the slice positions over the
+// physical scan time (gantry spinning), painting a cheap DEGRADED preview of each slice as
+// it is reached (marked PREVIEW). Independent of the full reconstruction, which runs in the
+// background and resolves the images afterwards.
+function animateHelicalScan(g, setup, alive) {
+  const nz = setup.count, T = scanAnimSeconds(g) * 1000;
+  const canPreview = !setup.phantom.geometryOnly;   // backend-only models have no browser volume to preview
+  const pgeo = canPreview ? reconGeoM(setup.fovMM, 0, ISO_Y, PREVIEW_DET) : null;
+  const ph = canPreview ? buildKernel(pgeo.ds, pgeo.m.nDet, pgeo.m.fixedPitch) : null;
+  const pPhotons = canPreview ? photonsFor(g, pgeo) : 0;
+  const pmeta = { gridN: PREVIEW_DET.gridN, fovMM: setup.fovMM, muWater: setup.muW };
+  return new Promise(res => {
+    const t0 = performance.now(); let lastSi = -1, done = false;
+    const finish = () => { if (done) return; done = true; res(); };
+    (function step() {
+      if (done) return;
+      if (!alive()) { finish(); return; }
+      const t = Math.min(1, (performance.now() - t0) / T);
+      const si = Math.min(nz - 1, Math.floor(t * nz + 1e-6));
+      if (si !== lastSi) {
+        lastSi = si;
+        moveCouchTo(setup.positions[si]);
+        if (canPreview) { try { drawScanPreview(previewReconSlice(setup, si, pgeo, ph, pPhotons), pmeta, si, nz, true); } catch (_) {} }
+      }
+      if (t < 1) requestAnimationFrame(step); else finish();
+    })();
+  });
+}
+
+// One group's exposure: breathe-in, then a time-paced helical acquisition showing degraded
+// live previews (gantry spinning), while the full reconstruction runs in the background.
+// After the acquisition, wait for the reconstruction to resolve (PREVIEW stays up), then
+// reveal the fully computed slices, store, and breathe-normal.
 async function scanGroupExposure(g, i, alive) {
-  const S = ctx.S;
   resetToIsocentre();
   setHint('G' + (i + 1) + ' · breathe in and hold…');
   Sound.play('breathIn');
@@ -1637,11 +1682,23 @@ async function scanGroupExposure(g, i, alive) {
   setHint('G' + (i + 1) + ' · acquiring…');
   startGantrySpin(g.rotSpeed);
   Sound.startScan(ctx.S.ct.scanSound);
+  const setup = scanSetup(g);
+  // 1) time-paced acquisition: advance the couch + show cheap degraded previews (PREVIEW
+  //    badge up), timed by the physical scan speed — NOT by reconstruction cost. Runs FIRST
+  //    and alone so the previews stay smooth even when the full recon is heavy (a heavy
+  //    browser recon would otherwise starve the animation thread).
+  await animateHelicalScan(g, setup, alive);
+  Sound.stopScan(); stopGantrySpin();          // acquisition finished; the gantry stops
+  if (!alive()) { showPreviewBadge(false); return null; }
+  // 2) THEN the full-quality reconstruction resolves the images — the PREVIEW badge stays up
+  //    (viewer is still showing the degraded preview) until the resolved slices are ready.
+  setHint('G' + (i + 1) + ' · reconstructing…');
   const recon = await reconstructSlices(g, alive,
-    (f) => setHint('G' + (i + 1) + ' · acquiring… ' + Math.round(f * 100) + '%'),
-    (si, nz, d, img, meta) => { moveCouchTo(d); drawScanPreview(img, meta, si, nz); });
-  Sound.stopScan(); stopGantrySpin();
-  if (!alive() || !recon) return null;
+    (f) => setHint('G' + (i + 1) + ' · reconstructing… ' + Math.round(f * 100) + '%'), null, setup);
+  if (!alive() || !recon) { showPreviewBadge(false); return null; }
+  // reveal the fully resolved final slice (clears the PREVIEW badge)
+  drawScanPreview(recon.slices[recon.nz - 1].mu,
+    { gridN: recon.gridN, fovMM: recon.fovMM, muWater: recon.muWater }, recon.nz - 1, recon.nz, false);
   resetToIsocentre();
   setHint('G' + (i + 1) + ' · breathe normally.');
   Sound.play('breathNormal');
@@ -1662,7 +1719,7 @@ function moveCouchTo(d) {
 // Paint the just-reconstructed transverse slice into the DR image viewer (#film), so
 // the operator watches the images build during the scan (like the scout stitch). Uses
 // the axial viewer's window; the render loop leaves #film alone while scanning.
-function drawScanPreview(mu, meta, si, count) {
+function drawScanPreview(mu, meta, si, count, preview) {
   const f = ctx.$('film'); if (!f) return;
   const N = meta.gridN, muW = meta.muWater, v = ctx.S.ct.viewer, c = N / 2, R2 = c * c;
   if (f.width !== N || f.height !== N) { f.width = N; f.height = N; }
@@ -1676,7 +1733,10 @@ function drawScanPreview(mu, meta, si, count) {
   g.putImageData(im, 0, 0);
   const noexp = ctx.$('noexp'); if (noexp) noexp.style.display = 'none';
   const prog = ctx.$('prog'); if (prog) prog.style.width = Math.round((si + 1) / count * 100) + '%';
+  showPreviewBadge(!!preview);   // yellow PREVIEW badge while the image is a degraded preview
 }
+// Toggle the yellow "PREVIEW" badge in the IMAGE/VIEWER monitor.
+function showPreviewBadge(on) { const b = ctx.$('previewBadge'); if (b) b.classList.toggle('show', on); }
 
 function startGantrySpin(rotSpeed) {
   if (!gantrySpin) return;
@@ -1795,7 +1855,11 @@ function backproject(q, geo) {
   return img;
 }
 
-async function reconstructSlices(g, alive, onProgress, onSlice) {
+// Shared geometry/material/position setup for a group's reconstruction — computed once
+// and reused by both the live preview and the full-quality recon so they sweep the same
+// anatomy. slice table positions are landmark-relative (scanStart + box fraction · length)
+// so the recon reconstructs exactly the anatomy the box selects on the scout.
+function scanSetup(g) {
   const spec = Spectrum.make(g.kv), effE = spec.meanE;
   const phantom = ctx.buildPhantom();            // built at the committed table position (patient.z = isoZ)
   const voxel = !!phantom.voxel;                 // chest (voxel/BodyMaterials) vs hand (analytic)
@@ -1803,21 +1867,26 @@ async function reconstructSlices(g, alive, onProgress, onSlice) {
                    : { soft: Materials.mu('soft', effE), bone: Materials.mu('bone', effE), marrow: Materials.mu('marrow', effE) };
   const muW = voxel ? BodyMaterials.muWater(effE) : mu.soft;   // HU reference (water for voxel, soft for hand)
   const fovMM = groupDFOV(g);                     // DFOV = scan box diameter (box centre reposed to isocentre)
-  const geo = reconGeo(fovMM, 0, ISO_Y);
-  // slice table positions are landmark-relative (scanStart + box fraction · length) so the
-  // recon reconstructs exactly the anatomy the box selects on the (scanStart-offset) scout
   const off = scanStartMM();
   const startMM = off + g.box.top * ctx.S.ct.scanLen, endMM = off + g.box.bot * ctx.S.ct.scanLen, span = endMM - startMM;
   const count = Math.max(1, Math.min(MAX_SLICES, groupImages(g)));   // one slice per planned image
   const positions = [];
   for (let i = 0; i < count; i++) positions.push(count > 1 ? startMM + span * i / (count - 1) : startMM + span / 2);
-  // Detected photons per sinogram sample. The quick detector is the noise reference;
-  // more views split the same tube output into smaller buckets (total output per
-  // rotation is set by the technique, not the view count). The realistic detector's
-  // finer channels pair with its apodized (Shepp-Logan) kernel — like a clinical
-  // "standard" algorithm — so its noise stays comparable at the same technique.
-  const photons0 = (geo.m.photonBase || PHOTON_BASE) * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5)
+  return { effE, phantom, voxel, mu, muW, fovMM, positions, count };
+}
+// Detected photons per sinogram sample for a given geometry. The quick detector is the
+// noise reference; more views split the same tube output into smaller buckets. The
+// realistic detector's finer channels pair with its apodized (Shepp-Logan) kernel.
+function photonsFor(g, geo) {
+  return (geo.m.photonBase || PHOTON_BASE) * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5)
     * (DET_MODES.quick.nAngles / geo.m.nAngles);
+}
+
+async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
+  setup = setup || scanSetup(g);
+  const { phantom, voxel, mu, muW, fovMM, positions, count, effE } = setup;
+  const geo = reconGeo(fovMM, 0, ISO_Y);
+  const photons0 = photonsFor(g, geo);
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
   // slice is emitted via onSlice as it completes so the scan shows the images coming

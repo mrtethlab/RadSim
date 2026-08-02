@@ -131,6 +131,12 @@
   .noexp{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; z-index:2;
      color:var(--muted2); font-family:var(--seg); letter-spacing:3px; font-size:12px; text-align:center}
   .prog{position:absolute; inset:auto 0 0 0; height:3px; background:var(--red); width:0%; transition:width .05s; z-index:4}
+  /* yellow "PREVIEW" badge — shown while the viewer image is a low-quality preview
+     (the full reconstruction is still processing) */
+  .preview-badge{position:absolute; left:0; right:0; bottom:10px; z-index:5; display:none;
+     text-align:center; font-family:var(--seg); font-size:12px; letter-spacing:3px;
+     color:#ffd23f; text-shadow:0 0 6px #000, 0 0 3px #000}
+  .preview-badge.show{display:block}
 
   .di{display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 12px 12px}
   .dib{background:var(--panel); border:1px solid var(--edge); padding:8px 10px; text-align:center}
