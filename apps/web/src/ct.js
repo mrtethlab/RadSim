@@ -1411,6 +1411,10 @@ function groupRecons(g) { if (!g.recons || !g.recons.length) g.recons = [default
 function renderReconPlan() {
   const cont = ctx.$('ctReconPlan'); if (!cont) return;
   const c = ctx.S.ct, gi = c.activeGroup || 0, g = grp(gi);
+  // Tag the recon table with the active scan group's colour class (gc0/gc1/…) so its number
+  // badges, row accents and title take that group's colour — a visual cue for which group's
+  // reconstructions are shown.
+  cont.className = 'scangroups reconplan gc' + gi;
   if (!g || !g.on) { cont.innerHTML = ''; return; }
   const recons = groupRecons(g), len = c.scanLen, off = scanStartMM();
   const gTop = off + g.box.top * len, gBot = off + g.box.bot * len, span = gBot - gTop;

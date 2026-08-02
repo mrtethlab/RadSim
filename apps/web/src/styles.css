@@ -66,6 +66,10 @@
      re-declare the text vars to light values so cells, headers, sub-text and the group colour-coding
      all read (GE's dark text would otherwise be near-invisible on the near-black table). */
   body.theme-ge .scangroups{--txt:#e3ecf4; --muted:#a7bacb; --muted2:#8598aa; --cyan:#7fc8d8}
+  /* the +Add scan / +Add recon buttons have a light var(--panel2) bg → make them dark dashed chips
+     on the dark table so their (now light) label reads instead of washing out. */
+  body.theme-ge .scangroups .sg-add{background:#1a2430; border-color:#41505f; color:#9fd4e0}
+  body.theme-ge .scangroups .sg-add:hover{border-color:#7fc8d8; color:#eafcff}
   /* The SCOUT planning table sits on the light settings panel — only its header was hardcoded dark. */
   body.theme-ge .scouttable .sg-table th{background:#96a8bc; color:#123a5e; border-color:#7d92a8}
   body.theme-ge .warn{background:#c3d1df; border-color:#7d92a8}                          /* console status strip → light */
@@ -521,9 +525,10 @@ body.mode-ct .di{display:none}
 .sg-station:hover{color:#fff; background:rgba(255,255,255,.06)}
 .sg-calc{color:var(--muted2); font-style:italic}
 .sg-sub{display:block; font-size:9px; color:var(--muted2); letter-spacing:.3px; margin-top:2px}
-/* recon planning table (per scan group) */
-.reconplan{margin-top:14px}
-.rp-title{font-family:var(--seg); font-size:10px; letter-spacing:1px; color:var(--muted); text-transform:uppercase; margin-bottom:5px}
+/* recon planning table (per scan group) — tinted with the active group's colour (--gc set by the
+   gc0/gc1/… class on the container) so it's clear which scan group's recons are shown. */
+.reconplan{margin-top:14px; border-left:3px solid var(--gc)}
+.rp-title{font-family:var(--seg); font-size:10px; letter-spacing:1px; color:var(--gc); text-transform:uppercase; margin-bottom:5px}
 .reconplan .sg-row.active{box-shadow:inset 3px 0 0 var(--cyan)}
 .rp-on{color:#7ee0a0 !important}
 /* draggable recon sub-area box on the scout for the active recon (orange, higher opacity) */
