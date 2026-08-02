@@ -2593,6 +2593,9 @@ function storeScan(g, i, recon) {
       dfov: recon.fovMM, offRL: 0, offAP: 0,
       thk: Math.max(r.thk, el), interval: r.interval, algo: r.algo, mar: !!r.mar,
       ww: r.ww, wl: r.wl, subTop: r.subTop, subBot: r.subBot, minThk: el,
+      // only recon 1 is "computed" up front (it's what the slice viewer shows); the recon page
+      // offers to compute + cache the rest, or discard them (see maybeReconComputePrompt).
+      computed: k === 0,
     })),
     nextReconId: groupRecons(g).length + 1,
   };
@@ -2960,6 +2963,39 @@ export function ctRenderRecons() {
   if (S.ct.mpr.scanId !== scan.id || !Array.isArray(S.ct.mpr.wins)) initMprForScan(scan);
   S.ct.mpr.scanId = scan.id;
   WINS.forEach(wi => drawReconWindow(scan, wi));
+  maybeReconComputePrompt(scan);
+}
+// Pre-compute a recon's full slice series by reformatting the stored volume once per slice, and
+// cache it so scrolling just indexes stored slices (no live reformat). Cheap — samples scan.vol.
+function precomputeRecon(scan, recon) {
+  if (recon.cache) return;
+  const a = winAxis(scan, recon), pane = recon.pane || 'axial';
+  const prm = { thk: Math.max(recon.minThk || 0.625, recon.thk || 5), interval: recon.interval, algo: recon.algo || 'standard', mar: !!recon.mar };
+  const positions = []; for (let p = a.lo; p <= a.hi + 1e-6; p += a.step) positions.push(p);
+  const slices = positions.map(p => { const img = paneImage(scan, pane, winCur(scan, recon, p), prm); return { data: img.data, w: img.w, h: img.h }; });
+  recon.cache = { positions, slices }; recon.computed = true;
+}
+// On opening the recon page, offer to compute the extra planned recons (Yes → compute + store) or
+// discard them down to the default (No → second confirmation → remove). Asked once per scan.
+function maybeReconComputePrompt(scan) {
+  const m = ctx.S.ct.mpr;
+  const uncomputed = (scan.recons || []).filter(r => r.computed === false);
+  if (!uncomputed.length || m.promptedScan === scan.id) return;
+  m.promptedScan = scan.id;
+  reconPopup(uncomputed.length + ' more reconstruction(s) were planned but not yet computed. Compute them now?',
+    [{ label: 'Yes — compute & store them', v: 'yes' }, { label: 'No — remove the extras', v: 'no' }], (opt) => {
+      if (opt.v === 'yes') {
+        setHint('Computing reconstructions…'); uncomputed.forEach(r => precomputeRecon(scan, r));
+        ctRenderRecons(); setHint(uncomputed.length + ' reconstruction(s) computed and stored.');
+      } else {
+        reconPopup('This removes all planned reconstructions except the default (recon 1). Continue?',
+          [{ label: 'Yes — remove them', v: 'yes' }, { label: 'Cancel', v: 'no' }], (o2) => {
+            if (o2.v !== 'yes') return;
+            scan.recons = (scan.recons || []).slice(0, 1); ctx.S.ct.mpr.wins = null; ctRenderRecons();
+            setHint('Extra planned reconstructions removed.');
+          });
+      }
+    });
 }
 // Render one recon window: its bound recon reformatted ONCE at the window's scroll position — a
 // static view, nothing else re-renders. Empty windows show their New / Select overlay (via CSS).
@@ -2976,7 +3012,13 @@ function drawReconWindow(scan, wi) {
   if (w.pos == null) w.pos = winMid(scan, recon);
   const pane = recon.pane || 'axial';
   const prm = { thk: Math.max(recon.minThk || 0.625, recon.thk || 5), interval: recon.interval, algo: recon.algo || 'standard', mar: !!recon.mar };
-  const img = paneImage(scan, pane, winCur(scan, recon, w.pos), prm);
+  // A pre-computed recon presents its stored slices directly (index by scroll position); otherwise
+  // it reformats the base volume on the fly (still fast — the base volume is already in memory).
+  let img;
+  if (recon.cache && recon.cache.slices.length) {
+    const c = recon.cache, dp = (c.positions[1] - c.positions[0]) || 1;
+    img = c.slices[clampV(Math.round((w.pos - c.positions[0]) / dp), 0, c.slices.length - 1)];
+  } else { img = paneImage(scan, pane, winCur(scan, recon, w.pos), prm); }
   if (!_off) _off = document.createElement('canvas');
   if (_off.width !== img.w || _off.height !== img.h) { _off.width = img.w; _off.height = img.h; }
   const octx = _off.getContext('2d'), oi = octx.createImageData(img.w, img.h), d8 = oi.data, muW = scan.muWater;
