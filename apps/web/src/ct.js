@@ -960,6 +960,7 @@ function initScanBoxes() {
   buildGroupBoxes('fitAP', 'ap');
   buildGroupBoxes('fitLAT', 'lat');
   wireScanGroupTable();
+  wireReconPlan();
   wireReposButtons();
 }
 // one DOM box per group per scout (shown/positioned per group in renderScanBoxes)
@@ -1141,6 +1142,7 @@ function updatePlan() {
   applyScoutPan();
   updatePlanReady();
   renderScanGroups();
+  renderReconPlan();
   renderSfovLines();
 }
 
@@ -1286,6 +1288,100 @@ function renderScanGroups() {
   const anyOff = c.groups.some((g) => !g.on);
   cont.innerHTML = '<table class="sg-table"><thead><tr>' + SG_HEADERS.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>'
     + rows + '</tbody></table>' + (anyOff ? '<button class="sg-add">+ Add scan group</button>' : '');
+}
+
+// ---- recon planning table (per scan group; up to N_RECONS reconstructions) ----
+const N_RECONS = 10;
+const RP_PLANES = [{ v: 'transverse', l: 'Transverse' }, { v: 'sagittal', l: 'Sagittal' }, { v: 'coronal', l: 'Coronal' }];
+const RP_ALGOS = [{ v: 'standard', l: 'Average' }, { v: 'mip', l: 'MiP' }, { v: 'minip', l: 'MiniP' }, { v: 'edge', l: 'Edge Enh' }, { v: 'blur', l: 'Blur' }];
+const RP_HEADERS = ['Recon', 'Plane', 'Thickness', 'Interval', 'WW', 'WL', 'Algorithm', 'MAR', 'Sub Start', 'Sub End'];
+const rpPlaneLabel = (p) => (RP_PLANES.find((x) => x.v === p) || { l: p }).l;
+const rpAlgoLabel = (a) => (RP_ALGOS.find((x) => x.v === a) || { l: a }).l;
+function defaultRecon() { return { plane: 'transverse', thk: 5, interval: 5, ww: 400, wl: 40, algo: 'standard', mar: false, subTop: 0, subBot: 1 }; }
+function groupRecons(g) { if (!g.recons || !g.recons.length) g.recons = [defaultRecon()]; return g.recons; }
+
+function renderReconPlan() {
+  const cont = ctx.$('ctReconPlan'); if (!cont) return;
+  const c = ctx.S.ct, gi = c.activeGroup || 0, g = grp(gi);
+  if (!g || !g.on) { cont.innerHTML = ''; return; }
+  const recons = groupRecons(g), len = c.scanLen, off = scanStartMM();
+  const gTop = off + g.box.top * len, gBot = off + g.box.bot * len, span = gBot - gTop;
+  const cell = (cls, act, txt) => '<td><span class="' + cls + '" data-act="' + act + '">' + txt + '</span></td>';
+  const ari = c.activeRecon || 0;
+  let rows = '';
+  recons.forEach((r, ri) => {
+    const num = ri > 0
+      ? '<span class="sg-num del" title="Delete recon"><span class="lbl">' + (ri + 1) + '</span><span class="trash">' + TRASH + '</span></span>'
+      : '<span class="sg-num">' + (ri + 1) + '</span>';
+    rows += '<tr class="sg-row rp-row' + (ri === ari ? ' active' : '') + '" data-recon="' + ri + '">'
+      + '<td>' + num + '</td>'
+      + cell('sg-station', 'rp-plane', rpPlaneLabel(r.plane))
+      + cell('sg-edit', 'rp-thk', fmtNum(r.thk) + ' mm')
+      + cell('sg-edit', 'rp-interval', fmtNum(r.interval) + ' mm')
+      + cell('sg-edit', 'rp-ww', Math.round(r.ww))
+      + cell('sg-edit', 'rp-wl', Math.round(r.wl))
+      + cell('sg-station', 'rp-algo', rpAlgoLabel(r.algo))
+      + cell('sg-station' + (r.mar ? ' rp-on' : ''), 'rp-mar', r.mar ? 'ON' : 'OFF')
+      + cell('sg-edit', 'rp-substart', fmtTablePos(gTop + r.subTop * span))
+      + cell('sg-edit', 'rp-subend', fmtTablePos(gTop + r.subBot * span))
+      + '</tr>';
+  });
+  const canAdd = recons.length < N_RECONS;
+  cont.innerHTML = '<div class="rp-title">Recon planning — scan group ' + (gi + 1) + '  ·  ' + recons.length + '/' + N_RECONS + '</div>'
+    + '<table class="sg-table"><thead><tr>' + RP_HEADERS.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>'
+    + rows + '</tbody></table>' + (canAdd ? '<button class="sg-add rp-add">+ Add recon</button>' : '');
+  renderReconSub();
+}
+function wireReconPlan() {
+  const cont = ctx.$('ctReconPlan'); if (!cont) return;
+  cont.addEventListener('click', (e) => {
+    const c = ctx.S.ct, g = grp(c.activeGroup || 0); if (!g || !g.on) return;
+    const recons = groupRecons(g);
+    if (e.target.closest('.rp-add')) { if (recons.length < N_RECONS) { recons.push(defaultRecon()); c.activeRecon = recons.length - 1; renderReconPlan(); } return; }
+    const del = e.target.closest('.sg-num.del');
+    if (del) { const ri = +del.closest('tr').dataset.recon; if (ri > 0) { recons.splice(ri, 1); c.activeRecon = Math.min(c.activeRecon || 0, recons.length - 1); renderReconPlan(); } return; }
+    const ed = e.target.closest('[data-act]'), row = e.target.closest('tr[data-recon]');
+    if (row) c.activeRecon = +row.dataset.recon;
+    if (ed) editRecon(+ed.closest('tr').dataset.recon, ed.dataset.act); else renderReconPlan();
+  });
+}
+function editRecon(ri, act) {
+  const c = ctx.S.ct, g = grp(c.activeGroup || 0), r = groupRecons(g)[ri]; if (!r) return;
+  c.activeRecon = ri;
+  const len = c.scanLen, off = scanStartMM(), gTop = off + g.box.top * len, span = (off + g.box.bot * len) - gTop;
+  const done = () => renderReconPlan();
+  const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
+  const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
+  if (act === 'rp-plane') station('Recon plane', RP_PLANES.map((p, i) => i), RP_PLANES.findIndex((p) => p.v === r.plane), (i) => RP_PLANES[i].l, (i) => { r.plane = RP_PLANES[i].v; });
+  else if (act === 'rp-algo') station('Processing algorithm', RP_ALGOS.map((a, i) => i), Math.max(0, RP_ALGOS.findIndex((a) => a.v === r.algo)), (i) => RP_ALGOS[i].l, (i) => { r.algo = RP_ALGOS[i].v; });
+  else if (act === 'rp-mar') { r.mar = !r.mar; done(); }
+  else if (act === 'rp-thk') type('Slice thickness (mm)', fmtNum(r.thk), (v) => { r.thk = clampV(v, 0.5, 50); });
+  else if (act === 'rp-interval') type('Slice interval (mm)', fmtNum(r.interval), (v) => { r.interval = clampV(v, 0.1, 50); });
+  else if (act === 'rp-ww') type('Window width (WW)', Math.round(r.ww), (v) => { r.ww = clampV(Math.round(v), 1, 4000); });
+  else if (act === 'rp-wl') type('Window level (WL)', Math.round(r.wl), (v) => { r.wl = clampV(Math.round(v), -1000, 3000); });
+  else if (act === 'rp-substart') type('Recon sub-area start (table position, mm)', Math.round(gTop + r.subTop * span), (v) => { r.subTop = clampV((v - gTop) / span, 0, r.subBot - 0.02); });
+  else if (act === 'rp-subend') type('Recon sub-area end (table position, mm)', Math.round(gTop + r.subBot * span), (v) => { r.subBot = clampV((v - gTop) / span, r.subTop + 0.02, 1); });
+  else done();
+}
+// Orange dashed band on the scouts showing the active recon's sub-area (within the group)
+// — only when it is a genuine sub-region, not the full group.
+function renderReconSub() {
+  const c = ctx.S.ct, g = grp(c.activeGroup || 0);
+  const r = g && g.on ? groupRecons(g)[c.activeRecon || 0] : null;
+  const partial = r && !(r.subTop <= 0.001 && r.subBot >= 0.999) && c.phase === 'planning';
+  document.querySelectorAll('#ctScouts .reconsub').forEach((el) => {
+    el.style.display = partial ? 'block' : 'none';
+    if (!partial) return;
+    // group box on the scout (fractions of the scout) → the sub-area is a slice of it
+    const t0 = g.box.top + r.subTop * (g.box.bot - g.box.top), t1 = g.box.top + r.subBot * (g.box.bot - g.box.top);
+    if (el.dataset.view === 'ap') {   // scan length is vertical on the AP scout
+      el.style.left = (g.box.apL * 100) + '%'; el.style.width = ((g.box.apR - g.box.apL) * 100) + '%';
+      el.style.top = (t0 * 100) + '%'; el.style.height = ((t1 - t0) * 100) + '%';
+    } else {                          // scan length is horizontal on the (rotated) lateral scout
+      el.style.left = (t0 * 100) + '%'; el.style.width = ((t1 - t0) * 100) + '%';
+      el.style.top = (g.box.latL * 100) + '%'; el.style.height = ((g.box.latR - g.box.latL) * 100) + '%';
+    }
+  });
 }
 
 // Modal field-edit popup: blurs the screen; must be confirmed (Enter) or cancelled
