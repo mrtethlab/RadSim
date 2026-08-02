@@ -258,6 +258,7 @@ const VOXEL_MODELS = {
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
   upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
   lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
+  totalhipreplacement: { title:'Total Hip Replacement', scoutKv:120, scoutMa:250, xrayKv:90 },
   wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
   hires_shoulder:  { title:'Shoulder · 0.25 mm',    scoutKv:110, scoutMa:120, xrayKv:70  },
   metalphantom:    { title:'Metal Test Phantom',    scoutKv:120, scoutMa:200, xrayKv:120 },
