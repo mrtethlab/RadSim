@@ -61,6 +61,32 @@
     50%{box-shadow:0 2px 7px rgba(18,40,64,.55), 0 0 0 7px rgba(20,92,184,1), 0 0 22px rgba(20,92,184,.9); filter:brightness(1.12)}}
   body.theme-ge .valchip{background:#d7e0ea; color:#0c3350}
   body.theme-ge .valchip.cyanlit{background:#eae4a8; color:#3a2f06}   /* GE's pale-yellow value box */
+  /* ---- GE visibility fixes: dark islands + light-on-light text that the bright bg hid ---- */
+  body.theme-ge .sg-table th{background:#96a8bc; color:#0f2c48; border-color:#7d92a8}   /* table header: light, dark text */
+  body.theme-ge .warn{background:#c3d1df; border-color:#7d92a8}                          /* console status strip → light */
+  body.theme-ge .warn .wt{color:#2a3f54}
+  body.theme-ge .lamp{background:#8a97a4; box-shadow:inset 0 0 4px rgba(0,0,0,.4)}        /* LED off state (visible on light) */
+  body.theme-ge .unzeroed{color:#c81f14 !important}                                       /* unzeroed start/end: deeper red */
+  body.theme-ge .note.warn{color:#c22b1e}
+  body.theme-ge .protoland{color:#6e4e08}                                                 /* "— none —" placeholder */
+  body.theme-ge .hdr .t b{color:#ffffff}                                                  /* header bold: white on the teal banner */
+  body.theme-ge .protobtn{background:linear-gradient(180deg,#eef4fb,#cfdcea); color:#123a5e; border-color:#7d92a8}   /* protocol button → light bevel */
+  body.theme-ge .protobtn:hover{border-color:#3a6ea5; color:#0c3350}
+  body.theme-ge .protochip{color:#6e4e08}
+  /* GE: value / station popup was a dark modal → make it a light dialog so the (dark) text reads */
+  body.theme-ge .ctpop-inner{background:#eef3f9; border-color:#8ea3ba; color:#0f2233}
+  body.theme-ge .ctpop-inner input{background:#ffffff; color:#0f2233}
+  /* ...but the scan-parameter HELP popup is a light-on-dark SVG diagram — keep that one dark,
+     and restore its light-on-dark text (it otherwise inherits GE's dark text = invisible). */
+  body.theme-ge .ctpop-inner:has(.help-pop){background:#0d141b; border-color:var(--edge); color:#dfeaf3}
+  body.theme-ge .help-title, body.theme-ge .help-def b{color:#7fc8d8}
+  body.theme-ge .help-def{color:#dfeaf3}
+  body.theme-ge .help-def i{color:#9fb4c4}
+  /* The CT image VIEWER is a black workstation surface (as on a real console) — its labels must
+     stay light. Re-declare the text vars to light values inside it (and the dark bay-menu chip). */
+  body.theme-ge #ctSlices{--txt:#dfe8f0; --muted:#9fb4c4; --muted2:#708496; --cyan:#7fc8d8}
+  body.theme-ge .baymenu-btn{color:#cdd8e2}
+  body.theme-ge .baymenu-btn:hover{color:#ffffff}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%}
   body{
