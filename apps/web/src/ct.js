@@ -2168,7 +2168,11 @@ function backproject(q, geo) {
   const halfDet = (nDet - 1) / 2;
   const img = new Float32Array(N * N);
   const px2world = (i) => (-R + (i + 0.5) * (2 * R / N));   // pixel centre → world offset from FOV centre
-  const R2 = R * R;
+  // Reconstruct the FULL display-FOV square (the framed box), not just the inscribed circle:
+  // clip only at the SFOV radius, where the rays actually run out of data. Otherwise anatomy in
+  // the box corners is framed but clipped ("the DFOV contains it but it clips"). The rays already
+  // integrate over the SFOV, so the corners have valid data as long as they sit inside it.
+  const R2 = geo.rayR * geo.rayR;
   for (let a = 0; a < nAng; a++) {
     const th = a * Math.PI / nAng, ct = Math.cos(th), st = Math.sin(th), base = a * nDet;
     for (let iy = 0; iy < N; iy++) {

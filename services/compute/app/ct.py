@@ -147,7 +147,9 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     # backprojection grid over the DISPLAY FOV
     px = (-dfov_r + (torch.arange(N, device=DEVICE, dtype=torch.float32) + 0.5) * (2 * dfov_r / N))
     wy, wx = torch.meshgrid(px, px, indexing="ij")             # (N, N); wy rows = iy
-    in_fov = (wx * wx + wy * wy) <= dfov_r * dfov_r
+    # reconstruct the FULL display-FOV square (the framed box), clipping only at the SFOV radius
+    # where the rays run out of data — so anatomy in the box corners isn't clipped (mirrors ct.js).
+    in_fov = (wx * wx + wy * wy) <= ray_r * ray_r
 
     out = np.empty((len(z0_list), N, N), dtype=np.float32)
     for zi, z0 in enumerate(z0_list):
