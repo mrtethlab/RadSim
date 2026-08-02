@@ -2002,9 +2002,11 @@ function buildKernel(ds, N, shepp) {
 // NEIGHBOURING slice still lies in this slice's SSP tail → its streaks bleed in. nSub=1 collapses
 // to a single infinitely-thin plane (single-slice / SSCT).
 const ONE_PLANE = [{ dz: 0, w: 1 }];
+const SSP_FWHM_FACTOR = 1.0;   // SSP FWHM = factor × slice thickness
+const SSP_SPAN_FACTOR = 1.5;   // sample out to factor × FWHM
 function sliceProfile(thkU, nSub) {
   if (!(nSub > 1) || !(thkU > 0)) return ONE_PLANE;
-  const sigma = thkU / 2.3548, span = 1.5 * thkU;          // FWHM = slice thickness; reach ~1.5× into neighbours
+  const fwhm = SSP_FWHM_FACTOR * thkU, sigma = fwhm / 2.3548, span = SSP_SPAN_FACTOR * fwhm;
   const prof = []; let sum = 0;
   for (let i = 0; i < nSub; i++) {
     const dz = -span + (2 * span) * i / (nSub - 1);
