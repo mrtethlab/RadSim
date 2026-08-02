@@ -15,7 +15,7 @@ import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
-import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons } from './ct.js';
+import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode } from './ct.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -438,8 +438,9 @@ const S = {
     tableY:0,                  // table height (mm); 0 = patient centred at the isocentre
     patientY:6,                // patient world-y for the current table height (set by ct.js)
     // Physics-simulation features (each adds recon cost). Default OFF (fast quick preview);
-    // selecting the Realistic detector turns them all ON. Toggled under the Detector window.
-    features:{ beamHardening:false, coneBeam:false, focalBlur:false, quantumNoise:false },
+    // selecting the Realistic detector turns them all ON. fullRecon:false keeps the fast live
+    // preview as the result (real-time). Toggled under Simulation settings.
+    features:{ beamHardening:false, coneBeam:false, focalBlur:false, quantumNoise:false, fullRecon:false },
     pov:'ap',                  // CT camera perspective: 'ap' (top) | 'lat' (90° around the bore)
     liveView:false,            // true while a scout build mirrors tube-POV into #film
     scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
@@ -1566,11 +1567,13 @@ function wireBackendToggles(){
     S.ct.detMode=b.dataset.dm;
     [...$('ctDetModeSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.dm===S.ct.detMode));
     const v=$('ctDetModeV'); if(v) v.textContent=S.ct.detMode==='realistic'?'800 ch · 0.625 mm':'128 ch · preview';
-    // Realistic turns every physics feature ON; Quick turns them all OFF (fast preview).
+    // Realistic turns every physics feature ON (incl. full-resolution recon); Quick turns them
+    // all OFF for a real-time preview-quality result. Either can be overridden afterwards.
     const on=S.ct.detMode==='realistic';
-    S.ct.features={ beamHardening:on, coneBeam:on, focalBlur:on, quantumNoise:on };
+    S.ct.features={ beamHardening:on, coneBeam:on, focalBlur:on, quantumNoise:on, fullRecon:on };
     syncFeatureToggles();
     updateDetWarn();
+    ctApplyAcqMode();                          // reconcile detector rows with the new SSCT/MSCT state
   });
   // Individual physics-feature toggles (override the per-mode defaults).
   $('ctDetFeat')?.addEventListener('change',e=>{
@@ -1578,11 +1581,22 @@ function wireBackendToggles(){
     S.ct.features[cb.dataset.feat]=cb.checked;
     updateDetWarn();
   });
+  // SSCT / MSCT acquisition-mode toggle (a two-button segment). MSCT = cone-beam z-divergent
+  // rays (cross-slice bleed); SSCT = a single untilted ray, and detector rows lock to 1.
+  $('ctConeSeg')?.addEventListener('click',e=>{
+    const b=e.target.closest('button'); if(!b) return;
+    S.ct.features.coneBeam = b.dataset.cone==='1';
+    syncFeatureToggles();
+    updateDetWarn();
+    ctApplyAcqMode();
+  });
 }
 // Reflect S.ct.features onto the toggle checkboxes.
 function syncFeatureToggles(){
   const f=S.ct.features||{};
   document.querySelectorAll('#ctDetFeat input[data-feat]').forEach(cb=>{ cb.checked=!!f[cb.dataset.feat]; });
+  const seg=$('ctConeSeg');
+  if(seg) [...seg.children].forEach(b=>b.classList.toggle('on', (b.dataset.cone==='1')===!!f.coneBeam));
 }
 // Warn about processing time whenever any heavy feature is enabled; call out Realistic + GPU.
 function updateDetWarn(){

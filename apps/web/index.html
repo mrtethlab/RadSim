@@ -234,14 +234,6 @@
             <button data-dm="quick" class="on">Quick</button>
             <button data-dm="realistic">Realistic</button>
           </div>
-          <div class="detfeat" id="ctDetFeat">
-            <div class="detfeat-lab">Physics simulation <span class="detfeat-hint">— each adds processing time</span></div>
-            <label class="ftog"><input type="checkbox" data-feat="beamHardening"><span>Beam hardening<small>polyenergetic — metal / bone artifacts</small></span></label>
-            <label class="ftog"><input type="checkbox" data-feat="coneBeam"><span>Cone beam (MSCT)<small>z-divergent rays — cross-slice bleed</small></span></label>
-            <label class="ftog"><input type="checkbox" data-feat="focalBlur"><span>Focal-spot blur<small>feathery streaks, no crosshatch</small></span></label>
-            <label class="ftog"><input type="checkbox" data-feat="quantumNoise"><span>Quantum noise<small>photon statistics + saturation</small></span></label>
-          </div>
-          <div class="note warn" id="ctDetWarn" style="margin-top:4px; display:none"></div>
         </div>
       </div>
 
@@ -412,6 +404,19 @@
               <button data-be="python" disabled>Python GPU</button>
             </div>
             <div class="note" id="computeNoteCT" style="margin-top:4px"></div>
+            <div class="detfeat" id="ctDetFeat">
+              <div class="detfeat-lab">Physics simulation <span class="detfeat-hint">— turn off to speed up processing</span></div>
+              <label class="ftog"><input type="checkbox" data-feat="beamHardening"><span>Beam hardening<small>polyenergetic — metal / bone artifacts</small></span></label>
+              <div class="ftog ftog-seg"><span>Acquisition<small>single- vs multi-slice (z-divergent cone rays)</small></span>
+                <div class="seg mini" id="ctConeSeg">
+                  <button data-cone="0" class="on">SSCT</button>
+                  <button data-cone="1">MSCT</button>
+                </div></div>
+              <label class="ftog"><input type="checkbox" data-feat="focalBlur"><span>Focal-spot blur<small>feathery streaks, no crosshatch</small></span></label>
+              <label class="ftog"><input type="checkbox" data-feat="quantumNoise"><span>Quantum noise<small>photon statistics + saturation</small></span></label>
+              <label class="ftog"><input type="checkbox" data-feat="fullRecon"><span>Full-quality reconstruction<small>off = real-time (quick preview-grade recon)</small></span></label>
+            </div>
+            <div class="note warn" id="ctDetWarn" style="margin-top:4px; display:none"></div>
           </div>
           <label class="cttoggle xray-only" style="margin-top:12px"><input type="checkbox" id="rescaleToggle" checked>
             <span>Automatic rescaling <small style="color:var(--muted)">(DR auto-ranging)</small></span></label>

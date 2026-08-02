@@ -925,7 +925,8 @@ const TABLE_SPEED = 45;              // mm/s couch reposition speed (NOT the acq
 const N_GROUPS = 4;
 // ---- acquisition geometry stations (reference GE "Image Thickness" dialog) ----
 const DET_ROW_OPTS = [8, 16, 32, 64, 128];        // detector rows (MDCT generations)
-const ELEMENTS = [0.625, 1.25];                   // detector element sizes → beam collimation = rows × element
+const DEL_MM = 0.625;                             // detector element (DEL) size — FIXED (a physical property)
+const ELEMENTS = [DEL_MM];                        // beam collimation = rows × DEL (one collimation per row count)
 const ACQ_THK = [0.625, 1.25, 2.5, 3.75, 5, 7.5, 10];  // reconstructed helical-thickness stations
 const PITCH_ACQ = [0.562, 0.938, 1.375, 1.75];    // pitch stations
 const ROT_STATIONS = [0.25, 0.4, 0.5, 0.75, 1.0, 1.5, 2.0];   // s / rotation
@@ -947,14 +948,20 @@ function sanitizeNum(s, fallback) { const n = parseFloat(String(s).replace(/[^0-
 
 // calculated fields
 function groupScanLenMM(g) { return Math.abs(g.box.bot - g.box.top) * ctx.S.ct.scanLen; }
-function groupImages(g) { return Math.max(1, Math.round(groupScanLenMM(g) / Math.max(g.interval, 0.1))); }
+// Slice thickness + interval live on the RECONSTRUCTIONS (the recon table), not the acquisition.
+// The base transverse volume is reconstructed at the FINEST recon it must serve, and thicker
+// recons are reformatted from it. The detector element is the physical thickness floor.
+function groupBaseThk(g) { const el = acqThkOf(g); return Math.max(el, Math.min(...groupRecons(g).map((r) => Math.max(r.thk || el, el)))); }
+function groupBaseInterval(g) { return Math.max(0.1, Math.min(...groupRecons(g).map((r) => r.interval || 5))); }
+function groupImages(g) { return Math.max(1, Math.round(groupScanLenMM(g) / groupBaseInterval(g))); }
 // scan time = scan length / (table feed per second); feed/s = tableSpeed(mm/rot) / rotSpeed(s/rot)
 function groupExpTime(g) { const feed = Math.max(tableSpeedOf(g), 1e-3); return (groupScanLenMM(g) / feed) * g.rotSpeed; }
 
 function defaultGroups() {
-  // detRows 16 × element 0.625 = 10 mm beam collimation; pitch 0.938 → 9.38 mm/rot.
+  // Default acquisition is SSCT (single detector row) → beam collimation = 1 × 0.625 mm DEL.
+  // Switching to MSCT restores a multi-row default (see ctApplyAcqMode).
   const sf = defaultSfov();
-  const base = { detRows: 16, beamColl: 10, pitch: 0.938, rotSpeed: 0.5, sfovMM: sf.mm, sfovName: sf.name };
+  const base = { detRows: 1, beamColl: DEL_MM, pitch: 0.938, rotSpeed: 0.5, sfovMM: sf.mm, sfovName: sf.name };
   return [
     { on: true,  vis: true, box: { top: 0.10, bot: 0.90, apL: 0.28, apR: 0.72, latL: 0.28, latR: 0.72 }, kv: 120, ma: 295, sliceThk: 5,    ...base, interval: 5,    tilt: 0, delay: 0 },
     { on: false, vis: true, box: { top: 0.14, bot: 0.50, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 2.5,  ...base, interval: 2.5,  tilt: 0, delay: 0 },
@@ -1014,9 +1021,9 @@ function renderScanBoxes() {
     }
     // per-slice dotted scan lines — toggled by the group's Show button; hidden while a
     // recon is selected (reduce clutter)
-    const sl = el.querySelector('.slices'), lenMM = groupScanLenMM(g);
-    const period = lenMM > 0 ? (g.interval / lenMM) * 100 : 100;
-    if (g.vis && !reconSel && period >= 0.7 && g.interval > 0) {
+    const sl = el.querySelector('.slices'), lenMM = groupScanLenMM(g), gInterval = groupBaseInterval(g);
+    const period = lenMM > 0 ? (gInterval / lenMM) * 100 : 100;
+    if (g.vis && !reconSel && period >= 0.7 && gInterval > 0) {
       const dir = view === 'ap' ? 'to bottom' : 'to right';
       sl.style.backgroundImage = 'repeating-linear-gradient(' + dir + ', var(--gc) 0, var(--gc) 1px, transparent 1px, transparent ' + period.toFixed(3) + '%)';
       sl.style.opacity = '0.55';
@@ -1269,7 +1276,7 @@ const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="no
 const EYE_CLOSED = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M3 10c2.2 2.9 5.6 4.6 9 4.6S18.8 12.9 21 10"/><path stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6 13.3l-1.6 2M12 15.1v2.4M18 13.3l1.6 2"/></svg>';
 const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff" d="M9 3l-1 1H4v2h16V4h-4l-1-1H9zM6 8l1.2 12.2c.1.9.9 1.8 1.9 1.8h5.8c1 0 1.8-.9 1.9-1.8L18 8H6zm4 2h1v9h-1v-9zm3 0h1v9h-1v-9z"/></svg>';
 const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'SFOV', 'DFOV', 'Total Images', 'Detector Config',
-  'Helical Thickness', 'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time', 'Slice Interval',
+  'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time',
   'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
 // DFOV-centre offset from the SFOV centre (isocentre): anteroposterior + mediolateral (mm).
 function dfovCenterStr(g) {
@@ -1343,12 +1350,10 @@ function renderScanGroups() {
       + '<td><span class="sg-edit" data-act="dfov">' + (groupDFOV(g) / 10).toFixed(1) + ' cm</span><span class="sg-sub">' + dfovCenterStr(g) + '</span></td>'
       + cell('sg-calc', '', groupImages(g))
       + cell('sg-station', 'acq', detConfig(g))
-      + cell('sg-station', 'acq', fmtNum(g.sliceThk) + ' mm')
       + cell('sg-station', 'acq', fmtNum(g.beamColl) + ' mm')
       + cell('sg-station', 'acq', fmtNum(g.pitch) + ':1')
       + cell('sg-station', 'acq', fmtNum(tableSpeedOf(g)) + ' mm/rot')
       + cell('sg-station', 'rot', g.rotSpeed.toFixed(2) + ' s')
-      + cell('sg-edit', 'interval', fmtNum(g.interval) + ' mm')
       + cell('sg-edit', 'tilt', g.tilt + '°')
       + cell('sg-edit', 'kv', g.kv + ' kV')
       + cell('sg-edit', 'ma', g.ma + ' mA')
@@ -1566,57 +1571,46 @@ function openScanHelp() {
   pop.classList.add('show');
 }
 
-// independent but can't be thinner than the detector element.
+// Acquisition popup: rows / pitch / rotation time. The detector element (DEL) is a fixed
+// physical property, so beam collimation = rows × DEL is DERIVED (never chosen directly), and
+// slice thickness / interval are reconstruction settings (the recon table), not acquisition.
 function openAcqPopup(gi) {
   const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) return;
   const g = grp(gi);
-  const w = { detRows: g.detRows, beamColl: g.beamColl, pitch: g.pitch, sliceThk: g.sliceThk };
-  const speedGrid = () => {
-    const colls = validColls(w.detRows), set = new Set();
-    PITCH_ACQ.forEach(p => colls.forEach(c => set.add(+(p * c).toFixed(2))));
-    return [...set].sort((a, b) => a - b);
-  };
-  const classifySpeed = (s) => {
-    const cur = +(w.pitch * w.beamColl).toFixed(2);
-    if (Math.abs(s - cur) < 0.01) return 'on';
-    if (validColls(w.detRows).some(c => Math.abs(c - s / w.pitch) < 0.01)) return 'alt';  // changes collimation only
-    return '';                                                                            // changes pitch
-  };
+  // Single-slice CT (SSCT) acquires ONE detector row per rotation — multi-row is meaningless,
+  // so the row selector is locked to 1. MSCT exposes the full multi-row detector.
+  const msct = !!(ctx.S.ct.features && ctx.S.ct.features.coneBeam);
+  const rowOpts = msct ? DET_ROW_OPTS : [1];
+  const w = { detRows: msct ? g.detRows : 1, pitch: g.pitch, rotSpeed: g.rotSpeed };
   const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
   const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
   function render() {
-    const el = w.beamColl / w.detRows;
-    const btns = (list, val, fmt, k, disBelowEl) => list.map(v =>
-      '<button data-k="' + k + '" data-v="' + v + '" class="' +
-      (Math.abs(v - val) < 1e-6 ? 'on' : (disBelowEl && v < el - 1e-6 ? 'dis' : '')) + '">' + fmt(v) + '</button>').join('');
+    const coll = w.detRows * DEL_MM;                          // beam collimation = rows × DEL (fixed 0.625 mm)
+    const feedRot = w.pitch * coll;                          // table travel per rotation (mm/rot)
+    const feedSec = feedRot / Math.max(w.rotSpeed, 1e-3);    // table feed speed (mm/s)
+    // one clean selection highlight per section; nothing to grey out (all combos are valid)
+    const btns = (list, val, fmt, k) => list.map(v =>
+      '<button data-k="' + k + '" data-v="' + v + '" class="' + (Math.abs(v - val) < 1e-6 ? 'on' : '') + '">' + fmt(v) + '</button>').join('');
     inner.innerHTML =
-      '<div class="acq-pop"><div class="acq-title">Select the desired Image Thickness</div><div class="acq-grid"><div class="acq-left">'
-      + '<div class="acq-sec"><div class="acq-lab">Detector Rows</div><div class="acq-btns">' + btns(DET_ROW_OPTS, w.detRows, x => x, 'rows', false) + '</div></div>'
-      + '<div class="acq-sec"><div class="acq-lab">Helical Thickness (mm)</div><div class="acq-btns">' + btns(ACQ_THK, w.sliceThk, fmtNum, 'thk', true) + '</div></div>'
-      + '<div class="acq-sec"><div class="acq-lab">Pitch</div><div class="acq-btns">' + btns(PITCH_ACQ, w.pitch, x => fmtNum(x) + ':1', 'pitch', false) + '</div></div>'
-      + '<div class="acq-sec"><div class="acq-lab">Speed (mm/rot)</div><div class="acq-btns">' + speedGrid().map(s => '<button data-k="speed" data-v="' + s + '" class="' + classifySpeed(s) + '">' + s.toFixed(2) + '</button>').join('') + '</div></div>'
+      '<div class="acq-pop"><div class="acq-title">Detector configuration &amp; acquisition</div><div class="acq-grid"><div class="acq-left">'
+      + '<div class="acq-sec"><div class="acq-lab">Detector Rows <small>× ' + fmtNum(DEL_MM) + ' mm DEL' + (msct ? '' : ' · SSCT: single row') + '</small></div><div class="acq-btns">' + btns(rowOpts, w.detRows, x => x, 'rows') + '</div></div>'
+      + '<div class="acq-sec"><div class="acq-lab">Pitch</div><div class="acq-btns">' + btns(PITCH_ACQ, w.pitch, x => fmtNum(x) + ':1', 'pitch') + '</div></div>'
+      + '<div class="acq-sec"><div class="acq-lab">Rotation Time (s)</div><div class="acq-btns">' + btns(ROT_STATIONS, w.rotSpeed, x => x.toFixed(2), 'rot') + '</div></div>'
       + '</div><div class="acq-right">'
-      + '<div class="acq-info"><div class="acq-ilab">Detector Configuration:</div><div class="acq-ival">' + w.detRows + ' × ' + fmtNum(el) + '</div></div>'
-      + '<div class="acq-info"><div class="acq-ilab">Beam Collimation:</div><div class="acq-ival">' + fmtNum(w.beamColl) + ' mm</div></div>'
-      + '<div class="acq-info"><div class="acq-ilab">Table Speed:</div><div class="acq-ival">' + fmtNum(w.pitch * w.beamColl) + ' mm/rot</div></div>'
+      + '<div class="acq-info"><div class="acq-ilab">Detector configuration:</div><div class="acq-ival">' + w.detRows + ' × ' + fmtNum(DEL_MM) + ' mm</div></div>'
+      + '<div class="acq-info"><div class="acq-ilab">Beam collimation:</div><div class="acq-ival">' + fmtNum(coll) + ' mm</div></div>'
+      + '<div class="acq-info"><div class="acq-ilab">Table travel:</div><div class="acq-ival">' + fmtNum(feedRot) + ' mm/rot</div></div>'
+      + '<div class="acq-info"><div class="acq-ilab">Table feed speed:</div><div class="acq-ival">' + fmtNum(feedSec) + ' mm/s</div></div>'
       + '</div></div><div class="acq-actions"><button class="acq-ok">OK</button><button class="acq-cancel">Cancel</button></div></div>';
     inner.querySelectorAll('.acq-btns button').forEach(b => b.addEventListener('click', () => {
-      if (b.classList.contains('dis')) return;
       const k = b.dataset.k, v = parseFloat(b.dataset.v);
-      if (k === 'rows') { w.detRows = v; if (!validColls(v).some(c => Math.abs(c - w.beamColl) < 0.01)) w.beamColl = nearestIn(validColls(v), w.beamColl); }
-      else if (k === 'thk') w.sliceThk = v;
+      if (k === 'rows') w.detRows = v;
       else if (k === 'pitch') w.pitch = v;
-      else if (k === 'speed') {
-        const collForPitch = v / w.pitch;
-        if (validColls(w.detRows).some(c => Math.abs(c - collForPitch) < 0.01)) w.beamColl = +collForPitch.toFixed(3);   // keep pitch
-        else w.pitch = nearestIn(PITCH_ACQ, v / w.beamColl);                                                             // keep collimation
-      }
-      const el2 = w.beamColl / w.detRows;                       // recon thickness can't be thinner than the element
-      if (w.sliceThk < el2 - 1e-6) { const ge = ACQ_THK.filter(t => t >= el2 - 1e-6); w.sliceThk = ge.length ? ge[0] : el2; }
+      else if (k === 'rot') w.rotSpeed = v;
       render();
     }));
     inner.querySelector('.acq-ok').addEventListener('click', () => {
-      g.detRows = w.detRows; g.beamColl = w.beamColl; g.pitch = w.pitch; g.sliceThk = w.sliceThk;
+      g.detRows = w.detRows; g.beamColl = w.detRows * DEL_MM; g.pitch = w.pitch; g.rotSpeed = w.rotSpeed;
       close(); renderScanBoxes(); updatePlan();
     });
     inner.querySelector('.acq-cancel').addEventListener('click', close);
@@ -1624,6 +1618,20 @@ function openAcqPopup(gi) {
   pop.classList.add('show');
   document.addEventListener('keydown', onKey, true);
   render();
+}
+
+// Reconcile the scan groups with the current acquisition mode. SSCT (cone beam off) acquires
+// a single detector row per rotation — multi-row is meaningless — so force every group to
+// detRows = 1 / beamColl = one DEL. MSCT leaves the groups' chosen row counts untouched.
+// Called by app.js whenever the SSCT/MSCT toggle (or the Quick/Realistic mode) changes.
+export function ctApplyAcqMode() {
+  if (!ctx || !ctx.S.ct.groups) return;
+  const msct = !!(ctx.S.ct.features && ctx.S.ct.features.coneBeam);
+  for (const g of ctx.S.ct.groups) {
+    if (!msct) { g.detRows = 1; g.beamColl = DEL_MM; }                        // SSCT → single row
+    else if (g.detRows < DET_ROW_OPTS[0]) { g.detRows = 16; g.beamColl = g.detRows * DEL_MM; }  // MSCT → restore a multi-row default
+  }
+  renderScanBoxes(); renderScanGroups(); updatePlan();
 }
 
 // Flash TABLE (orange) while the couch still needs to move; else flash START (green).
@@ -1770,7 +1778,7 @@ const DET_MODES = {
   // zSub: z sub-planes across the slice sensitivity profile (finite slab thickness). >1 makes
   // this a MULTI-slice recon — partial-volume in z + cross-slice artifact bleed. quick keeps it
   // light (fast preview); realistic integrates the full SSP.
-  quick:     { nDet: 384, nAngles: 360, gridN: 128, fixedPitch: false, zSub: 3 },
+  quick:     { nDet: 384, nAngles: 288, gridN: 128, fixedPitch: false, zSub: 3 },
   // photonBase: detected photons per channel per view at the reference technique —
   // clinical scale (~10^6-10^7), so the 512² image lands at a clinical ~10-15 HU noise;
   // the quick preview keeps the old (much lower) base tuned for its coarse grid.
@@ -1828,7 +1836,12 @@ function reconGeoM(fovMM, cx, cy, m, sfovMM) {
 function reconGeo(fovMM, cx, cy, sfovMM) { return reconGeoM(fovMM, cx, cy, detMode(), sfovMM || 500); }
 // Low-res detector used for the live scan PREVIEW (deliberately coarse so previews are
 // cheap and visibly degraded; the full recon replaces them afterwards).
-const PREVIEW_DET = { nDet: 96, nAngles: 60, gridN: 96, fixedPitch: false };
+const PREVIEW_DET = { nDet: 64, nAngles: 44, gridN: 72, fixedPitch: false };
+// Real-time reconstruction detector (fullRecon OFF): coarse projection so every slice
+// reconstructs in a few ms even for a dense voxel phantom, but a full-size 128² image so
+// the stored/scrolled slices don't look blocky. Streakier than a full quick recon (few
+// angles), but it keeps the scan feeling instant — the whole point of the Quick preset.
+const QUICK_RT = { nDet: 128, nAngles: 96, gridN: 128, fixedPitch: false, zSub: 1 };
 
 let scanToken = 0;                // invalidates an in-flight scan on abort / mode switch
 function cancelScan() { scanToken++; }
@@ -1915,10 +1928,13 @@ async function scanDelay(sec, alive) {
 function scanAnimSeconds(g) { return Math.max(2.5, Math.min(18, groupExpTime(g))); }
 
 // One slice of a fast, low-resolution preview reconstruction (browser engine).
-function previewReconSlice(setup, si, geo, h, photons0) {
+function previewReconSlice(setup, si, geo, h, mu) {
   const zw = setup.positions[si] / MM_PER_UNIT;
-  const sino = projectSlice(setup.phantom, zw, setup.mu, photons0, geo);
-  const q = filterSino(sinoBlur(sino, geo.m), h, geo.ds, geo.m);
+  // The live preview must be CHEAP: monochromatic mu (mu passed in with muMat stripped), a single
+  // untilted ray, no aperture blur and no photon noise — regardless of the physics toggles. The
+  // full reconstruction that follows applies the real physics.
+  const sino = projectSlice(setup.phantom, zw, mu, 0, geo);
+  const q = filterSino(sino, h, geo.ds, geo.m);
   return backproject(q, geo);
 }
 
@@ -1931,23 +1947,35 @@ function animateHelicalScan(g, setup, alive) {
   const canPreview = !setup.phantom.geometryOnly;   // backend-only models have no browser volume to preview
   const pgeo = canPreview ? reconGeoM(setup.fovMM, 0, ISO_Y, PREVIEW_DET, setup.sfovMM) : null;
   const ph = canPreview ? buildKernel(pgeo.ds, pgeo.m.nDet, pgeo.m.fixedPitch) : null;
-  const pPhotons = canPreview ? photonsFor(g, pgeo) : 0;
+  const pmu = canPreview ? { ...setup.mu, muMat: null, bhc: null } : null;   // monochromatic (cheap preview)
   const pmeta = { gridN: PREVIEW_DET.gridN, fovMM: setup.fovMM, muWater: setup.muW };
   return new Promise(res => {
-    const t0 = performance.now(); let lastSi = -1, done = false;
-    const finish = () => { if (done) return; done = true; res(); };
-    (function step() {
+    const t0 = performance.now(); let lastSi = -1, lastPrev = 0, done = false, raf = 0, tmo = 0;
+    const finish = () => { if (done) return; done = true; cancelAnimationFrame(raf); clearTimeout(tmo); res(); };
+    // Drive the loop with BOTH rAF (smooth 60 fps when the pane is visible) and a setTimeout
+    // fallback (keeps advancing when the pane is backgrounded and rAF is paused/throttled).
+    // Whichever fires first runs step(), which cancels the other and reschedules. The frame is
+    // time-paced by `now - t0`, so the scan always finishes at t0 + T regardless of tick rate.
+    const kick = () => { if (done) return; cancelAnimationFrame(raf); clearTimeout(tmo); raf = requestAnimationFrame(step); tmo = setTimeout(step, 200); };
+    function step() {
       if (done) return;
+      cancelAnimationFrame(raf); clearTimeout(tmo);
       if (!alive()) { finish(); return; }
-      const t = Math.min(1, (performance.now() - t0) / T);
+      const now = performance.now(), t = Math.min(1, (now - t0) / T);
       const si = Math.min(nz - 1, Math.floor(t * nz + 1e-6));
       if (si !== lastSi) {
         lastSi = si;
         moveCouchTo(setup.positions[si]);
-        if (canPreview) { try { drawScanPreview(previewReconSlice(setup, si, pgeo, ph, pPhotons), pmeta, si, nz, true); } catch (_) {} }
+        // Throttle the (still non-trivial) preview so its cost can NEVER stall the time-paced
+        // animation: compute at most ~every 120 ms, and always for the final slice.
+        if (canPreview && (now - lastPrev > 120 || si === nz - 1)) {
+          lastPrev = now;
+          try { drawScanPreview(previewReconSlice(setup, si, pgeo, ph, pmu), pmeta, si, nz, true); } catch (_) {}
+        }
       }
-      if (t < 1) requestAnimationFrame(step); else finish();
-    })();
+      if (t < 1) kick(); else finish();
+    }
+    kick();
   });
 }
 
@@ -2326,7 +2354,7 @@ function scanSetup(g) {
 // better metal penetration, handled in scanSetup), this reproduces the clinical result
 // that raising kVp reduces metal artifacts.
 function photonsFor(g, geo) {
-  return (geo.m.photonBase || PHOTON_BASE) * (g.ma / 300) * (g.rotSpeed / 0.5) * (g.sliceThk / 5)
+  return (geo.m.photonBase || PHOTON_BASE) * (g.ma / 300) * (g.rotSpeed / 0.5) * (groupBaseThk(g) / 5)
     * Math.pow(g.kv / 120, 2)                              // fluence ∝ kVp² (120 kVp = reference)
     * (DET_MODES.quick.nAngles / geo.m.nAngles);
 }
@@ -2342,9 +2370,12 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   const feat = ctx.S.ct.features || {};
   const bh = !!feat.beamHardening, blurOn = !!feat.focalBlur;
   const mu = bh ? setup.mu : { ...setup.mu, muMat: null, bhc: null };   // strip poly data when beam hardening is off
-  const geo = reconGeo(fovMM, 0, ISO_Y, sfovMM);
+  // fullRecon off → reconstruct at the coarse PREVIEW detector (real-time, low quality) instead
+  // of the selected detector; keeps the scan feeling instant when only a quick look is needed.
+  const recMode = feat.fullRecon === false ? QUICK_RT : detMode();
+  const geo = reconGeoM(fovMM, 0, ISO_Y, recMode, sfovMM);
   const photons0 = feat.quantumNoise ? photonsFor(g, geo) : 0;
-  const cone = feat.coneBeam ? coneProfile(g.beamColl / MM_PER_UNIT, g.sliceThk / MM_PER_UNIT, geo.m.zSub || 1) : ONE_RAY;
+  const cone = feat.coneBeam ? coneProfile(g.beamColl / MM_PER_UNIT, groupBaseThk(g) / MM_PER_UNIT, geo.m.zSub || 1) : ONE_RAY;
   // Reconstruct the full transverse stack into one contiguous volume so it can be
   // resampled in any plane (axial / coronal / sagittal) for multiplanar recons. Each
   // slice is emitted via onSlice as it completes so the scan shows the images coming
@@ -2408,7 +2439,7 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
     }
   }
   const slices = positions.map((d, i) => ({ d, mu: vol.subarray(i * N * N, (i + 1) * N * N) }));
-  const dz = nz > 1 ? (positions[nz - 1] - positions[0]) / (nz - 1) : Math.max(g.interval, 0.1);
+  const dz = nz > 1 ? (positions[nz - 1] - positions[0]) / (nz - 1) : groupBaseInterval(g);
   return { slices, vol, nz, gridN: N, fovMM, z0: positions[0], dz, centerY: ISO_Y, muWater: muW, effE };
 }
 
@@ -2420,7 +2451,7 @@ function storeScan(g, i, recon) {
   const el = acqThkOf(g);                          // detector element = minimum recon thickness
   const entry = {
     id, label: 'Scan ' + id + ' · G' + (i + 1), ts: tstamp(),
-    params: { kv: g.kv, ma: g.ma, sliceThk: g.sliceThk, pitch: g.pitch, interval: g.interval, rotSpeed: g.rotSpeed, acqThk: el, detRows: g.detRows, beamColl: g.beamColl },
+    params: { kv: g.kv, ma: g.ma, sliceThk: groupBaseThk(g), pitch: g.pitch, interval: groupBaseInterval(g), rotSpeed: g.rotSpeed, acqThk: el, detRows: g.detRows, beamColl: g.beamColl },
     gridN: recon.gridN, fovMM: recon.fovMM, muWater: recon.muWater, effE: recon.effE, slices: recon.slices,
     // full volume + geometry for multiplanar resampling
     vol: recon.vol, nz: recon.nz, z0: recon.z0, dz: recon.dz, centerY: recon.centerY,
@@ -2483,7 +2514,7 @@ function drawSliceToCanvas(cv, scan, sl, wl, ww) {
       const o = (iy * N + ix) * 4;
       const dx = ix - c + 0.5, dy = srcY - c + 0.5;
       let val;
-      if (dx * dx + dy * dy > R2) val = 0;
+      if (dx * dx + dy * dy > R2) val = 0;       // circular FOV (reconstruction cylinder)
       else { const mu = sl.mu[srcY * N + ix]; const hu = 1000 * (mu - muW) / muW; val = Math.round(255 * huToGray(hu, wl, ww)); }
       d[o] = d[o + 1] = d[o + 2] = val; d[o + 3] = 255;
     }
