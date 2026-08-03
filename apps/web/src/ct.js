@@ -14,7 +14,8 @@ import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
 import { Sound } from './audio/sound.js';
 
 let ctx = null;
-let couch = null, gantry = null, gantrySpin = null;  // couch (moves) + gantry ring (static) + rotating tube/detector (scan only)
+let couch = null, gantry = null, gantrySpin = null;  // couch pallet (moves) + gantry ring (static) + rotating tube/detector (scan only)
+let couchBase = null, gantryShell = null;            // vendor exterior: static pedestal + housing cover — shown in the Orbit PoV only
 let scanMarkers = null;               // usability aid: coloured lines at scan start/end + a direction arrow
 let laserTop = null, laserSide = null; // projected alignment lasers (SpotLights) + their cookies
 let laserTopTex = null, laserSideTex = null;
@@ -136,34 +137,13 @@ export function initCT(context) {
 function buildCTScene() {
   const { THREE, three } = ctx;
 
-  // ---- couch (moving) ---- real-CT scale: a long, wide pallet the patient lies on
-  couch = new THREE.Group();
-  const padMat = new THREE.MeshStandardMaterial({ color: 0x232a31, metalness: 0.2, roughness: 0.75 });
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(46, 3, 220), padMat);
-  pad.position.set(0, -1.5, 8); pad.receiveShadow = true; couch.add(pad);    // pad top at local y=0
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(50, 2, 220), new THREE.MeshStandardMaterial({ color: 0x2f3a44, metalness: 0.4, roughness: 0.5 }));
-  rail.position.set(0, -4, 8); couch.add(rail);
-  couch.visible = false; three.scene.add(couch);
-
-  // ---- gantry (static) ---- ~700 mm bore so a real torso passes through cleanly
-  gantry = new THREE.Group();
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 9, 9, 24, 72),
-    new THREE.MeshStandardMaterial({ color: 0x3c4753, metalness: 0.55, roughness: 0.4, emissive: 0x141a20, emissiveIntensity: 1 }));
-  ring.position.set(0, ISO_Y, 0); gantry.add(ring);                          // bore centred at the isocentre
-  const ringIn = new THREE.Mesh(new THREE.TorusGeometry(BORE_R, 1.6, 12, 72),
-    new THREE.MeshStandardMaterial({ color: 0x11161b, metalness: 0.3, roughness: 0.8 }));
-  ringIn.position.set(0, ISO_Y, 3.5); gantry.add(ringIn);
-  // rotating tube/detector assembly inside the bore — spins about the bore axis (z)
-  // during a scan so the acquisition is visible. Static (parked) otherwise.
-  gantrySpin = new THREE.Group(); gantrySpin.position.set(0, ISO_Y, 3);
-  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(8, 5, 3.5),
-    new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb733, emissiveIntensity: 0.9, metalness: 0.3, roughness: 0.4 }));
-  tubeBlk.position.set(0, BORE_R + 3, 0); gantrySpin.add(tubeBlk);           // focal spot at top of the ring
-  const detArc = new THREE.Mesh(new THREE.TorusGeometry(BORE_R, 2.5, 8, 40, Math.PI * 0.9),
-    new THREE.MeshStandardMaterial({ color: 0x1a2833, emissive: 0x0a2230, emissiveIntensity: 0.6, metalness: 0.4, roughness: 0.5 }));
-  detArc.rotation.z = -Math.PI / 2 - Math.PI * 0.45; detArc.position.set(0, 0, 0); gantrySpin.add(detArc);   // opposing detector arc
-  gantrySpin.visible = false; gantry.add(gantrySpin);
-  gantry.visible = false; three.scene.add(gantry);
+  // ---- CT machine: couch pallet (moves), couch base/pedestal (static), gantry housing (static) ----
+  // The vendor-accurate cover, control panels and pedestal are built in rebuildCTModel() so the
+  // whole rig can be re-skinned when the vendor toggle flips (GE Optima ↔ Canon/Toshiba Aquilion).
+  couch = new THREE.Group(); couch.visible = false; three.scene.add(couch);        // sliding pallet (patient lies here; top at local y=0)
+  couchBase = new THREE.Group(); couchBase.visible = false; three.scene.add(couchBase);   // pedestal + foot (static, Orbit PoV only)
+  gantry = new THREE.Group(); gantry.visible = false; three.scene.add(gantry);      // bore ring + housing cover (static)
+  rebuildCTModel();
 
   // ---- scan-range markers (usability aid, not physical) ----
   // green line = scan START (at the isocentre), red line = scan END, orange arrow = the
@@ -201,6 +181,197 @@ function buildCTScene() {
   const side = mkLaser(drawSideLaserCookie);
   laserSide = side.sl; laserSideTex = side.tex;
   laserSide.shadow.camera.up.set(0, 1, 0);            // world y -> cookie vertical
+}
+
+// ============================================================================
+// Vendor-accurate CT machine model (gantry housing + control panels + couch).
+// The exterior cover / panels / pedestal are only shown in the Orbit PoV (the
+// AP / Lat planning views sit inside the bore, so they keep the bare framing ring).
+// Re-skinned on the vendor toggle: GE Optima (blue-grey two-tone, dark base,
+// angular table) vs Canon / Toshiba Aquilion (warm white, bellows table column).
+// ============================================================================
+const GANT_DEPTH = 44, FRONT_Z = 12, FLOOR_Y = ISO_Y - 46;
+
+function vendorLook() {
+  const v = (ctx && ctx.S.ct.vendor) || 'ge';
+  if (v === 'ge') return {
+    v: 'ge', cover: 0xeceff2, shoulder: 0x9fb4c6, boreRim: 0x8ea3b5, boreRim2: 0xccd6df,
+    baseTop: 0x46525d, baseBot: 0x232a31, plinth: 14,
+    panelFace: '#e7ebef', panelEdge: '#c2ccd6', led: '#08160e', ledText: '#57e089',
+    btnFace: '#eef2f6', btn: '#3f7cae', screen1: '#0b2c48', screen2: '#124a72',
+    brand: 'GE', model: 'Optima', couchTop: 0xeceff2,
+    pedStyle: 'ge', pedLight: 0xdfe4e9, pedBase: 0x46525d, pedFoot: 0x232a31, redDot: 0xff4a3d,
+  };
+  return {
+    v: 'canon', cover: 0xf3f1ea, shoulder: 0xe6e3db, boreRim: 0xbcd2e0, boreRim2: 0xe1eaf0,
+    baseTop: 0xe0dcd3, baseBot: 0xcbc7bd, plinth: 0,
+    panelFace: '#edebe4', panelEdge: '#d6d3c9', led: '#07130d', ledText: '#7fe0a0',
+    btnFace: '#f2f0ea', btn: '#8fa9bd', screen1: '#0b2c48', screen2: '#134a74',
+    brand: 'Canon', model: 'Aquilion ONE', couchTop: 0xf1efe8,
+    pedStyle: 'bellows', pedLight: 0xe6e2d9, pedBase: 0xdedad1, pedFoot: 0xbfbcb2, redDot: 0xff4a3d,
+  };
+}
+function disposeGroup(g) {
+  if (!g) return;
+  for (let i = g.children.length - 1; i >= 0; i--) {
+    const c = g.children[i]; g.remove(c);
+    c.traverse && c.traverse(o => {
+      o.geometry && o.geometry.dispose && o.geometry.dispose();
+      if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.map && m.map.dispose && m.map.dispose(); m.dispose && m.dispose(); });
+    });
+  }
+}
+// (Re)build the whole rig for the current vendor. Preserves the couch / couchBase / gantry groups
+// (referenced by ctSyncScene + the scan animation) and re-creates gantrySpin + gantryShell inside.
+function rebuildCTModel() {
+  if (!ctx || !gantry) return;
+  const { THREE } = ctx, look = vendorLook();
+  disposeGroup(gantry); disposeGroup(couch); disposeGroup(couchBase);
+  gantrySpin = null; gantryShell = null;
+  buildGantry(THREE, look); buildCouch(THREE, look);
+  if (ctx.$('ctRecons')) { /* no-op: keep signature stable */ }
+}
+const stdMat = (THREE, c, m, r) => new THREE.MeshStandardMaterial({ color: c, metalness: m == null ? 0.1 : m, roughness: r == null ? 0.55 : r });
+function canvasTex(THREE, cv) { const t = new THREE.CanvasTexture(cv); t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 4; return t; }
+function cvRoundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+function roundedRectShape(s, w, h, r) { const x = -w / 2, y = -h / 2; s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); }
+
+function buildGantry(THREE, look) {
+  const std = (c, m, r) => stdMat(THREE, c, m, r);
+  // bore-framing ring — visible in every PoV so AP / Lat planning still frames the patient
+  const frame = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 2, 2, 16, 80), std(look.boreRim, 0.4, 0.5));
+  frame.position.set(0, ISO_Y, FRONT_Z - 2); gantry.add(frame);
+  // rotating tube + detector assembly (spins during a scan)
+  gantrySpin = new THREE.Group(); gantrySpin.position.set(0, ISO_Y, FRONT_Z - 9);
+  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(11, 6, 6), std(0xdfe3e7, 0.4, 0.4));
+  tubeBlk.position.set(0, BORE_R - 1, 0); gantrySpin.add(tubeBlk);
+  const foc = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 3.4), new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb733, emissiveIntensity: 0.8 }));
+  foc.position.set(0, BORE_R - 4.5, 0); gantrySpin.add(foc);
+  const detArc = new THREE.Mesh(new THREE.TorusGeometry(BORE_R - 1, 3, 8, 44, Math.PI * 0.85), std(0x2b3742, 0.4, 0.5));
+  detArc.rotation.z = -Math.PI / 2 - Math.PI * 0.425; gantrySpin.add(detArc);
+  gantrySpin.visible = false; gantry.add(gantrySpin);
+
+  // ---- exterior housing shell (Orbit PoV only) ----
+  gantryShell = new THREE.Group(); gantry.add(gantryShell);
+  const halfW = 92, topY = ISO_Y + 80, botY = FLOOR_Y + (look.plinth || 0), shoulderY = ISO_Y + 26, topR = 46, holeR = BORE_R + 5, flare = look.v === 'canon' ? 16 : 4;
+  const shape = new THREE.Shape();
+  shape.moveTo(-(halfW + flare), botY);
+  shape.lineTo(-halfW, shoulderY);
+  shape.quadraticCurveTo(-halfW, topY, -halfW + topR, topY);
+  shape.lineTo(halfW - topR, topY);
+  shape.quadraticCurveTo(halfW, topY, halfW, shoulderY);
+  shape.lineTo(halfW + flare, botY);
+  shape.lineTo(-(halfW + flare), botY);
+  const hole = new THREE.Path(); hole.absarc(0, ISO_Y, holeR, 0, Math.PI * 2, true); shape.holes.push(hole);
+  const cover = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: GANT_DEPTH, bevelEnabled: true, bevelThickness: 1.5, bevelSize: 1.5, bevelSegments: 2, curveSegments: 64 }), std(look.cover, 0.08, 0.5));
+  cover.position.z = FRONT_Z - GANT_DEPTH; gantryShell.add(cover);
+  // raised bore rim + thin inner accent
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(holeR - 1.5, 3, 16, 80), std(look.boreRim, 0.35, 0.5));
+  rim.position.set(0, ISO_Y, FRONT_Z + 4); gantryShell.add(rim);
+  const rim2 = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 1.5, 1.2, 12, 80), std(look.boreRim2, 0.3, 0.6));
+  rim2.position.set(0, ISO_Y, FRONT_Z + 4.6); gantryShell.add(rim2);
+  // dark bore tunnel
+  const tunnel = new THREE.Mesh(new THREE.CylinderGeometry(BORE_R, BORE_R, 78, 60, 1, true), new THREE.MeshStandardMaterial({ color: 0x0c1013, side: THREE.DoubleSide, metalness: 0.2, roughness: 0.9 }));
+  tunnel.rotation.x = Math.PI / 2; tunnel.position.set(0, ISO_Y, FRONT_Z - 42); gantryShell.add(tunnel);
+  // GE side shoulder accents (two-tone body)
+  if (look.v === 'ge') {
+    [-1, 1].forEach(s => {
+      const acc = new THREE.Mesh(new THREE.BoxGeometry(9, 76, GANT_DEPTH - 3), std(look.shoulder, 0.1, 0.5));
+      acc.position.set(s * (halfW - 2.5), ISO_Y + 12, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(acc);
+    });
+  }
+  // control panels + red indicator LEDs
+  [-1, 1].forEach(s => {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(34, 42), new THREE.MeshStandardMaterial({ map: makePanelTex(THREE, look, s), metalness: 0.05, roughness: 0.6 }));
+    p.position.set(s * (BORE_R + 24), ISO_Y + 4, FRONT_Z + 4.5); p.rotation.y = -s * 0.12; gantryShell.add(p);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(1.1, 12, 12), new THREE.MeshStandardMaterial({ color: look.redDot, emissive: look.redDot, emissiveIntensity: 0.85 }));
+    dot.position.set(s * (BORE_R + 6), ISO_Y + BORE_R - 4, FRONT_Z + 5); gantryShell.add(dot);
+  });
+  // top-centre display + bezel
+  const bez = new THREE.Mesh(new THREE.BoxGeometry(31, 23, 3.2), std(look.cover, 0.08, 0.5));
+  bez.position.set(0, ISO_Y + BORE_R + 20, FRONT_Z + 3); gantryShell.add(bez);
+  const disp = new THREE.Mesh(new THREE.PlaneGeometry(24, 17), new THREE.MeshStandardMaterial({ map: makeTopTex(THREE, look), emissive: 0x1a2a3a, emissiveIntensity: 0.4, roughness: 0.4 }));
+  disp.position.set(0, ISO_Y + BORE_R + 20, FRONT_Z + 5); gantryShell.add(disp);
+  // base plinth (GE dark base)
+  if (look.plinth) {
+    const p1 = new THREE.Mesh(new THREE.BoxGeometry((halfW + flare) * 2 + 6, look.plinth + 2, GANT_DEPTH + 8), std(look.baseTop, 0.2, 0.6));
+    p1.position.set(0, FLOOR_Y + look.plinth / 2, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(p1);
+    const p2 = new THREE.Mesh(new THREE.BoxGeometry((halfW + flare) * 2 - 8, 5, GANT_DEPTH + 2), std(look.baseBot, 0.3, 0.5));
+    p2.position.set(0, FLOOR_Y + 2.5, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(p2);
+  }
+}
+// Control-panel texture: recessed face + an LED numeric readout + a button cluster
+// (GE = circular ring of round keys; Canon = rows of round keys).
+function makePanelTex(THREE, look, side) {
+  const W = 256, H = 320, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  g.fillStyle = look.panelFace; cvRoundRect(g, 6, 6, W - 12, H - 12, 18); g.fill();
+  g.lineWidth = 3; g.strokeStyle = look.panelEdge; g.stroke();
+  // LED numeric display (tilt / height / time-style readout)
+  g.fillStyle = look.led; cvRoundRect(g, 26, 22, W - 52, 60, 8); g.fill();
+  g.fillStyle = look.ledText; g.textAlign = 'right'; g.font = '18px "Courier New", monospace';
+  ['+0.0', '+50.0', '0.0'].forEach((t, i) => g.fillText(t, W - 40, 42 + i * 17));
+  g.textAlign = 'left'; g.font = '9px "Courier New", monospace'; g.fillStyle = look.ledText;
+  ['deg', 'mm', 'sec'].forEach((t, i) => g.fillText(t, 40, 42 + i * 17));
+  // button cluster
+  const drawBtn = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, 7); g.fillStyle = look.btnFace; g.fill(); g.lineWidth = 2.4; g.strokeStyle = look.btn; g.stroke(); g.beginPath(); g.arc(x - r * 0.3, y - r * 0.3, r * 0.34, 0, 7); g.fillStyle = 'rgba(255,255,255,0.55)'; g.fill(); };
+  if (look.v === 'ge') {
+    const cx = W / 2, cy = 210, R = 54;
+    for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2; drawBtn(cx + Math.cos(a) * R, cy + Math.sin(a) * R, 12); }
+    drawBtn(cx, cy, 17);
+  } else {
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) drawBtn(44 + c * 56, 150 + r * 52, 15);
+  }
+  return canvasTex(THREE, cv);
+}
+// Top-centre display: blue console screen with the vendor logo + model line.
+function makeTopTex(THREE, look) {
+  const W = 256, H = 180, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, look.screen1); grd.addColorStop(1, look.screen2);
+  g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  g.textAlign = 'center'; g.fillStyle = '#ffffff'; g.font = 'bold 34px Arial'; g.fillText(look.brand, W / 2, 70);
+  g.fillStyle = '#cfe6ff'; g.font = 'italic 22px Arial'; g.fillText(look.model, W / 2, 104);
+  g.fillStyle = 'rgba(255,255,255,0.22)'; cvRoundRect(g, 44, 128, W - 88, 12, 6); g.fill();
+  return canvasTex(THREE, cv);
+}
+
+function buildCouch(THREE, look) {
+  const std = (c, m, r) => stdMat(THREE, c, m, r);
+  // ---- pallet (moves) : white plate, top surface at LOCAL y=0 (patient posterior rests here) ----
+  const palLen = 150, palW = 34;
+  const ps = new THREE.Shape(); roundedRectShape(ps, palW, 3.4, 1.5);
+  const pallet = new THREE.Mesh(new THREE.ExtrudeGeometry(ps, { depth: palLen, bevelEnabled: false, curveSegments: 8 }), std(look.couchTop, 0.15, 0.5));
+  pallet.position.set(0, -1.7, -52); couch.add(pallet);                 // top at y≈0, spans z −52 … +98 (cantilevers into the bore)
+  // subtle recessed centre channel (the patient-tray groove)
+  const chan = new THREE.Mesh(new THREE.BoxGeometry(palW - 12, 0.5, palLen - 6), std(0xdfe3e6, 0.1, 0.6));
+  chan.position.set(0, -0.35, 23); couch.add(chan);
+  // head grip handle at the foot (+z) end
+  const grip = new THREE.Mesh(new THREE.TorusGeometry(9, 1.3, 10, 26, Math.PI), std(0xbfc6cc, 0.6, 0.35));
+  grip.position.set(0, 0, 96); couch.add(grip);
+  couch.visible = false;
+
+  // ---- couch base / pedestal (static, Orbit PoV only) : positioned in ctSyncScene ----
+  const top = 2, foot = FLOOR_Y;
+  if (look.pedStyle === 'bellows') {
+    // Canon / Toshiba: an accordion (bellows) column of stacked discs + a round foot base
+    const n = 9, colH = top - (foot + 10), seg = colH / n;
+    for (let i = 0; i < n; i++) {
+      const yy = top - (i + 0.5) * seg, rr = i % 2 ? 9 : 11;
+      const disc = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, seg * 0.95, 26), std(look.pedLight, 0.15, 0.6));
+      disc.position.set(0, yy, 0); couchBase.add(disc);
+    }
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(15, 18, 9, 30), std(look.pedFoot, 0.2, 0.6));
+    base.position.set(0, foot + 4.5, 0); couchBase.add(base);
+  } else {
+    // GE: a tapered column on a two-tone base with a wide foot plate
+    const colBot = foot + 16;
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(9, 13, top - colBot, 22), std(look.pedLight, 0.2, 0.55));
+    col.position.set(0, (top + colBot) / 2, 0); couchBase.add(col);
+    const bTop = new THREE.Mesh(new THREE.BoxGeometry(42, 11, 34), std(look.pedBase, 0.2, 0.55));
+    bTop.position.set(0, foot + 12, 0); couchBase.add(bTop);
+    const bBot = new THREE.Mesh(new THREE.BoxGeometry(50, 9, 44), std(look.pedFoot, 0.3, 0.5));
+    bBot.position.set(0, foot + 4.5, 0); couchBase.add(bBot);
+  }
+  couchBase.visible = false;
 }
 
 // TOP laser cookie: a full-width axial line (the scan plane) plus a short vertical
@@ -267,6 +438,11 @@ export function ctSyncScene() {
     couch.position.z = S.ct.patient.z;
     // gantry + lasers stay fixed at the isocentre (only the couch + patient move)
     gantry.position.set(0, 0, 0);
+    // vendor exterior (cover / panels / pedestal) is heavy detail worth showing only in the free
+    // Orbit PoV — the AP / Lat planning views sit inside the bore and keep the bare framing ring.
+    const orbit = S.ct.pov === 'orbit';
+    if (gantryShell) gantryShell.visible = orbit;
+    if (couchBase) { couchBase.visible = orbit; couchBase.position.set(S.ct.patient.x, 0, 82); }
     laserTop.position.set(0, ISO_Y + BORE_R + 8, 0); laserTop.target.position.set(0, ISO_Y, 0);
     laserTop.target.updateMatrixWorld();
     laserSide.position.set(BORE_R + 8, ISO_Y, 0); laserSide.target.position.set(0, ISO_Y, 0);
@@ -278,6 +454,7 @@ export function ctSyncScene() {
   } else {
     three.handGroup.position.x = 0;
     three.handGroup.position.z = 0;
+    if (couchBase) couchBase.visible = false;
   }
   updateScanMarkers();
 }
@@ -1768,6 +1945,8 @@ export function ctApplyVendor() {
                                      const hw = (g.box.latR - g.box.latL) / 2; g.box.latL = 0.5 - hw; g.box.latR = 0.5 + hw; } }
   if (ctx.syncScene) { /* keep scene consistent if patient moved */ }
   renderScanBoxes(); updatePlan();
+  rebuildCTModel();                               // re-skin the 3D machine (GE Optima ↔ Canon/Toshiba Aquilion)
+  ctSyncScene();                                  // re-apply shell/couch visibility + positions for the current PoV
   ctApplyColorTheme();                            // GE ↔ Canon may switch the vendor palette
   ctx.refreshReadouts && ctx.refreshReadouts();
 }
