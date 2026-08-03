@@ -196,6 +196,7 @@ function vendorLook() {
   const v = (ctx && ctx.S.ct.vendor) || 'ge';
   if (v === 'ge') return {
     v: 'ge', cover: 0xeceff2, shoulder: 0x9fb4c6, boreRim: 0x8ea3b5, boreRim2: 0xccd6df,
+    recess: 0x7c93a6, recessDark: 0x5e7488,
     baseTop: 0x46525d, baseBot: 0x232a31, plinth: 14,
     panelFace: '#e7ebef', panelEdge: '#c2ccd6', led: '#08160e', ledText: '#57e089',
     btnFace: '#eef2f6', btn: '#3f7cae', screen1: '#0b2c48', screen2: '#124a72',
@@ -204,6 +205,7 @@ function vendorLook() {
   };
   return {
     v: 'canon', cover: 0xf3f1ea, shoulder: 0xe6e3db, boreRim: 0xbcd2e0, boreRim2: 0xe1eaf0,
+    recess: 0xcbc7bd, recessDark: 0xb0aca2,
     baseTop: 0xe0dcd3, baseBot: 0xcbc7bd, plinth: 0,
     panelFace: '#edebe4', panelEdge: '#d6d3c9', led: '#07130d', ledText: '#7fe0a0',
     btnFace: '#f2f0ea', btn: '#8fa9bd', screen1: '#0b2c48', screen2: '#134a74',
@@ -254,7 +256,10 @@ function buildGantry(THREE, look) {
   // ---- exterior housing shell (Orbit PoV only) ----
   gantryShell = new THREE.Group(); gantry.add(gantryShell);
   const halfW = 92, topY = ISO_Y + 82, botY = FLOOR_Y + (look.plinth || 0), shoulderY = ISO_Y + 22, topR = 54, holeR = BORE_R + 6, flare = look.v === 'canon' ? 18 : 6;
-  // fully-rounded cover silhouette — every corner is an arc, and the extrude bevel rounds the depth edges
+  const px = BORE_R + 27, py = ISO_Y + 2, pw = 25, ph = 31;        // control-panel recess (both sides)
+  const tdY = ISO_Y + BORE_R + 20, tdW = 20, tdH = 13;             // top-display recess
+  // fully-rounded cover silhouette — every corner is an arc; the panels + top display are REAL
+  // cut-outs so the controls sit recessed and flush with the front face (no protruding, angled plates).
   const shape = new THREE.Shape();
   shape.moveTo(-(halfW + flare) + 12, botY);
   shape.quadraticCurveTo(-(halfW + flare), botY, -(halfW + flare), botY + 14);
@@ -265,20 +270,26 @@ function buildGantry(THREE, look) {
   shape.lineTo(halfW + flare, botY + 14);
   shape.quadraticCurveTo(halfW + flare, botY, halfW + flare - 12, botY);
   shape.lineTo(-(halfW + flare) + 12, botY);
-  const hole = new THREE.Path(); hole.absarc(0, ISO_Y, holeR, 0, Math.PI * 2, true); shape.holes.push(hole);
-  const cover = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: GANT_DEPTH, bevelEnabled: true, bevelThickness: 6, bevelSize: 5, bevelSegments: 6, curveSegments: 120 }), std(look.cover, 0.05, 0.42));
+  const bore = new THREE.Path(); bore.absarc(0, ISO_Y, holeR, 0, Math.PI * 2, true); shape.holes.push(bore);
+  pushRRHole(THREE, shape, -px, py, pw, ph, 5);
+  pushRRHole(THREE, shape, px, py, pw, ph, 5);
+  pushRRHole(THREE, shape, 0, tdY, tdW, tdH, 4);
+  const coverGeo = new THREE.ExtrudeGeometry(shape, { depth: GANT_DEPTH, bevelEnabled: true, bevelThickness: 3, bevelSize: 2.4, bevelSegments: 5, curveSegments: 150 });
+  coverGeo.computeVertexNormals();
+  const cover = new THREE.Mesh(coverGeo, std(look.cover, 0.05, 0.42));
   cover.position.z = FRONT_Z - GANT_DEPTH; gantryShell.add(cover);
-  // concentric recessed collar around the bore (the moulded ring on the front face)
-  const collar = new THREE.Mesh(new THREE.TorusGeometry(holeR + 7, 5, 24, 140), std(look.cover, 0.05, 0.45));
+  // concentric moulded collar around the bore
+  const collar = new THREE.Mesh(new THREE.TorusGeometry(holeR + 6, 4, 32, 200), std(look.cover, 0.05, 0.45));
   collar.position.set(0, ISO_Y, FRONT_Z - 1); gantryShell.add(collar);
   // raised bore rim + thin inner accent (high-poly, smooth)
-  const rim = new THREE.Mesh(new THREE.TorusGeometry(holeR - 1, 3.4, 28, 160), std(look.boreRim, 0.35, 0.45));
-  rim.position.set(0, ISO_Y, FRONT_Z + 3.5); gantryShell.add(rim);
-  const rim2 = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 2, 1.4, 20, 160), std(look.boreRim2, 0.3, 0.55));
-  rim2.position.set(0, ISO_Y, FRONT_Z + 4.4); gantryShell.add(rim2);
-  // dark bore tunnel
-  const tunnel = new THREE.Mesh(new THREE.CylinderGeometry(BORE_R, BORE_R, 80, 96, 1, true), new THREE.MeshStandardMaterial({ color: 0x0c1013, side: THREE.DoubleSide, metalness: 0.2, roughness: 0.9 }));
-  tunnel.rotation.x = Math.PI / 2; tunnel.position.set(0, ISO_Y, FRONT_Z - 42); gantryShell.add(tunnel);
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(holeR - 1, 3.2, 36, 220), std(look.boreRim, 0.35, 0.45));
+  rim.position.set(0, ISO_Y, FRONT_Z + 3); gantryShell.add(rim);
+  const rim2 = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 2, 1.3, 28, 220), std(look.boreRim2, 0.3, 0.55));
+  rim2.position.set(0, ISO_Y, FRONT_Z + 3.8); gantryShell.add(rim2);
+  // dark bore tunnel — spans only the housing depth so nothing pokes out the back
+  const tunnel = new THREE.Mesh(new THREE.CylinderGeometry(BORE_R, BORE_R, GANT_DEPTH, 160, 1, true), new THREE.MeshStandardMaterial({ color: 0x0c1013, side: THREE.DoubleSide, metalness: 0.2, roughness: 0.9 }));
+  tunnel.rotation.x = Math.PI / 2; tunnel.position.set(0, ISO_Y, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(tunnel);
+  // (the extrude already caps the back of the housing; the panel/display pockets cap their cut-outs)
   // GE side shoulder accents (two-tone body) — rounded
   if (look.v === 'ge') {
     [-1, 1].forEach(s => {
@@ -286,16 +297,19 @@ function buildGantry(THREE, look) {
       acc.position.set(s * (halfW - 2), ISO_Y + 12, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(acc);
     });
   }
-  // control panels (real 3D keys + recessed displays) + red indicator LEDs
+  // recessed control panels (real 3D keys + inset displays, flush with the surface) + red LEDs
   [-1, 1].forEach(s => {
-    const panel = buildPanel(THREE, look, s);
-    panel.position.set(s * (BORE_R + 26), ISO_Y + 3, FRONT_Z + 4); gantryShell.add(panel);
-    const dot = new THREE.Mesh(new THREE.SphereGeometry(1.3, 20, 16), new THREE.MeshStandardMaterial({ color: look.redDot, emissive: look.redDot, emissiveIntensity: 0.9, roughness: 0.3 }));
-    dot.position.set(s * (BORE_R + 4), ISO_Y + BORE_R - 2, FRONT_Z + 5); gantryShell.add(dot);
+    const panel = buildPanel(THREE, look, pw, ph);
+    panel.position.set(s * px, py, FRONT_Z); gantryShell.add(panel);
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(1.1, 24, 18), new THREE.MeshStandardMaterial({ color: look.redDot, emissive: look.redDot, emissiveIntensity: 0.9, roughness: 0.3 }));
+    dot.position.set(s * (BORE_R + 5), ISO_Y + BORE_R - 2, FRONT_Z + 2.5); gantryShell.add(dot);
   });
-  // top-centre console display (recessed emissive screen in a rounded 3D bezel)
-  const top = buildScreen(THREE, 24, 17, makeTopTex(THREE, look), std(look.cover, 0.05, 0.45), 0.6);
-  top.position.set(0, ISO_Y + BORE_R + 21, FRONT_Z + 4); gantryShell.add(top);
+  // top-centre console display — recessed emissive screen (pocket caps the cut-out from behind)
+  const topTex = makeTopTex(THREE, look);
+  const topPocket = new THREE.Mesh(roundedBoxGeo(THREE, tdW + 2, tdH + 2, GANT_DEPTH - 4, 2.5), std(look.recess, 0.12, 0.6));
+  topPocket.position.set(0, tdY, FRONT_Z - 3 - (GANT_DEPTH - 4) / 2); gantryShell.add(topPocket);
+  const topScr = new THREE.Mesh(new THREE.PlaneGeometry(tdW - 3, tdH - 3), new THREE.MeshStandardMaterial({ map: topTex, emissive: 0xffffff, emissiveMap: topTex, emissiveIntensity: 1.0, roughness: 0.28 }));
+  topScr.position.set(0, tdY, FRONT_Z - 1.2); gantryShell.add(topScr);
   // base plinth (GE dark base) — rounded
   if (look.plinth) {
     const p1 = new THREE.Mesh(roundedBoxGeo(THREE, (halfW + flare) * 2 + 6, look.plinth + 2, GANT_DEPTH + 8, 5), std(look.baseTop, 0.18, 0.6));
@@ -314,28 +328,33 @@ function roundedBoxGeo(THREE, w, h, d, r) {
   g.translate(0, 0, bt - d / 2); g.computeVertexNormals();
   return g;
 }
-// One control panel: a raised rounded plate with a recessed LED readout and real domed 3D keys
-// (GE = a circular ring of keys; Canon = rows of keys). Angled slightly outward.
-function buildPanel(THREE, look, side) {
+// Push a rounded-rect HOLE into a shape (reversed winding), for the recessed panels / display.
+function pushRRHole(THREE, shape, cx, cy, w, h, r) {
+  const s = new THREE.Shape(); roundedRectShape(s, w, h, Math.min(r, w / 2 - 0.5, h / 2 - 0.5));
+  const pts = s.getPoints(20).map(p => new THREE.Vector2(p.x + cx, p.y + cy)).reverse();
+  shape.holes.push(new THREE.Path(pts));
+}
+// One control panel, RECESSED flush into the cover cut-out (no protruding/angled plate): a dark
+// pocket floor sunk below the surface, an inset LED readout, and real domed keys whose tops sit
+// ~flush with the surface. GE = a circular ring of keys; Canon = rows of keys.
+function buildPanel(THREE, look, pw, ph) {
   const std = (c, m, r) => stdMat(THREE, c, m, r);
   const gp = new THREE.Group();
-  const plate = new THREE.Mesh(roundedBoxGeo(THREE, 34, 46, 5, 8), std(look.cover, 0.05, 0.5));
-  gp.add(plate);
-  const inset = new THREE.Mesh(roundedBoxGeo(THREE, 29, 41, 1.8, 6), std(look.shoulder, 0.05, 0.6));
-  inset.position.z = 2.5; gp.add(inset);
-  const led = buildScreen(THREE, 24, 13, makeLEDTex(THREE, look), std(0x10161c, 0.3, 0.5), 0.95);
-  led.position.set(0, 13, 3.2); gp.add(led);
+  // recessed pocket — also caps the cut-out from behind; floor sits 3 units below the surface (local z 0)
+  const pocket = new THREE.Mesh(roundedBoxGeo(THREE, pw + 1.5, ph + 1.5, GANT_DEPTH - 3, 3), std(look.recess, 0.12, 0.6));
+  pocket.position.z = -3 - (GANT_DEPTH - 3) / 2; gp.add(pocket);
+  const led = buildScreen(THREE, 15, 7, makeLEDTex(THREE, look), std(0x10161c, 0.3, 0.5), 1.0);
+  led.position.set(0, 9.5, -2.1); gp.add(led);
   const capMat = new THREE.MeshStandardMaterial({ color: look.btnFace, metalness: 0.0, roughness: 0.2 });
-  const socMat = std(look.shoulder, 0.1, 0.55);
+  const socMat = std(look.recessDark, 0.1, 0.55);
   const key = (x, y, r) => {
-    const b = new THREE.Mesh(new THREE.CapsuleGeometry(r, r * 0.45, 8, 24), capMat);
-    b.rotation.x = Math.PI / 2; b.position.set(x, y, 4.0 + r * 0.2); gp.add(b);
-    const soc = new THREE.Mesh(new THREE.TorusGeometry(r * 1.3, r * 0.16, 12, 26), socMat);
-    soc.position.set(x, y, 3.1); gp.add(soc);
+    const b = new THREE.Mesh(new THREE.CapsuleGeometry(r, r * 0.4, 8, 24), capMat);
+    b.rotation.x = Math.PI / 2; b.position.set(x, y, -1.9); gp.add(b);
+    const soc = new THREE.Mesh(new THREE.TorusGeometry(r * 1.4, r * 0.16, 12, 26), socMat);
+    soc.position.set(x, y, -2.85); gp.add(soc);
   };
-  if (look.v === 'ge') { const R = 11.5; for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2; key(Math.cos(a) * R, -7 + Math.sin(a) * R, 2.1); } key(0, -7, 2.7); }
-  else { for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) key(-9 + c * 6, 1 - r * 6.4, 2.0); }
-  gp.rotation.y = -side * 0.14;
+  if (look.v === 'ge') { const R = 6.5; for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2; key(Math.cos(a) * R, -5.5 + Math.sin(a) * R, 1.15); } key(0, -5.5, 1.5); }
+  else { for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) key(-6 + c * 4, 0.5 - r * 4.2, 1.05); }
   return gp;
 }
 // A recessed emissive screen (real content) inside a rounded 3D bezel.
@@ -372,7 +391,8 @@ function buildCouch(THREE, look) {
   // ---- pallet (moves) : white plate, top surface at LOCAL y=0 (patient posterior rests here) ----
   const palLen = 150, palW = 34;
   const ps = new THREE.Shape(); roundedRectShape(ps, palW, 3.4, 1.6);
-  const pallet = new THREE.Mesh(new THREE.ExtrudeGeometry(ps, { depth: palLen - 3, bevelEnabled: true, bevelThickness: 1.4, bevelSize: 1.4, bevelSegments: 4, curveSegments: 16 }), std(look.couchTop, 0.12, 0.45));
+  const palGeo = new THREE.ExtrudeGeometry(ps, { depth: palLen - 3, bevelEnabled: true, bevelThickness: 1.4, bevelSize: 1.4, bevelSegments: 5, curveSegments: 24 }); palGeo.computeVertexNormals();
+  const pallet = new THREE.Mesh(palGeo, std(look.couchTop, 0.12, 0.45));
   pallet.position.set(0, -1.7, -50); couch.add(pallet);                 // rounded ends + edges; top ≈ y0, cantilevers into the bore
   // subtle recessed centre channel (the patient-tray groove)
   const chan = new THREE.Mesh(roundedBoxGeo(THREE, palW - 12, 0.9, palLen - 12, 2), std(0xdfe3e6, 0.08, 0.6));
