@@ -318,16 +318,18 @@ function drawTopScreen() {
       });
     }
   } else {
-    // Canon: blue UI — brand plus a live height / position line
-    const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, look.screen1); grd.addColorStop(1, look.screen2);
+    // Canon (ref): light-blue screen, dark band + white rule at the top, "ONE Aquilion" mid,
+    // and a small live height / position line at the bottom
+    const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, '#3572a8'); grd.addColorStop(1, '#8fc0e2');
     g.fillStyle = grd; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#9fc6e8'; g.fillRect(24, 20, W - 48, 4);
-    g.textAlign = 'center'; g.fillStyle = '#ffffff'; g.font = 'bold 26px Arial'; g.fillText('ONE', W / 2, 70);
-    g.font = 'italic 24px Arial'; g.fillText('Aquilion', W / 2, 100);
-    g.font = 'bold 20px "Courier New", monospace';
-    g.fillStyle = '#63e08c'; g.textAlign = 'left'; g.fillText((th > 0 ? '+' : '') + th + 'mm', 18, 152);
-    g.fillStyle = '#ffb347'; g.textAlign = 'right'; g.fillText(fmtTablePos(S.ct.tablePos), W - 18, 152);
-    g.fillStyle = 'rgba(255,255,255,0.25)'; cvRoundRect(g, 44, 170, W - 88, 10, 5); g.fill();
+    g.fillStyle = '#22588c'; g.fillRect(0, 0, W, 34);
+    g.fillStyle = '#ffffff'; g.fillRect(26, 20, W - 52, 5);
+    g.textAlign = 'center'; g.fillStyle = '#ffffff';
+    g.font = 'bold 24px Arial'; g.fillText('ONE', W / 2 + 26, 78);
+    g.font = 'italic bold 26px Arial'; g.fillText('Aquilion', W / 2, 108);
+    g.font = 'bold 18px "Courier New", monospace';
+    g.fillStyle = '#d7f5e2'; g.textAlign = 'left'; g.fillText((th > 0 ? '+' : '') + th + 'mm', 18, 168);
+    g.fillStyle = '#ffe0b0'; g.textAlign = 'right'; g.fillText(fmtTablePos(S.ct.tablePos), W - 18, 168);
   }
   liveScr.top.tex.needsUpdate = true;
 }
@@ -382,7 +384,8 @@ function buildGantry(THREE, look) {
   // machine ≈240 wide × 206 tall for the 70-unit bore; white cover with a blue-grey frame border ----
   gantryShell = new THREE.Group(); gantry.add(gantryShell);
   const BEV = 3, FACE_Z = FRONT_Z + BEV;                       // extrude front bevel → the TRUE front-face z
-  const halfW = 114, topY = ISO_Y + 100, shoulderY = ISO_Y + 30, topR = 62, holeR = BORE_R + 3;
+  const halfW = 114, topY = ISO_Y + 100, shoulderY = ISO_Y + 30, holeR = BORE_R + 3;
+  const topR = look.v === 'canon' ? 92 : 62;                   // Aquilion crown is much rounder than the Optima
   const flare = look.v === 'canon' ? 16 : 6, botY = FLOOR_Y + (look.plinth || 0);
   const silhouette = (grow) => {                                // rounded-arch outline, offset outward by `grow`
     const s = new THREE.Shape();
@@ -414,7 +417,7 @@ function buildGantry(THREE, look) {
   // the big WHITE DONUT moulding around the bore — ONE smooth lathe: outer seam → forward bulge →
   // bore throat → back flare that seals the cover hole from behind. The bore itself stays OPEN
   // (you see the couch through it): no grey collar, no cap, and no see-through gaps at any angle.
-  const DON_R = 76;
+  const DON_R = look.v === 'canon' ? 82 : 76;                  // Aquilion's moulding reaches closer to its blue ring
   const prof = new THREE.SplineCurve([
     new THREE.Vector2(DON_R + 2, 1.5), new THREE.Vector2(DON_R - 6, -3.2), new THREE.Vector2(58, -6.8),
     new THREE.Vector2(46, -5.4), new THREE.Vector2(39.5, -1.2), new THREE.Vector2(BORE_R + 0.6, 5),
@@ -428,52 +431,75 @@ function buildGantry(THREE, look) {
   // small grey tab at the top of the bore (ref)
   const tab = new THREE.Mesh(roundedBoxGeo(THREE, 16, 4, 3, 2), std(look.trim, 0.12, 0.45));
   tab.position.set(0, ISO_Y + BORE_R + 6, FACE_Z + 1.6); gantryShell.add(tab);
-  // Canon / Toshiba Aquilion signature details (per the reference photo)
+  // Canon / Toshiba Aquilion signature details, laid out to the reference photo: the thin blue
+  // ring hugs the donut seam, the tilted control pads ride the donut's upper flanks INSIDE the
+  // ring, red stops sit above the pads, and the oval grips sit tangentially on the lower flanks.
   if (look.v === 'canon') {
-    // thin blue accent ring circling the donut
-    const accent = new THREE.Mesh(new THREE.TorusGeometry(DON_R + 4, 1.8, 20, 220), std(0xaac6de, 0.2, 0.45));
-    accent.position.set(0, ISO_Y, FACE_Z + 0.6); gantryShell.add(accent);
-    // rear side pods (the darker-cream towers peeking out either side)
+    const accent = new THREE.Mesh(new THREE.TorusGeometry(DON_R + 5, 1.5, 20, 240), std(0xa9c3d9, 0.2, 0.45));
+    accent.position.set(0, ISO_Y, FACE_Z + 1.0); gantryShell.add(accent);
+    // rear side pods (the cream towers peeking out either side, floor to shoulder)
     [-1, 1].forEach(s => {
-      const pod = new THREE.Mesh(roundedBoxGeo(THREE, 30, 155, GANT_DEPTH + 10, 12), std(0xe9e6dd, 0.06, 0.5));
-      pod.position.set(s * (halfW + 2), ISO_Y + 2, FRONT_Z - GANT_DEPTH / 2 - 7); gantryShell.add(pod);
+      const pod = new THREE.Mesh(roundedBoxGeo(THREE, 34, 130, GANT_DEPTH + 12, 14), std(0xe9e6dd, 0.06, 0.5));
+      pod.position.set(s * (halfW + 4), ISO_Y - 10, FRONT_Z - GANT_DEPTH / 2 - 8); gantryShell.add(pod);
     });
-    // red emergency-stop domes above the panels + a green power LED beside the module
     const domeG = (r) => { const gg = new THREE.SphereGeometry(r, 28, 18); gg.scale(1, 1, 0.5); return gg; };
+    // red emergency-stop domes just above each pad's inner corner
     [-1, 1].forEach(s => {
-      const stop = new THREE.Mesh(domeG(1.6), new THREE.MeshStandardMaterial({ color: 0xd23c30, roughness: 0.35 }));
-      stop.position.set(s * 56, ISO_Y + 61, FACE_Z + 0.7); gantryShell.add(stop);
+      const stop = new THREE.Mesh(domeG(1.5), new THREE.MeshStandardMaterial({ color: 0xd23c30, roughness: 0.35 }));
+      stop.position.set(s * 44, ISO_Y + 50, FACE_Z + 5.4); gantryShell.add(stop);
     });
+    // green power LED right of the module + two small grey icons left of it (on the flat face)
     const pwr = new THREE.Mesh(domeG(1.0), new THREE.MeshStandardMaterial({ color: 0x69d47a, emissive: 0x3fae52, emissiveIntensity: 0.8 }));
-    pwr.position.set(30, ISO_Y + 84, FACE_Z + 0.6); gantryShell.add(pwr);
-    // oval moulding dimples beside the bore
-    [-1, 1].forEach(s => {
-      const dim = new THREE.Mesh(roundedBoxGeo(THREE, 9, 4.5, 1.2, 2.2), std(look.shoulder, 0.08, 0.55));
-      dim.position.set(s * 55, ISO_Y - 4, FACE_Z + 1.2); gantryShell.add(dim);
+    pwr.position.set(21, topY - 12, FACE_Z + 0.8); gantryShell.add(pwr);
+    [-10, -15].forEach(dy => {
+      const ic = new THREE.Mesh(domeG(0.9), std(0x9aa4ad, 0.15, 0.5));
+      ic.position.set(-21, topY + dy, FACE_Z + 0.7); gantryShell.add(ic);
     });
-    // red Canon wordmark on the module below the screen
-    const cb = new THREE.Mesh(new THREE.PlaneGeometry(13, 4.5), new THREE.MeshBasicMaterial({ map: makeTextTex(THREE, 'Canon', '#cc0f2f'), transparent: true }));
-    cb.position.set(0, topY - 48, FACE_Z + 6.9); gantryShell.add(cb);   // on the module, below the slot
+    // oval grip mouldings, tangential on the donut's lower flanks
+    [-1, 1].forEach(s => {
+      const dim = new THREE.Mesh(roundedBoxGeo(THREE, 10, 4.5, 1.6, 2.2), std(look.shoulder, 0.08, 0.55));
+      dim.position.set(s * 46, ISO_Y - 49, FACE_Z + 5.2); dim.rotation.z = -s * 0.75; gantryShell.add(dim);
+    });
+    // dark slit on the bore-top tab (the ref's little sensor slot)
+    const slit = new THREE.Mesh(roundedBoxGeo(THREE, 1.2, 2.4, 0.8, 0.5), std(0x2b2f33, 0.2, 0.6));
+    slit.position.set(0, ISO_Y + BORE_R + 6, FACE_Z + 3.4); gantryShell.add(slit);
   }
-  // top-centre console module (blue-grey housing + UI screen + mini readout) — proud of the cover,
-  // flush with the top edge, its lower half riding over the donut arc exactly like the reference
-  const modW = 42, modH = 52, modY = topY - modH / 2 - 1;
-  const mod = new THREE.Mesh(roundedBoxGeo(THREE, modW, modH, 12, 6), std(look.recess, 0.1, 0.5));
-  mod.position.set(0, modY, FACE_Z + 0.5); gantryShell.add(mod);
-  liveScr.top = mkScreen(THREE, 256, 200); drawTopScreen();          // LIVE console screen
-  const scrBez = new THREE.Mesh(roundedBoxGeo(THREE, 30, 24, 2.4, 2), std(0x2c353f, 0.2, 0.4));
-  scrBez.position.set(0, modY + 8, FACE_Z + 6.2); gantryShell.add(scrBez);
-  const scrMesh = new THREE.Mesh(new THREE.PlaneGeometry(27, 21), new THREE.MeshStandardMaterial({ map: liveScr.top.tex, emissive: 0xffffff, emissiveMap: liveScr.top.tex, emissiveIntensity: 0.9, roughness: 0.3 }));
-  scrMesh.position.set(0, modY + 8, FACE_Z + 7.5); gantryShell.add(scrMesh);
-  const miniTex = makeMiniLedTex(THREE);
-  const mini = new THREE.Mesh(new THREE.PlaneGeometry(12, 3.2), new THREE.MeshStandardMaterial({ map: miniTex, emissive: 0xffffff, emissiveMap: miniTex, emissiveIntensity: 0.9, roughness: 0.3 }));
-  mini.position.set(0, modY - 10, FACE_Z + 6.8); gantryShell.add(mini);
-  const slot = new THREE.Mesh(roundedBoxGeo(THREE, 14, 1.2, 1, 0.5), std(0x5a6672, 0.2, 0.5));
-  slot.position.set(0, modY - 15, FACE_Z + 6.6); gantryShell.add(slot);
+  // top-centre console module — proud of the cover, flush with the top edge. GE: blue-grey housing
+  // with the big UI screen + mini readout. Canon: the reference's narrow WHITE housing with the
+  // blue screen on top, the red Canon wordmark beneath it, and a small speaker slot.
+  liveScr.top = mkScreen(THREE, 256, 200); drawTopScreen();          // LIVE console screen (both vendors)
+  const scrMat = () => new THREE.MeshStandardMaterial({ map: liveScr.top.tex, emissive: 0xffffff, emissiveMap: liveScr.top.tex, emissiveIntensity: 0.9, roughness: 0.3 });
+  if (look.v === 'canon') {
+    const modW = 27, modH = 46, modY = topY - modH / 2 - 1;
+    const mod = new THREE.Mesh(roundedBoxGeo(THREE, modW, modH, 10, 5), std(look.cover, 0.05, 0.45));
+    mod.position.set(0, modY, FACE_Z + 0.5); gantryShell.add(mod);
+    const scrBez = new THREE.Mesh(roundedBoxGeo(THREE, 22, 18, 2.2, 1.6), std(0x27435f, 0.2, 0.4));
+    scrBez.position.set(0, modY + 10, FACE_Z + 5.4); gantryShell.add(scrBez);
+    const scrMesh = new THREE.Mesh(new THREE.PlaneGeometry(20, 15.5), scrMat());
+    scrMesh.position.set(0, modY + 10, FACE_Z + 6.6); gantryShell.add(scrMesh);
+    const cb = new THREE.Mesh(new THREE.PlaneGeometry(12, 4.2), new THREE.MeshBasicMaterial({ map: makeTextTex(THREE, 'Canon', '#cc0f2f'), transparent: true }));
+    cb.position.set(0, modY - 4, FACE_Z + 5.8); gantryShell.add(cb);
+    const slot = new THREE.Mesh(roundedBoxGeo(THREE, 8, 1, 0.8, 0.4), std(0x8b949c, 0.2, 0.5));
+    slot.position.set(0, modY - 11, FACE_Z + 5.7); gantryShell.add(slot);
+  } else {
+    const modW = 42, modH = 52, modY = topY - modH / 2 - 1;
+    const mod = new THREE.Mesh(roundedBoxGeo(THREE, modW, modH, 12, 6), std(look.recess, 0.1, 0.5));
+    mod.position.set(0, modY, FACE_Z + 0.5); gantryShell.add(mod);
+    const scrBez = new THREE.Mesh(roundedBoxGeo(THREE, 30, 24, 2.4, 2), std(0x2c353f, 0.2, 0.4));
+    scrBez.position.set(0, modY + 8, FACE_Z + 6.2); gantryShell.add(scrBez);
+    const scrMesh = new THREE.Mesh(new THREE.PlaneGeometry(27, 21), scrMat());
+    scrMesh.position.set(0, modY + 8, FACE_Z + 7.5); gantryShell.add(scrMesh);
+    const miniTex = makeMiniLedTex(THREE);
+    const mini = new THREE.Mesh(new THREE.PlaneGeometry(12, 3.2), new THREE.MeshStandardMaterial({ map: miniTex, emissive: 0xffffff, emissiveMap: miniTex, emissiveIntensity: 0.9, roughness: 0.3 }));
+    mini.position.set(0, modY - 10, FACE_Z + 6.8); gantryShell.add(mini);
+    const slot = new THREE.Mesh(roundedBoxGeo(THREE, 14, 1.2, 1, 0.5), std(0x5a6672, 0.2, 0.5));
+    slot.position.set(0, modY - 15, FACE_Z + 6.6); gantryShell.add(slot);
+  }
   // side control panels + patient-indicator pills — mounted ON the true front face (never buried)
   [-1, 1].forEach(s => {
     const panel = buildPanel(THREE, look);
-    if (look.v === 'canon') { panel.position.set(s * 86, ISO_Y + 40, FACE_Z + 0.2); panel.rotation.z = -s * 0.30; }   // Aquilion: strongly tilted pads
+    // Aquilion: the pads ride the donut's upper flanks INSIDE the blue ring, tilted tangentially
+    if (look.v === 'canon') { panel.position.set(s * 54, ISO_Y + 30, FACE_Z + 5.6); panel.rotation.z = -s * 0.48; }
     else { panel.position.set(s * 91, ISO_Y + 38, FACE_Z + 0.2); panel.rotation.z = -s * 0.10; }
     gantryShell.add(panel);
     const pill = new THREE.Mesh(roundedBoxGeo(THREE, 8, 4.5, 2, 2), std(0xffffff, 0.03, 0.5));
@@ -486,9 +512,14 @@ function buildGantry(THREE, look) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
     m.position.set(x, y, FACE_Z + 0.3); gantryShell.add(m);
   };
-  badge(makeTextTex(THREE, look.model), 28, 10, -72, ISO_Y + 72);
-  if (look.v === 'ge') badge(makeGELogoTex(THREE), 10, 10, 70, ISO_Y + 72);
-  else badge(makeTextTex(THREE, look.brand), 20, 10, 70, ISO_Y + 72);
+  if (look.v === 'ge') {
+    badge(makeTextTex(THREE, look.model), 28, 10, -72, ISO_Y + 72);
+    badge(makeGELogoTex(THREE), 10, 10, 70, ISO_Y + 72);
+  } else {
+    // two-line "ONE / Aquilion" wordmark (drawn to fit — the single-line texture clipped)
+    const wm = new THREE.Mesh(new THREE.PlaneGeometry(24, 12), new THREE.MeshBasicMaterial({ map: makeAquilionTex(THREE), transparent: true }));
+    wm.position.set(-40, ISO_Y + 58, FACE_Z + 6.2); gantryShell.add(wm);
+  }
   // dark slate base plinth (full width, slightly stepped — ref)
   if (look.plinth) {
     const p1 = new THREE.Mesh(roundedBoxGeo(THREE, (halfW + flare) * 2 + 18, 18, GANT_DEPTH + 12, 4), std(look.baseBot, 0.2, 0.55));
@@ -520,7 +551,11 @@ function pushRRHole(THREE, shape, cx, cy, w, h, r) {
 function buildPanel(THREE, look) {
   const S = (c, m, r) => stdMat(THREE, c, m, r);
   const gp = new THREE.Group();
-  const back = new THREE.Mesh(roundedBoxGeo(THREE, 25, 29, 2, 7), S(look.shoulder, 0.08, 0.5));
+  // canon pads sit over the curved donut slope, so their backplate extends deep enough to embed
+  // into the surface (no floating gap at the outer edge); GE pads lie on the flat face (thin plate)
+  const backDepth = look.v === 'canon' ? 12 : 2;
+  const back = new THREE.Mesh(roundedBoxGeo(THREE, 25, 29, backDepth, 7), S(look.shoulder, 0.08, 0.5));
+  if (look.v === 'canon') back.position.z = -5;
   gp.add(back);                                                   // grey outline plate
   const face = new THREE.Mesh(roundedBoxGeo(THREE, 23, 27, 2.2, 6), S(look.cover, 0.04, 0.5));
   face.position.z = 0.6; gp.add(face);                            // white panel face, front ≈ +1.7
@@ -554,9 +589,12 @@ function buildPanel(THREE, look) {
     const tt = liveScr.panel.tex;
     const scrn = new THREE.Mesh(new THREE.PlaneGeometry(16, 10), new THREE.MeshStandardMaterial({ map: tt, emissive: 0xffffff, emissiveMap: tt, emissiveIntensity: 0.9, roughness: 0.3 }));
     scrn.position.set(0, 6.6, 2.7); gp.add(scrn);
-    const pat = ['bgbb', 'gbbg', 'bbgb'];
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++)
-      key(-5.4 + c * 3.6, -3.4 - r * 3.6, 0.95, pat[r][c] === 'b' ? look.btn : 0x9aa4ad);
+    // ref layout: grey utility pairs on the top rows, blue motion keys clustered below
+    const K = [[-6.3, -1.6, 'g'], [-3.1, -1.6, 'g'], [1.8, -1.6, 'b'], [5.0, -1.6, 'g'],
+               [-6.3, -4.8, 'b'], [-3.1, -4.8, 'b'], [1.8, -4.8, 'g'], [5.0, -4.8, 'b'],
+               [-6.3, -8.0, 'b'], [-3.1, -8.0, 'b'], [0.1, -8.0, 'b'], [3.3, -8.0, 'b'],
+               [-4.7, -11.0, 'b'], [-1.5, -11.0, 'b']];
+    K.forEach(([x, y, c]) => key(x, y, 0.9, c === 'b' ? look.btn : 0x9aa4ad));
   }
   return gp;
 }
@@ -589,6 +627,14 @@ function makeMiniLedTex(THREE) {
   g.fillStyle = '#0c1810'; g.fillRect(0, 0, W, H);
   g.fillStyle = '#5fe08a'; g.font = 'bold 24px "Courier New", monospace'; g.textAlign = 'right'; g.fillText('0.0', W - 10, 29);
   g.fillRect(8, 12, 10, 16); g.fillStyle = '#0c1810'; g.fillRect(11, 16, 4, 8);   // tiny icon block
+  return canvasTex(THREE, cv);
+}
+// Canon's two-line "ONE / Aquilion" wordmark on a transparent plane (sized to fit — never clips).
+function makeAquilionTex(THREE) {
+  const W = 256, H = 128, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  g.clearRect(0, 0, W, H); g.fillStyle = '#6f88ad'; g.textAlign = 'center';
+  g.font = 'bold 36px Arial'; g.fillText('ONE', W / 2 + 34, 46);
+  g.font = 'italic bold 44px Arial'; g.fillText('Aquilion', W / 2, 96);
   return canvasTex(THREE, cv);
 }
 // GE roundel badge (circle + monogram) on a transparent plane.
@@ -652,11 +698,13 @@ function buildCouch(THREE, look) {
   const wingZ = footLocal + thU - 90;                            // module centre: foot parks at its far edge
   const zLo = footLocal - thU - 100, zHi = footLocal + thU - 82; // slab span under the foot travel
   const slabLen = zHi - zLo, slabZ = (zLo + zHi) / 2, baseZ = wingZ - 44;
+  const wingCol = look.v === 'canon' ? 0xc9c6bf : look.couchTop;   // Aquilion's head module is grey
+  const plateCol = look.v === 'canon' ? 0xb2afa8 : look.trim;
   const slab = new THREE.Mesh(roundedBoxGeo(THREE, 50, 8, slabLen, 3), std(look.couchTop, 0.06, 0.55));
   slab.position.set(0, -10, slabZ); couchBase.add(slab);
-  const wing = new THREE.Mesh(roundedBoxGeo(THREE, 62, 18, 16, 6), std(look.couchTop, 0.05, 0.5));
+  const wing = new THREE.Mesh(roundedBoxGeo(THREE, 62, 18, 16, 6), std(wingCol, 0.05, 0.5));
   wing.position.set(0, 1, wingZ); couchBase.add(wing);
-  const plate = new THREE.Mesh(roundedBoxGeo(THREE, 44, 11, 13, 4), std(look.trim, 0.12, 0.45));
+  const plate = new THREE.Mesh(roundedBoxGeo(THREE, 44, 11, 13, 4), std(plateCol, 0.12, 0.45));
   plate.position.set(0, 12, wingZ - 1); couchBase.add(plate);
   const handle = new THREE.Mesh(new THREE.TorusGeometry(14, 1.8, 24, 72, Math.PI), std(0xcdd4da, 0.55, 0.28));
   handle.position.set(0, 16, wingZ - 1); couchBase.add(handle);
