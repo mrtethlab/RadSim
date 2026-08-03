@@ -3300,15 +3300,18 @@ function orthoPlaneFromAng(P, ang) {
   return { plane: 'oblique', nax: null, aligned: false };
 }
 // The oblique plane basis (centred coords) for a localizer line on source pane P — the recon plane
-// is spanned by the line direction u and the source's out-of-plane axis a3; it scrolls along n.
-function localizerBasis(scan, P, ang, cu, cv) {
-  const g = mprGeom(scan), c = Math.cos(ang), s = Math.sin(ang);
+// is spanned by the line direction u and the source's out-of-plane axis a3; it scrolls along n. The
+// plane is anchored at the SOURCE slice's out-of-plane position (srcPos) along a3, so the recon
+// passes through the anatomy the user was looking at (not the volume centre).
+function localizerBasis(scan, P, ang, cu, cv, srcPos) {
+  const g = mprGeom(scan), zc = g.z0 + g.zExt / 2, c = Math.cos(ang), s = Math.sin(ang);
   let a1, a2, a3;
   if (P === 'axial') { a1 = [1, 0, 0]; a2 = [0, 1, 0]; a3 = [0, 0, 1]; }
   else if (P === 'coronal') { a1 = [1, 0, 0]; a2 = [0, 0, 1]; a3 = [0, 1, 0]; }
   else { a1 = [0, 1, 0]; a2 = [0, 0, 1]; a3 = [1, 0, 0]; }                            // sagittal
+  const s3 = P === 'axial' ? ((srcPos || 0) - zc) : (srcPos || 0);                    // a3 offset in centred coords (z is centred)
   return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
-    C: v3add(v3scl(a1, cu), v3scl(a2, cv)), fov: g.fov, vExt: P === 'axial' ? g.zExt : g.fov, view: P };
+    C: v3add(v3add(v3scl(a1, cu), v3scl(a2, cv)), v3scl(a3, s3)), fov: g.fov, vExt: P === 'axial' ? g.zExt : g.fov, view: P };
 }
 // Set the planned plane from the live table (auto-orients the box). 'parallel' → crop rectangle.
 function setPlanPlane(scan, planeV) {
@@ -3337,8 +3340,9 @@ function startReconPlan(target, src) {
   const scan = mprScan(); if (!scan) return;
   const srcRec = winRecon(src); if (!srcRec || srcRec.pane === 'oblique') { setHint('Pick an axial / coronal / sagittal recon to plan on.'); return; }
   const el = scanMinThk(scan), m = ctx.S.ct.mpr, sp = srcRec.pane;
+  const perpFull = sp === 'axial' ? scan.fovMM : mprGeom(scan).zExt;   // the box-width (recon depth) default for oblique
   m.plan = { target, src, srcPlane: sp, srcPos: (m.wins[src].pos == null ? winMid(scan, srcRec) : m.wins[src].pos),
-    mode: 'ortho', cu: 0, cv: 0, ang: 0, len: scan.fovMM * 0.8, wid: Math.max(el, 5), crop: null, plane: null,
+    mode: 'ortho', cu: 0, cv: 0, ang: 0, len: scan.fovMM * 0.8, wid: clampV(perpFull * 0.55, 20, perpFull), crop: null, plane: null,
     params: { thk: Math.max(el, 5), interval: 5, algo: 'standard', mar: false, ww: srcRec.ww || 800, wl: srcRec.wl != null ? srcRec.wl : 60 } };
   setPlanPlane(scan, sp === 'axial' ? 'coronal' : 'transverse');
   m.selw = []; updateWinSel();
@@ -3366,7 +3370,8 @@ function commitReconPlan() {
       dfov: clampV(2 * Math.max(cr.hw, cr.hh), 40, scan.fovMM), offRL: Math.round(ctr.x), offAP: Math.round(ctr.y) });
     pos = pl.srcPos;
   } else if (pl.plane === 'oblique') {                            // arbitrary oblique reformat
-    const ob = localizerBasis(scan, pl.srcPlane, pl.ang, pl.cu, pl.cv);
+    const ob = localizerBasis(scan, pl.srcPlane, pl.ang, pl.cu, pl.cv, pl.srcPos);
+    ob.fov = clampV(pl.len, 40, scan.fovMM * 1.6); ob.vExt = clampV(pl.wid, 20, (pl.srcPlane === 'axial' ? scan.fovMM : g.zExt) * 1.2);   // box length × width → recon extents
     rec = Object.assign(base, { plane: 'oblique', pane: 'oblique', ob, obliqueLabel: 'OBLIQUE' });
     pos = 0;
   } else {                                                        // clean orthogonal plane at the box centre
@@ -3400,17 +3405,21 @@ function drawPlannerOverlay(g, scan, map) {
     g.fillStyle = '#35c6d6'; [c1, c2, c3, c4].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
     const cc = disp(cr.cu, cr.cv); symCircleX(g, cc[0], cc[1]);
   } else {
-    const c = Math.cos(pl.ang), s = Math.sin(pl.ang), hl = pl.len / 2, hw = Math.max(3, pl.wid / 2);
+    const oblique = pl.plane === 'oblique';
+    // Oblique: a resizable rectangle whose length × width set the recon's in-plane × depth extent.
+    // Orthogonal: a thin edge-on slab (its width just shows the slab thickness).
+    const c = Math.cos(pl.ang), s = Math.sin(pl.ang), hl = pl.len / 2, hw = oblique ? Math.max(8, pl.wid / 2) : Math.max(3, (pl.params.thk || 5) / 2);
     const corner = (a, b) => disp(pl.cu + c * a - s * b, pl.cv + s * a + c * b);
     const p1 = corner(hl, hw), p2 = corner(hl, -hw), p3 = corner(-hl, -hw), p4 = corner(-hl, hw);
     const e1 = disp(pl.cu + c * hl, pl.cv + s * hl), e2 = disp(pl.cu - c * hl, pl.cv - s * hl);
-    const oblique = pl.plane === 'oblique';
     g.strokeStyle = oblique ? '#ffcf7a' : '#35c6d6'; g.fillStyle = oblique ? 'rgba(255,207,122,0.12)' : 'rgba(53,198,214,0.14)'; g.lineWidth = 1.6;
     g.beginPath(); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.lineTo(p3[0], p3[1]); g.lineTo(p4[0], p4[1]); g.closePath(); g.fill(); g.stroke();
     g.strokeStyle = '#ff4d4d'; line(g, e1[0], e1[1], e2[0], e2[1]);
-    g.fillStyle = oblique ? '#ffcf7a' : '#35c6d6'; [e1, e2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
+    const hc = oblique ? '#ffcf7a' : '#35c6d6';
+    g.fillStyle = hc; [e1, e2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
+    if (oblique) { const s1 = disp(pl.cu - s * hw, pl.cv + c * hw), s2 = disp(pl.cu + s * hw, pl.cv - c * hw); [s1, s2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); }); }   // width handles
     const mid = disp(pl.cu, pl.cv);
-    if (!oblique) symDoubleArrow(g, mid[0], mid[1], pl.ang + Math.PI / 2);             // advance direction (double arrow) for orthogonal
+    symDoubleArrow(g, mid[0], mid[1], pl.ang + Math.PI / 2);                            // advance direction — always shown
   }
   g.restore();
 }
@@ -3442,12 +3451,15 @@ function plannerPointerDown(e, cv, wi) {
     if (Math.abs(Math.abs(dx) - cr.hw) < tol && Math.abs(Math.abs(dy) - cr.hh) < tol) mode = 'corner';
     else if (Math.abs(dx) < cr.hw && Math.abs(dy) < cr.hh) { mode = 'move'; grab = { ou: dx, ov: dy }; }
   } else {
+    const oblique = pl.plane === 'oblique';
     const c = Math.cos(pl.ang), s = Math.sin(pl.ang), du = a0.cu - pl.cu, dv = a0.cv - pl.cv;
-    const along = du * c + dv * s, perp = -du * s + dv * c, hl = pl.len / 2, tol = Math.max(5, pl.len * 0.14);
-    if (Math.abs(perp) < Math.max(tol, pl.wid) && Math.abs(along) <= hl + tol) {
+    const along = du * c + dv * s, perp = -du * s + dv * c, hl = pl.len / 2, hw = oblique ? pl.wid / 2 : Math.max(4, (pl.params.thk || 5) / 2);
+    const tol = Math.max(5, pl.len * 0.14), ptol = Math.max(6, hw * 0.3);
+    if (Math.abs(along) <= hl + tol && Math.abs(perp) <= hw + ptol) {
       if (Math.abs(along) > hl - tol) { mode = 'end'; endSign = Math.sign(along) || 1; }
+      else if (oblique && Math.abs(perp) > hw - ptol) mode = 'side';   // grab a long edge → resize width
       else { mode = 'move'; grab = { ou: du, ov: dv }; }
-    } else mode = 'slide';                                         // click off the line → slide the plane along its normal
+    } else mode = 'slide';                                         // click off the box → slide the plane along its normal
   }
   const move = (ev) => {
     const ab = at(ev);
@@ -3457,6 +3469,10 @@ function plannerPointerDown(e, cv, wi) {
     } else if (mode === 'end') {
       const vu = (ab.cu - pl.cu) * endSign, vv = (ab.cv - pl.cv) * endSign, d = Math.hypot(vu, vv);
       if (d > 1) { pl.ang = Math.atan2(vv, vu); pl.len = clampV(2 * d, 20, scan.fovMM * 1.6); } recomputePlanPlane(scan);
+    } else if (mode === 'side') {                                  // resize the oblique box width (recon depth extent)
+      const s2 = Math.sin(pl.ang), c2 = Math.cos(pl.ang), perp = -(ab.cu - pl.cu) * s2 + (ab.cv - pl.cv) * c2;
+      const g2 = mprGeom(scan), maxW = (pl.srcPlane === 'axial' ? scan.fovMM : g2.zExt) * 1.2;
+      pl.wid = clampV(2 * Math.abs(perp), 20, maxW);
     } else if (mode === 'move') { pl.cu = ab.cu - grab.ou; pl.cv = ab.cv - grab.ov; }
     else if (mode === 'slide') { const c = Math.cos(pl.ang), s = Math.sin(pl.ang), perp = -(ab.cu - pl.cu) * s + (ab.cv - pl.cv) * c; pl.cu += -s * perp; pl.cv += c * perp; }
     drawReconWindow(scan, wi); renderReconPlanLive();
@@ -3467,8 +3483,8 @@ function plannerPointerDown(e, cv, wi) {
 // ---- live recon-planner table (below the scan-group selector; recon-page only) ----
 function planSymbolHTML() {
   const pl = ctx.S.ct.mpr.plan; if (!pl) return '';
-  if (pl.mode === 'parallel') return RB_XCIRC + '<span class="rpl-sym-lbl">Parallel — crop</span>';
-  if (pl.plane === 'oblique') return '<span class="rpl-obl">⟂ Oblique</span>';
+  if (pl.mode === 'parallel') return RB_XCIRC + '<span class="rpl-sym-lbl">' + rpPlaneLabel(paneToPlaneName(pl.srcPlane)) + ' — crop</span>';
+  if (pl.plane === 'oblique') return rbArrow(false) + '<span class="rpl-obl">Oblique</span>';
   return rbArrow(false) + '<span class="rpl-sym-lbl">' + rpPlaneLabel(pl.plane) + '</span>';
 }
 function renderReconPlanLive() {
@@ -3476,8 +3492,9 @@ function renderReconPlanLive() {
   if (!pl) { box.classList.remove('show'); box.innerHTML = ''; return; }
   box.classList.add('show');
   const p = pl.params;
-  const planeChoices = [{ v: 'transverse', l: 'Transverse' }, { v: 'sagittal', l: 'Sagittal' }, { v: 'coronal', l: 'Coronal' }, { v: 'parallel', l: 'Parallel (crop)' }];
-  const cur = pl.mode === 'parallel' ? 'parallel' : pl.plane;
+  // Selecting the plane the source image is already in = crop mode (no separate Parallel button).
+  const planeChoices = [{ v: 'transverse', l: 'Transverse' }, { v: 'sagittal', l: 'Sagittal' }, { v: 'coronal', l: 'Coronal' }];
+  const cur = pl.mode === 'parallel' ? paneToPlaneName(pl.srcPlane) : pl.plane;
   const seg = planeChoices.map(pc => '<button class="rpl-seg' + (pc.v === cur ? ' on' : '') + '" data-plane="' + pc.v + '">' + pc.l + '</button>').join('');
   const chip = (act, txt) => '<button class="rpl-chip" data-p="' + act + '">' + txt + '</button>';
   box.innerHTML = '<div class="rpl-head"><span class="rpl-title">New reconstruction</span>'
