@@ -1,0 +1,14 @@
+{
+  "_about": "Display look-up tables as DICOM SIGMOID VOI LUT functions. For a normalized input display tone x in [0,1]: out = 1 / (1 + exp(-4*(x - center)/width)). This is the DICOM PS3.3 C.11.2.1.3.1 SIGMOID VOI LUT Function (Equation C.11-1) with the window centre/width re-expressed in normalized tone space. width < 1 steepens contrast (short latitude, e.g. bone/extremity); width > 1 flattens it (long latitude, e.g. chest). Brightness shifts the centre, contrast scales the width at display time.",
+  "_reference": "DICOM PS3.3 C.11.2.1.3.1 SIGMOID VOI LUT Function; per-anatomy gradation follows typical CR/DR body-part processing (steep for extremities, wide latitude for chest).",
+  "luts": {
+    "linear":     { "label": "Linear (no LUT)",            "sigmoid": false, "center": 0.50, "width": 1.00 },
+    "extremity":  { "label": "Extremity · high contrast",  "sigmoid": true,  "center": 0.55, "width": 0.55 },
+    "bone":       { "label": "Bone / fine detail",         "sigmoid": true,  "center": 0.55, "width": 0.62 },
+    "chest":      { "label": "Chest · wide latitude",      "sigmoid": true,  "center": 0.50, "width": 1.15 },
+    "abdomen":    { "label": "Abdomen / soft tissue",      "sigmoid": true,  "center": 0.50, "width": 0.90 },
+    "softtissue": { "label": "Soft tissue",                "sigmoid": true,  "center": 0.50, "width": 0.95 },
+    "spine":      { "label": "Spine",                      "sigmoid": true,  "center": 0.53, "width": 0.80 },
+    "skull":      { "label": "Skull",                      "sigmoid": true,  "center": 0.55, "width": 0.75 }
+  }
+}

@@ -1,6 +1,6 @@
 {
-  "name": "Lower extremity",
-  "source": "VSD Full Body postmortem CT (z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
+  "name": "Total Hip Replacement",
+  "source": "VSD Full Body postmortem CT (z045, 45M) \u00b7 titanium THR \u00b7 CC BY-NC-SA",
   "dims": [
     124,
     191,
@@ -12,9 +12,9 @@
     1.5
   ],
   "order": "x-fastest: i = x + nx*(y + ny*z)",
-  "volume": "lowerextremity.mat.bin",
+  "volume": "totalhipreplacement.mat.bin",
   "dtype": "uint8",
-  "mesh": "lowerextremity.glb",
+  "mesh": "totalhipreplacement.glb",
   "materials": [
     {
       "id": 0,
@@ -183,6 +183,12 @@
       "name": "Lead",
       "hu": null,
       "color": "#6a6f77"
+    },
+    {
+      "id": 28,
+      "name": "Acrylic",
+      "hu": 120,
+      "color": "#9fb6a8"
     }
   ],
   "materialsPresent": [
@@ -193,7 +199,8 @@
     10,
     17,
     18,
-    23
+    23,
+    25
   ],
   "huReference": [
     -1024,

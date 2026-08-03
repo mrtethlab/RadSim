@@ -1,20 +1,20 @@
 {
-  "name": "Lower extremity",
-  "source": "VSD Full Body postmortem CT (z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
+  "name": "Metal Test Phantom",
+  "source": "Synthetic QA phantom (acrylic + water + lead) for metal-artifact testing",
   "dims": [
-    124,
-    191,
-    697
+    200,
+    200,
+    180
   ],
   "spacing": [
-    1.5,
-    1.5,
-    1.5
+    1.0,
+    1.0,
+    1.0
   ],
   "order": "x-fastest: i = x + nx*(y + ny*z)",
-  "volume": "lowerextremity.mat.bin",
+  "volume": "metalphantom.mat.bin",
   "dtype": "uint8",
-  "mesh": "lowerextremity.glb",
+  "mesh": "metalphantom.glb",
   "materials": [
     {
       "id": 0,
@@ -183,21 +183,23 @@
       "name": "Lead",
       "hu": null,
       "color": "#6a6f77"
+    },
+    {
+      "id": 28,
+      "name": "Acrylic",
+      "hu": 120,
+      "color": "#9fb6a8"
     }
   ],
   "materialsPresent": [
     0,
-    1,
-    2,
-    7,
-    10,
-    17,
-    18,
-    23
+    3,
+    27,
+    28
   ],
   "huReference": [
-    -1024,
-    2988
+    -1000,
+    3071
   ],
   "backendOnly": false
 }

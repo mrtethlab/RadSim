@@ -13,9 +13,23 @@
    ============================================================================ */
 import { BodyMaterials } from './materials.js';
 
+// Rotation matrix (row-major 3x3, flat 9) from euler angles rx,ry,rz applied as
+// Rz·Ry·Rx (X first, then Y, then Z). Shared by the phantom + the display mesh so
+// the ray-cast object and the 3D preview always agree.
+export function eulerMatrix(rx, ry, rz) {
+  const cx = Math.cos(rx), sx = Math.sin(rx), cy = Math.cos(ry), sy = Math.sin(ry), cz = Math.cos(rz), sz = Math.sin(rz);
+  return [
+    cz * cy, cz * sy * sx - sz * cx, cz * sy * cx + sz * sx,
+    sz * cy, sz * sy * sx + cz * cx, sz * sy * cx - cz * sx,
+    -sy, cy * sx, cy * cx,
+  ];
+}
+const isIdentity = (m) => m[0] === 1 && m[4] === 1 && m[8] === 1 && m[1] === 0 && m[2] === 0 && m[3] === 0 && m[5] === 0 && m[6] === 0 && m[7] === 0;
+
 export class VoxelPhantom {
   // model: { dims:[nx,ny,nz], vs:[sx,sy,sz] (cm), data:Uint8Array (x-fastest) }
-  constructor(model, center = [0, 0, 0], flip = [false, false, false]) {
+  // rot: row-major 3x3 world rotation about the volume centre (identity = none).
+  constructor(model, center = [0, 0, 0], flip = [false, false, false], rot = null) {
     this.voxel = true;
     const [nx, ny, nz] = model.dims;
     this.nx = nx; this.ny = ny; this.nz = nz;
@@ -25,6 +39,13 @@ export class VoxelPhantom {
     this.nmat = BodyMaterials.count;
     this.setCenter(center);
     this.flip = flip.slice();
+    this.setRotation(rot);
+  }
+  // Store the volume rotation + its transpose (= inverse) for the world→local ray map.
+  setRotation(rot) {
+    this.rot = rot ? rot.slice() : null;
+    this.rotated = !!rot && !isIdentity(rot);
+    if (this.rotated) this.rotT = [rot[0], rot[3], rot[6], rot[1], rot[4], rot[7], rot[2], rot[5], rot[8]];
   }
   setCenter(center) {
     // world AABB [min,max] with the volume centred on `center`
@@ -53,6 +74,14 @@ export class VoxelPhantom {
   trace(o, d, maxT = Infinity) {
     const L = new Float32Array(this.nmat);
     if (this.geometryOnly) return L;   // no volume in the browser — the GPU backend traces
+    // rotate the object by inverse-rotating the ray into the volume's local frame
+    // (about the centre); the DDA below stays axis-aligned. Lengths are preserved.
+    if (this.rotated) {
+      const R = this.rotT, cx = (this.min[0] + this.max[0]) / 2, cy = (this.min[1] + this.max[1]) / 2, cz = (this.min[2] + this.max[2]) / 2;
+      const ox = o[0] - cx, oy = o[1] - cy, oz = o[2] - cz;
+      o = [cx + R[0] * ox + R[1] * oy + R[2] * oz, cy + R[3] * ox + R[4] * oy + R[5] * oz, cz + R[6] * ox + R[7] * oy + R[8] * oz];
+      d = [R[0] * d[0] + R[1] * d[1] + R[2] * d[2], R[3] * d[0] + R[4] * d[1] + R[5] * d[2], R[6] * d[0] + R[7] * d[1] + R[8] * d[2]];
+    }
     const min = this.min, max = this.max, vs = this.vs;
     // slab-clip the ray to the volume AABB
     let t0 = 0, t1 = maxT;

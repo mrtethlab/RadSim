@@ -112,6 +112,7 @@ export const BodyMaterials = (()=>{
     { id:25, name:'Titanium',         hu:null,  kind:'elem',   key:'titanium', color:0xb8c2cc },
     { id:26, name:'Stainless steel',  hu:null,  kind:'elem',   key:'steel',    color:0xd0d4d8 },
     { id:27, name:'Lead',             hu:null,  kind:'elem',   key:'lead',     color:0x6a6f77 },
+    { id:28, name:'Acrylic',          hu:120,   kind:'tissue',                 color:0x9fb6a8 },
   ];
   const idByName = {}; LIST.forEach(m=> idByName[m.name]=m.id);
 

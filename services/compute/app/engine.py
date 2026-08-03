@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from .gpu import DEVICE, get_volume, sample_ids
+from .gpu import DEVICE, get_volume, sample_ids, rot_tensor
 
 STEP = 0.05          # ray-march step, world units (= 0.5 mm; voxels are ~1 mm)
 CHUNK = 1 << 14      # rays per batch (memory: CHUNK x nsteps indices)
@@ -29,6 +29,7 @@ def project_voxel(p: dict[str, Any]) -> np.ndarray:
     center = p["center"]
     nx, ny = int(p["nx"]), int(p["ny"])
     pxU, pxV = float(p["pxU"]), float(p["pxV"])
+    rot = rot_tensor(p.get("rot"))
     src = torch.tensor(p["source"], dtype=torch.float32, device=DEVICE)
     detC = torch.tensor(p["detCenter"], dtype=torch.float32, device=DEVICE)
     detU = torch.tensor(p["detU"], dtype=torch.float32, device=DEVICE)
@@ -82,7 +83,7 @@ def project_voxel(p: dict[str, Any]) -> np.ndarray:
                                     .unsqueeze(0) + 0.5) * STEP               # (R, S)
             valid = ts < t1.unsqueeze(1)
             pts = src + dir_.unsqueeze(1) * ts.unsqueeze(2)                   # (R, S, 3)
-            ids = sample_ids(vv, pts, center)                                 # (R, S)
+            ids = sample_ids(vv, pts, center, rot)                            # (R, S)
             ids = torch.where(valid, ids, torch.zeros_like(ids))
             L = torch.zeros(sel.numel(), vv.nmat, dtype=torch.float32, device=DEVICE)
             L.scatter_add_(1, ids, torch.full_like(ts, STEP) * valid)         # path length per material

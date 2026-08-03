@@ -6,6 +6,7 @@ const URL_SOUNDS = {
   breathIn: '/sounds/CTBreathIn.wav',
   breathNormal: '/sounds/CTBreathNormal.wav',
   tableMove: '/sounds/TableMovement.wav',
+  ctExposureS1: '/sounds/CTExposure_S1.wav',
 };
 
 export const Sound=(()=>{
@@ -21,6 +22,16 @@ export const Sound=(()=>{
   function duration(name){ return buf[name] ? buf[name].duration : 0; }
   function startBuzz(){ if(!ctx||!buf.buzz)return; stopBuzz(); const s=ctx.createBufferSource(); s.buffer=buf.buzz; s.loop=true; s.connect(ctx.destination); try{s.start();}catch(e){} buzzSrc=s; }
   function stopBuzz(){ if(buzzSrc){ try{buzzSrc.stop();}catch(e){} buzzSrc=null; } }
+  // CT scan-exposure sound: a user-selectable looping source (classic x-ray 'buzz' or a
+  // recorded scanner tone). Kept separate from startBuzz so the x-ray sound is unchanged.
+  let scanSrc=null;
+  function startScan(name){ const key=(name&&buf[name])?name:'buzz'; if(!ctx||!buf[key])return;
+    stopScan(); const s=ctx.createBufferSource(); s.buffer=buf[key]; s.loop=true; s.connect(ctx.destination);
+    try{s.start();}catch(e){} scanSrc=s; }
+  function stopScan(){ if(scanSrc){ try{scanSrc.stop();}catch(e){} scanSrc=null; } }
+  // one-shot preview of a scan sound (for the sound picker)
+  function preview(name){ const key=(name&&buf[name])?name:'buzz'; if(!ctx||!buf[key])return;
+    const s=ctx.createBufferSource(); s.buffer=buf[key]; s.connect(ctx.destination); try{s.start(); s.stop(ctx.currentTime+Math.min(1.2, buf[key].duration*6));}catch(e){} }
   // Table-motor loop. Looped (no time-stretch) to fill any movement duration, with
   // short fades so start/stop never clicks. rate pitch-shifts it (a clean resample)
   // so the two axes sound like two different motors. loopStart/End trim the file's
@@ -41,5 +52,5 @@ export const Sound=(()=>{
     const t=ctx.currentTime;
     try{ g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value,t); g.gain.linearRampToValueAtTime(0, t+0.1); s.stop(t+0.12); }catch(e){}
   }
-  return {init,resume,play,duration,startBuzz,stopBuzz,startTableSound,stopTableSound};
+  return {init,resume,play,duration,startBuzz,stopBuzz,startScan,stopScan,preview,startTableSound,stopTableSound};
 })();

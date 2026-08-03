@@ -23,6 +23,16 @@ MODELS_DIR = _ROOT / "apps" / "web" / "public" / "models"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def rot_tensor(rot):
+    """Build a 3x3 rotation tensor from a flat row-major 9-list, or None if absent/identity."""
+    if not rot:
+        return None
+    ident = [1, 0, 0, 0, 1, 0, 0, 0, 1]
+    if all(abs(a - b) < 1e-9 for a, b in zip(rot, ident)):
+        return None
+    return torch.tensor(rot, dtype=torch.float32, device=DEVICE).reshape(3, 3)
+
+
 def device_info() -> dict:
     if DEVICE.type == "cuda":
         p = torch.cuda.get_device_properties(0)
@@ -61,9 +71,14 @@ def get_volume(name: str, flips) -> VoxelVolume:
     return _cache[key]
 
 
-def sample_ids(vv: VoxelVolume, pts: torch.Tensor, center) -> torch.Tensor:
-    """Nearest-voxel material id at world points (..., 3). Outside the volume -> 0 (air)."""
+def sample_ids(vv: VoxelVolume, pts: torch.Tensor, center, rot=None) -> torch.Tensor:
+    """Nearest-voxel material id at world points (..., 3). Outside the volume -> 0 (air).
+    rot (3x3 tensor, the volume's world rotation) inverse-rotates the points into the
+    volume's local frame about `center`, so a rotated object is sampled correctly."""
     nx, ny, nz = vv.dims
+    if rot is not None:
+        c = torch.tensor(center, device=pts.device, dtype=pts.dtype)
+        pts = (pts - c) @ rot + c        # local = (world - c) @ R + c  ==  R^T (world - c) + c
     mn = torch.tensor([center[0] - vv.extent[0] / 2,
                        center[1] - vv.extent[1] / 2,
                        center[2] - vv.extent[2] / 2], device=pts.device)

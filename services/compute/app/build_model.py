@@ -32,7 +32,7 @@ from scipy import ndimage as ndi
 # ---- material ids (MUST match BodyMaterials.LIST order in materials.js) ----
 AIR, LUNG, FAT, WATER, CSF, SIMPLE_FLUID, BILE, MUSCLE, BLOOD, CLOT, SOFT, \
     LIVER, SPLEEN, KIDNEY, PANCREAS, HEART, CARTILAGE, TRABECULAR, CORTICAL, \
-    ENAMEL, IODINE, CALCIF, STONE, SKIN, ALUMINUM, TITANIUM, STEEL, LEAD = range(28)
+    ENAMEL, IODINE, CALCIF, STONE, SKIN, ALUMINUM, TITANIUM, STEEL, LEAD, PLASTIC = range(29)
 
 LEGEND = [
     (AIR, "Air", -1000, 0x000000), (LUNG, "Lung", -700, 0x3a4a63),
@@ -49,6 +49,7 @@ LEGEND = [
     (STONE, "Kidney stone", 800, 0xd8cba0), (SKIN, "Skin", 30, 0xd8a07a),
     (ALUMINUM, "Aluminum", None, 0x9fb4c0), (TITANIUM, "Titanium", None, 0xb8c2cc),
     (STEEL, "Stainless steel", None, 0xd0d4d8), (LEAD, "Lead", None, 0x6a6f77),
+    (PLASTIC, "Acrylic", 120, 0x9fb6a8),
 ]
 
 BONE_PREFIX = ("vertebrae", "rib", "sternum", "scapula", "clavicula", "humerus",
@@ -174,18 +175,23 @@ def _region_bounds(region, lab, cmap, shape, spacing):
     return (max(0, zs.min() - mg), min(zN, zs.max() + mg + 1), 0, yN, 0, xN)
 
 
-def materialize(hu, lab, spacing):
+def materialize(hu, lab, spacing, body_restrict=None):
     """Assign a body-material id to every voxel of an (already-resampled) HU + label
-    volume. Returns (mat uint8, body mask). Reused by build() and build_highres."""
+    volume. Returns (mat uint8, body mask). Reused by build() and build_highres.
+    body_restrict: optional bool mask (e.g. TotalSegmentator's `body` task) to clip the
+    body to the patient envelope, removing the scanner table + external tubes/leads."""
     body = hu > -320
     body = ndi.binary_closing(body, iterations=2)
     body = ndi.binary_fill_holes(body)
+    if body_restrict is not None:
+        body &= body_restrict
     lbl, n = ndi.label(body)
     if n > 1:
         sizes = ndi.sum(np.ones_like(lbl), lbl, index=range(1, n + 1))
-        big = sizes.max()
-        keep = {i + 1 for i, s in enumerate(sizes) if s >= 0.25 * big}
-        body = np.isin(lbl, list(keep))
+        # keep ONLY the largest connected component — drops the scanner table/cradle and
+        # any disconnected external kit (tubes, leads, positioning aids) that the
+        # HU>-320 body mask would otherwise include (postmortem forensic CT is full of it).
+        body = lbl == (int(np.argmax(sizes)) + 1)
     body = ndi.binary_fill_holes(body)
 
     mat = np.full(hu.shape, AIR, dtype=np.uint8)
@@ -244,7 +250,52 @@ def write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source,
         _build_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"), mesh_step_mul)
 
 
-def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source):
+def add_hip_prosthesis(mat, lab, cmap, spacing):
+    """Emulate a bilateral TOTAL HIP REPLACEMENT: replace each native hip joint with a
+    titanium implant — a femoral head/neck ball, an intramedullary femoral stem, and an
+    acetabular cup. Uses the TotalSegmentator femur_* / hip_* masks to locate each joint,
+    so the implant sits exactly where the real articulation was. mat/lab are the final
+    (cropped, flipped) volumes and must be aligned."""
+    femur_ids = [i for i, n in cmap.items() if n.lower().startswith("femur")]
+    hip_ids = [i for i, n in cmap.items() if n.lower().startswith("hip")]
+    if not femur_ids or not hip_ids:
+        print("      ! no femur/hip labels found — THR skipped")
+        return mat
+    hip_mask = np.isin(lab, hip_ids)
+    hip_dist_mm = ndi.distance_transform_edt(~hip_mask) * spacing        # mm to nearest acetabulum voxel
+    nz, ny, nx = mat.shape
+    zz, yy, xx = np.mgrid[0:nz, 0:ny, 0:nx].astype(np.float32)
+    n_impl = 0
+    for fid in femur_ids:                                                # femur_left / femur_right → one implant each
+        fem = lab == fid
+        if fem.sum() < 500:
+            continue
+        near = fem & (hip_dist_mm < 10.0)                                # femur voxels hugging the acetabulum = head
+        if near.sum() < 30:
+            near = fem & (hip_dist_mm <= np.percentile(hip_dist_mm[fem], 3.0))
+        hc = np.array([zz[near].mean(), yy[near].mean(), xx[near].mean()])   # femoral-head centre (vox)
+        fc = np.array([zz[fem].mean(), yy[fem].mean(), xx[fem].mean()])      # femur centroid (vox)
+        axis = fc - hc
+        nrm = np.linalg.norm(axis)
+        if nrm < 1e-3:
+            continue
+        axis /= nrm                                                      # head → shaft direction (stem axis)
+        rz, ry, rx = (zz - hc[0]) * spacing, (yy - hc[1]) * spacing, (xx - hc[2]) * spacing
+        d_head = np.sqrt(rz * rz + ry * ry + rx * rx)                    # mm from the head centre
+        t = rz * axis[0] + ry * axis[1] + rx * axis[2]                   # mm along the stem axis (+ toward shaft)
+        rad = np.sqrt(np.clip(d_head * d_head - t * t, 0.0, None))       # mm perpendicular to the stem axis
+        solid = mat > AIR
+        ball = (d_head <= 18.0) & solid                                 # Ø36 mm prosthetic head + neck
+        stem = (t >= 0.0) & (t <= 120.0) & (rad <= 7.0) & solid         # intramedullary femoral stem
+        cup = (d_head <= 27.0) & hip_mask                               # acetabular cup shell (in the pelvis)
+        mat[ball | stem | cup] = TITANIUM
+        n_impl += 1
+        print(f"      THR femur#{fid}: head@vox {hc.round(1)}  titanium voxels {int((ball | stem | cup).sum())}")
+    print(f"      inserted {n_impl} titanium hip implant(s)")
+    return mat
+
+
+def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None, flip=(0, 0, 0), hip_titanium=False):
     print(f"[1/4] loading + resampling to {spacing} mm iso …")
     ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
     seg = sitk.ReadImage(seg_path)
@@ -253,15 +304,37 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
     lab = sitk.GetArrayFromImage(seg).astype(np.int32)
     print(f"      grid {hu.shape[::-1]}  ({hu.size/1e6:.1f} M voxels)")
 
+    body_restrict = None
+    if body_path:
+        bimg = sitk.ReadImage(body_path)
+        bimg = sitk.Resample(bimg, ct, sitk.Transform(), sitk.sitkNearestNeighbor, 0, bimg.GetPixelID())
+        body_restrict = sitk.GetArrayFromImage(bimg) > 0
+        # the --fast body task under-covers the limbs; dilate + fill so the envelope
+        # comfortably contains the anatomy (no holes) while the table/leads — a larger
+        # air gap away — stay excluded.
+        r = max(1, int(round(4.0 / spacing)))
+        body_restrict = ndi.binary_dilation(body_restrict, iterations=r)
+        body_restrict = ndi.binary_fill_holes(body_restrict)
+        print(f"      body-envelope restrict (+{r}vox): {body_restrict.sum()/1e6:.0f} M voxels")
+
     print("[2/4] materials …")
-    mat, body = materialize(hu, lab, spacing)
+    mat, body = materialize(hu, lab, spacing, body_restrict=body_restrict)
 
     print("[3/4] region crop + tight body bbox …")
-    b = _region_bounds(region, lab, ts_class_map(), hu.shape, spacing)
+    if box is not None:
+        # explicit normalised crop (zlo,zhi,ylo,yhi,xlo,xhi in [0,1]) — used when the
+        # segmentation is too noisy for anchor-based crops (e.g. postmortem full-body
+        # scans, where a stray femur/humerus voxel wrecks a 3D bbox). z=0 is slice 0.
+        nz0, ny0, nx0 = hu.shape
+        b = (int(box[0]*nz0), int(box[1]*nz0), int(box[2]*ny0), int(box[3]*ny0),
+             int(box[4]*nx0), int(box[5]*nx0))
+        print(f"      box crop z[{b[0]}:{b[1]}] y[{b[2]}:{b[3]}] x[{b[4]}:{b[5]}]")
+    else:
+        b = _region_bounds(region, lab, ts_class_map(), hu.shape, spacing)
     if b != (0, hu.shape[0], 0, hu.shape[1], 0, hu.shape[2]):
         print(f"      region '{region}': z[{b[0]}:{b[1]}] y[{b[2]}:{b[3]}] x[{b[4]}:{b[5]}]")
     sl = (slice(b[0], b[1]), slice(b[2], b[3]), slice(b[4], b[5]))
-    body = body[sl]; mat = mat[sl]; hu = hu[sl]
+    body = body[sl]; mat = mat[sl]; hu = hu[sl]; lab = lab[sl]
     zs, ys, xs = np.where(body)
     if zs.size == 0:
         raise SystemExit("empty body mask after region crop — check the region/anchor")
@@ -269,7 +342,21 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
     z0, z1 = max(0, zs.min() - pad), min(mat.shape[0], zs.max() + pad + 1)
     y0, y1 = max(0, ys.min() - pad), min(mat.shape[1], ys.max() + pad + 1)
     x0, x1 = max(0, xs.min() - pad), min(mat.shape[2], xs.max() + pad + 1)
-    mat = mat[z0:z1, y0:y1, x0:x1]; hu_c = hu[z0:z1, y0:y1, x0:x1]
+    mat = mat[z0:z1, y0:y1, x0:x1]; hu_c = hu[z0:z1, y0:y1, x0:x1]; lab_c = lab[z0:z1, y0:y1, x0:x1]
+
+    if flip and any(flip):
+        # bake anatomical axis flips into the stored volume + derived mesh so every model
+        # shares the app's display convention (index-0 = inferior / anterior / patient-R).
+        # VSD forensic scans store head-first, so they need a z flip to match the chest model.
+        if flip[2]: mat = mat[:, :, ::-1]; hu_c = hu_c[:, :, ::-1]; lab_c = lab_c[:, :, ::-1]   # x (lateral)
+        if flip[1]: mat = mat[:, ::-1, :]; hu_c = hu_c[:, ::-1, :]; lab_c = lab_c[:, ::-1, :]   # y (AP)
+        if flip[0]: mat = mat[::-1, :, :]; hu_c = hu_c[::-1, :, :]; lab_c = lab_c[::-1, :, :]   # z (long/superior)
+        mat = np.ascontiguousarray(mat); hu_c = np.ascontiguousarray(hu_c); lab_c = np.ascontiguousarray(lab_c)
+        print(f"      axis flip (z,y,x)={tuple(int(f) for f in flip)}")
+
+    if hip_titanium:
+        print("      inserting titanium total hip replacement …")
+        mat = add_hip_prosthesis(mat, lab_c, ts_class_map(), spacing)
 
     print("[4/4] writing volume …")
     write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source)
@@ -286,6 +373,8 @@ def _build_mesh(mat: np.ndarray, spacing: float, path: str, step_mul: int = 1):
     groups = [
         (np.isin(mat, [SKIN, FAT, MUSCLE, SOFT]),          (0xd8, 0xa0, 0x7a, 70),  3),
         (np.isin(mat, [CORTICAL, TRABECULAR, CARTILAGE]),  (0xf5, 0xef, 0xd8, 255), 2),
+        (np.isin(mat, [TITANIUM, STEEL, ALUMINUM, LEAD]),  (0x9a, 0xa5, 0xb0, 255), 1),  # metal implants — solid
+
         (mat == LUNG,                                      (0x6a, 0x8f, 0xbf, 120), 3),
         (mat == HEART,                                     (0xc0, 0x3a, 0x3a, 230), 2),
         (np.isin(mat, [BLOOD, IODINE]),                    (0xd0, 0x40, 0x40, 240), 2),
@@ -318,6 +407,19 @@ if __name__ == "__main__":
     ap.add_argument("--spacing", type=float, default=1.0)
     ap.add_argument("--source", default="TotalSegmentator dataset · segmented with TotalSegmentator")
     ap.add_argument("--no-mesh", action="store_true")
+    ap.add_argument("--box", type=float, nargs=6, default=None,
+                    metavar=("ZLO", "ZHI", "YLO", "YHI", "XLO", "XHI"),
+                    help="explicit normalised crop [0,1], overrides --region (for noisy seg)")
+    ap.add_argument("--body", default=None,
+                    help="TotalSegmentator `body` task mask to clip to the patient envelope "
+                         "(removes the scanner table + external tubes/leads)")
+    ap.add_argument("--flip", type=int, nargs=3, default=(0, 0, 0), metavar=("Z", "Y", "X"),
+                    help="bake anatomical axis flips (z y x) into the volume+mesh, e.g. "
+                         "--flip 1 0 0 for VSD head-first scans")
+    ap.add_argument("--hip-titanium", action="store_true",
+                    help="replace both native hip joints with a titanium total hip replacement "
+                         "(femoral ball + stem + acetabular cup) — for metal-artifact demos")
     a = ap.parse_args()
     build(a.ct, a.seg, a.out, a.name, a.title or a.name, a.region, a.spacing,
-          mesh=not a.no_mesh, source=a.source)
+          mesh=not a.no_mesh, source=a.source, box=a.box, body_path=a.body, flip=a.flip,
+          hip_titanium=a.hip_titanium)

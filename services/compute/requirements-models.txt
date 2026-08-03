@@ -32,7 +32,51 @@
 # NB clinical whole-body CT spans vertex→pelvis, so the extremities are proximal
 # (shoulder/upper-arm, hip/femur); distal limbs need dedicated extremity CT.
 #
+# ---------------------------------------------------------------------------
+# TRUE head-to-toe whole body + distal extremities: the TotalSegmentator subset
+# above stops at the pelvis. Use the VSD Full Body collection instead — open
+# anonymized whole-body POSTMORTEM forensic CT (Bern/Zürich), already NIfTI,
+# CC BY-NC-SA (non-commercial; fine for this educational sim):
+#   https://zenodo.org/records/8270365   (DOI 10.5281/zenodo.8270364; 109 subjects)
+#   Direct per-subject: https://zenodo.org/records/8270365/files/<id>.zip?download=1
+# The z-prefixed ids (z033, z045, …) are single whole-body volumes; plain-numbered
+# ids are separate regional DICOM series. CAUTION: forensic positioning VARIES —
+# many subjects are flexed (folded hips/knees). Inspect first and pick an EXTENDED
+# supine subject (z045 = 45M, extended, arms abducted, 512×512×3117 @1.0/0.5mm,
+# 1558 mm head-to-feet is a good one):
+#   ./.venv/Scripts/python.exe -m app.inspect_vsd data/vsd/z045.zip data/vsd/z045 z045.png
+#   # squeeze the 4D NIfTI -> ct.nii.gz (see prep step inside), then segment IF the
+#   # torch/torchvision versions match (a mismatch -> "torchvision::nms does not
+#   # exist"; TS's NN then can't run). materialize() derives air/lung/fat/muscle/
+#   # bone/skin from HU ALONE, so a ZERO-label seg still yields a full attenuation
+#   # model (only organ mesh colours are lost):
+#   ./.venv/Scripts/python.exe -c "import nibabel as nib,numpy as np; c=nib.load('data/vsd/z045/ct.nii.gz'); nib.save(nib.Nifti1Image(np.zeros(c.shape[:3],np.uint8),c.affine),'data/vsd/z045/seg.nii')"
+#   ./.venv/Scripts/python.exe -m app.build_model --ct data/vsd/z045/ct.nii.gz \
+#     --seg data/vsd/z045/seg.nii --out ../../apps/web/public/models/wholebody \
+#     --name wholebody --region wholebody --spacing 2.0 --source "VSD Full Body (z045)"
+# The --fast seg is too noisy on postmortem full-body scans for anchor-based bbox crops
+# (a stray femur/humerus voxel wrecks the 3D bbox), so build_model.py takes an explicit
+# normalised --box ZLO ZHI YLO YHI XLO XHI crop (overrides --region). For z045 (z=0 head
+# → z=1 feet; x=0..1 image left→right; arms abducted), these crops give the four models:
+#   WB=whole body ; CAP=thorax→pelvis (arms trimmed) ; LE=one leg hip→toes ; UE=one arm scapula→hand
+#   ./.venv/Scripts/python.exe -c "import nibabel as nib,numpy as np; c=nib.load('data/vsd/z045/ct.nii.gz'); nib.save(nib.Nifti1Image(np.zeros(c.shape[:3],np.uint8),c.affine),'data/vsd/z045/seg.nii')"  # zero seg if TS unavailable
+#   TS='./.venv/Scripts/TotalSegmentator.exe -i data/vsd/z045/ct.nii.gz -o data/vsd/z045/seg.nii --ml --fast'  # or real seg (needs matching torchvision)
+#   B='./.venv/Scripts/python.exe -m app.build_model --ct data/vsd/z045/ct.nii.gz --seg data/vsd/z045/seg.nii --source "VSD Full Body (z045)"'
+#   $B --out ../../apps/web/public/models/wholebody       --name wholebody       --region wholebody --spacing 2.0
+#   $B --out ../../apps/web/public/models/chestabdopelvis  --name chestabdopelvis --spacing 2.0 --box 0.04 0.46 0 1 0.16 0.84
+#   $B --out ../../apps/web/public/models/lowerextremity   --name lowerextremity  --spacing 1.5 --box 0.33 1.00 0 1 0.19 0.55
+#   $B --out ../../apps/web/public/models/upperextremity   --name upperextremity  --spacing 1.5 --box 0.00 0.44 0 1 0.00 0.29
+#   # eyeball any crop:  ./.venv/Scripts/python.exe -m app.mip_model ../../apps/web/public/models/<r> <r> out.png
+#
 # torch is installed separately (CPU wheel above) to avoid the CUDA build.
+#
+# GPU note: if TotalSegmentator dies with "operator torchvision::nms does not exist",
+# torch and torchvision are a MISMATCHED pair (a stray PyPI torchvision expecting a
+# different torch). They MUST come from the same CUDA index and match. This box runs
+# torch 2.11.0+cu128 -> pair it with torchvision 0.26.0+cu128:
+#   ./.venv/Scripts/python.exe -m pip install torch==2.11.0+cu128 torchvision==0.26.0+cu128 \
+#     --index-url https://download.pytorch.org/whl/cu128
+# (the cu128 index's latest torchvision is the correct match for the installed torch.)
 SimpleITK>=2.3
 nibabel>=5.2
 scipy>=1.11

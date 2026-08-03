@@ -34,6 +34,6 @@ export async function loadVoxelModel(baseUrl, name) {
     // build a VoxelPhantom centred at `center` (world cm) with optional axis flips.
     // With data=null it is geometry-only (extent/flip for placement; trace unused —
     // the backend does the ray-casting).
-    makePhantom(center, flip) { return new VoxelPhantom({ dims: [nx, ny, nz], vs, data }, center, flip); },
+    makePhantom(center, flip, rot) { return new VoxelPhantom({ dims: [nx, ny, nz], vs, data }, center, flip, rot); },
   };
 }
