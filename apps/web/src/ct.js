@@ -192,29 +192,33 @@ function buildCTScene() {
 // angular table) vs Canon / Toshiba Aquilion (warm white, bellows table column).
 // ============================================================================
 const GANT_DEPTH = 50, FRONT_Z = 12, FLOOR_Y = ISO_Y - 100;   // real-Optima proportions: bore centre ≈1 m above floor
-// GE Optima CT660 / GT1700V patient-table specification (GE "EMEA Product Description" datasheet, 2010):
-//   Horizontal Range 1745 mm · Scannable range 1730 axial / 1580 helical / 1600 scout
-//   Vertical Range 430–991 mm (cradle top above floor) · Cradle speed 125–150 mm/s · 227 kg capacity
-//   GT1700V envelope 660 × 4456 mm at full extension → ≈2.2 m cradle riding a ≈1.9–2.3 m base.
-const TABLE_TRAVEL_MM = 1745;                                  // total physical horizontal cradle travel
-const TRAVEL_HALF_U = TABLE_TRAVEL_MM / 2 / MM_PER_UNIT;       // ±87.25 world units about the isocentre
-const TABLE_TOP_MAX_MM = 991, TABLE_TOP_MIN_MM = 430;          // cradle-top height above the floor
-const MOVE_SPEED_MMPS = 150;                                   // Move-to-Scan cradle speed (spec: 150 mm/s)
-const CRADLE_LEN_U = 220, CRADLE_W_U = 46;                     // 2.2 m cradle, 460 mm pallet (660 mm table envelope)
-const clampPatientZ = (z) => clampV(z, -TRAVEL_HALF_U, TRAVEL_HALF_U);
+// Patient-table specifications per vendor, from the official datasheets:
+//  · GE Optima CT660 / GT1700V ("EMEA Product Description", 2010): Horizontal Range 1745 mm;
+//    scannable 1730 axial / 1580 helical / 1600 scout; Vertical Range 430–991 mm; cradle speed
+//    125–150 mm/s; 227 kg; envelope 660 × 4456 mm → ≈2.2 m cradle. NO lateral couch movement.
+//  · Canon / Toshiba Aquilion ONE (TSX-301/306 product data): horizontal stroke 2190 mm (2390 on
+//    the long couch); scan range 1800–2000 mm; vertical stroke ≈600 mm from a 330 mm minimum
+//    couch-top height → ≈330–935 mm; Lateral Slide ±85 mm; 300 kg → ≈2.4 m cradle.
+const TABLE_SPECS = {
+  ge:    { travelMM: 1745, topMinMM: 430, topMaxMM: 991, moveSpeedMMPS: 150, cradleU: 220, cradleWU: 46, latMM: 0 },
+  canon: { travelMM: 2190, topMinMM: 330, topMaxMM: 935, moveSpeedMMPS: 150, cradleU: 240, cradleWU: 47, latMM: 85 },
+};
+const tableSpec = () => TABLE_SPECS[(ctx && ctx.S.ct.vendor) === 'canon' ? 'canon' : 'ge'];
+const travelHalfU = () => tableSpec().travelMM / 2 / MM_PER_UNIT;   // half-travel about the isocentre, world units
+const clampPatientZ = (z) => clampV(z, -travelHalfU(), travelHalfU());
 // Landmark-relative table-position (mm) reachable within the physical travel (the zero point moves
 // with c.isoZ, so the limits are converted from the ABSOLUTE cradle position, which is patient.z).
 function clampTablePosMM(tp) {
-  const c = ctx.S.ct;
-  return clampV(tp, (c.isoZ - TRAVEL_HALF_U) * MM_PER_UNIT, (c.isoZ + TRAVEL_HALF_U) * MM_PER_UNIT);
+  const c = ctx.S.ct, h = travelHalfU();
+  return clampV(tp, (c.isoZ - h) * MM_PER_UNIT, (c.isoZ + h) * MM_PER_UNIT);
 }
-// Table-height (tableY, mm) limits: the cradle top may never exceed the 991 mm spec ceiling; the
-// ±80 mm fine-adjust window applies otherwise (the full 430 mm patient-loading drop isn't simulated,
-// matching the spec's "vertical scannable range 791–991 mm" — you scan near the top of the range).
+// Table-height (tableY, mm) limits: the cradle top may never exceed the vendor's spec ceiling; the
+// ±80 mm fine-adjust window applies otherwise (the full patient-loading drop isn't simulated,
+// matching e.g. GE's "vertical scannable range 791–991 mm" — you scan near the top of the range).
 function tableYLimits() {
-  const topAtZero = (ISO_Y - backDropU() - FLOOR_Y) * MM_PER_UNIT;   // cradle-top height (mm) at tableY = 0
+  const s = tableSpec(), topAtZero = (ISO_Y - backDropU() - FLOOR_Y) * MM_PER_UNIT;   // cradle-top height (mm) at tableY = 0
   // hi never drops below 0 so the default "centred" position stays reachable for thin subjects
-  return { lo: Math.max(-80, TABLE_TOP_MIN_MM - topAtZero), hi: Math.max(0, Math.min(80, TABLE_TOP_MAX_MM - topAtZero)) };
+  return { lo: Math.max(-80, s.topMinMM - topAtZero), hi: Math.max(0, Math.min(80, s.topMaxMM - topAtZero)) };
 }
 
 function vendorLook() {
@@ -255,6 +259,7 @@ function rebuildCTModel() {
   const { THREE } = ctx, look = vendorLook();
   disposeGroup(gantry); disposeGroup(couch); disposeGroup(couchBase);
   gantrySpin = null; gantryShell = null; boreFrameRing = null;
+  liveScr = { top: null, timer: null, panel: null };   // screens are rebuilt with the shell
   buildGantry(THREE, look); buildCouch(THREE, look);
   if (ctx.$('ctRecons')) { /* no-op: keep signature stable */ }
 }
@@ -262,6 +267,101 @@ const stdMat = (THREE, c, m, r) => new THREE.MeshStandardMaterial({ color: c, me
 function canvasTex(THREE, cv) { const t = new THREE.CanvasTexture(cv); t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 4; return t; }
 function cvRoundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
 function roundedRectShape(s, w, h, r) { const x = -w / 2, y = -h / 2; s.moveTo(x + r, y); s.lineTo(x + w - r, y); s.quadraticCurveTo(x + w, y, x + w, y + r); s.lineTo(x + w, y + h - r); s.quadraticCurveTo(x + w, y + h, x + w - r, y + h); s.lineTo(x + r, y + h); s.quadraticCurveTo(x, y + h, x, y + h - r); s.lineTo(x, y + r); s.quadraticCurveTo(x, y, x + r, y); }
+
+// ---- live gantry displays ----
+// The gantry screens are CanvasTextures redrawn from live state: the top console screen (green =
+// table height mm · orange = table position · white = gantry tilt, NYI 0.0° · bottom = the OM/XY/IC
+// pads, replaced by protocol name + anatomic-zero shorthand once a protocol is selected), the GE
+// side-panel countdown timer (delay / scan durations), and the Canon 4-line panel readout.
+// updateGantryDisplays() runs from updateCTReadouts; the timer runs its own rAF loop while counting.
+let liveScr = { top: null, timer: null, panel: null };
+let timerEndMs = 0, timerRAF = 0;
+function mkScreen(THREE, w, h) { const cv = document.createElement('canvas'); cv.width = w; cv.height = h; return { cv, tex: canvasTex(THREE, cv) }; }
+function timerRemaining() { return timerEndMs ? Math.max(0, (timerEndMs - performance.now()) / 1000) : 0; }
+function startPanelTimer(sec) { timerEndMs = performance.now() + sec * 1000; drawTimerScreens(); if (!timerRAF) tickPanelTimer(); }
+function stopPanelTimer() { timerEndMs = 0; drawTimerScreens(); }
+function tickPanelTimer() {
+  timerRAF = requestAnimationFrame(() => {
+    drawTimerScreens();
+    if (timerRemaining() > 0) tickPanelTimer(); else { timerRAF = 0; timerEndMs = 0; }
+  });
+}
+function drawTimerScreens() { drawTimerScreen(); drawPanelLED(); }
+function updateGantryDisplays() { drawTopScreen(); drawTimerScreens(); }
+function drawTopScreen() {
+  if (!liveScr.top || !ctx) return;
+  const S = ctx.S, look = vendorLook(), cv = liveScr.top.cv, g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  const th = Math.round(S.ct.tableY);
+  if (look.v === 'ge') {
+    g.fillStyle = '#24313e'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#31414f'; g.fillRect(0, 0, W, 24);
+    g.fillStyle = '#9fb6c8'; g.font = '13px Arial'; g.textAlign = 'left'; g.fillText('GT1700V', 10, 17);
+    // green = table height (mm) · orange = table position · white = gantry tilt (NYI)
+    g.font = 'bold 30px Arial';
+    g.fillStyle = '#63e08c'; g.fillText((th > 0 ? '+' : '') + th + '.0', 14, 62);
+    g.fillStyle = '#ffb347'; g.fillText(fmtTablePos(S.ct.tablePos), 14, 100);
+    g.fillStyle = '#ffffff'; g.font = 'bold 22px Arial'; g.textAlign = 'right'; g.fillText('0.0°', W - 12, 62);
+    g.fillStyle = '#7e93a5'; g.font = '12px Arial'; g.fillText('mm', W - 12, 100);
+    g.textAlign = 'center'; g.font = '16px Arial'; g.fillStyle = '#cfe0ee'; g.fillText('John Smith', W / 2, 128);
+    // bottom: the OM/XY/IC anatomic-zero pads — replaced by "protocol name + shorthand box" once
+    // a protocol is selected
+    const proto = CT_PROTOCOLS.find(p => p.id === S.ct.protocol);
+    if (proto && proto.id !== 'whole') {
+      g.textAlign = 'left'; g.font = 'bold 17px Arial'; g.fillStyle = '#cfe0ee';
+      g.fillText(proto.name.length > 20 ? proto.name.slice(0, 19) + '…' : proto.name, 12, 170);
+      g.fillStyle = '#8fa3b8'; cvRoundRect(g, W - 62, 146, 50, 34, 6); g.fill();
+      g.fillStyle = '#1d2731'; g.font = 'bold 20px Arial'; g.textAlign = 'center'; g.fillText(proto.land || '—', W - 37, 170);
+    } else {
+      ['OM', 'XY', 'IC'].forEach((t, i) => {
+        g.fillStyle = '#8fa3b8'; cvRoundRect(g, 30 + i * 70, 146, 56, 34, 6); g.fill();
+        g.fillStyle = '#1d2731'; g.font = 'bold 20px Arial'; g.textAlign = 'center'; g.fillText(t, 58 + i * 70, 170);
+      });
+    }
+  } else {
+    // Canon: blue UI — brand plus a live height / position line
+    const grd = g.createLinearGradient(0, 0, 0, H); grd.addColorStop(0, look.screen1); grd.addColorStop(1, look.screen2);
+    g.fillStyle = grd; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#9fc6e8'; g.fillRect(24, 20, W - 48, 4);
+    g.textAlign = 'center'; g.fillStyle = '#ffffff'; g.font = 'bold 26px Arial'; g.fillText('ONE', W / 2, 70);
+    g.font = 'italic 24px Arial'; g.fillText('Aquilion', W / 2, 100);
+    g.font = 'bold 20px "Courier New", monospace';
+    g.fillStyle = '#63e08c'; g.textAlign = 'left'; g.fillText((th > 0 ? '+' : '') + th + 'mm', 18, 152);
+    g.fillStyle = '#ffb347'; g.textAlign = 'right'; g.fillText(fmtTablePos(S.ct.tablePos), W - 18, 152);
+    g.fillStyle = 'rgba(255,255,255,0.25)'; cvRoundRect(g, 44, 170, W - 88, 10, 5); g.fill();
+  }
+  liveScr.top.tex.needsUpdate = true;
+}
+// GE side-panel countdown: delay / scan durations tick down here, 0.0 when idle.
+function drawTimerScreen() {
+  if (!liveScr.timer) return;
+  const cv = liveScr.timer.cv, g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.fillStyle = '#0c1810'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#5fe08a'; g.font = 'bold 34px "Courier New", monospace'; g.textAlign = 'right';
+  g.fillText(timerRemaining().toFixed(1), W - 12, H / 2 + 12);
+  g.font = '12px "Courier New", monospace'; g.textAlign = 'left'; g.fillText('sec', 8, H / 2 + 12);
+  liveScr.timer.tex.needsUpdate = true;
+}
+// Canon 4-line panel readout: gantry tilt (NYI) / table height / table position / timer.
+function drawPanelLED() {
+  if (!liveScr.panel || !ctx) return;
+  const S = ctx.S, cv = liveScr.panel.cv, g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.fillStyle = '#07130d'; g.fillRect(0, 0, W, H);
+  const th = Math.round(S.ct.tableY);
+  const rows = [['+0.0', 'deg'], [(th > 0 ? '+' : '') + th, 'mm'], [fmtTablePos(S.ct.tablePos), 'mm'], [timerRemaining().toFixed(1), 'sec']];
+  rows.forEach((r, i) => {
+    g.fillStyle = '#7fe0a0'; g.font = 'bold 20px "Courier New", monospace'; g.textAlign = 'right'; g.fillText(r[0], W - 36, 24 + i * 25);
+    g.font = '11px "Courier New", monospace'; g.textAlign = 'left'; g.fillText(r[1], W - 32, 24 + i * 25);
+  });
+  liveScr.panel.tex.needsUpdate = true;
+}
+// Canvas glyph for the panel START key — the console start symbol (diamond + centre line), green.
+function makeStartGlyphTex(THREE) {
+  const Wc = 64, cv = document.createElement('canvas'); cv.width = cv.height = Wc; const g = cv.getContext('2d');
+  g.clearRect(0, 0, Wc, Wc); g.strokeStyle = '#2f9e57'; g.lineWidth = 5; g.lineJoin = 'round';
+  g.beginPath(); g.moveTo(32, 8); g.lineTo(56, 32); g.lineTo(32, 56); g.lineTo(8, 32); g.closePath(); g.stroke();
+  g.beginPath(); g.moveTo(32, 8); g.lineTo(32, 56); g.stroke();
+  return canvasTex(THREE, cv);
+}
 
 function buildGantry(THREE, look) {
   const std = (c, m, r) => stdMat(THREE, c, m, r);
@@ -328,16 +428,43 @@ function buildGantry(THREE, look) {
   // small grey tab at the top of the bore (ref)
   const tab = new THREE.Mesh(roundedBoxGeo(THREE, 16, 4, 3, 2), std(look.trim, 0.12, 0.45));
   tab.position.set(0, ISO_Y + BORE_R + 6, FACE_Z + 1.6); gantryShell.add(tab);
+  // Canon / Toshiba Aquilion signature details (per the reference photo)
+  if (look.v === 'canon') {
+    // thin blue accent ring circling the donut
+    const accent = new THREE.Mesh(new THREE.TorusGeometry(DON_R + 4, 1.8, 20, 220), std(0xaac6de, 0.2, 0.45));
+    accent.position.set(0, ISO_Y, FACE_Z + 0.6); gantryShell.add(accent);
+    // rear side pods (the darker-cream towers peeking out either side)
+    [-1, 1].forEach(s => {
+      const pod = new THREE.Mesh(roundedBoxGeo(THREE, 30, 155, GANT_DEPTH + 10, 12), std(0xe9e6dd, 0.06, 0.5));
+      pod.position.set(s * (halfW + 2), ISO_Y + 2, FRONT_Z - GANT_DEPTH / 2 - 7); gantryShell.add(pod);
+    });
+    // red emergency-stop domes above the panels + a green power LED beside the module
+    const domeG = (r) => { const gg = new THREE.SphereGeometry(r, 28, 18); gg.scale(1, 1, 0.5); return gg; };
+    [-1, 1].forEach(s => {
+      const stop = new THREE.Mesh(domeG(1.6), new THREE.MeshStandardMaterial({ color: 0xd23c30, roughness: 0.35 }));
+      stop.position.set(s * 56, ISO_Y + 61, FACE_Z + 0.7); gantryShell.add(stop);
+    });
+    const pwr = new THREE.Mesh(domeG(1.0), new THREE.MeshStandardMaterial({ color: 0x69d47a, emissive: 0x3fae52, emissiveIntensity: 0.8 }));
+    pwr.position.set(30, ISO_Y + 84, FACE_Z + 0.6); gantryShell.add(pwr);
+    // oval moulding dimples beside the bore
+    [-1, 1].forEach(s => {
+      const dim = new THREE.Mesh(roundedBoxGeo(THREE, 9, 4.5, 1.2, 2.2), std(look.shoulder, 0.08, 0.55));
+      dim.position.set(s * 55, ISO_Y - 4, FACE_Z + 1.2); gantryShell.add(dim);
+    });
+    // red Canon wordmark on the module below the screen
+    const cb = new THREE.Mesh(new THREE.PlaneGeometry(13, 4.5), new THREE.MeshBasicMaterial({ map: makeTextTex(THREE, 'Canon', '#cc0f2f'), transparent: true }));
+    cb.position.set(0, topY - 48, FACE_Z + 6.9); gantryShell.add(cb);   // on the module, below the slot
+  }
   // top-centre console module (blue-grey housing + UI screen + mini readout) — proud of the cover,
   // flush with the top edge, its lower half riding over the donut arc exactly like the reference
   const modW = 42, modH = 52, modY = topY - modH / 2 - 1;
   const mod = new THREE.Mesh(roundedBoxGeo(THREE, modW, modH, 12, 6), std(look.recess, 0.1, 0.5));
   mod.position.set(0, modY, FACE_Z + 0.5); gantryShell.add(mod);
-  const uiTex = look.v === 'ge' ? makeGEUITex(THREE) : makeTopTex(THREE, look);
+  liveScr.top = mkScreen(THREE, 256, 200); drawTopScreen();          // LIVE console screen
   const scrBez = new THREE.Mesh(roundedBoxGeo(THREE, 30, 24, 2.4, 2), std(0x2c353f, 0.2, 0.4));
   scrBez.position.set(0, modY + 8, FACE_Z + 6.2); gantryShell.add(scrBez);
-  const scr = new THREE.Mesh(new THREE.PlaneGeometry(27, 21), new THREE.MeshStandardMaterial({ map: uiTex, emissive: 0xffffff, emissiveMap: uiTex, emissiveIntensity: 0.9, roughness: 0.3 }));
-  scr.position.set(0, modY + 8, FACE_Z + 7.5); gantryShell.add(scr);
+  const scrMesh = new THREE.Mesh(new THREE.PlaneGeometry(27, 21), new THREE.MeshStandardMaterial({ map: liveScr.top.tex, emissive: 0xffffff, emissiveMap: liveScr.top.tex, emissiveIntensity: 0.9, roughness: 0.3 }));
+  scrMesh.position.set(0, modY + 8, FACE_Z + 7.5); gantryShell.add(scrMesh);
   const miniTex = makeMiniLedTex(THREE);
   const mini = new THREE.Mesh(new THREE.PlaneGeometry(12, 3.2), new THREE.MeshStandardMaterial({ map: miniTex, emissive: 0xffffff, emissiveMap: miniTex, emissiveIntensity: 0.9, roughness: 0.3 }));
   mini.position.set(0, modY - 10, FACE_Z + 6.8); gantryShell.add(mini);
@@ -346,7 +473,9 @@ function buildGantry(THREE, look) {
   // side control panels + patient-indicator pills — mounted ON the true front face (never buried)
   [-1, 1].forEach(s => {
     const panel = buildPanel(THREE, look);
-    panel.position.set(s * 91, ISO_Y + 38, FACE_Z + 0.2); panel.rotation.z = -s * 0.10; gantryShell.add(panel);
+    if (look.v === 'canon') { panel.position.set(s * 86, ISO_Y + 40, FACE_Z + 0.2); panel.rotation.z = -s * 0.30; }   // Aquilion: strongly tilted pads
+    else { panel.position.set(s * 91, ISO_Y + 38, FACE_Z + 0.2); panel.rotation.z = -s * 0.10; }
+    gantryShell.add(panel);
     const pill = new THREE.Mesh(roundedBoxGeo(THREE, 8, 4.5, 2, 2), std(0xffffff, 0.03, 0.5));
     pill.position.set(s * 70, ISO_Y + 58, FACE_Z + 0.8); gantryShell.add(pill);
     const picon = new THREE.Mesh(new THREE.CircleGeometry(1.2, 20), new THREE.MeshStandardMaterial({ color: 0xd9838f, emissive: 0xd9838f, emissiveIntensity: 0.4, roughness: 0.4 }));
@@ -395,30 +524,46 @@ function buildPanel(THREE, look) {
   gp.add(back);                                                   // grey outline plate
   const face = new THREE.Mesh(roundedBoxGeo(THREE, 23, 27, 2.2, 6), S(look.cover, 0.04, 0.5));
   face.position.z = 0.6; gp.add(face);                            // white panel face, front ≈ +1.7
-  const disp = (x, w) => {                                        // small green readout in a dark bezel
-    const bez = new THREE.Mesh(roundedBoxGeo(THREE, w, 5.4, 1.4, 1), S(0x252b31, 0.2, 0.45));
-    bez.position.set(x, 8.4, 1.9); gp.add(bez);
-    const t = makeMiniLedTex(THREE);
-    const scrn = new THREE.Mesh(new THREE.PlaneGeometry(w - 1.2, 4.2), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.9, roughness: 0.3 }));
-    scrn.position.set(x, 8.4, 2.7); gp.add(scrn);
+  // smooth DOMED keys (squashed spheres half-sunk in the face — no sharp cylinder edges)
+  const dome = (r) => { const gg = new THREE.SphereGeometry(r, 28, 18); gg.scale(1, 1, 0.5); return gg; };
+  const key = (x, y, r, color) => {
+    const m = new THREE.Mesh(dome(r), new THREE.MeshStandardMaterial({ color: color || look.btn, metalness: 0.08, roughness: 0.32 }));
+    m.position.set(x, y, 1.7); gp.add(m);
   };
-  const btnMat = new THREE.MeshStandardMaterial({ color: look.btn, metalness: 0.1, roughness: 0.35 });
-  const key = (x, y, r) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.8, 24), btnMat); c.rotation.x = Math.PI / 2; c.position.set(x, y, 2.1); gp.add(c); };
   if (look.v === 'ge') {
-    disp(-5.6, 6.5); disp(3.8, 10.5);                             // two green readouts along the top
+    // LEFT: a physical START key carrying the console start symbol (not a screen)
+    const sb = new THREE.Mesh(roundedBoxGeo(THREE, 6.6, 5.6, 1.8, 1.4), S(0xf2f5f7, 0.05, 0.4));
+    sb.position.set(-5.6, 8.4, 2.1); gp.add(sb);
+    const glyph = new THREE.Mesh(new THREE.PlaneGeometry(4.2, 4.2), new THREE.MeshBasicMaterial({ map: makeStartGlyphTex(THREE), transparent: true }));
+    glyph.position.set(-5.6, 8.4, 3.1); gp.add(glyph);
+    // RIGHT: the LIVE scan / delay countdown timer display
+    if (!liveScr.timer) liveScr.timer = mkScreen(THREE, 128, 64);
+    const bez = new THREE.Mesh(roundedBoxGeo(THREE, 10.8, 5.8, 1.4, 1), S(0x252b31, 0.2, 0.45));
+    bez.position.set(3.8, 8.4, 1.9); gp.add(bez);
+    const tt = liveScr.timer.tex;
+    const scrn = new THREE.Mesh(new THREE.PlaneGeometry(9.6, 4.6), new THREE.MeshStandardMaterial({ map: tt, emissive: 0xffffff, emissiveMap: tt, emissiveIntensity: 0.9, roughness: 0.3 }));
+    scrn.position.set(3.8, 8.4, 2.7); gp.add(scrn);
     const R = 6.4; for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2 - Math.PI / 2; key(Math.cos(a) * R, -4.5 + Math.sin(a) * R, 1.15); }
     key(0, -4.5, 1.7);                                            // blue key ring + centre key (ref keypad)
     key(9.2, -1.5, 0.8); key(9.2, -7.5, 0.8);                     // two small side keys
   } else {
-    disp(0, 16);
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) key(-5.4 + c * 3.6, -1 - r * 3.6, 1.0);
+    // Canon: LIVE 4-line readout (tilt / height / position / timer) + mixed blue-grey key rows
+    if (!liveScr.panel) liveScr.panel = mkScreen(THREE, 168, 108);
+    const bez = new THREE.Mesh(roundedBoxGeo(THREE, 17.5, 11.2, 1.4, 1.2), S(0x1c2126, 0.2, 0.45));
+    bez.position.set(0, 6.6, 1.9); gp.add(bez);
+    const tt = liveScr.panel.tex;
+    const scrn = new THREE.Mesh(new THREE.PlaneGeometry(16, 10), new THREE.MeshStandardMaterial({ map: tt, emissive: 0xffffff, emissiveMap: tt, emissiveIntensity: 0.9, roughness: 0.3 }));
+    scrn.position.set(0, 6.6, 2.7); gp.add(scrn);
+    const pat = ['bgbb', 'gbbg', 'bbgb'];
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++)
+      key(-5.4 + c * 3.6, -3.4 - r * 3.6, 0.95, pat[r][c] === 'b' ? look.btn : 0x9aa4ad);
   }
   return gp;
 }
-// Grey badge text (Optima / GE) on a transparent plane.
-function makeTextTex(THREE, txt) {
+// Badge text (Optima / GE / Canon wordmarks) on a transparent plane.
+function makeTextTex(THREE, txt, color) {
   const W = 256, H = 96, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
-  g.clearRect(0, 0, W, H); g.fillStyle = '#6b7788'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.clearRect(0, 0, W, H); g.fillStyle = color || '#6b7788'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = 'italic bold 60px Arial'; g.fillText(txt, W / 2, H / 2 + 3);
   return canvasTex(THREE, cv);
 }
@@ -486,54 +631,63 @@ function makeTopTex(THREE, look) {
 function buildCouch(THREE, look) {
   const std = (c, m, r) => stdMat(THREE, c, m, r);
   // ---- pallet (moves): white plate, top surface at LOCAL y=0 (patient posterior rests here) ----
-  const palLen = CRADLE_LEN_U, palW = CRADLE_W_U;   // GT1700V: 2.2 m cradle, 460 mm wide (660 mm envelope)
+  const spec = tableSpec(), palLen = spec.cradleU, palW = spec.cradleWU;   // vendor cradle dimensions
   const ps = new THREE.Shape(); roundedRectShape(ps, palW, 3.4, 1.6);
   const palGeo = new THREE.ExtrudeGeometry(ps, { depth: palLen - 3, bevelEnabled: true, bevelThickness: 1.4, bevelSize: 1.4, bevelSegments: 9, curveSegments: 40 }); palGeo.computeVertexNormals();
   const pallet = new THREE.Mesh(palGeo, std(look.couchTop, 0.1, 0.45));
   pallet.position.set(0, -1.7, -50); couch.add(pallet);                 // rounded ends + edges; cantilevers into the bore
   const chan = new THREE.Mesh(roundedBoxGeo(THREE, palW - 14, 0.9, palLen - 12, 2), std(0xe3e7ea, 0.06, 0.6));
-  chan.position.set(0, -0.35, 58); couch.add(chan);
+  chan.position.set(0, -0.35, (palLen - 103) / 2); couch.add(chan);   // centred on the pallet
   couch.visible = false;
 
   // ---- static base (Orbit PoV only, positioned in ctSyncScene): the reference's foot-end head
   // module (white wing the pallet slides through + grey handle plate + chrome arch + GE roundel),
   // on a pedestal column and a dark floor base ----
   const foot = FLOOR_Y;
-  // base slab the cradle rides on (≈1.9 m of the GT1700V's ≈2.26 m base sits under the travel), with
-  // the head module (white wing + grey handle plate + chrome arch + roundel) at the FOOT end — at
-  // full extension (tablePos −872 mm) the cradle foot parks exactly inside the module, so the
-  // cradle can never float unsupported past its holder again.
-  const slab = new THREE.Mesh(roundedBoxGeo(THREE, 50, 8, 192, 3), std(look.couchTop, 0.06, 0.55));
-  slab.position.set(0, -10, 76); couchBase.add(slab);
+  // Layout derived from the vendor spec: the base slab covers the cradle-foot travel band, and
+  // the head module (white wing + grey handle plate + chrome arch + roundel) sits at the FOOT end
+  // so at full extension the cradle foot parks exactly inside the module — the cradle can never
+  // float unsupported past its holder. (couchBase sits at world z = 82; positions are local.)
+  const thU = travelHalfU(), footLocal = palLen - 53;            // pallet local foot z (head fixed at −50)
+  const wingZ = footLocal + thU - 90;                            // module centre: foot parks at its far edge
+  const zLo = footLocal - thU - 100, zHi = footLocal + thU - 82; // slab span under the foot travel
+  const slabLen = zHi - zLo, slabZ = (zLo + zHi) / 2, baseZ = wingZ - 44;
+  const slab = new THREE.Mesh(roundedBoxGeo(THREE, 50, 8, slabLen, 3), std(look.couchTop, 0.06, 0.55));
+  slab.position.set(0, -10, slabZ); couchBase.add(slab);
   const wing = new THREE.Mesh(roundedBoxGeo(THREE, 62, 18, 16, 6), std(look.couchTop, 0.05, 0.5));
-  wing.position.set(0, 1, 164); couchBase.add(wing);
+  wing.position.set(0, 1, wingZ); couchBase.add(wing);
   const plate = new THREE.Mesh(roundedBoxGeo(THREE, 44, 11, 13, 4), std(look.trim, 0.12, 0.45));
-  plate.position.set(0, 12, 163); couchBase.add(plate);
+  plate.position.set(0, 12, wingZ - 1); couchBase.add(plate);
   const handle = new THREE.Mesh(new THREE.TorusGeometry(14, 1.8, 24, 72, Math.PI), std(0xcdd4da, 0.55, 0.28));
-  handle.position.set(0, 16, 163); couchBase.add(handle);
+  handle.position.set(0, 16, wingZ - 1); couchBase.add(handle);
   if (look.v === 'ge') {
     const lg = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshBasicMaterial({ map: makeGELogoTex(THREE), transparent: true }));
-    lg.position.set(0, 12, 170.5); couchBase.add(lg);
+    lg.position.set(0, 12, wingZ + 6.5); couchBase.add(lg);
   }
   if (look.pedStyle === 'bellows') {
     // Canon / Toshiba: accordion bellows column + round foot
     const colTop = -8, colBot = foot + 14, colH = colTop - colBot, n = 10;
     const core = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, colH, 48), std(look.pedLight, 0.12, 0.55));
-    core.position.set(0, (colTop + colBot) / 2, 120); couchBase.add(core);
+    core.position.set(0, (colTop + colBot) / 2, baseZ); couchBase.add(core);
     for (let i = 0; i < n; i++) {
       const rib = new THREE.Mesh(new THREE.TorusGeometry(10.6, 2.6, 32, 72), std(look.pedLight, 0.1, 0.6));
-      rib.rotation.x = Math.PI / 2; rib.position.set(0, colBot + (i + 0.5) * colH / n, 120); couchBase.add(rib);
+      rib.rotation.x = Math.PI / 2; rib.position.set(0, colBot + (i + 0.5) * colH / n, baseZ); couchBase.add(rib);
     }
     const base = new THREE.Mesh(new THREE.CylinderGeometry(17, 20, 8, 56), std(look.pedFoot, 0.18, 0.55));
-    base.position.set(0, foot + 6, 120); couchBase.add(base);
+    base.position.set(0, foot + 6, baseZ); couchBase.add(base);
+    // floor rails either side of the base (Aquilion reference)
+    [-1, 1].forEach(s => {
+      const rail = new THREE.Mesh(roundedBoxGeo(THREE, 6, 4, 70, 2), std(look.pedFoot, 0.15, 0.55));
+      rail.position.set(s * 26, foot + 2, baseZ); couchBase.add(rail);
+    });
   } else {
     // GE: white pedestal box on a dark slate base with a light front cap (ref)
     const col = new THREE.Mesh(roundedBoxGeo(THREE, 34, 70, 60, 6), std(look.pedLight, 0.08, 0.5));
-    col.position.set(0, -42, 120); couchBase.add(col);
+    col.position.set(0, -42, baseZ); couchBase.add(col);
     const base = new THREE.Mesh(roundedBoxGeo(THREE, 50, 18, 84, 6), std(look.pedFoot, 0.2, 0.5));
-    base.position.set(0, foot + 9, 120); couchBase.add(base);
+    base.position.set(0, foot + 9, baseZ); couchBase.add(base);
     const cap = new THREE.Mesh(roundedBoxGeo(THREE, 26, 13, 5, 4), std(0x9aa4ad, 0.15, 0.5));
-    cap.position.set(0, foot + 10, 164); couchBase.add(cap);
+    cap.position.set(0, foot + 10, wingZ); couchBase.add(cap);
   }
   couchBase.visible = false;
 }
@@ -745,15 +899,17 @@ function wireCTSettings() {
   // direction pad — nudge the patient/couch (10 mm/press); hold to auto-repeat
   const STEP = 1;                       // world unit per press (= 10 mm)
   wireHoldRepeat($('ctDpad'), 'button[data-dir]', (b) => {
-    const p = S.ct.patient, dmm = STEP * MM_PER_UNIT, xLim = maxPatientX();
+    // lateral limit = the tighter of bore clearance and the vendor spec (GE: no lateral
+    // movement at all; Canon/Toshiba Lateral Slide: ±85 mm)
+    const p = S.ct.patient, dmm = STEP * MM_PER_UNIT, xLim = Math.min(maxPatientX(), tableSpec().latMM / MM_PER_UNIT);
     switch (b.dataset.dir) {
-      // in/out clamps to the physical cradle travel (GT1700V: 1745 mm total); the readout is
-      // derived from the clamped position (tablePos ≡ (isoZ − z)·10) so it stays drift-free
+      // in/out clamps to the physical cradle travel (vendor spec); the readout is derived from
+      // the clamped position (tablePos ≡ (isoZ − z)·10) so it stays drift-free
       case 'up':   { const nz = clampPatientZ(p.z - STEP);
-                     if (nz === p.z) setHint('Table at its physical travel limit (1745 mm).');
+                     if (nz === p.z) setHint('Table at its physical travel limit (' + tableSpec().travelMM + ' mm).');
                      p.z = nz; S.ct.tablePos = (S.ct.isoZ - nz) * MM_PER_UNIT; break; }   // into the gantry (+I)
       case 'down': { const nz = clampPatientZ(p.z + STEP);
-                     if (nz === p.z) setHint('Table at its physical travel limit (1745 mm).');
+                     if (nz === p.z) setHint('Table at its physical travel limit (' + tableSpec().travelMM + ' mm).');
                      p.z = nz; S.ct.tablePos = (S.ct.isoZ - nz) * MM_PER_UNIT; break; }   // out (-S)
       case 'left':  p.x = Math.max(-xLim, p.x - STEP); break;   // clamp so the couch clears the bore
       case 'right': p.x = Math.min(xLim, p.x + STEP); break;
@@ -791,6 +947,7 @@ function updateCTReadouts() {
   ['ctScanStartV', 'ctScanEndV'].forEach((id) => { const el = $(id); if (el) el.classList.toggle('unzeroed', !S.ct.isocentred); });
   // the Zero Table button asks to be pressed only while scouting (idle) and un-zeroed
   $('ctIsocentre')?.classList.toggle('needzero', !S.ct.isocentred && S.ct.phase === 'idle');
+  updateGantryDisplays();                       // mirror the readouts onto the 3D gantry screens
 }
 // one-shot emphasis on the isocentre button when a scan is attempted un-zeroed
 function flashIso() {
@@ -995,17 +1152,20 @@ async function runScoutExposure(view, data, alive = () => true) {
   resetToScanStart();                                      // each pass begins at the scout start
   drawScout(cv, data, 0);                                   // start from a blank field
   setHint(view + ' scout · breathe in and hold…');
+  startPanelTimer((Sound.duration('breathIn') || 2) + 1);   // panel timer counts the pre-exposure delay
   Sound.play('breathIn');
   await sleep((Sound.duration('breathIn') || 2) * 1000);   // let the breathe-in finish
   if (!alive()) return;
   await sleep(1000);                                        // 1 s hold before the exposure
   if (!alive()) return;
   setHint(view + ' scout · scanning…');
+  startPanelTimer(scoutScanTime());                          // panel timer counts down the scout duration
   Sound.startScan(ctx.S.ct.scanSound);
   // stitch rows 0..t as the couch advances -> image builds in lockstep with travel
   await animateTableTravel(scoutScanTime() * 1000, (t) => drawScout(cv, data, t * data.nz), alive);
   Sound.stopScan();
   if (!alive()) return;
+  stopPanelTimer();
   drawScout(cv, data);                                      // guarantee the final full frame
   setHint(view + ' scout · breathe normally.');
   Sound.play('breathNormal');
@@ -1056,7 +1216,7 @@ function moveTableTo(targetMM, dur = null) {
     // clamp to the physical cradle travel, and glide at the spec Move-to-Scan speed (150 mm/s)
     const startPatZ = S.ct.patient.z, endPatZ = clampPatientZ(tablePosToPatientZ(targetMM));
     const distMM = Math.abs(endPatZ - startPatZ) * MM_PER_UNIT;
-    if (dur == null) dur = Math.max(700, distMM / MOVE_SPEED_MMPS * 1000);
+    if (dur == null) dur = Math.max(700, distMM / tableSpec().moveSpeedMMPS * 1000);
     if (Math.abs(endPatZ - startPatZ) < 1e-3) { res(); return; }
     movingToScan = true;
     // mirror the couch glide into the DR monitor (lateral PoV) so the model is visibly
@@ -1582,7 +1742,9 @@ function nudgeRepos(axis, dir, big) {
   if (c.phase !== 'planning') return;
   const step = (big ? REPOS_STEP.large : REPOS_STEP.small) * dir;
   const lim = scoutFov() / 2;                 // keep the scan centre inside the scout FOV
-  if (axis === 'x') c.plan.targetX = clampV(c.plan.targetX + step, -lim, lim);
+  // mediolateral is additionally bound by the couch's Lateral Slide spec (Aquilion ONE: ±85 mm)
+  const xlim = Math.min(lim, tableSpec().latMM || lim);
+  if (axis === 'x') c.plan.targetX = clampV(c.plan.targetX + step, -xlim, xlim);
   else c.plan.targetY = clampV(c.plan.targetY + step, -lim, lim);
   updatePlan();
 }
@@ -2118,6 +2280,9 @@ export function ctApplyVendor() {
   if (ge) { c.plan.targetX = c.plan.targetY = c.plan.committedX = c.plan.committedY = 0; c.patient.x = 0; c.tableY = 0; }
   else { for (const g of c.groups) { g.box.apL = 0.5 - (g.box.apR - g.box.apL) / 2; g.box.apR = 1 - g.box.apL;   // re-centre the box for the locked-box workflow
                                      const hw = (g.box.latR - g.box.latL) / 2; g.box.latL = 0.5 - hw; g.box.latR = 0.5 + hw; } }
+  // the new vendor's physical travel may be tighter — pull the couch back inside it
+  c.patient.z = clampPatientZ(c.patient.z); c.tablePos = (c.isoZ - c.patient.z) * MM_PER_UNIT;
+  updateCTReadouts();
   if (ctx.syncScene) { /* keep scene consistent if patient moved */ }
   renderScanBoxes(); updatePlan();
   rebuildCTModel();                               // re-skin the 3D machine (GE Optima ↔ Canon/Toshiba Aquilion)
@@ -2249,7 +2414,8 @@ function applyTableCommit() {
   // patient's back, which sits BELOW the isocentre — so the couch must rise to bring it up to
   // the iso (table height = +offset). Negating this moved the patient the wrong way (posterior
   // box → table down → anterior imaged).
-  c.tableY = c.plan.committedY;
+  const hl = tableYLimits();                                   // spec vertical range (cradle-top ceiling)
+  c.tableY = clampV(c.plan.committedY, hl.lo, hl.hi);
   ctx.syncScene();
   updateCTReadouts();
 }
@@ -2496,7 +2662,9 @@ async function scanGroupExposure(g, i, alive) {
   //    badge up), timed by the physical scan speed — NOT by reconstruction cost. Runs FIRST
   //    and alone so the previews stay smooth even when the full recon is heavy (a heavy
   //    browser recon would otherwise starve the animation thread).
+  startPanelTimer(scanAnimSeconds(g));               // gantry panel timer counts down the acquisition
   await animateHelicalScan(g, setup, alive);
+  stopPanelTimer();
   Sound.stopScan(); stopGantrySpin();          // acquisition finished; the gantry stops
   if (!alive()) { showPreviewBadge(false); return null; }
   // The scan MOTION is done — the patient can breathe normally now, while the computer
