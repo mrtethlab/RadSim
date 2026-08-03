@@ -192,6 +192,30 @@ function buildCTScene() {
 // angular table) vs Canon / Toshiba Aquilion (warm white, bellows table column).
 // ============================================================================
 const GANT_DEPTH = 50, FRONT_Z = 12, FLOOR_Y = ISO_Y - 100;   // real-Optima proportions: bore centre ≈1 m above floor
+// GE Optima CT660 / GT1700V patient-table specification (GE "EMEA Product Description" datasheet, 2010):
+//   Horizontal Range 1745 mm · Scannable range 1730 axial / 1580 helical / 1600 scout
+//   Vertical Range 430–991 mm (cradle top above floor) · Cradle speed 125–150 mm/s · 227 kg capacity
+//   GT1700V envelope 660 × 4456 mm at full extension → ≈2.2 m cradle riding a ≈1.9–2.3 m base.
+const TABLE_TRAVEL_MM = 1745;                                  // total physical horizontal cradle travel
+const TRAVEL_HALF_U = TABLE_TRAVEL_MM / 2 / MM_PER_UNIT;       // ±87.25 world units about the isocentre
+const TABLE_TOP_MAX_MM = 991, TABLE_TOP_MIN_MM = 430;          // cradle-top height above the floor
+const MOVE_SPEED_MMPS = 150;                                   // Move-to-Scan cradle speed (spec: 150 mm/s)
+const CRADLE_LEN_U = 220, CRADLE_W_U = 46;                     // 2.2 m cradle, 460 mm pallet (660 mm table envelope)
+const clampPatientZ = (z) => clampV(z, -TRAVEL_HALF_U, TRAVEL_HALF_U);
+// Landmark-relative table-position (mm) reachable within the physical travel (the zero point moves
+// with c.isoZ, so the limits are converted from the ABSOLUTE cradle position, which is patient.z).
+function clampTablePosMM(tp) {
+  const c = ctx.S.ct;
+  return clampV(tp, (c.isoZ - TRAVEL_HALF_U) * MM_PER_UNIT, (c.isoZ + TRAVEL_HALF_U) * MM_PER_UNIT);
+}
+// Table-height (tableY, mm) limits: the cradle top may never exceed the 991 mm spec ceiling; the
+// ±80 mm fine-adjust window applies otherwise (the full 430 mm patient-loading drop isn't simulated,
+// matching the spec's "vertical scannable range 791–991 mm" — you scan near the top of the range).
+function tableYLimits() {
+  const topAtZero = (ISO_Y - backDropU() - FLOOR_Y) * MM_PER_UNIT;   // cradle-top height (mm) at tableY = 0
+  // hi never drops below 0 so the default "centred" position stays reachable for thin subjects
+  return { lo: Math.max(-80, TABLE_TOP_MIN_MM - topAtZero), hi: Math.max(0, Math.min(80, TABLE_TOP_MAX_MM - topAtZero)) };
+}
 
 function vendorLook() {
   const v = (ctx && ctx.S.ct.vendor) || 'ge';
@@ -462,48 +486,54 @@ function makeTopTex(THREE, look) {
 function buildCouch(THREE, look) {
   const std = (c, m, r) => stdMat(THREE, c, m, r);
   // ---- pallet (moves): white plate, top surface at LOCAL y=0 (patient posterior rests here) ----
-  const palLen = 150, palW = 44;
+  const palLen = CRADLE_LEN_U, palW = CRADLE_W_U;   // GT1700V: 2.2 m cradle, 460 mm wide (660 mm envelope)
   const ps = new THREE.Shape(); roundedRectShape(ps, palW, 3.4, 1.6);
   const palGeo = new THREE.ExtrudeGeometry(ps, { depth: palLen - 3, bevelEnabled: true, bevelThickness: 1.4, bevelSize: 1.4, bevelSegments: 9, curveSegments: 40 }); palGeo.computeVertexNormals();
   const pallet = new THREE.Mesh(palGeo, std(look.couchTop, 0.1, 0.45));
   pallet.position.set(0, -1.7, -50); couch.add(pallet);                 // rounded ends + edges; cantilevers into the bore
   const chan = new THREE.Mesh(roundedBoxGeo(THREE, palW - 14, 0.9, palLen - 12, 2), std(0xe3e7ea, 0.06, 0.6));
-  chan.position.set(0, -0.35, 23); couch.add(chan);
+  chan.position.set(0, -0.35, 58); couch.add(chan);
   couch.visible = false;
 
   // ---- static base (Orbit PoV only, positioned in ctSyncScene): the reference's foot-end head
   // module (white wing the pallet slides through + grey handle plate + chrome arch + GE roundel),
   // on a pedestal column and a dark floor base ----
   const foot = FLOOR_Y;
+  // base slab the cradle rides on (≈1.9 m of the GT1700V's ≈2.26 m base sits under the travel), with
+  // the head module (white wing + grey handle plate + chrome arch + roundel) at the FOOT end — at
+  // full extension (tablePos −872 mm) the cradle foot parks exactly inside the module, so the
+  // cradle can never float unsupported past its holder again.
+  const slab = new THREE.Mesh(roundedBoxGeo(THREE, 50, 8, 192, 3), std(look.couchTop, 0.06, 0.55));
+  slab.position.set(0, -10, 76); couchBase.add(slab);
   const wing = new THREE.Mesh(roundedBoxGeo(THREE, 62, 18, 16, 6), std(look.couchTop, 0.05, 0.5));
-  wing.position.set(0, 1, 8); couchBase.add(wing);
+  wing.position.set(0, 1, 164); couchBase.add(wing);
   const plate = new THREE.Mesh(roundedBoxGeo(THREE, 44, 11, 13, 4), std(look.trim, 0.12, 0.45));
-  plate.position.set(0, 12, 7); couchBase.add(plate);
+  plate.position.set(0, 12, 163); couchBase.add(plate);
   const handle = new THREE.Mesh(new THREE.TorusGeometry(14, 1.8, 24, 72, Math.PI), std(0xcdd4da, 0.55, 0.28));
-  handle.position.set(0, 16, 7); couchBase.add(handle);
+  handle.position.set(0, 16, 163); couchBase.add(handle);
   if (look.v === 'ge') {
     const lg = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshBasicMaterial({ map: makeGELogoTex(THREE), transparent: true }));
-    lg.position.set(0, 12, 14); couchBase.add(lg);
+    lg.position.set(0, 12, 170.5); couchBase.add(lg);
   }
   if (look.pedStyle === 'bellows') {
     // Canon / Toshiba: accordion bellows column + round foot
     const colTop = -8, colBot = foot + 14, colH = colTop - colBot, n = 10;
     const core = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, colH, 48), std(look.pedLight, 0.12, 0.55));
-    core.position.set(0, (colTop + colBot) / 2, 0); couchBase.add(core);
+    core.position.set(0, (colTop + colBot) / 2, 120); couchBase.add(core);
     for (let i = 0; i < n; i++) {
       const rib = new THREE.Mesh(new THREE.TorusGeometry(10.6, 2.6, 32, 72), std(look.pedLight, 0.1, 0.6));
-      rib.rotation.x = Math.PI / 2; rib.position.set(0, colBot + (i + 0.5) * colH / n, 0); couchBase.add(rib);
+      rib.rotation.x = Math.PI / 2; rib.position.set(0, colBot + (i + 0.5) * colH / n, 120); couchBase.add(rib);
     }
     const base = new THREE.Mesh(new THREE.CylinderGeometry(17, 20, 8, 56), std(look.pedFoot, 0.18, 0.55));
-    base.position.set(0, foot + 6, 0); couchBase.add(base);
+    base.position.set(0, foot + 6, 120); couchBase.add(base);
   } else {
     // GE: white pedestal box on a dark slate base with a light front cap (ref)
-    const col = new THREE.Mesh(roundedBoxGeo(THREE, 30, 70, 26, 5), std(look.pedLight, 0.08, 0.5));
-    col.position.set(0, -42, 4); couchBase.add(col);
-    const base = new THREE.Mesh(roundedBoxGeo(THREE, 46, 18, 42, 6), std(look.pedFoot, 0.2, 0.5));
-    base.position.set(0, foot + 9, 4); couchBase.add(base);
+    const col = new THREE.Mesh(roundedBoxGeo(THREE, 34, 70, 60, 6), std(look.pedLight, 0.08, 0.5));
+    col.position.set(0, -42, 120); couchBase.add(col);
+    const base = new THREE.Mesh(roundedBoxGeo(THREE, 50, 18, 84, 6), std(look.pedFoot, 0.2, 0.5));
+    base.position.set(0, foot + 9, 120); couchBase.add(base);
     const cap = new THREE.Mesh(roundedBoxGeo(THREE, 26, 13, 5, 4), std(0x9aa4ad, 0.15, 0.5));
-    cap.position.set(0, foot + 10, 26); couchBase.add(cap);
+    cap.position.set(0, foot + 10, 164); couchBase.add(cap);
   }
   couchBase.visible = false;
 }
@@ -685,7 +715,8 @@ function wireCTSettings() {
   $('ctScanHelp')?.addEventListener('click', () => openScanHelp());
   // table height — raise / lower by 1 mm per press; hold to auto-repeat
   wireHoldRepeat($('ctTablePad'), 'button[data-th]', (b) => {
-    S.ct.tableY = Math.max(-80, Math.min(80, S.ct.tableY + (b.dataset.th === 'up' ? 1 : -1)));
+    const hl = tableYLimits();                        // spec ceiling: cradle top ≤ 991 mm above floor
+    S.ct.tableY = Math.max(hl.lo, Math.min(hl.hi, S.ct.tableY + (b.dataset.th === 'up' ? 1 : -1)));
     ctx.syncScene(); updateCTReadouts();
   });
   // isocentre confirm — zero the table position reading (patient stays put)
@@ -716,8 +747,14 @@ function wireCTSettings() {
   wireHoldRepeat($('ctDpad'), 'button[data-dir]', (b) => {
     const p = S.ct.patient, dmm = STEP * MM_PER_UNIT, xLim = maxPatientX();
     switch (b.dataset.dir) {
-      case 'up':    p.z -= STEP; S.ct.tablePos += dmm; break;   // table into the gantry (+I)
-      case 'down':  p.z += STEP; S.ct.tablePos -= dmm; break;   // table out (-S)
+      // in/out clamps to the physical cradle travel (GT1700V: 1745 mm total); the readout is
+      // derived from the clamped position (tablePos ≡ (isoZ − z)·10) so it stays drift-free
+      case 'up':   { const nz = clampPatientZ(p.z - STEP);
+                     if (nz === p.z) setHint('Table at its physical travel limit (1745 mm).');
+                     p.z = nz; S.ct.tablePos = (S.ct.isoZ - nz) * MM_PER_UNIT; break; }   // into the gantry (+I)
+      case 'down': { const nz = clampPatientZ(p.z + STEP);
+                     if (nz === p.z) setHint('Table at its physical travel limit (1745 mm).');
+                     p.z = nz; S.ct.tablePos = (S.ct.isoZ - nz) * MM_PER_UNIT; break; }   // out (-S)
       case 'left':  p.x = Math.max(-xLim, p.x - STEP); break;   // clamp so the couch clears the bore
       case 'right': p.x = Math.min(xLim, p.x + STEP); break;
     }
@@ -932,8 +969,8 @@ function resetToIsocentre() {
 // isocentre. This is why Move to Scan must run before the scout is acquired.
 function resetToScanStart() {
   const { S } = ctx;
-  S.ct.patient.z = tablePosToPatientZ(scanStartMM());
-  S.ct.tablePos = scanStartMM();
+  S.ct.patient.z = clampPatientZ(tablePosToPatientZ(scanStartMM()));   // physical travel limit
+  S.ct.tablePos = (S.ct.isoZ - S.ct.patient.z) * MM_PER_UNIT;          // readout follows the couch
   ctx.syncScene();
   updateCTReadouts();
 }
@@ -989,7 +1026,7 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
     let done = false;
     const apply = (t) => {
       const dz = -travelU * t;                         // travel into the bore (-z)
-      S.ct.patient.z = startPatZ + dz;                 // patient + couch feed as one rigid body
+      S.ct.patient.z = clampPatientZ(startPatZ + dz);  // patient + couch feed as one rigid body (travel-limited)
       three.handGroup.position.z = S.ct.patient.z;
       couch.position.z = S.ct.patient.z;               // gantry stays fixed
       S.ct.tablePos = scanStartMM() + tpEnd * t;       // live table position (landmark-relative)
@@ -1012,11 +1049,14 @@ function animateTableTravel(dur, onFrame, alive = () => true) {
 // by "Move to Scan". Drives patient.z (the single source of truth), so the physical
 // position actually changes (the scout/scan then begins there); the couch tracks it.
 let movingToScan = false;
-function moveTableTo(targetMM, dur = 1100) {
+function moveTableTo(targetMM, dur = null) {
   const three = ctx.three, S = ctx.S;
   if (movingToScan || S.ct.phase === 'scanning' || S.ct.phase === 'scouting') return Promise.resolve();
   return new Promise(res => {
-    const startPatZ = S.ct.patient.z, endPatZ = tablePosToPatientZ(targetMM);
+    // clamp to the physical cradle travel, and glide at the spec Move-to-Scan speed (150 mm/s)
+    const startPatZ = S.ct.patient.z, endPatZ = clampPatientZ(tablePosToPatientZ(targetMM));
+    const distMM = Math.abs(endPatZ - startPatZ) * MM_PER_UNIT;
+    if (dur == null) dur = Math.max(700, distMM / MOVE_SPEED_MMPS * 1000);
     if (Math.abs(endPatZ - startPatZ) < 1e-3) { res(); return; }
     movingToScan = true;
     // mirror the couch glide into the DR monitor (lateral PoV) so the model is visibly
@@ -2094,7 +2134,9 @@ export function ctApplyVendor() {
 //  · planning:        the first scan group's superior edge (scanStart + box.top·len)
 // The next button (START) only unlocks once the table is parked at that position.
 function scanStartTablePos() { return scanStartMM() + grp(0).box.top * ctx.S.ct.scanLen; }
-function moveScanTarget() { return ctx.S.ct.phase === 'planning' ? scanStartTablePos() : scanStartMM(); }
+// Clamped to the physical travel so a plan just beyond the limit parks the couch AT the limit and
+// still unlocks START (the recon works in scout coordinates; the couch glide is the physical part).
+function moveScanTarget() { return clampTablePosMM(ctx.S.ct.phase === 'planning' ? scanStartTablePos() : scanStartMM()); }
 function atMoveTarget() { return Math.abs(ctx.S.ct.tablePos - moveScanTarget()) <= 1.0; }
 // Drive the flashing console key for the current phase. Sequence:
 //  · idle:     Zero Table (needzero) → MOVE TO SCAN → START (acquire scouts)
