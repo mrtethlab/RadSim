@@ -16,6 +16,7 @@ import { Sound } from './audio/sound.js';
 let ctx = null;
 let couch = null, gantry = null, gantrySpin = null;  // couch pallet (moves) + gantry ring (static) + rotating tube/detector (scan only)
 let couchBase = null, gantryShell = null;            // vendor exterior: static pedestal + housing cover — shown in the Orbit PoV only
+let boreFrameRing = null;                            // bare bore-framing ring for the AP / Lat planning views (hidden in Orbit)
 let scanMarkers = null;               // usability aid: coloured lines at scan start/end + a direction arrow
 let laserTop = null, laserSide = null; // projected alignment lasers (SpotLights) + their cookies
 let laserTopTex = null, laserSideTex = null;
@@ -190,14 +191,14 @@ function buildCTScene() {
 // Re-skinned on the vendor toggle: GE Optima (blue-grey two-tone, dark base,
 // angular table) vs Canon / Toshiba Aquilion (warm white, bellows table column).
 // ============================================================================
-const GANT_DEPTH = 44, FRONT_Z = 12, FLOOR_Y = ISO_Y - 46;
+const GANT_DEPTH = 50, FRONT_Z = 12, FLOOR_Y = ISO_Y - 100;   // real-Optima proportions: bore centre ≈1 m above floor
 
 function vendorLook() {
   const v = (ctx && ctx.S.ct.vendor) || 'ge';
   if (v === 'ge') return {
-    v: 'ge', cover: 0xeceff2, shoulder: 0xaeb9cc, boreRim: 0x8ea3b5, boreRim2: 0xccd6df,
-    recess: 0x8f9cb2, recessDark: 0x5e7488, panelFloor: 0xccd4dd, boreLiner: 0xeef2f5, trim: 0xaeb9cc,
-    baseTop: 0x565f6a, baseBot: 0x3a424c, plinth: 14,
+    v: 'ge', cover: 0xf4f6f8, shoulder: 0xb9c4d2, boreRim: 0x8ea3b5, boreRim2: 0xccd6df,
+    recess: 0x93a5bf, recessDark: 0x5e7488, panelFloor: 0xccd4dd, boreLiner: 0xeef2f5, trim: 0x9aabc0,
+    baseTop: 0x59626e, baseBot: 0x3a424c, plinth: 33,
     panelFace: '#e7ebef', panelEdge: '#c2ccd6', led: '#08160e', ledText: '#57e089',
     btnFace: '#eef2f6', btn: '#3f7cae', screen1: '#0b2c48', screen2: '#124a72',
     brand: 'GE', model: 'Optima', couchTop: 0xeceff2,
@@ -205,7 +206,7 @@ function vendorLook() {
   };
   return {
     v: 'canon', cover: 0xf3f1ea, shoulder: 0xe6e3db, boreRim: 0xbcd2e0, boreRim2: 0xe1eaf0,
-    recess: 0xcbc7bd, recessDark: 0xb0aca2, panelFloor: 0xe8e4db, boreLiner: 0xf1efe8, trim: 0xbcd2e0,
+    recess: 0xcbc7bd, recessDark: 0xb0aca2, panelFloor: 0xe8e4db, boreLiner: 0xf1efe8, trim: 0xe0ddd3,
     baseTop: 0xe0dcd3, baseBot: 0xcbc7bd, plinth: 0,
     panelFace: '#edebe4', panelEdge: '#d6d3c9', led: '#07130d', ledText: '#7fe0a0',
     btnFace: '#f2f0ea', btn: '#8fa9bd', screen1: '#0b2c48', screen2: '#134a74',
@@ -229,7 +230,7 @@ function rebuildCTModel() {
   if (!ctx || !gantry) return;
   const { THREE } = ctx, look = vendorLook();
   disposeGroup(gantry); disposeGroup(couch); disposeGroup(couchBase);
-  gantrySpin = null; gantryShell = null;
+  gantrySpin = null; gantryShell = null; boreFrameRing = null;
   buildGantry(THREE, look); buildCouch(THREE, look);
   if (ctx.$('ctRecons')) { /* no-op: keep signature stable */ }
 }
@@ -240,86 +241,110 @@ function roundedRectShape(s, w, h, r) { const x = -w / 2, y = -h / 2; s.moveTo(x
 
 function buildGantry(THREE, look) {
   const std = (c, m, r) => stdMat(THREE, c, m, r);
-  // bore-framing ring — visible in every PoV so AP / Lat planning still frames the patient
-  const frame = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 2, 2, 16, 80), std(look.boreRim, 0.4, 0.5));
-  frame.position.set(0, ISO_Y, FRONT_Z - 2); gantry.add(frame);
-  // rotating tube + detector assembly (spins during a scan)
+  // bore-framing ring — AP / Lat planning views only (the Orbit PoV shows the real housing instead)
+  boreFrameRing = new THREE.Mesh(new THREE.TorusGeometry(BORE_R + 2, 2, 16, 80), std(look.boreRim, 0.4, 0.5));
+  boreFrameRing.position.set(0, ISO_Y, FRONT_Z - 2); gantry.add(boreFrameRing);
+  // rotating tube + detector assembly (spins during a scan) — sized to stay inside the bore throat
   gantrySpin = new THREE.Group(); gantrySpin.position.set(0, ISO_Y, FRONT_Z - 9);
-  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(11, 6, 6), std(0xdfe3e7, 0.4, 0.4));
-  tubeBlk.position.set(0, BORE_R - 1, 0); gantrySpin.add(tubeBlk);
+  const tubeBlk = new THREE.Mesh(new THREE.BoxGeometry(10, 5, 6), std(0xdfe3e7, 0.4, 0.4));
+  tubeBlk.position.set(0, BORE_R - 7, 0); gantrySpin.add(tubeBlk);
   const foc = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 3.4), new THREE.MeshStandardMaterial({ color: 0xffd27a, emissive: 0xffb733, emissiveIntensity: 0.8 }));
-  foc.position.set(0, BORE_R - 4.5, 0); gantrySpin.add(foc);
-  const detArc = new THREE.Mesh(new THREE.TorusGeometry(BORE_R - 1, 3, 8, 44, Math.PI * 0.85), std(0x2b3742, 0.4, 0.5));
+  foc.position.set(0, BORE_R - 10.5, 0); gantrySpin.add(foc);
+  const detArc = new THREE.Mesh(new THREE.TorusGeometry(BORE_R - 7, 2.4, 8, 44, Math.PI * 0.85), std(0x2b3742, 0.4, 0.5));
   detArc.rotation.z = -Math.PI / 2 - Math.PI * 0.425; gantrySpin.add(detArc);
   gantrySpin.visible = false; gantry.add(gantrySpin);
 
-  // ---- exterior housing shell (Orbit PoV only) ----
+  // ---- exterior housing (Orbit PoV only) — proportioned to the GE Optima reference photo:
+  // machine ≈240 wide × 206 tall for the 70-unit bore; white cover with a blue-grey frame border ----
   gantryShell = new THREE.Group(); gantry.add(gantryShell);
-  const halfW = 92, topY = ISO_Y + 82, botY = FLOOR_Y + (look.plinth || 0), shoulderY = ISO_Y + 22, topR = 54, holeR = BORE_R + 2, flare = look.v === 'canon' ? 18 : 6;
-  const px = BORE_R + 22, py = ISO_Y + 6, pw = 21, ph = 25;        // control-panel recess (both sides), sized to the reference
-  const tdY = ISO_Y + BORE_R + 18, tdW = 25, tdH = 16;             // top-display module (protrudes; not a recess)
-  // fully-rounded cover silhouette — every corner is an arc; the side panels are REAL cut-outs so
-  // they sit recessed & flush. The top display is a raised module (built after the cover).
-  const shape = new THREE.Shape();
-  shape.moveTo(-(halfW + flare) + 12, botY);
-  shape.quadraticCurveTo(-(halfW + flare), botY, -(halfW + flare), botY + 14);
-  shape.lineTo(-halfW, shoulderY);
-  shape.quadraticCurveTo(-halfW, topY, -halfW + topR, topY);
-  shape.lineTo(halfW - topR, topY);
-  shape.quadraticCurveTo(halfW, topY, halfW, shoulderY);
-  shape.lineTo(halfW + flare, botY + 14);
-  shape.quadraticCurveTo(halfW + flare, botY, halfW + flare - 12, botY);
-  shape.lineTo(-(halfW + flare) + 12, botY);
-  const bore = new THREE.Path(); bore.absarc(0, ISO_Y, holeR, 0, Math.PI * 2, true); shape.holes.push(bore);
-  const coverGeo = new THREE.ExtrudeGeometry(shape, { depth: GANT_DEPTH, bevelEnabled: true, bevelThickness: 3, bevelSize: 2.4, bevelSegments: 9, curveSegments: 170 });
-  coverGeo.computeVertexNormals();
-  const cover = new THREE.Mesh(coverGeo, std(look.cover, 0.05, 0.42));
-  cover.position.z = FRONT_Z - GANT_DEPTH; gantryShell.add(cover);
-  // ---- bore: a clean WHITE opening (matches the reference — no grey collar or dark tunnel) ----
-  const linerMat = std(look.boreLiner, 0.03, 0.6); linerMat.side = THREE.DoubleSide;
-  const liner = new THREE.Mesh(new THREE.CylinderGeometry(holeR - 0.3, holeR - 0.3, GANT_DEPTH + 2, 220, 1, true), linerMat);
-  liner.rotation.x = Math.PI / 2; liner.position.set(0, ISO_Y, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(liner);
-  const boreBack = new THREE.Mesh(new THREE.CircleGeometry(holeR, 200), std(look.boreLiner, 0.05, 0.7));
-  boreBack.position.set(0, ISO_Y, FRONT_Z - GANT_DEPTH - 1); gantryShell.add(boreBack);   // white back cap (no see-through)
-  // GE blue-grey top eyebrow trim + shoulder accents
-  if (look.trim) {
-    const eyebrow = new THREE.Mesh(new THREE.TorusGeometry(halfW * 0.62, 3.4, 16, 120, Math.PI * 0.7), std(look.trim, 0.15, 0.45));
-    eyebrow.position.set(0, ISO_Y + 30, FRONT_Z - 1); eyebrow.rotation.z = (Math.PI - Math.PI * 0.7) / 2; eyebrow.scale.set(1, 0.62, 1); gantryShell.add(eyebrow);
-    [-1, 1].forEach(s => {
-      const acc = new THREE.Mesh(roundedBoxGeo(THREE, 12, 62, GANT_DEPTH - 1, 6), std(look.trim, 0.12, 0.45));
-      acc.position.set(s * (halfW - 1), ISO_Y + 18, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(acc);
-    });
-  }
-  // surface-mounted control panels + small patient-indicator pills (no cover cut-outs → no artifacts)
-  [-1, 1].forEach(s => {
-    const panel = buildPanel(THREE, look, pw, ph);
-    panel.position.set(s * px, py, FRONT_Z); gantryShell.add(panel);
-    const pill = new THREE.Mesh(roundedBoxGeo(THREE, 7, 4, 2, 1.8), std(look.cover, 0.05, 0.5));
-    pill.position.set(s * (BORE_R + 3), ISO_Y + BORE_R + 3, FRONT_Z + 0.6); gantryShell.add(pill);
-    const picon = new THREE.Mesh(new THREE.CircleGeometry(1.1, 20), new THREE.MeshStandardMaterial({ color: 0xe08aa0, emissive: 0xe08aa0, emissiveIntensity: 0.5, roughness: 0.4 }));
-    picon.position.set(s * (BORE_R + 3), ISO_Y + BORE_R + 3, FRONT_Z + 1.7); gantryShell.add(picon);
-  });
-  // top-centre console module — a raised housing that STICKS OUT of the cover (like the reference)
-  const topTex = makeTopTex(THREE, look);
-  const topHouse = new THREE.Mesh(roundedBoxGeo(THREE, tdW, tdH, 6, 3), std(look.recess, 0.12, 0.5));
-  topHouse.position.set(0, tdY, FRONT_Z + 2.2); gantryShell.add(topHouse);
-  const topScr = new THREE.Mesh(new THREE.PlaneGeometry(tdW - 5, tdH - 6), new THREE.MeshStandardMaterial({ map: topTex, emissive: 0xffffff, emissiveMap: topTex, emissiveIntensity: 1.0, roughness: 0.28 }));
-  topScr.position.set(0, tdY + 1, FRONT_Z + 5.4); gantryShell.add(topScr);
-  // "Optima" / "GE" badging (matches the reference placement)
-  const badge = (txt, w, h, x, y) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: makeTextTex(THREE, txt), transparent: true }));
-    m.position.set(x, y, FRONT_Z + 0.4); gantryShell.add(m);
+  const BEV = 3, FACE_Z = FRONT_Z + BEV;                       // extrude front bevel → the TRUE front-face z
+  const halfW = 114, topY = ISO_Y + 100, shoulderY = ISO_Y + 30, topR = 62, holeR = BORE_R + 3;
+  const flare = look.v === 'canon' ? 16 : 6, botY = FLOOR_Y + (look.plinth || 0);
+  const silhouette = (grow) => {                                // rounded-arch outline, offset outward by `grow`
+    const s = new THREE.Shape();
+    const hw = halfW + grow, hf = halfW + flare + grow, t = topY + grow, b = botY - grow, tr = topR;
+    s.moveTo(-hf + 12, b);
+    s.quadraticCurveTo(-hf, b, -hf, b + 14);
+    s.lineTo(-hw, shoulderY);
+    s.quadraticCurveTo(-hw, t, -hw + tr, t);
+    s.lineTo(hw - tr, t);
+    s.quadraticCurveTo(hw, t, hw, shoulderY);
+    s.lineTo(hf, b + 14);
+    s.quadraticCurveTo(hf, b, hf - 12, b);
+    s.lineTo(-hf + 12, b);
+    return s;
   };
-  badge(look.model, 26, 9, -halfW + 40, ISO_Y + 38);
-  badge(look.brand, 15, 9, halfW - 30, ISO_Y + 38);
-  // base plinth (GE dark base) — rounded
+  const mkBoreHole = (sh) => { const h = new THREE.Path(); h.absarc(0, ISO_Y, holeR, 0, Math.PI * 2, true); sh.holes.push(h); };
+  // blue-grey FRAME shell — sits behind the white cover and peeks out around the whole outline (ref)
+  const frameShape = silhouette(4); mkBoreHole(frameShape);
+  const frameGeo = new THREE.ExtrudeGeometry(frameShape, { depth: GANT_DEPTH, bevelEnabled: true, bevelThickness: BEV, bevelSize: 2.4, bevelSegments: 7, curveSegments: 150 });
+  frameGeo.computeVertexNormals();
+  const frameShell = new THREE.Mesh(frameGeo, std(look.trim, 0.08, 0.5));
+  frameShell.position.z = FRONT_Z - GANT_DEPTH - 5; gantryShell.add(frameShell);
+  // white front cover
+  const shape = silhouette(0); mkBoreHole(shape);
+  const coverGeo = new THREE.ExtrudeGeometry(shape, { depth: GANT_DEPTH, bevelEnabled: true, bevelThickness: BEV, bevelSize: 2.4, bevelSegments: 9, curveSegments: 170 });
+  coverGeo.computeVertexNormals();
+  const cover = new THREE.Mesh(coverGeo, std(look.cover, 0.04, 0.45));
+  cover.position.z = FRONT_Z - GANT_DEPTH; gantryShell.add(cover);
+  // the big WHITE DONUT moulding around the bore — ONE smooth lathe: outer seam → forward bulge →
+  // bore throat → back flare that seals the cover hole from behind. The bore itself stays OPEN
+  // (you see the couch through it): no grey collar, no cap, and no see-through gaps at any angle.
+  const DON_R = 76;
+  const prof = new THREE.SplineCurve([
+    new THREE.Vector2(DON_R + 2, 1.5), new THREE.Vector2(DON_R - 6, -3.2), new THREE.Vector2(58, -6.8),
+    new THREE.Vector2(46, -5.4), new THREE.Vector2(39.5, -1.2), new THREE.Vector2(BORE_R + 0.6, 5),
+    new THREE.Vector2(BORE_R, 14), new THREE.Vector2(BORE_R, GANT_DEPTH - 10), new THREE.Vector2(holeR + 1.5, GANT_DEPTH - 5),
+  ]).getPoints(72);
+  const donGeo = new THREE.LatheGeometry(prof, 240); donGeo.computeVertexNormals();
+  const donMat = std(look.cover, 0.04, 0.5); donMat.side = THREE.DoubleSide;
+  const donut = new THREE.Mesh(donGeo, donMat);
+  donut.rotation.x = -Math.PI / 2;                              // profile +y (deeper) → world −z
+  donut.position.set(0, ISO_Y, FACE_Z - 1); gantryShell.add(donut);
+  // small grey tab at the top of the bore (ref)
+  const tab = new THREE.Mesh(roundedBoxGeo(THREE, 16, 4, 3, 2), std(look.trim, 0.12, 0.45));
+  tab.position.set(0, ISO_Y + BORE_R + 6, FACE_Z + 1.6); gantryShell.add(tab);
+  // top-centre console module (blue-grey housing + UI screen + mini readout) — proud of the cover,
+  // flush with the top edge, its lower half riding over the donut arc exactly like the reference
+  const modW = 42, modH = 52, modY = topY - modH / 2 - 1;
+  const mod = new THREE.Mesh(roundedBoxGeo(THREE, modW, modH, 12, 6), std(look.recess, 0.1, 0.5));
+  mod.position.set(0, modY, FACE_Z + 0.5); gantryShell.add(mod);
+  const uiTex = look.v === 'ge' ? makeGEUITex(THREE) : makeTopTex(THREE, look);
+  const scrBez = new THREE.Mesh(roundedBoxGeo(THREE, 30, 24, 2.4, 2), std(0x2c353f, 0.2, 0.4));
+  scrBez.position.set(0, modY + 8, FACE_Z + 6.2); gantryShell.add(scrBez);
+  const scr = new THREE.Mesh(new THREE.PlaneGeometry(27, 21), new THREE.MeshStandardMaterial({ map: uiTex, emissive: 0xffffff, emissiveMap: uiTex, emissiveIntensity: 0.9, roughness: 0.3 }));
+  scr.position.set(0, modY + 8, FACE_Z + 7.5); gantryShell.add(scr);
+  const miniTex = makeMiniLedTex(THREE);
+  const mini = new THREE.Mesh(new THREE.PlaneGeometry(12, 3.2), new THREE.MeshStandardMaterial({ map: miniTex, emissive: 0xffffff, emissiveMap: miniTex, emissiveIntensity: 0.9, roughness: 0.3 }));
+  mini.position.set(0, modY - 10, FACE_Z + 6.8); gantryShell.add(mini);
+  const slot = new THREE.Mesh(roundedBoxGeo(THREE, 14, 1.2, 1, 0.5), std(0x5a6672, 0.2, 0.5));
+  slot.position.set(0, modY - 15, FACE_Z + 6.6); gantryShell.add(slot);
+  // side control panels + patient-indicator pills — mounted ON the true front face (never buried)
+  [-1, 1].forEach(s => {
+    const panel = buildPanel(THREE, look);
+    panel.position.set(s * 91, ISO_Y + 38, FACE_Z + 0.2); panel.rotation.z = -s * 0.10; gantryShell.add(panel);
+    const pill = new THREE.Mesh(roundedBoxGeo(THREE, 8, 4.5, 2, 2), std(0xffffff, 0.03, 0.5));
+    pill.position.set(s * 70, ISO_Y + 58, FACE_Z + 0.8); gantryShell.add(pill);
+    const picon = new THREE.Mesh(new THREE.CircleGeometry(1.2, 20), new THREE.MeshStandardMaterial({ color: 0xd9838f, emissive: 0xd9838f, emissiveIntensity: 0.4, roughness: 0.4 }));
+    picon.position.set(s * 70, ISO_Y + 58, FACE_Z + 2); gantryShell.add(picon);
+  });
+  // badging: "Optima" wordmark (left) + GE roundel (right); Canon shows its wordmarks instead
+  const badge = (tex, w, h, x, y) => {
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, transparent: true }));
+    m.position.set(x, y, FACE_Z + 0.3); gantryShell.add(m);
+  };
+  badge(makeTextTex(THREE, look.model), 28, 10, -72, ISO_Y + 72);
+  if (look.v === 'ge') badge(makeGELogoTex(THREE), 10, 10, 70, ISO_Y + 72);
+  else badge(makeTextTex(THREE, look.brand), 20, 10, 70, ISO_Y + 72);
+  // dark slate base plinth (full width, slightly stepped — ref)
   if (look.plinth) {
-    const p1 = new THREE.Mesh(roundedBoxGeo(THREE, (halfW + flare) * 2 + 6, look.plinth + 2, GANT_DEPTH + 8, 5), std(look.baseTop, 0.18, 0.6));
-    p1.position.set(0, FLOOR_Y + look.plinth / 2, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(p1);
-    const p2 = new THREE.Mesh(roundedBoxGeo(THREE, (halfW + flare) * 2 - 8, 6, GANT_DEPTH + 2, 3), std(look.baseBot, 0.3, 0.5));
-    p2.position.set(0, FLOOR_Y + 3, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(p2);
+    const p1 = new THREE.Mesh(roundedBoxGeo(THREE, (halfW + flare) * 2 + 18, 18, GANT_DEPTH + 12, 4), std(look.baseBot, 0.2, 0.55));
+    p1.position.set(0, FLOOR_Y + 8, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(p1);
+    const p2 = new THREE.Mesh(roundedBoxGeo(THREE, (halfW + flare) * 2 + 10, 18, GANT_DEPTH + 6, 4), std(look.baseTop, 0.18, 0.6));
+    p2.position.set(0, FLOOR_Y + 24, FRONT_Z - GANT_DEPTH / 2); gantryShell.add(p2);
   }
 }
+
 // A rounded box (no sharp corners) via an extruded rounded-rect with a matching front/back bevel,
 // centred on the origin with total depth d.
 function roundedBoxGeo(THREE, w, h, d, r) {
@@ -336,27 +361,33 @@ function pushRRHole(THREE, shape, cx, cy, w, h, r) {
   const pts = s.getPoints(20).map(p => new THREE.Vector2(p.x + cx, p.y + cy)).reverse();
   shape.holes.push(new THREE.Path(pts));
 }
-// One control panel — a shallow SURFACE-MOUNTED tray (no cover cut-out, so no see-through / stray
-// faces). A light rounded tray, a slightly-lower inset floor, small FLAT round keys and indicator
-// lights. GE = a ring of small blue keys + a lights row; Canon = a green LED readout + key rows.
-function buildPanel(THREE, look, pw, ph) {
+// One control panel — matches the reference: a white rounded tray on a grey outline plate, two
+// small green readouts along the top, and a ring of small flat BLUE keys below (GE); Canon keeps
+// a green readout + key rows. Surface-mounted on the true front face — nothing buried or cut out.
+function buildPanel(THREE, look) {
   const S = (c, m, r) => stdMat(THREE, c, m, r);
   const gp = new THREE.Group();
-  const tray = new THREE.Mesh(roundedBoxGeo(THREE, pw, ph, 2.8, 4.5), S(look.cover, 0.05, 0.5));
-  gp.add(tray);                                                    // back embeds in the cover, front ~+1.4
-  const floor = new THREE.Mesh(roundedBoxGeo(THREE, pw - 4, ph - 4, 2.2, 3), S(look.panelFloor, 0.05, 0.6));
-  floor.position.z = -0.2; gp.add(floor);                         // inset floor, front ~+0.9 (shallow recess)
-  const btnMat = new THREE.MeshStandardMaterial({ color: look.btn, metalness: 0.15, roughness: 0.35 });
-  const indMat = (c) => new THREE.MeshStandardMaterial({ color: c, emissive: c, emissiveIntensity: 0.7, roughness: 0.4 });
-  const key = (x, y, r) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.55, 24), btnMat); c.rotation.x = Math.PI / 2; c.position.set(x, y, 1.15); gp.add(c); };
-  const light = (x, y, c, r) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.4, 16), indMat(c)); m.rotation.x = Math.PI / 2; m.position.set(x, y, 1.05); gp.add(m); };
+  const back = new THREE.Mesh(roundedBoxGeo(THREE, 25, 29, 2, 7), S(look.shoulder, 0.08, 0.5));
+  gp.add(back);                                                   // grey outline plate
+  const face = new THREE.Mesh(roundedBoxGeo(THREE, 23, 27, 2.2, 6), S(look.cover, 0.04, 0.5));
+  face.position.z = 0.6; gp.add(face);                            // white panel face, front ≈ +1.7
+  const disp = (x, w) => {                                        // small green readout in a dark bezel
+    const bez = new THREE.Mesh(roundedBoxGeo(THREE, w, 5.4, 1.4, 1), S(0x252b31, 0.2, 0.45));
+    bez.position.set(x, 8.4, 1.9); gp.add(bez);
+    const t = makeMiniLedTex(THREE);
+    const scrn = new THREE.Mesh(new THREE.PlaneGeometry(w - 1.2, 4.2), new THREE.MeshStandardMaterial({ map: t, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.9, roughness: 0.3 }));
+    scrn.position.set(x, 8.4, 2.7); gp.add(scrn);
+  };
+  const btnMat = new THREE.MeshStandardMaterial({ color: look.btn, metalness: 0.1, roughness: 0.35 });
+  const key = (x, y, r) => { const c = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.8, 24), btnMat); c.rotation.x = Math.PI / 2; c.position.set(x, y, 2.1); gp.add(c); };
   if (look.v === 'ge') {
-    ['#5fe08a', '#5fe08a', '#8fd0ff'].forEach((c, i) => light(-5 + i * 2.4, ph / 2 - 3.6, c, 0.55));   // indicator lights row
-    const R = 4.7; for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 - Math.PI / 2; key(Math.cos(a) * R, -3.5 + Math.sin(a) * R, 0.72); } key(0, -3.5, 1.0);   // circular keypad
+    disp(-5.6, 6.5); disp(3.8, 10.5);                             // two green readouts along the top
+    const R = 6.4; for (let i = 0; i < 9; i++) { const a = i / 9 * Math.PI * 2 - Math.PI / 2; key(Math.cos(a) * R, -4.5 + Math.sin(a) * R, 1.15); }
+    key(0, -4.5, 1.7);                                            // blue key ring + centre key (ref keypad)
+    key(9.2, -1.5, 0.8); key(9.2, -7.5, 0.8);                     // two small side keys
   } else {
-    const led = buildScreen(THREE, pw - 6, 5.5, makeLEDTex(THREE, look), S(0x10161c, 0.3, 0.5), 1.0);
-    led.position.set(0, ph / 2 - 4.5, 0.9); gp.add(led);
-    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) key(-5.4 + c * 3.6, -1.5 - r * 3.4, 0.85);
+    disp(0, 16);
+    for (let r = 0; r < 3; r++) for (let c = 0; c < 4; c++) key(-5.4 + c * 3.6, -1 - r * 3.6, 1.0);
   }
   return gp;
 }
@@ -365,6 +396,38 @@ function makeTextTex(THREE, txt) {
   const W = 256, H = 96, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
   g.clearRect(0, 0, W, H); g.fillStyle = '#6b7788'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.font = 'italic bold 60px Arial'; g.fillText(txt, W / 2, H / 2 + 3);
+  return canvasTex(THREE, cv);
+}
+// GE-style console UI for the top module screen (numbers row / patient line / soft keys — ref).
+function makeGEUITex(THREE) {
+  const W = 256, H = 200, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  g.fillStyle = '#24313e'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#31414f'; g.fillRect(0, 0, W, 26);
+  g.font = 'bold 30px Arial'; g.textAlign = 'left';
+  g.fillStyle = '#63e08c'; g.fillText('+', 14, 64); g.fillText('50.0', 40, 64);
+  g.fillStyle = '#ffb347'; g.fillText('240.0', 40, 100);
+  g.fillStyle = '#ffffff'; g.font = 'bold 24px Arial'; g.textAlign = 'right'; g.fillText('0.0°', W - 14, 64);
+  g.textAlign = 'center'; g.font = '18px Arial'; g.fillStyle = '#cfe0ee'; g.fillText('John Smith', W / 2, 132);
+  ['OM', 'XY', 'IC'].forEach((t, i) => {
+    g.fillStyle = '#8fa3b8'; cvRoundRect(g, 30 + i * 70, 150, 56, 34, 6); g.fill();
+    g.fillStyle = '#1d2731'; g.font = 'bold 20px Arial'; g.fillText(t, 58 + i * 70, 173);
+  });
+  return canvasTex(THREE, cv);
+}
+// Tiny green LED strip (panel mini-readouts + the module's secondary readout).
+function makeMiniLedTex(THREE) {
+  const W = 96, H = 40, cv = document.createElement('canvas'); cv.width = W; cv.height = H; const g = cv.getContext('2d');
+  g.fillStyle = '#0c1810'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#5fe08a'; g.font = 'bold 24px "Courier New", monospace'; g.textAlign = 'right'; g.fillText('0.0', W - 10, 29);
+  g.fillRect(8, 12, 10, 16); g.fillStyle = '#0c1810'; g.fillRect(11, 16, 4, 8);   // tiny icon block
+  return canvasTex(THREE, cv);
+}
+// GE roundel badge (circle + monogram) on a transparent plane.
+function makeGELogoTex(THREE) {
+  const Wc = 128, cv = document.createElement('canvas'); cv.width = cv.height = Wc; const g = cv.getContext('2d');
+  g.clearRect(0, 0, Wc, Wc); g.strokeStyle = '#5b7ca6'; g.fillStyle = '#5b7ca6';
+  g.lineWidth = 7; g.beginPath(); g.arc(Wc / 2, Wc / 2, 52, 0, Math.PI * 2); g.stroke();
+  g.font = 'italic bold 52px Georgia'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('GE', Wc / 2, Wc / 2 + 4);
   return canvasTex(THREE, cv);
 }
 // A recessed emissive screen (real content) inside a rounded 3D bezel.
@@ -398,50 +461,49 @@ function makeTopTex(THREE, look) {
 
 function buildCouch(THREE, look) {
   const std = (c, m, r) => stdMat(THREE, c, m, r);
-  // ---- pallet (moves) : white plate, top surface at LOCAL y=0 (patient posterior rests here) ----
-  const palLen = 150, palW = 34;
+  // ---- pallet (moves): white plate, top surface at LOCAL y=0 (patient posterior rests here) ----
+  const palLen = 150, palW = 44;
   const ps = new THREE.Shape(); roundedRectShape(ps, palW, 3.4, 1.6);
   const palGeo = new THREE.ExtrudeGeometry(ps, { depth: palLen - 3, bevelEnabled: true, bevelThickness: 1.4, bevelSize: 1.4, bevelSegments: 9, curveSegments: 40 }); palGeo.computeVertexNormals();
-  const pallet = new THREE.Mesh(palGeo, std(look.couchTop, 0.12, 0.45));
-  pallet.position.set(0, -1.7, -50); couch.add(pallet);                 // rounded ends + edges; top ≈ y0, cantilevers into the bore
-  // subtle recessed centre channel (the patient-tray groove)
-  const chan = new THREE.Mesh(roundedBoxGeo(THREE, palW - 12, 0.9, palLen - 12, 2), std(0xdfe3e6, 0.08, 0.6));
+  const pallet = new THREE.Mesh(palGeo, std(look.couchTop, 0.1, 0.45));
+  pallet.position.set(0, -1.7, -50); couch.add(pallet);                 // rounded ends + edges; cantilevers into the bore
+  const chan = new THREE.Mesh(roundedBoxGeo(THREE, palW - 14, 0.9, palLen - 12, 2), std(0xe3e7ea, 0.06, 0.6));
   chan.position.set(0, -0.35, 23); couch.add(chan);
-  // head grip handle at the foot (+z) end — smooth tube arch
-  const grip = new THREE.Mesh(new THREE.TorusGeometry(9, 1.5, 32, 90, Math.PI), std(0xbfc6cc, 0.55, 0.32));
-  grip.position.set(0, 0, 96); couch.add(grip);
   couch.visible = false;
 
-  // ---- couch base / pedestal (static, Orbit PoV only) : positioned in ctSyncScene ----
-  const top = 2, foot = FLOOR_Y;
+  // ---- static base (Orbit PoV only, positioned in ctSyncScene): the reference's foot-end head
+  // module (white wing the pallet slides through + grey handle plate + chrome arch + GE roundel),
+  // on a pedestal column and a dark floor base ----
+  const foot = FLOOR_Y;
+  const wing = new THREE.Mesh(roundedBoxGeo(THREE, 62, 18, 16, 6), std(look.couchTop, 0.05, 0.5));
+  wing.position.set(0, 1, 8); couchBase.add(wing);
+  const plate = new THREE.Mesh(roundedBoxGeo(THREE, 44, 11, 13, 4), std(look.trim, 0.12, 0.45));
+  plate.position.set(0, 12, 7); couchBase.add(plate);
+  const handle = new THREE.Mesh(new THREE.TorusGeometry(14, 1.8, 24, 72, Math.PI), std(0xcdd4da, 0.55, 0.28));
+  handle.position.set(0, 16, 7); couchBase.add(handle);
+  if (look.v === 'ge') {
+    const lg = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshBasicMaterial({ map: makeGELogoTex(THREE), transparent: true }));
+    lg.position.set(0, 12, 14); couchBase.add(lg);
+  }
   if (look.pedStyle === 'bellows') {
-    // Canon / Toshiba: an accordion (bellows) column — a smooth core with rounded torus ribs + round foot
-    const colTop = top - 3, colBot = foot + 10, colH = colTop - colBot;
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, colH, 40), std(look.pedLight, 0.15, 0.55));
+    // Canon / Toshiba: accordion bellows column + round foot
+    const colTop = -8, colBot = foot + 14, colH = colTop - colBot, n = 10;
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, colH, 48), std(look.pedLight, 0.12, 0.55));
     core.position.set(0, (colTop + colBot) / 2, 0); couchBase.add(core);
-    const n = 9;
     for (let i = 0; i < n; i++) {
-      const yy = colBot + (i + 0.5) * colH / n;
-      const rib = new THREE.Mesh(new THREE.TorusGeometry(9.4, 2.4, 32, 72), std(look.pedLight, 0.12, 0.6));
-      rib.rotation.x = Math.PI / 2; rib.position.set(0, yy, 0); couchBase.add(rib);
+      const rib = new THREE.Mesh(new THREE.TorusGeometry(10.6, 2.6, 32, 72), std(look.pedLight, 0.1, 0.6));
+      rib.rotation.x = Math.PI / 2; rib.position.set(0, colBot + (i + 0.5) * colH / n, 0); couchBase.add(rib);
     }
-    const cap = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 3, 40), std(look.pedLight, 0.15, 0.5));
-    cap.position.set(0, colTop + 1, 0); couchBase.add(cap);
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(15, 18, 6, 48), std(look.pedFoot, 0.2, 0.55));
-    base.position.set(0, foot + 5, 0); couchBase.add(base);
-    const baseCap = new THREE.Mesh(new THREE.TorusGeometry(16.5, 2, 28, 72), std(look.pedFoot, 0.2, 0.5));
-    baseCap.rotation.x = Math.PI / 2; baseCap.position.set(0, foot + 8, 0); couchBase.add(baseCap);
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(17, 20, 8, 56), std(look.pedFoot, 0.18, 0.55));
+    base.position.set(0, foot + 6, 0); couchBase.add(base);
   } else {
-    // GE: a smooth tapered column on a rounded two-tone base
-    const colBot = foot + 17;
-    const col = new THREE.Mesh(new THREE.CylinderGeometry(9, 13, top - colBot, 44), std(look.pedLight, 0.18, 0.5));
-    col.position.set(0, (top + colBot) / 2, 0); couchBase.add(col);
-    const collar = new THREE.Mesh(new THREE.CylinderGeometry(13.5, 13.5, 3, 44), std(look.pedLight, 0.18, 0.5));
-    collar.position.set(0, colBot + 1, 0); couchBase.add(collar);
-    const bTop = new THREE.Mesh(roundedBoxGeo(THREE, 42, 12, 34, 5), std(look.pedBase, 0.18, 0.55));
-    bTop.position.set(0, foot + 13, 0); couchBase.add(bTop);
-    const bBot = new THREE.Mesh(roundedBoxGeo(THREE, 50, 9, 44, 4), std(look.pedFoot, 0.3, 0.5));
-    bBot.position.set(0, foot + 5, 0); couchBase.add(bBot);
+    // GE: white pedestal box on a dark slate base with a light front cap (ref)
+    const col = new THREE.Mesh(roundedBoxGeo(THREE, 30, 70, 26, 5), std(look.pedLight, 0.08, 0.5));
+    col.position.set(0, -42, 4); couchBase.add(col);
+    const base = new THREE.Mesh(roundedBoxGeo(THREE, 46, 18, 42, 6), std(look.pedFoot, 0.2, 0.5));
+    base.position.set(0, foot + 9, 4); couchBase.add(base);
+    const cap = new THREE.Mesh(roundedBoxGeo(THREE, 26, 13, 5, 4), std(0x9aa4ad, 0.15, 0.5));
+    cap.position.set(0, foot + 10, 26); couchBase.add(cap);
   }
   couchBase.visible = false;
 }
@@ -514,6 +576,7 @@ export function ctSyncScene() {
     // Orbit PoV — the AP / Lat planning views sit inside the bore and keep the bare framing ring.
     const orbit = S.ct.pov === 'orbit';
     if (gantryShell) gantryShell.visible = orbit;
+    if (boreFrameRing) boreFrameRing.visible = !orbit;   // bare ring only where the housing is hidden
     if (couchBase) { couchBase.visible = orbit; couchBase.position.set(S.ct.patient.x, 0, 82); }
     laserTop.position.set(0, ISO_Y + BORE_R + 8, 0); laserTop.target.position.set(0, ISO_Y, 0);
     laserTop.target.updateMatrixWorld();
