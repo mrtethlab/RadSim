@@ -2956,7 +2956,7 @@ function winRecon(wi) { const w = ctx.S.ct.mpr.wins[wi]; return (w && w.recon) |
 // Scroll axis + range (mm) for a recon's plane: which cross-reference coord its slices step along.
 function winAxis(scan, recon) {
   const g = mprGeom(scan);
-  if (recon.pane === 'oblique') return { axis: 'n', lo: -g.fov / 2, hi: g.fov / 2, step: Math.max(recon.interval || scan.dz, 0.5) };   // scroll along the plane normal
+  if (recon.pane === 'oblique') { const r = (recon.ob && recon.ob.range) || g.fov; return { axis: 'n', lo: -r / 2, hi: r / 2, step: Math.max(recon.interval || scan.dz, 0.5) }; }   // scroll along the plane normal, bounded by the box width
   if (recon.pane === 'coronal') return { axis: 'y', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || scan.dz, 0.5) };
   if (recon.pane === 'sagittal') return { axis: 'x', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || scan.dz, 0.5) };
   return { axis: 'z', lo: g.z0, hi: g.z0 + g.zExt, step: Math.max(recon.interval || scan.dz, scan.dz) };   // axial
@@ -2968,7 +2968,7 @@ function winCur(scan, recon, pos) {
   cur[winAxis(scan, recon).axis] = pos; return cur;
 }
 function winPosLabel(recon, pos) {
-  if (recon.pane === 'oblique') return 'OBL ' + (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
+  if (recon.pane === 'oblique') return (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
   if (recon.pane === 'coronal') return 'A/P ' + (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
   if (recon.pane === 'sagittal') return 'R/L ' + (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
   return fmtTablePos(pos) + ' mm';
@@ -3369,18 +3369,18 @@ function commitReconPlan() {
     rec = Object.assign(base, { plane: paneToPlaneName(pl.srcPlane), pane: pl.srcPlane,
       dfov: clampV(2 * Math.max(cr.hw, cr.hh), 40, scan.fovMM), offRL: Math.round(ctr.x), offAP: Math.round(ctr.y) });
     pos = pl.srcPos;
-  } else if (pl.plane === 'oblique') {                            // arbitrary oblique reformat
+  } else {                                                        // line mode (orthogonal OR oblique) — one path
+    // The box LENGTH → each slice's in-plane extent (fov, along the line); the box WIDTH → the scroll
+    // range (how far the red line sweeps along the plane normal). vExt (out-of-view depth) stays full.
+    const info = orthoPlaneFromAng(pl.srcPlane, pl.ang);
     const ob = localizerBasis(scan, pl.srcPlane, pl.ang, pl.cu, pl.cv, pl.srcPos);
-    ob.fov = clampV(pl.len, 40, scan.fovMM * 1.6); ob.vExt = clampV(pl.wid, 20, (pl.srcPlane === 'axial' ? scan.fovMM : g.zExt) * 1.2);   // box length × width → recon extents
-    rec = Object.assign(base, { plane: 'oblique', pane: 'oblique', ob, obliqueLabel: 'OBLIQUE' });
+    ob.fov = clampV(pl.len, 40, scan.fovMM * 1.6);
+    ob.range = clampV(pl.wid, 10, (pl.srcPlane === 'axial' ? scan.fovMM : g.zExt) * 1.2);
+    const aligned = info.aligned, pane = aligned ? RP_PLANE_PANE[info.plane] : 'oblique';
+    rec = Object.assign(base, { plane: aligned ? info.plane : 'oblique', pane: 'oblique', ob, obliqueLabel: aligned ? PLANE_LABEL[pane] : 'OBLIQUE' });
     pos = 0;
-  } else {                                                        // clean orthogonal plane at the box centre
-    const info = orthoPlaneFromAng(pl.srcPlane, pl.ang), ctr = inviewToPhysical(scan, pl.srcPlane, pl.srcPos, pl.cu, pl.cv);
-    const pane = RP_PLANE_PANE[info.plane] || 'axial';
-    rec = Object.assign(base, { plane: info.plane, pane });
-    pos = info.nax === 'z' ? ctr.z : info.nax === 'y' ? ctr.y : ctr.x;
   }
-  rec.name = (rec.pane === 'oblique' ? 'Oblique' : rpPlaneLabel(rec.plane)) + ' · ' + fmtNum(thk) + ' mm · ' + rpAlgoLabel(rec.algo) + (rec.mar ? ' · MAR' : '');
+  rec.name = (rec.plane === 'oblique' ? 'Oblique' : rpPlaneLabel(rec.plane)) + ' · ' + fmtNum(thk) + ' mm · ' + rpAlgoLabel(rec.algo) + (rec.mar ? ' · MAR' : '');
   precomputeRecon(scan, rec);
   const a = winAxis(scan, rec);
   m.wins[pl.target] = { recon: rec, pos: clampV(pos, a.lo, a.hi), saved: false };
@@ -3405,21 +3405,22 @@ function drawPlannerOverlay(g, scan, map) {
     g.fillStyle = '#35c6d6'; [c1, c2, c3, c4].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
     const cc = disp(cr.cu, cr.cv); symCircleX(g, cc[0], cc[1]);
   } else {
-    const oblique = pl.plane === 'oblique';
-    // Oblique: a resizable rectangle whose length × width set the recon's in-plane × depth extent.
-    // Orthogonal: a thin edge-on slab (its width just shows the slab thickness).
-    const c = Math.cos(pl.ang), s = Math.sin(pl.ang), hl = pl.len / 2, hw = oblique ? Math.max(8, pl.wid / 2) : Math.max(3, (pl.params.thk || 5) / 2);
+    // Always a teal, fully-resizable rectangle: LENGTH (along the red slice line) sets the recon's
+    // in-plane extent; WIDTH (perpendicular) sets the scroll range — scrolling sweeps the red line
+    // across the box in the double-arrow direction. End handles = length, side handles = width.
+    const c = Math.cos(pl.ang), s = Math.sin(pl.ang), hl = pl.len / 2, hw = Math.max(8, pl.wid / 2);
     const corner = (a, b) => disp(pl.cu + c * a - s * b, pl.cv + s * a + c * b);
     const p1 = corner(hl, hw), p2 = corner(hl, -hw), p3 = corner(-hl, -hw), p4 = corner(-hl, hw);
     const e1 = disp(pl.cu + c * hl, pl.cv + s * hl), e2 = disp(pl.cu - c * hl, pl.cv - s * hl);
-    g.strokeStyle = oblique ? '#ffcf7a' : '#35c6d6'; g.fillStyle = oblique ? 'rgba(255,207,122,0.12)' : 'rgba(53,198,214,0.14)'; g.lineWidth = 1.6;
+    g.strokeStyle = '#35c6d6'; g.fillStyle = 'rgba(53,198,214,0.14)'; g.lineWidth = 1.6;
     g.beginPath(); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.lineTo(p3[0], p3[1]); g.lineTo(p4[0], p4[1]); g.closePath(); g.fill(); g.stroke();
-    g.strokeStyle = '#ff4d4d'; line(g, e1[0], e1[1], e2[0], e2[1]);
-    const hc = oblique ? '#ffcf7a' : '#35c6d6';
-    g.fillStyle = hc; [e1, e2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
-    if (oblique) { const s1 = disp(pl.cu - s * hw, pl.cv + c * hw), s2 = disp(pl.cu + s * hw, pl.cv - c * hw); [s1, s2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); }); }   // width handles
-    const mid = disp(pl.cu, pl.cv);
-    symDoubleArrow(g, mid[0], mid[1], pl.ang + Math.PI / 2);                            // advance direction — always shown
+    g.strokeStyle = '#ff4d4d'; line(g, e1[0], e1[1], e2[0], e2[1]);                     // current-slice (red) line
+    g.fillStyle = '#35c6d6';
+    [e1, e2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });   // length handles
+    const s1 = disp(pl.cu - s * hw, pl.cv + c * hw), s2 = disp(pl.cu + s * hw, pl.cv - c * hw);
+    [s1, s2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });    // width handles
+    const mid = disp(pl.cu, pl.cv), ldx = e2[0] - e1[0], ldy = e2[1] - e1[1];          // arrow ⟂ the DISPLAYED line
+    symDoubleArrow(g, mid[0], mid[1], Math.atan2(ldx, -ldy));                           // scroll (advance) direction
   }
   g.restore();
 }
@@ -3451,13 +3452,12 @@ function plannerPointerDown(e, cv, wi) {
     if (Math.abs(Math.abs(dx) - cr.hw) < tol && Math.abs(Math.abs(dy) - cr.hh) < tol) mode = 'corner';
     else if (Math.abs(dx) < cr.hw && Math.abs(dy) < cr.hh) { mode = 'move'; grab = { ou: dx, ov: dy }; }
   } else {
-    const oblique = pl.plane === 'oblique';
     const c = Math.cos(pl.ang), s = Math.sin(pl.ang), du = a0.cu - pl.cu, dv = a0.cv - pl.cv;
-    const along = du * c + dv * s, perp = -du * s + dv * c, hl = pl.len / 2, hw = oblique ? pl.wid / 2 : Math.max(4, (pl.params.thk || 5) / 2);
+    const along = du * c + dv * s, perp = -du * s + dv * c, hl = pl.len / 2, hw = pl.wid / 2;
     const tol = Math.max(5, pl.len * 0.14), ptol = Math.max(6, hw * 0.3);
     if (Math.abs(along) <= hl + tol && Math.abs(perp) <= hw + ptol) {
-      if (Math.abs(along) > hl - tol) { mode = 'end'; endSign = Math.sign(along) || 1; }
-      else if (oblique && Math.abs(perp) > hw - ptol) mode = 'side';   // grab a long edge → resize width
+      if (Math.abs(along) > hl - tol) { mode = 'end'; endSign = Math.sign(along) || 1; }        // grab an end → length + rotate
+      else if (Math.abs(perp) > hw - ptol) mode = 'side';                                       // grab a long edge → width
       else { mode = 'move'; grab = { ou: du, ov: dv }; }
     } else mode = 'slide';                                         // click off the box → slide the plane along its normal
   }
