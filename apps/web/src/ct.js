@@ -121,6 +121,7 @@ export function initCT(context) {
   wireStorage();
   wireSliceViewer();
   wireRecons();
+  wireScoutZoom();
   applyMode(ctx.S.mode);        // establish initial (x-ray) state + body class
   // keep the scout panels row-locked at the shared scale when the window resizes
   window.addEventListener('resize', () => {
@@ -908,6 +909,43 @@ function layoutScouts() {
     fit.style.width = Math.round(w) + 'px'; fit.style.height = Math.round(h) + 'px';
   };
   place(ap); place(lat);
+  applyScoutXform('ap'); applyScoutXform('lat');   // keep any active zoom/pan across relayout
+}
+// ---- scout zoom + pan ----
+// The transform is applied to the .scoutfit (which holds the image AND the scan/recon boxes), so
+// they zoom/pan together; the reposition buttons live on the .scoutwrap and stay put. overflow:
+// hidden on the wrap clips the zoomed image.
+const scoutZoom = { ap: { z: 1, px: 0, py: 0 }, lat: { z: 1, px: 0, py: 0 } };
+function applyScoutXform(view) {
+  const fit = ctx.$(view === 'ap' ? 'fitAP' : 'fitLAT'); if (!fit) return;
+  const s = scoutZoom[view];
+  fit.style.transformOrigin = '0 0';
+  fit.style.transform = s.z === 1 ? '' : ('translate(' + s.px + 'px,' + s.py + 'px) scale(' + s.z + ')');
+}
+function wireScoutZoom() {
+  ['ap', 'lat'].forEach(view => {
+    const wrap = ctx.$(view === 'ap' ? 'wrapAP' : 'wrapLAT'), fit = ctx.$(view === 'ap' ? 'fitAP' : 'fitLAT');
+    if (!wrap || !fit) return;
+    wrap.addEventListener('wheel', (e) => {              // wheel = zoom, anchored at the cursor
+      e.preventDefault(); const s = scoutZoom[view], r = fit.getBoundingClientRect();
+      const lx = (e.clientX - r.left) / s.z, ly = (e.clientY - r.top) / s.z;   // fit-local point under cursor
+      const nz = clampV(s.z * (e.deltaY < 0 ? 1.18 : 1 / 1.18), 1, 6);
+      const fitLeft0 = r.left - s.px, fitTop0 = r.top - s.py;                    // untransformed top-left
+      s.px = e.clientX - fitLeft0 - lx * nz; s.py = e.clientY - fitTop0 - ly * nz; s.z = nz;
+      if (nz === 1) { s.px = 0; s.py = 0; }
+      applyScoutXform(view);
+    }, { passive: false });
+    wrap.addEventListener('pointerdown', (e) => {         // drag empty image area = pan (only when zoomed)
+      if (e.target.closest('.scanbox, .reconbox, .reposcluster, .eh')) return;   // boxes/handles/buttons keep their drag
+      const s = scoutZoom[view]; if (s.z <= 1) return;
+      e.preventDefault(); try { wrap.setPointerCapture(e.pointerId); } catch (_) {}
+      const start = { x: e.clientX, y: e.clientY, px: s.px, py: s.py };
+      const move = (ev) => { s.px = start.px + (ev.clientX - start.x); s.py = start.py + (ev.clientY - start.y); applyScoutXform(view); };
+      const up = () => { wrap.removeEventListener('pointermove', move); wrap.removeEventListener('pointerup', up); wrap.removeEventListener('pointercancel', up); };
+      wrap.addEventListener('pointermove', move); wrap.addEventListener('pointerup', up); wrap.addEventListener('pointercancel', up);
+    });
+    wrap.addEventListener('dblclick', () => { scoutZoom[view] = { z: 1, px: 0, py: 0 }; applyScoutXform(view); });   // reset
+  });
 }
 
 // keep the last scout data for later phases (scan box) to reuse the geometry/dims
