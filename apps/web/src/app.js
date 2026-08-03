@@ -478,8 +478,9 @@ const S = {
     // the viewed scan's recon list. wins[i] = { reconId, pos } (pos = scroll position along the
     // recon's slice axis, mm) or null (empty window). Independent per-window scroll — no linked
     // cross-referencing — so panes don't all re-reformat on every interaction.
-    mpr:{ scanId:null, wins:[null,null,null,null],
-          // oblique-plane state kept for the (deferred) Phase-2 planner; unused for now.
+    mpr:{ scanId:null, wins:[null,null,null,null], selw:[], plan:null,
+          // oblique-plane state kept for the linked-MPR localizer; the Phase-2 New-recon
+          // planner uses its own m.plan state (see startReconPlan).
           ob:{ view:'axial', ang:0, cu:0, cv:0, fov:60 } },
     busy:false,                // true during scan execution (controls greyed out)
   },

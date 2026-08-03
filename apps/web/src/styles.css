@@ -760,8 +760,33 @@ body.hist-off .histcanvas{display:none}
 .rw-btn:hover{border-color:var(--cyan); color:#fff}
 /* recon page bottom bar (Save recon + scan-group selector) + Phase-2 planner slot */
 .recon-bottom{flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:4px 4px 2px}
-.reconplan-live{flex:0 0 auto}
+.reconplan-live{flex:0 0 auto; display:none}
+.reconplan-live.show{display:block; background:var(--panel2); border:1px solid var(--edge2);
+  border-left:3px solid var(--cyan); border-radius:4px; padding:6px 8px; margin-top:2px}
 .reconplan-live:empty{display:none}
+.rpl-head{display:flex; align-items:center; gap:10px; margin-bottom:5px}
+.rpl-title{font-family:var(--seg); font-size:11px; letter-spacing:.6px; color:#eafcff}
+.rpl-src{font-family:var(--seg); font-size:9.5px; letter-spacing:.5px; color:var(--muted); text-transform:uppercase}
+.rpl-sym{margin-left:auto; display:flex; align-items:center; gap:6px}
+.rpl-sym svg{vertical-align:middle}
+.rpl-sym-lbl{font-family:var(--seg); font-size:10px; letter-spacing:.5px; color:#ffcf7a}
+.rpl-obl{font-family:var(--seg); font-size:10px; letter-spacing:.6px; color:#ffcf7a}
+.rpl-planes{display:flex; gap:4px; margin-bottom:5px; flex-wrap:wrap}
+.rpl-seg{font-family:var(--seg); font-size:10px; letter-spacing:.4px; padding:5px 9px; border-radius:3px; cursor:pointer;
+  background:var(--panel); border:1px solid var(--edge2); color:var(--muted)}
+.rpl-seg.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
+.rpl-fields{display:flex; gap:4px; margin-bottom:6px; flex-wrap:wrap}
+.rpl-chip{font-family:var(--disp); font-size:11px; padding:5px 8px; border-radius:3px; cursor:pointer;
+  background:#060a0d; border:1px solid var(--edge2); color:#eafcff}
+.rpl-chip:hover{border-color:var(--cyan)}
+.rpl-chip.on{background:var(--cyan-dim); border-color:var(--cyan)}
+.rpl-actions{display:flex; gap:6px}
+.rpl-create{font-family:var(--seg); font-size:10.5px; letter-spacing:.6px; padding:6px 14px; border-radius:3px; cursor:pointer;
+  background:var(--cyan-dim); border:1px solid var(--cyan); color:#eafcff}
+.rpl-create:hover{background:var(--cyan); color:#022}
+.rpl-cancel{font-family:var(--seg); font-size:10.5px; letter-spacing:.6px; padding:6px 12px; border-radius:3px; cursor:pointer;
+  background:var(--panel); border:1px solid var(--edge2); color:var(--muted)}
+.rpl-cancel:hover{border-color:#ff6b6b; color:#ffb3b3}
 /* slice-viewer: scan-group selector row at the bottom */
 .slbottom{margin-top:2px}
 

@@ -2855,6 +2855,41 @@ function paneImage(scan, pane, cur, prm) {
   if (prm.mar) applyMAR(data, w, h, scan.muWater);
   return { data, w, h };
 }
+// Reformat one slice of a WINDOW-bound reconstruction at scroll position `pos`. Dispatches on the
+// recon's pane: an orthogonal recon reformats its plane at `pos`; an oblique recon (carrying a
+// stored plane basis `recon.ob`) samples that arbitrary plane offset `pos` along its normal.
+function reconSliceImage(scan, recon, pos, prm) {
+  if (recon.pane === 'oblique' && recon.ob) return obliqueImageBasis(scan, recon.ob, pos, prm);
+  return paneImage(scan, recon.pane || 'axial', winCur(scan, recon, pos), prm);
+}
+// Sample an arbitrary oblique plane defined by basis `ob` = { u, v, n, C(centred coords), fov, vExt },
+// shifted `pos` mm along its normal. Mirrors paneImage's oblique branch but reads a per-recon basis.
+function obliqueImageBasis(scan, ob, pos, prm) {
+  const g = mprGeom(scan), N = g.N, zc = g.z0 + g.zExt / 2;
+  const fov = ob.fov, vExt = ob.vExt, pu = fov / N;
+  const w = N, h = clampV(Math.round(N * vExt / fov), 16, 512), pv = vExt / h;
+  const ns = Math.max(1, Math.round(prm.thk / pu));
+  const Cx = ob.C[0] + pos * ob.n[0], Cy = ob.C[1] + pos * ob.n[1], Cd = ob.C[2] + pos * ob.n[2];
+  let data = new Float32Array(w * h);
+  for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
+    const su = (i - (N - 1) / 2) * pu, sv = ((h - 1) / 2 - j) * pv;
+    let acc = prm.algo === 'mip' ? -Infinity : prm.algo === 'minip' ? Infinity : 0, cnt = 0;
+    for (let k = 0; k < ns; k++) {
+      const so = (k - (ns - 1) / 2) * pu;
+      const Px = Cx + su * ob.u[0] + sv * ob.v[0] + so * ob.n[0];
+      const Py = Cy + su * ob.u[1] + sv * ob.v[1] + so * ob.n[1];
+      const Pd = Cd + su * ob.u[2] + sv * ob.v[2] + so * ob.n[2];
+      const val = sampleVol(scan, Px, Py, zc + Pd);
+      if (isNaN(val)) continue;
+      if (prm.algo === 'mip') acc = Math.max(acc, val); else if (prm.algo === 'minip') acc = Math.min(acc, val); else { acc += val; cnt++; }
+    }
+    data[j * w + i] = prm.algo === 'mip' ? (acc === -Infinity ? NaN : acc) : prm.algo === 'minip' ? (acc === Infinity ? NaN : acc) : (cnt ? acc / cnt : NaN);
+  }
+  if (prm.algo === 'blur') data = filter2D(data, w, h, 'blur');
+  else if (prm.algo === 'edge') data = filter2D(data, w, h, 'edge');
+  if (prm.mar) applyMAR(data, w, h, scan.muWater);
+  return { data, w, h };
+}
 // 3×3 box blur, or unsharp edge-enhancement (mu-domain).
 function filter2D(src, w, h, kind) {
   const out = new Float32Array(w * h);
@@ -2921,6 +2956,7 @@ function winRecon(wi) { const w = ctx.S.ct.mpr.wins[wi]; return (w && w.recon) |
 // Scroll axis + range (mm) for a recon's plane: which cross-reference coord its slices step along.
 function winAxis(scan, recon) {
   const g = mprGeom(scan);
+  if (recon.pane === 'oblique') return { axis: 'n', lo: -g.fov / 2, hi: g.fov / 2, step: Math.max(recon.interval || scan.dz, 0.5) };   // scroll along the plane normal
   if (recon.pane === 'coronal') return { axis: 'y', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || scan.dz, 0.5) };
   if (recon.pane === 'sagittal') return { axis: 'x', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || scan.dz, 0.5) };
   return { axis: 'z', lo: g.z0, hi: g.z0 + g.zExt, step: Math.max(recon.interval || scan.dz, scan.dz) };   // axial
@@ -2932,20 +2968,24 @@ function winCur(scan, recon, pos) {
   cur[winAxis(scan, recon).axis] = pos; return cur;
 }
 function winPosLabel(recon, pos) {
+  if (recon.pane === 'oblique') return 'OBL ' + (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
   if (recon.pane === 'coronal') return 'A/P ' + (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
   if (recon.pane === 'sagittal') return 'R/L ' + (pos >= 0 ? '+' : '') + Math.round(pos) + ' mm';
   return fmtTablePos(pos) + ' mm';
 }
-// Populate the four windows for a freshly-viewed scan: window 0 = the first planned reconstruction;
-// if the group also planned a coronal / sagittal recon, show those in windows 1 / 2. No cross-
-// referencing between windows — each is an independent static view (scroll re-renders only itself).
+// Populate the four windows for a freshly-viewed scan: window 0 = the first reconstruction (recon 1,
+// the only one computed by default). A planned coronal / sagittal recon is shown in window 1 / 2
+// ONLY once it has been computed (via the compute prompt) — an un-computed recon is never rendered
+// (it would otherwise reformat-on-open and show before the user chose to compute it). Independent
+// windows — each is a static view, scroll re-renders only itself.
 function initMprForScan(scan) {
   const m = ctx.S.ct.mpr, recons = scan.recons || [];
   m.scanId = scan.id;
+  if (m.plan) { m.plan = null; const live = ctx.$('ctReconPlanLive'); if (live) { live.classList.remove('show'); live.innerHTML = ''; } }
   const bind = (r) => r ? { recon: r, pos: winMid(scan, r), saved: true } : null;
   const first = recons[0] || null;
-  const coronal = recons.find(r => r.pane === 'coronal' && r !== first) || null;
-  const sagittal = recons.find(r => r.pane === 'sagittal' && r !== first) || null;
+  const coronal = recons.find(r => r.pane === 'coronal' && r !== first && r.computed) || null;
+  const sagittal = recons.find(r => r.pane === 'sagittal' && r !== first && r.computed) || null;
   m.wins = [bind(first), bind(coronal), bind(sagittal), null];
 }
 // ---- true-oblique plane geometry ----
@@ -3010,7 +3050,7 @@ function precomputeRecon(scan, recon) {
   const a = winAxis(scan, recon), pane = recon.pane || 'axial';
   const prm = { thk: Math.max(recon.minThk || 0.625, recon.thk || 5), interval: recon.interval, algo: recon.algo || 'standard', mar: !!recon.mar };
   const positions = []; for (let p = a.lo; p <= a.hi + 1e-6; p += a.step) positions.push(p);
-  const slices = positions.map(p => { const img = paneImage(scan, pane, winCur(scan, recon, p), prm); return { data: img.data, w: img.w, h: img.h }; });
+  const slices = positions.map(p => { const img = reconSliceImage(scan, recon, p, prm); return { data: img.data, w: img.w, h: img.h }; });
   recon.cache = { positions, slices }; recon.computed = true;
 }
 // On opening the recon page, offer to compute the extra planned recons (Yes → compute + store) or
@@ -3024,7 +3064,9 @@ function maybeReconComputePrompt(scan) {
     [{ label: 'Yes — compute & store them', v: 'yes' }, { label: 'No — remove the extras', v: 'no' }], (opt) => {
       if (opt.v === 'yes') {
         setHint('Computing reconstructions…'); uncomputed.forEach(r => precomputeRecon(scan, r));
-        ctRenderRecons(); setHint(uncomputed.length + ' reconstruction(s) computed and stored.');
+        // extras are now computed — re-populate the windows so a coronal / sagittal recon fills
+        // window 1 / 2 (initMprForScan only binds computed recons).
+        m.wins = null; ctRenderRecons(); setHint(uncomputed.length + ' reconstruction(s) computed and stored.');
       } else {
         reconPopup('This removes all planned reconstructions except the default (recon 1). Continue?',
           [{ label: 'Yes — remove them', v: 'yes' }, { label: 'Cancel', v: 'no' }], (o2) => {
@@ -3056,16 +3098,26 @@ function drawReconWindow(scan, wi) {
   if (recon.cache && recon.cache.slices.length) {
     const c = recon.cache, dp = (c.positions[1] - c.positions[0]) || 1;
     img = c.slices[clampV(Math.round((w.pos - c.positions[0]) / dp), 0, c.slices.length - 1)];
-  } else { img = paneImage(scan, pane, winCur(scan, recon, w.pos), prm); }
+  } else { img = reconSliceImage(scan, recon, w.pos, prm); }
   if (!_off) _off = document.createElement('canvas');
   if (_off.width !== img.w || _off.height !== img.h) { _off.width = img.w; _off.height = img.h; }
   const octx = _off.getContext('2d'), oi = octx.createImageData(img.w, img.h), d8 = oi.data, muW = scan.muWater;
   const wl = recon.wl != null ? recon.wl : 60, ww = recon.ww != null ? recon.ww : 800;
   for (let i = 0; i < img.data.length; i++) { const v = img.data[i]; const val = Number.isNaN(v) ? 0 : Math.round(255 * huToGray(1000 * (v - muW) / muW, wl, ww)); const o = i * 4; d8[o] = d8[o + 1] = d8[o + 2] = val; d8[o + 3] = 255; }
   octx.putImageData(oi, 0, 0);
-  const map = paneMapping(scan, pane, cv);
+  // Oblique images have their own aspect (spanned by the plane basis), so letterbox the image
+  // directly; orthogonal panes use the shared physical mapping (needed by the planner overlay).
+  let map;
+  if (pane === 'oblique') {
+    const sc = Math.min(W / img.w, H / img.h), dw = img.w * sc, dh = img.h * sc;
+    map = { dx: (W - dw) / 2, dy: (H - dh) / 2, dw, dh };
+  } else map = paneMapping(scan, pane, cv);
   g.imageSmoothingEnabled = true; g.drawImage(_off, map.dx, map.dy, map.dw, map.dh);
-  if (lbl) lbl.textContent = PLANE_LABEL[pane] + '  ·  ' + winPosLabel(recon, w.pos) + '  ·  ' + fmtNum(prm.thk) + 'mm  ·  ' + algoLabel(prm.algo) + (prm.mar ? ' · MAR' : '') + (w.saved === false ? '  ·  UNSAVED' : '') + '  ·  W/L ' + Math.round(ww) + '/' + Math.round(wl);
+  const plabel = pane === 'oblique' ? (recon.obliqueLabel || 'OBLIQUE') : PLANE_LABEL[pane];
+  if (lbl) lbl.textContent = plabel + '  ·  ' + winPosLabel(recon, w.pos) + '  ·  ' + fmtNum(prm.thk) + 'mm  ·  ' + algoLabel(prm.algo) + (prm.mar ? ' · MAR' : '') + (w.saved === false ? '  ·  UNSAVED' : '') + '  ·  W/L ' + Math.round(ww) + '/' + Math.round(wl);
+  // Draw the New-recon planner localizer on its source window (orthogonal pane only).
+  const m = ctx.S.ct.mpr;
+  if (m.plan && m.plan.src === wi && pane !== 'oblique') drawPlannerOverlay(g, scan, map);
 }
 // Cross-reference line across the image with a slice-order arrow in the margin.
 function refLine(g, dir, pos, off0, len, color) {
@@ -3171,8 +3223,10 @@ function wireRecons() {
     const cv = ctx.$('mprCanvas_' + wi); if (!cv) return;
     cv.addEventListener('wheel', (e) => onWinWheel(e, wi), { passive: false });
     cv.addEventListener('pointerdown', (e) => {            // click a filled window to select it for scrolling
+      const m = ctx.S.ct.mpr;
+      if (m.plan && m.plan.src === wi) { plannerPointerDown(e, cv, wi); return; }   // planning → drag the localizer
       if (!winRecon(wi)) return;                            // empty window → its overlay buttons handle it
-      const m = ctx.S.ct.mpr; m.selw = m.selw || [];
+      m.selw = m.selw || [];
       if (e.shiftKey || e.ctrlKey || e.metaKey) { const k = m.selw.indexOf(wi); if (k >= 0) m.selw.splice(k, 1); else m.selw.push(wi); }
       else m.selw = [wi];
       updateWinSel();
@@ -3183,12 +3237,14 @@ function wireRecons() {
     if (nb) newReconForWindow(+nb.dataset.win);
     else if (sb) selectReconForWindow(+sb.dataset.win);
   });
-  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.wins = null; ctx.S.ct.mpr.selw = []; ctRenderRecons(); });
+  ctx.$('ctReconScanSel')?.addEventListener('change', (e) => { cancelReconPlan(); ctx.S.ct.mpr.scanId = +e.target.value; ctx.S.ct.mpr.wins = null; ctx.S.ct.mpr.selw = []; ctRenderRecons(); });
+  wireReconPlanLive();
   ctx.$('ctReconSave')?.addEventListener('click', saveReconStart);
   ctx.$('ctReconClear')?.addEventListener('click', () => {
     const scan = mprScan(); if (!scan) return;
     const m = ctx.S.ct.mpr, sel = (m.selw || []).slice();
     if (!sel.length) { setHint('Click a window to select it, then Clear window.'); return; }
+    if (m.plan && (sel.includes(m.plan.src) || sel.includes(m.plan.target))) cancelReconPlan();
     sel.forEach(wi => { m.wins[wi] = null; }); m.selw = []; updateWinSel();
     sel.forEach(wi => drawReconWindow(scan, wi));
   });
@@ -3215,19 +3271,243 @@ function selectReconForWindow(wi) {
     drawReconWindow(scan, wi);
   });
 }
-// Create a new (unsaved) reconstruction for a window — pick a plane; params default to the group's
-// minimum thickness / standard algorithm. (Phase 2 will add the interactive planner box + table.)
+// ========================================================================================
+// Phase-2 New-recon interactive planner. "New recon" plans a reconstruction ON a currently
+// displayed recon (the SOURCE): a localizer box is drawn on the source image (like the old
+// oblique localizer). An orthogonal plane appears edge-on as a LINE with a double-arrow (its
+// advance direction); rotating it off-axis makes it OBLIQUE; a parallel plane is a crop
+// rectangle with a circle-X (crop A/P & R/L, keep scan length). A live recon-planner table
+// below the scan-group selector edits the params and picks the plane (auto-orienting the box).
+// ========================================================================================
+const PLANE_NORMAL = { transverse: 'z', axial: 'z', coronal: 'y', sagittal: 'x' };   // recon plane → advance axis
+const NAX_PLANE = { z: 'transverse', y: 'coronal', x: 'sagittal' };                   // advance axis → recon plane
+// The horizontal / vertical / out-of-plane physical axes of a source pane's in-view frame.
+function srcAxes(P) { return P === 'axial' ? { h: 'x', v: 'y', n: 'z' } : P === 'coronal' ? { h: 'x', v: 'z', n: 'y' } : { h: 'y', v: 'z', n: 'x' }; }
+// In-view (cu,cv) on a source pane at scroll pos → centred physical coords {x, y, d} (d = z − zCentre).
+function inviewToPhysical(scan, P, spos, cu, cv) {
+  const g = mprGeom(scan), zc = g.z0 + g.zExt / 2;
+  if (P === 'axial') return { x: cu, y: cv, z: spos };
+  if (P === 'coronal') return { x: cu, y: spos, z: zc + cv };
+  return { x: spos, y: cu, z: zc + cv };                                              // sagittal
+}
+// Which recon plane a localizer line at angle `ang` (on source pane P) defines. A near-axis line
+// is a clean orthogonal plane; otherwise it is oblique. Returns {plane, nax, aligned}.
+function orthoPlaneFromAng(P, ang) {
+  const ax = srcAxes(P), TOL = 0.18;                     // ~10°
+  const a = ((ang % Math.PI) + Math.PI) % Math.PI;       // 0..π
+  if (a < TOL || Math.PI - a < TOL) return { plane: NAX_PLANE[ax.v], nax: ax.v, aligned: true };   // horizontal line → advance along v
+  if (Math.abs(a - Math.PI / 2) < TOL) return { plane: NAX_PLANE[ax.h], nax: ax.h, aligned: true }; // vertical line → advance along h
+  return { plane: 'oblique', nax: null, aligned: false };
+}
+// The oblique plane basis (centred coords) for a localizer line on source pane P — the recon plane
+// is spanned by the line direction u and the source's out-of-plane axis a3; it scrolls along n.
+function localizerBasis(scan, P, ang, cu, cv) {
+  const g = mprGeom(scan), c = Math.cos(ang), s = Math.sin(ang);
+  let a1, a2, a3;
+  if (P === 'axial') { a1 = [1, 0, 0]; a2 = [0, 1, 0]; a3 = [0, 0, 1]; }
+  else if (P === 'coronal') { a1 = [1, 0, 0]; a2 = [0, 0, 1]; a3 = [0, 1, 0]; }
+  else { a1 = [0, 1, 0]; a2 = [0, 0, 1]; a3 = [1, 0, 0]; }                            // sagittal
+  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
+    C: v3add(v3scl(a1, cu), v3scl(a2, cv)), fov: g.fov, vExt: P === 'axial' ? g.zExt : g.fov, view: P };
+}
+// Set the planned plane from the live table (auto-orients the box). 'parallel' → crop rectangle.
+function setPlanPlane(scan, planeV) {
+  const pl = ctx.S.ct.mpr.plan, ax = srcAxes(pl.srcPlane);
+  if (planeV === 'parallel' || PLANE_NORMAL[planeV] === ax.n) {                       // same normal as source → crop
+    pl.mode = 'parallel'; pl.plane = 'parallel';
+    if (!pl.crop) pl.crop = { cu: 0, cv: 0, hw: scan.fovMM / 4, hh: (pl.srcPlane === 'axial' ? scan.fovMM : mprGeom(scan).zExt) / 4 };
+    return;
+  }
+  const nax = PLANE_NORMAL[planeV];
+  pl.mode = 'ortho'; pl.ang = nax === ax.v ? 0 : Math.PI / 2; pl.plane = planeV;
+}
+function recomputePlanPlane(scan) { const pl = ctx.S.ct.mpr.plan; if (pl && pl.mode === 'ortho') pl.plane = orthoPlaneFromAng(pl.srcPlane, pl.ang).plane; }
+
+// Start planning a new recon for window `wi`: pick a displayed (orthogonal) recon to plan on.
 function newReconForWindow(wi) {
   const scan = mprScan(); if (!scan) return;
-  const el = scanMinThk(scan);
-  const planes = [{ label: 'Axial (transverse)', v: 'transverse' }, { label: 'Coronal', v: 'coronal' }, { label: 'Sagittal', v: 'sagittal' }];
-  reconPopup('New reconstruction — plane', planes, (p) => {
-    const rid = scan.nextReconId || ((scan.recons || []).length + 1); scan.nextReconId = rid + 1;
-    const rec = { id: rid, plane: p.v, pane: RP_PLANE_PANE[p.v] || 'axial',
-      name: rpPlaneLabel(p.v) + ' · ' + fmtNum(Math.max(el, 5)) + ' mm · ' + algoLabel('standard'),
-      dfov: scan.fovMM, offRL: 0, offAP: 0, thk: Math.max(el, 5), interval: 5, algo: 'standard', mar: false, ww: 800, wl: 60, subTop: 0, subBot: 1, minThk: el };
-    ctx.S.ct.mpr.wins[wi] = { recon: rec, pos: winMid(scan, rec), saved: false };
-    drawReconWindow(scan, wi);
+  const srcs = WINS.filter(s => { const r = winRecon(s); return r && r.pane !== 'oblique'; })
+    .map(s => ({ label: 'Window ' + (s + 1) + ' — ' + PLANE_LABEL[winRecon(s).pane], s }));
+  if (!srcs.length) { setHint('Display an axial / coronal / sagittal recon first, then plan on it.'); return; }
+  if (srcs.length === 1) startReconPlan(wi, srcs[0].s);
+  else reconPopup('Plan the new recon on which displayed image?', srcs, (it) => startReconPlan(wi, it.s));
+}
+// Enter planning mode: init m.plan, default to an orthogonal plane ≠ the source, draw the box + table.
+function startReconPlan(target, src) {
+  const scan = mprScan(); if (!scan) return;
+  const srcRec = winRecon(src); if (!srcRec || srcRec.pane === 'oblique') { setHint('Pick an axial / coronal / sagittal recon to plan on.'); return; }
+  const el = scanMinThk(scan), m = ctx.S.ct.mpr, sp = srcRec.pane;
+  m.plan = { target, src, srcPlane: sp, srcPos: (m.wins[src].pos == null ? winMid(scan, srcRec) : m.wins[src].pos),
+    mode: 'ortho', cu: 0, cv: 0, ang: 0, len: scan.fovMM * 0.8, wid: Math.max(el, 5), crop: null, plane: null,
+    params: { thk: Math.max(el, 5), interval: 5, algo: 'standard', mar: false, ww: srcRec.ww || 800, wl: srcRec.wl != null ? srcRec.wl : 60 } };
+  setPlanPlane(scan, sp === 'axial' ? 'coronal' : 'transverse');
+  m.selw = []; updateWinSel();
+  ctx.$('ctReconPlanLive')?.classList.add('show');
+  renderReconPlanLive(); drawReconWindow(scan, src);
+}
+function cancelReconPlan() {
+  const m = ctx.S.ct.mpr, scan = mprScan(), src = m.plan && m.plan.src; m.plan = null;
+  ctx.$('ctReconPlanLive')?.classList.remove('show');
+  const live = ctx.$('ctReconPlanLive'); if (live) live.innerHTML = '';
+  if (scan && src != null) drawReconWindow(scan, src);
+}
+// Commit the planned recon: build the recon object, precompute it, bind it to the target window.
+function commitReconPlan() {
+  const scan = mprScan(), m = ctx.S.ct.mpr, pl = m.plan; if (!scan || !pl) return;
+  const el = scanMinThk(scan), p = pl.params, thk = Math.max(el, p.thk);
+  const rid = scan.nextReconId || ((scan.recons || []).length + 1); scan.nextReconId = rid + 1;
+  const base = { id: rid, thk, interval: Math.max(0.1, p.interval), algo: p.algo, mar: p.mar, ww: p.ww, wl: p.wl,
+    dfov: scan.fovMM, offRL: 0, offAP: 0, subTop: 0, subBot: 1, minThk: el, computed: false };
+  const g = mprGeom(scan), zc = g.z0 + g.zExt / 2;
+  let rec, pos;
+  if (pl.mode === 'parallel') {                                   // crop the source plane (A/P & R/L), keep scan length
+    const cr = pl.crop, ctr = inviewToPhysical(scan, pl.srcPlane, pl.srcPos, cr.cu, cr.cv);
+    rec = Object.assign(base, { plane: paneToPlaneName(pl.srcPlane), pane: pl.srcPlane,
+      dfov: clampV(2 * Math.max(cr.hw, cr.hh), 40, scan.fovMM), offRL: Math.round(ctr.x), offAP: Math.round(ctr.y) });
+    pos = pl.srcPos;
+  } else if (pl.plane === 'oblique') {                            // arbitrary oblique reformat
+    const ob = localizerBasis(scan, pl.srcPlane, pl.ang, pl.cu, pl.cv);
+    rec = Object.assign(base, { plane: 'oblique', pane: 'oblique', ob, obliqueLabel: 'OBLIQUE' });
+    pos = 0;
+  } else {                                                        // clean orthogonal plane at the box centre
+    const info = orthoPlaneFromAng(pl.srcPlane, pl.ang), ctr = inviewToPhysical(scan, pl.srcPlane, pl.srcPos, pl.cu, pl.cv);
+    const pane = RP_PLANE_PANE[info.plane] || 'axial';
+    rec = Object.assign(base, { plane: info.plane, pane });
+    pos = info.nax === 'z' ? ctr.z : info.nax === 'y' ? ctr.y : ctr.x;
+  }
+  rec.name = (rec.pane === 'oblique' ? 'Oblique' : rpPlaneLabel(rec.plane)) + ' · ' + fmtNum(thk) + ' mm · ' + rpAlgoLabel(rec.algo) + (rec.mar ? ' · MAR' : '');
+  precomputeRecon(scan, rec);
+  const a = winAxis(scan, rec);
+  m.wins[pl.target] = { recon: rec, pos: clampV(pos, a.lo, a.hi), saved: false };
+  m.plan = null; ctx.$('ctReconPlanLive')?.classList.remove('show');
+  const live = ctx.$('ctReconPlanLive'); if (live) live.innerHTML = '';
+  drawReconWindow(scan, pl.target); if (pl.src !== pl.target) drawReconWindow(scan, pl.src);
+  m.selw = [pl.target]; updateWinSel();
+  setHint('New reconstruction created in window ' + (pl.target + 1) + '. Use “Save recon” to keep it in the scan group.');
+}
+const paneToPlaneName = (pane) => pane === 'axial' ? 'transverse' : pane;
+
+// ---- planner overlay (drawn on the source window) ----
+function drawPlannerOverlay(g, scan, map) {
+  const pl = ctx.S.ct.mpr.plan; if (!pl) return;
+  const P = pl.srcPlane, disp = (u, v) => obDisp(scan, P, map, u, v);
+  g.save();
+  if (pl.mode === 'parallel') {
+    const cr = pl.crop;
+    const c1 = disp(cr.cu - cr.hw, cr.cv - cr.hh), c2 = disp(cr.cu + cr.hw, cr.cv - cr.hh), c3 = disp(cr.cu + cr.hw, cr.cv + cr.hh), c4 = disp(cr.cu - cr.hw, cr.cv + cr.hh);
+    g.strokeStyle = '#35c6d6'; g.fillStyle = 'rgba(53,198,214,0.12)'; g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(c1[0], c1[1]); g.lineTo(c2[0], c2[1]); g.lineTo(c3[0], c3[1]); g.lineTo(c4[0], c4[1]); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#35c6d6'; [c1, c2, c3, c4].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
+    const cc = disp(cr.cu, cr.cv); symCircleX(g, cc[0], cc[1]);
+  } else {
+    const c = Math.cos(pl.ang), s = Math.sin(pl.ang), hl = pl.len / 2, hw = Math.max(3, pl.wid / 2);
+    const corner = (a, b) => disp(pl.cu + c * a - s * b, pl.cv + s * a + c * b);
+    const p1 = corner(hl, hw), p2 = corner(hl, -hw), p3 = corner(-hl, -hw), p4 = corner(-hl, hw);
+    const e1 = disp(pl.cu + c * hl, pl.cv + s * hl), e2 = disp(pl.cu - c * hl, pl.cv - s * hl);
+    const oblique = pl.plane === 'oblique';
+    g.strokeStyle = oblique ? '#ffcf7a' : '#35c6d6'; g.fillStyle = oblique ? 'rgba(255,207,122,0.12)' : 'rgba(53,198,214,0.14)'; g.lineWidth = 1.6;
+    g.beginPath(); g.moveTo(p1[0], p1[1]); g.lineTo(p2[0], p2[1]); g.lineTo(p3[0], p3[1]); g.lineTo(p4[0], p4[1]); g.closePath(); g.fill(); g.stroke();
+    g.strokeStyle = '#ff4d4d'; line(g, e1[0], e1[1], e2[0], e2[1]);
+    g.fillStyle = oblique ? '#ffcf7a' : '#35c6d6'; [e1, e2].forEach(pt => { g.beginPath(); g.arc(pt[0], pt[1], 4.5, 0, Math.PI * 2); g.fill(); });
+    const mid = disp(pl.cu, pl.cv);
+    if (!oblique) symDoubleArrow(g, mid[0], mid[1], pl.ang + Math.PI / 2);             // advance direction (double arrow) for orthogonal
+  }
+  g.restore();
+}
+function symDoubleArrow(g, x, y, ang) {
+  const c = Math.cos(ang), s = Math.sin(ang), L = 16, hd = 5;
+  g.save(); g.strokeStyle = '#ffcf7a'; g.fillStyle = '#ffcf7a'; g.lineWidth = 2.2; g.lineCap = 'round';
+  line(g, x - c * L, y - s * L, x + c * L, y + s * L);
+  [[1, x + c * L, y + s * L], [-1, x - c * L, y - s * L]].forEach(([d, hx, hy]) => {
+    const bx = hx - d * c * hd, by = hy - d * s * hd, px = -s * hd, py = c * hd;
+    g.beginPath(); g.moveTo(hx, hy); g.lineTo(bx + px, by + py); g.lineTo(bx - px, by - py); g.closePath(); g.fill();
+  });
+  g.restore();
+}
+function symCircleX(g, x, y) {
+  const r = 9; g.save(); g.strokeStyle = '#ffcf7a'; g.lineWidth = 2.2; g.lineCap = 'round';
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.stroke();
+  line(g, x - r * 0.6, y - r * 0.6, x + r * 0.6, y + r * 0.6); line(g, x + r * 0.6, y - r * 0.6, x - r * 0.6, y + r * 0.6);
+  g.restore();
+}
+// Drag / rotate / resize the localizer on the source window.
+function plannerPointerDown(e, cv, wi) {
+  const scan = mprScan(), m = ctx.S.ct.mpr, pl = m.plan; if (!scan || !pl) return;
+  const P = pl.srcPlane, map = paneMapping(scan, P, cv);
+  e.preventDefault(); try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  const at = (ev) => { const { px, py } = evtToCanvas(ev, cv); return obClickAB(scan, P, map, px, py); };
+  const a0 = at(e); let mode = null, grab = null, endSign = 1;
+  if (pl.mode === 'parallel') {
+    const cr = pl.crop, dx = a0.cu - cr.cu, dy = a0.cv - cr.cv, tol = Math.max(5, Math.min(cr.hw, cr.hh) * 0.35);
+    if (Math.abs(Math.abs(dx) - cr.hw) < tol && Math.abs(Math.abs(dy) - cr.hh) < tol) mode = 'corner';
+    else if (Math.abs(dx) < cr.hw && Math.abs(dy) < cr.hh) { mode = 'move'; grab = { ou: dx, ov: dy }; }
+  } else {
+    const c = Math.cos(pl.ang), s = Math.sin(pl.ang), du = a0.cu - pl.cu, dv = a0.cv - pl.cv;
+    const along = du * c + dv * s, perp = -du * s + dv * c, hl = pl.len / 2, tol = Math.max(5, pl.len * 0.14);
+    if (Math.abs(perp) < Math.max(tol, pl.wid) && Math.abs(along) <= hl + tol) {
+      if (Math.abs(along) > hl - tol) { mode = 'end'; endSign = Math.sign(along) || 1; }
+      else { mode = 'move'; grab = { ou: du, ov: dv }; }
+    } else mode = 'slide';                                         // click off the line → slide the plane along its normal
+  }
+  const move = (ev) => {
+    const ab = at(ev);
+    if (pl.mode === 'parallel') {
+      if (mode === 'corner') { pl.crop.hw = Math.max(20, Math.abs(ab.cu - pl.crop.cu)); pl.crop.hh = Math.max(20, Math.abs(ab.cv - pl.crop.cv)); }
+      else if (mode === 'move') { pl.crop.cu = ab.cu - grab.ou; pl.crop.cv = ab.cv - grab.ov; }
+    } else if (mode === 'end') {
+      const vu = (ab.cu - pl.cu) * endSign, vv = (ab.cv - pl.cv) * endSign, d = Math.hypot(vu, vv);
+      if (d > 1) { pl.ang = Math.atan2(vv, vu); pl.len = clampV(2 * d, 20, scan.fovMM * 1.6); } recomputePlanPlane(scan);
+    } else if (mode === 'move') { pl.cu = ab.cu - grab.ou; pl.cv = ab.cv - grab.ov; }
+    else if (mode === 'slide') { const c = Math.cos(pl.ang), s = Math.sin(pl.ang), perp = -(ab.cu - pl.cu) * s + (ab.cv - pl.cv) * c; pl.cu += -s * perp; pl.cv += c * perp; }
+    drawReconWindow(scan, wi); renderReconPlanLive();
+  };
+  const up = () => { cv.removeEventListener('pointermove', move); cv.removeEventListener('pointerup', up); cv.removeEventListener('pointercancel', up); };
+  cv.addEventListener('pointermove', move); cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+}
+// ---- live recon-planner table (below the scan-group selector; recon-page only) ----
+function planSymbolHTML() {
+  const pl = ctx.S.ct.mpr.plan; if (!pl) return '';
+  if (pl.mode === 'parallel') return RB_XCIRC + '<span class="rpl-sym-lbl">Parallel — crop</span>';
+  if (pl.plane === 'oblique') return '<span class="rpl-obl">⟂ Oblique</span>';
+  return rbArrow(false) + '<span class="rpl-sym-lbl">' + rpPlaneLabel(pl.plane) + '</span>';
+}
+function renderReconPlanLive() {
+  const box = ctx.$('ctReconPlanLive'), pl = ctx.S.ct.mpr.plan; if (!box) return;
+  if (!pl) { box.classList.remove('show'); box.innerHTML = ''; return; }
+  box.classList.add('show');
+  const p = pl.params;
+  const planeChoices = [{ v: 'transverse', l: 'Transverse' }, { v: 'sagittal', l: 'Sagittal' }, { v: 'coronal', l: 'Coronal' }, { v: 'parallel', l: 'Parallel (crop)' }];
+  const cur = pl.mode === 'parallel' ? 'parallel' : pl.plane;
+  const seg = planeChoices.map(pc => '<button class="rpl-seg' + (pc.v === cur ? ' on' : '') + '" data-plane="' + pc.v + '">' + pc.l + '</button>').join('');
+  const chip = (act, txt) => '<button class="rpl-chip" data-p="' + act + '">' + txt + '</button>';
+  box.innerHTML = '<div class="rpl-head"><span class="rpl-title">New reconstruction</span>'
+    + '<span class="rpl-src">on Window ' + (pl.src + 1) + ' · ' + PLANE_LABEL[pl.srcPlane] + '</span>'
+    + '<span class="rpl-sym">' + planSymbolHTML() + '</span></div>'
+    + '<div class="rpl-planes">' + seg + '</div>'
+    + '<div class="rpl-fields">'
+    + chip('thk', fmtNum(p.thk) + ' mm') + chip('interval', fmtNum(p.interval) + ' mm')
+    + chip('algo', rpAlgoLabel(p.algo)) + '<button class="rpl-chip' + (p.mar ? ' on' : '') + '" data-p="mar">MAR ' + (p.mar ? 'ON' : 'OFF') + '</button>'
+    + chip('ww', 'WW ' + Math.round(p.ww)) + chip('wl', 'WL ' + Math.round(p.wl)) + '</div>'
+    + '<div class="rpl-actions"><button class="rpl-create" data-p="create">Create recon</button>'
+    + '<button class="rpl-cancel" data-p="cancel">Cancel</button></div>';
+}
+function wireReconPlanLive() {
+  const box = ctx.$('ctReconPlanLive'); if (!box) return;
+  box.addEventListener('click', (e) => {
+    const scan = mprScan(), pl = ctx.S.ct.mpr.plan; if (!scan || !pl) return;
+    const seg = e.target.closest('.rpl-seg');
+    if (seg) { setPlanPlane(scan, seg.dataset.plane); renderReconPlanLive(); drawReconWindow(scan, pl.src); return; }
+    const b = e.target.closest('[data-p]'); if (!b) return;
+    const act = b.dataset.p, p = pl.params, done = () => { renderReconPlanLive(); };
+    const type = (label, curv, apply) => openTypedPopup(label, curv, (v) => { apply(sanitizeNum(v, curv)); done(); });
+    if (act === 'create') commitReconPlan();
+    else if (act === 'cancel') cancelReconPlan();
+    else if (act === 'mar') { p.mar = !p.mar; done(); }
+    else if (act === 'algo') openStationPopup('Processing algorithm', RP_ALGOS.map((a, i) => i), Math.max(0, RP_ALGOS.findIndex(a => a.v === p.algo)), (i) => RP_ALGOS[i].l, (i) => { p.algo = RP_ALGOS[i].v; done(); });
+    else if (act === 'thk') type('Slice thickness (mm)', fmtNum(p.thk), (v) => { p.thk = clampV(v, 0.5, 50); });
+    else if (act === 'interval') type('Slice interval (mm)', fmtNum(p.interval), (v) => { p.interval = clampV(v, 0.1, 50); });
+    else if (act === 'ww') type('Window width (WW)', Math.round(p.ww), (v) => { p.ww = clampV(Math.round(v), 1, 4000); });
+    else if (act === 'wl') type('Window level (WL)', Math.round(p.wl), (v) => { p.wl = clampV(Math.round(v), -1000, 3000); });
   });
 }
 // Save a window's (unsaved) reconstruction into the scan group's recon list.
