@@ -261,7 +261,7 @@ function rebuildCTModel() {
   gantrySpin = null; gantryShell = null; boreFrameRing = null;
   liveScr = { top: null, timer: null, panel: null };   // screens are rebuilt with the shell
   buildGantry(THREE, look); buildCouch(THREE, look);
-  if (ctx.$('ctRecons')) { /* no-op: keep signature stable */ }
+  updateGantryDisplays();                              // initial draw — panel readouts must never sit black
 }
 const stdMat = (THREE, c, m, r) => new THREE.MeshStandardMaterial({ color: c, metalness: m == null ? 0.1 : m, roughness: r == null ? 0.55 : r });
 function canvasTex(THREE, cv) { const t = new THREE.CanvasTexture(cv); t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 4; return t; }
@@ -433,7 +433,7 @@ function buildGantry(THREE, look) {
   // it and the blue ring (where the flush pads sit). The profile is parametric in the annulus
   // thickness A so both proportions come out right; the bulge flattens for thin annuli.
   const DON_R = look.v === 'canon' ? 60 : 76;                  // ref: donut outer ≈ 0.47 of body width
-  const A = DON_R - BORE_R, D = Math.min(1, A / 30) * (look.v === 'canon' ? 0.55 : 1);   // canon: broad GENTLE mound
+  const A = DON_R - BORE_R, D = Math.min(1, A / 30) * (look.v === 'canon' ? 0.25 : 1);   // canon: a SUBTLE swell (~1.4 u) so the pads sit flush on it
   const prof = new THREE.SplineCurve([
     new THREE.Vector2(DON_R + 2, 1.5), new THREE.Vector2(DON_R - Math.min(6, A * 0.15), -3.2 * D),
     new THREE.Vector2(BORE_R + A * 0.56, -6.8 * D), new THREE.Vector2(BORE_R + A * 0.27, -5.4 * D),
@@ -463,8 +463,10 @@ function buildGantry(THREE, look) {
     // beyond the body edge (ref). Front face 3 behind the cover face → a visible shadow seam (the
     // air gap) traces the circle where disc and pillar meet; the disc tilts between them (NYI).
     [-1, 1].forEach(s => {
-      const pil = new THREE.Mesh(roundedBoxGeo(THREE, 32, 140, GANT_DEPTH + 2, 12), std(0xdedacf, 0.06, 0.5));
-      pil.position.set(s * 100, ISO_Y + 40 - 70, FACE_Z - 3 - (GANT_DEPTH + 2) / 2);   // top at ISO_Y+40, foot at the floor
+      // outer edge ≈ the disc's max radius (100 ≤ R 101): in the photo NO pillar shows at the
+      // machine's widest point — slivers appear only where the disc curves away (top-sides + floor)
+      const pil = new THREE.Mesh(roundedBoxGeo(THREE, 36, 138, GANT_DEPTH + 2, 14), std(0xdedacf, 0.06, 0.5));
+      pil.position.set(s * 82, ISO_Y + 38 - 69, FACE_Z - 3 - (GANT_DEPTH + 2) / 2);   // top at ISO_Y+38, foot at the floor
       gantryShell.add(pil);
     });
     const domeG = (r) => { const gg = new THREE.SphereGeometry(r, 28, 18); gg.scale(1, 1, 0.5); return gg; };
@@ -476,7 +478,7 @@ function buildGantry(THREE, look) {
     // oval grip mouldings just outside the bore on the mound's inner slope (ref)
     [-1, 1].forEach(s => {
       const dim = new THREE.Mesh(roundedBoxGeo(THREE, 8, 4, 1.4, 1.9), std(look.shoulder, 0.08, 0.55));
-      dim.position.set(s * 40, ISO_Y + 4, FACE_Z + 2.4); dim.rotation.z = -s * 0.1; gantryShell.add(dim);
+      dim.position.set(s * 40, ISO_Y + 4, FACE_Z + 1.4); dim.rotation.z = -s * 0.1; gantryShell.add(dim);
     });
     // dark sensor slit on the bore-top tab (the ref's element below the module)
     const slit = new THREE.Mesh(roundedBoxGeo(THREE, 1.4, 2.6, 1.0, 0.6), std(0x2b2f33, 0.2, 0.6));
@@ -491,8 +493,8 @@ function buildGantry(THREE, look) {
     // Small module nested at the crown of the LOW-centred circle (ref: crown ≈ ISO_Y+75), with a
     // wedge fairing behind it so it reads as moulded into the body rather than floating.
     const canonTop = ISO_Y + 75, modW = 22, modH = 26, modY = canonTop - modH / 2 + 1;
-    const wedge = new THREE.Mesh(roundedBoxGeo(THREE, 34, 22, 4, 8), std(look.cover, 0.05, 0.45));
-    wedge.position.set(0, canonTop - 8, FACE_Z + 0.2); gantryShell.add(wedge);
+    const wedge = new THREE.Mesh(roundedBoxGeo(THREE, 26, 18, 3, 7), std(look.cover, 0.05, 0.45));
+    wedge.position.set(0, canonTop - 7, FACE_Z + 0.2); gantryShell.add(wedge);
     const mod = new THREE.Mesh(roundedBoxGeo(THREE, modW, modH, 8, 4.5), std(look.cover, 0.05, 0.45));
     mod.position.set(0, modY, FACE_Z + 0.5); gantryShell.add(mod);
     const scrBez = new THREE.Mesh(roundedBoxGeo(THREE, 18.6, 14.6, 2, 1.4), std(0x27435f, 0.2, 0.4));
@@ -506,10 +508,10 @@ function buildGantry(THREE, look) {
     // green power LED right of the screen + two small grey icons left of it (ref)
     const domeM = (r) => { const gg = new THREE.SphereGeometry(r, 28, 18); gg.scale(1, 1, 0.5); return gg; };
     const pwr = new THREE.Mesh(domeM(0.9), new THREE.MeshStandardMaterial({ color: 0x69d47a, emissive: 0x3fae52, emissiveIntensity: 0.8 }));
-    pwr.position.set(13.5, modY + 4, FACE_Z + 2.6); gantryShell.add(pwr);          // on the wedge, right of the screen
+    pwr.position.set(11.5, modY + 4, FACE_Z + 2.2); gantryShell.add(pwr);          // on the wedge, right of the screen
     [2, 6.5].forEach(dy => {
       const ic = new THREE.Mesh(domeM(0.7), std(0x9aa4ad, 0.15, 0.5));
-      ic.position.set(-13.5, modY + dy, FACE_Z + 2.5); gantryShell.add(ic);        // small icons left of the screen
+      ic.position.set(-11.5, modY + dy, FACE_Z + 2.1); gantryShell.add(ic);        // small icons left of the screen
     });
   } else {
     const modW = 42, modH = 52, modY = topY - modH / 2 - 1;
@@ -530,7 +532,9 @@ function buildGantry(THREE, look) {
     const panel = buildPanel(THREE, look, s);
     // Aquilion: the pads sit FLUSH on the flat face annulus between donut and ring — only the
     // pad OUTLINE is tilted (inside buildPanel); the screen and key rows stay upright (ref)
-    if (look.v === 'canon') { panel.position.set(s * 36, ISO_Y + 40, FACE_Z + 2.6); }   // riding the gentle mound (ref)
+    // Aquilion: the whole pad points RADIALLY at the bore — screen at the outer end, keys marching
+    // down toward the bore centre (rotation ≈ atan2(38, 36) from vertical). Flush on the face.
+    if (look.v === 'canon') { panel.position.set(s * 38, ISO_Y + 36, FACE_Z + 1.0); panel.rotation.z = -s * 0.71; }
     else { panel.position.set(s * 91, ISO_Y + 38, FACE_Z + 0.2); panel.rotation.z = -s * 0.10; }
     gantryShell.add(panel);
     if (look.v === 'ge') {                                      // GE-only patient-indicator pills
@@ -552,7 +556,7 @@ function buildGantry(THREE, look) {
     // two-line "ONE / Aquilion" wordmark on the FLAT face annulus (it previously intersected the
     // donut bulge, which sliced the text — that was the "clipping")
     const wm = new THREE.Mesh(new THREE.PlaneGeometry(22, 11), new THREE.MeshBasicMaterial({ map: makeAquilionTex(THREE), transparent: true }));
-    wm.position.set(-32, ISO_Y + 59, FACE_Z + 1.6); gantryShell.add(wm);   // tight above the left pad, like the ref
+    wm.position.set(-34, ISO_Y + 60, FACE_Z + 2.5); gantryShell.add(wm);   // above the left pad, in FRONT of its plate (no clipping)
   }
   // dark slate base plinth (full width, slightly stepped — ref)
   if (look.plinth) {
@@ -623,30 +627,31 @@ function buildPanel(THREE, look, side) {
       for (let i = 0; i < p.count; i++) p.setX(i, p.getX(i) * (1 + k * (p.getY(i) / 17)));
       geo.computeVertexNormals(); return geo;
     };
-    const rim = new THREE.Mesh(taper(roundedBoxGeo(THREE, 29.6, 35.6, 0.9, 5.5), 0.16), S(look.shoulder, 0.06, 0.5));
-    rim.rotation.z = -side * 0.55; rim.position.z = -0.15; gp.add(rim);      // seam outline, barely proud
-    const plate = new THREE.Mesh(taper(roundedBoxGeo(THREE, 28, 34, 1.6, 5), 0.16), S(look.cover, 0.04, 0.5));
-    plate.rotation.z = -side * 0.55; plate.position.z = 0.3; gp.add(plate);
-    // upright LIVE 4-line readout at the pad's top-outer corner
+    // THIN plates (flush — no raised block); the GROUP is rotated radially by the caller, so a
+    // symmetric centred layout serves both sides: screen at the outer end, key column marching
+    // straight down the radial toward the bore.
+    const rim = new THREE.Mesh(taper(roundedBoxGeo(THREE, 27.4, 33.4, 0.8, 6), 0.22), S(look.shoulder, 0.06, 0.5));
+    rim.position.z = -0.1; gp.add(rim);                          // seam outline, barely proud
+    const plate = new THREE.Mesh(taper(roundedBoxGeo(THREE, 26, 32, 1.2, 5.5), 0.22), S(look.cover, 0.04, 0.5));
+    plate.position.z = 0.35; gp.add(plate);
+    // LIVE 4-line readout at the outer (top) end
     if (!liveScr.panel) liveScr.panel = mkScreen(THREE, 168, 108);
-    const bez = new THREE.Mesh(roundedBoxGeo(THREE, 16, 10.4, 1.2, 1), S(0x1c2126, 0.2, 0.45));
-    bez.position.set(side * 3.2, 10.4, 1.4); gp.add(bez);
+    const bez = new THREE.Mesh(roundedBoxGeo(THREE, 15, 9.6, 1.2, 1), S(0x1c2126, 0.2, 0.45));
+    bez.position.set(0, 10.6, 1.3); gp.add(bez);
     const tt = liveScr.panel.tex;
-    const scrn = new THREE.Mesh(new THREE.PlaneGeometry(14.6, 9.2), new THREE.MeshStandardMaterial({ map: tt, emissive: 0xffffff, emissiveMap: tt, emissiveIntensity: 0.9, roughness: 0.3 }));
-    scrn.position.set(side * 3.2, 10.4, 2.1); gp.add(scrn);
+    const scrn = new THREE.Mesh(new THREE.PlaneGeometry(13.8, 8.6), new THREE.MeshStandardMaterial({ map: tt, emissive: 0xffffff, emissiveMap: tt, emissiveIntensity: 0.9, roughness: 0.3 }));
+    scrn.position.set(0, 10.6, 1.95); gp.add(scrn);
     const GREY = 0x9aa4ad, WHITE = 0xf0f2f4, BLUE = 0x5aa7dc, GLOW = 0x2f7fc0;
-    // upright keys cascading down-INWARD along the pad diagonal (right-pad coords, x mirrored)
     const K = [
-      [0.2, 4.4, 1.2, GREY], [3.7, 4.4, 1.2, GREY],
-      [-3.0, 1.2, 1.2, GREY], [0.5, 1.2, 1.25, BLUE, GLOW], [3.9, 1.2, 1.2, WHITE],
-      [-4.8, -2.1, 1.2, GREY], [-1.4, -2.1, 1.2, GREY],
-      [-3.0, -5.1, 1.45, BLUE, GLOW],                            // table-motion cross: up
-      [-6.4, -7.8, 1.2, GREY], [-3.0, -7.8, 1.3, WHITE], [0.5, -7.8, 1.2, GREY],
-      [-3.0, -10.6, 1.45, BLUE, GLOW],                           // cross: down
-      [-5.8, -13.6, 1.3, BLUE, GLOW], [-2.5, -13.6, 1.3, BLUE, GLOW],
-      [-8.0, -16.3, 1.3, BLUE, GLOW], [-4.8, -16.3, 1.3, BLUE, GLOW],
+      [-3.2, 4.6, 1.1, GREY], [0, 4.6, 1.1, GREY], [3.2, 4.6, 1.1, WHITE],
+      [-3.2, 1.8, 1.1, GREY], [0, 1.8, 1.15, BLUE, GLOW], [3.2, 1.8, 1.1, GREY],
+      [0, -1.2, 1.35, BLUE, GLOW],                               // table-motion cross: up
+      [-3.0, -3.4, 1.1, GREY], [0, -3.4, 1.2, WHITE], [3.0, -3.4, 1.1, GREY],
+      [0, -5.6, 1.35, BLUE, GLOW],                               // cross: down
+      [-1.7, -8.4, 1.25, BLUE, GLOW], [1.7, -8.4, 1.25, BLUE, GLOW],
+      [-1.7, -11.0, 1.25, BLUE, GLOW], [1.7, -11.0, 1.25, BLUE, GLOW],
     ];
-    K.forEach(([x, y, r, c, gl]) => key(side * x, y, r, c, gl));
+    K.forEach(([x, y, r, c, gl]) => key(x, y, r, c, gl));
   }
   return gp;
 }
