@@ -89,14 +89,9 @@ function initScene(){
   const lf={visible:false}, lfFill={visible:false,geometry:{dispose(){}}},
         lfCross={visible:false,geometry:{dispose(){}}};
 
-  // tube head
+  // tube head — a manual collimator box modeled to the reference photos, with a LIVE LCD strip
   const tube=new THREE.Group();
-  const housing=new THREE.Mesh(new THREE.CylinderGeometry(4.5,4.5,7,24),
-     new THREE.MeshStandardMaterial({color:0x2a343d,metalness:.6,roughness:.35}));
-  housing.rotation.x=Math.PI/2; tube.add(housing);
-  const cone=new THREE.Mesh(new THREE.CylinderGeometry(1.6,3.2,6,20,1,true),
-     new THREE.MeshStandardMaterial({color:0x161c22,metalness:.5,roughness:.4,side:THREE.DoubleSide}));
-  cone.position.y=-5.5; tube.add(cone);
+  const collLCD=buildCollimatorHead(THREE,tube);
   scene.add(tube);
 
   // central ray
@@ -108,7 +103,7 @@ function initScene(){
   const handGroup=new THREE.Group(); scene.add(handGroup);
 
   three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
-         amb,key,lamp,cookieCanvas,cookieTex,lampAngle};
+         amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD};
   buildHandMeshes();
 
   // camera: free orbit OR tube's-eye bird's view
@@ -591,6 +586,8 @@ function syncScene(){
   const aim=[S.tubeX,0,S.tubeZ];
   three.tube.position.set(src[0],src[1],src[2]);
   three.tube.lookAt(new THREE.Vector3(...aim)); three.tube.rotateX(Math.PI/2);
+  three.tube.rotateY(-0.9);        // spin about the beam so the front panel faces the default camera
+  updateCollimatorLCD();           // live LCD strip: filter / field size / status / SID
   three.cr.geometry.setFromPoints([new THREE.Vector3(...src), new THREE.Vector3(...aim)]);
   three.cr.geometry.attributes.position.needsUpdate=true;
 
@@ -637,6 +634,165 @@ function updateCookie(){
   g.moveTo(cx-w, cy); g.lineTo(cx-gap, cy); g.moveTo(cx+gap, cy); g.lineTo(cx+w, cy);
   g.stroke();
   t.cookieTex.needsUpdate=true;
+}
+
+/* ---- X-RAY COLLIMATOR HEAD ------------------------------------------------
+   The tube head modeled as a real manual collimator (reference photos): beige
+   box, dark tube-port cone + white dome on top, vented top plate, printed
+   front panel (groove, blue LCD bezel with white tick marks, red/blue
+   crosshatch knob scales, tape-measure badge), a LIVE LCD strip, the round
+   key row (light / M / − / +), the square lamp key between the twin grey
+   field-size knobs, on a grey base with corner feet.
+   Local frame: origin = focal spot, −y = beam direction, +z = front panel. */
+function collRBox(THREE,w,h,d,r,bev){
+  bev=bev===undefined?0.5:bev;
+  const s=new THREE.Shape(), x=w/2, y=h/2;
+  s.moveTo(-x+r,-y); s.lineTo(x-r,-y); s.absarc(x-r,-y+r,r,-Math.PI/2,0,false);
+  s.lineTo(x,y-r); s.absarc(x-r,y-r,r,0,Math.PI/2,false);
+  s.lineTo(-x+r,y); s.absarc(-x+r,y-r,r,Math.PI/2,Math.PI,false);
+  s.lineTo(-x,-y+r); s.absarc(-x+r,-y+r,r,Math.PI,Math.PI*1.5,false);
+  const g=new THREE.ExtrudeGeometry(s,{depth:Math.max(0.1,d-2*bev),bevelEnabled:true,
+    bevelThickness:bev,bevelSize:bev,bevelSegments:5,curveSegments:24});
+  g.translate(0,0,-(d-2*bev)/2); g.computeVertexNormals(); return g;
+}
+function collGlyphTex(THREE,draw){
+  const sz=128, cv=document.createElement('canvas'); cv.width=cv.height=sz;
+  const g=cv.getContext('2d'); g.clearRect(0,0,sz,sz); draw(g,sz);
+  const t=new THREE.CanvasTexture(cv); t.anisotropy=4; return t;
+}
+/* Printed front panel: everything flat lives in ONE hi-res texture (14.6×9.8
+   units at 70 px/unit); knobs, keys and the live LCD glass are 3D on top. */
+function makeCollPanelTex(THREE){
+  const W=1024,H=688,k=70,cx=W/2, cv=document.createElement('canvas'); cv.width=W; cv.height=H;
+  const g=cv.getContext('2d');
+  const py=(d)=>(d-5.1)*k;                       // d = distance below the focal spot (panel top at 5.1)
+  const rr=(x,y,w,h,r)=>{ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r);
+    g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); };
+  g.fillStyle='#eae6da'; g.fillRect(0,0,W,H);
+  g.strokeStyle='#d2cdbd'; g.lineWidth=3; g.strokeRect(10,10,W-20,H-20);    // panel groove
+  // deep-blue LCD bezel; the glass area is dark (the live LCD plane sits over it)
+  const bw=12.7*k, bh=2.9*k, by=py(7.2)-bh/2;
+  rr(cx-bw/2,by,bw,bh,14); g.fillStyle='#203d80'; g.fill();
+  rr(cx-bw/2+18,by+16,bw-36,bh-32,8); g.fillStyle='#101d2b'; g.fill();
+  // white marks printed on the bezel: centring triangle, tick pairs, patient icon
+  g.strokeStyle='#e8ecf2'; g.lineWidth=3;
+  g.beginPath(); g.moveTo(cx-8,by+13); g.lineTo(cx+8,by+13); g.lineTo(cx,by+3); g.closePath(); g.stroke();
+  [-250,250].forEach(dx=>{ g.beginPath(); g.moveTo(cx+dx-5,by+4); g.lineTo(cx+dx-5,by+13);
+    g.moveTo(cx+dx+5,by+4); g.lineTo(cx+dx+5,by+13); g.stroke(); });
+  g.beginPath(); g.arc(cx+bw/2-28,by+8,4,0,Math.PI*2); g.moveTo(cx+bw/2-28,by+12); g.lineTo(cx+bw/2-28,by+16); g.stroke();
+  // printed glyphs beside the key row (field-length / field-width marks)
+  g.strokeStyle='#3c3b34'; g.lineWidth=4;
+  const ky=py(9.5);
+  g.beginPath(); for(let i=-1;i<=1;i++){ g.moveTo(cx-3.2*k-16,ky+i*9); g.lineTo(cx-3.2*k+16,ky+i*9); } g.stroke();
+  g.beginPath(); for(let i=-1;i<=1;i++){ g.moveTo(cx+1.0*k+i*9,ky-14); g.lineTo(cx+1.0*k+i*9,ky+14); } g.stroke();
+  // red / blue crosshatch scale marks flanking the knobs (ref)
+  const hash=(x,y,col)=>{ g.strokeStyle=col; g.lineWidth=5; g.save(); g.translate(x,y); g.rotate(0.32);
+    g.beginPath(); g.moveTo(-8,-20); g.lineTo(-8,20); g.moveTo(8,-20); g.lineTo(8,20);
+    g.moveTo(-20,-7); g.lineTo(20,-7); g.moveTo(-20,7); g.lineTo(20,7); g.stroke(); g.restore(); };
+  const kn=py(12.7);
+  hash(cx-6.1*k,kn,'#a8322c'); hash(cx-1.65*k,kn,'#a8322c');
+  hash(cx+1.65*k,kn,'#2f4f9e'); hash(cx+6.1*k,kn,'#2f4f9e');
+  // tape-measure badge at the bottom lip
+  g.fillStyle='#efece1'; g.strokeStyle='#8a877c'; g.lineWidth=3;
+  g.beginPath(); g.ellipse(cx,py(14.55),80,26,0,0,Math.PI*2); g.fill(); g.stroke();
+  g.fillStyle='#4a473e'; g.font='bold 24px Arial'; g.textAlign='center'; g.fillText('0 cm',cx+22,py(14.55)+8);
+  g.strokeStyle='#4a473e'; g.strokeRect(cx-52,py(14.55)-11,30,22);
+  g.beginPath(); g.moveTo(cx-22,py(14.55)); g.lineTo(cx-8,py(14.55)); g.stroke();
+  const t=new THREE.CanvasTexture(cv); t.anisotropy=8; return t;
+}
+function buildCollimatorHead(THREE,tube){
+  // the tube group's lookAt+rotateX puts the BEAM along local +y — build in a shell
+  // flipped π about x so the model's "down toward the patient" (−y here) matches it
+  const shell=new THREE.Group(); shell.rotation.x=Math.PI; tube.add(shell); tube=shell;
+  const std=(c,r,m)=>new THREE.MeshStandardMaterial({color:c,roughness:r===undefined?0.55:r,metalness:m===undefined?0.06:m});
+  // tube-port dome + dark cone dropping into the box top (refs 1–3)
+  const dome=new THREE.Mesh(new THREE.SphereGeometry(3.1,40,24), std(0xe9e7e0,0.5));
+  dome.scale.set(1,0.72,1); dome.position.set(0,0.5,0); tube.add(dome);
+  const cone=new THREE.Mesh(new THREE.CylinderGeometry(1.9,3.7,4.4,56), std(0x2f3438,0.4,0.3));
+  cone.position.set(0,-2.3,0); tube.add(cone);
+  const collar=new THREE.Mesh(new THREE.TorusGeometry(4.05,0.3,14,64), std(0xd8d4c8,0.5));
+  collar.rotation.x=Math.PI/2; collar.position.set(0,-4.35,0); tube.add(collar);
+  const bracket=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.1,1.1), std(0x8e9296,0.45,0.2));
+  bracket.position.set(0,-3.95,-3.1); tube.add(bracket);       // −z here = the FRONT after the shell flip
+  // main beige housing (rounded vertical edges + bevelled top/bottom)
+  const body=new THREE.Mesh(collRBox(THREE,16,11,13,0.9,0.6), std(0xe7e3d6,0.6));
+  body.position.set(0,-10,0); tube.add(body);
+  // vent slat groups on the top plate + small sensor screw
+  [-4.6,4.6].forEach(sx=>{ for(let i=0;i<5;i++){
+    const slat=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.1,0.34), std(0x4c4f52,0.5));
+    slat.position.set(sx,-4.42,-(2.6+i*0.62)); tube.add(slat);  // front half of the top plate
+  }});
+  const screw=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,0.12,16), std(0x3a3d40,0.4,0.3));
+  screw.position.set(2.3,-4.42,-1.6); tube.add(screw);
+  // printed front panel + live LCD glass
+  const panel=new THREE.Mesh(new THREE.PlaneGeometry(14.6,9.8),
+    new THREE.MeshStandardMaterial({map:makeCollPanelTex(THREE),roughness:0.75,metalness:0.02}));
+  panel.position.set(0,-10,6.55); tube.add(panel);
+  const cv=document.createElement('canvas'); cv.width=640; cv.height=120;
+  const tex=new THREE.CanvasTexture(cv); tex.anisotropy=8;
+  const glass=new THREE.Mesh(new THREE.PlaneGeometry(12.2,2.2),
+    new THREE.MeshStandardMaterial({map:tex,emissive:0xffffff,emissiveMap:tex,emissiveIntensity:0.55,roughness:0.35}));
+  glass.position.set(0,-7.2,6.6); tube.add(glass);
+  // round key row: collimator light, Memory, − , +
+  const mkBtn=(x,drawIcon)=>{
+    const b=new THREE.Mesh(new THREE.CylinderGeometry(0.62,0.66,0.55,36), std(0xb9bbb7,0.4));
+    b.rotation.x=Math.PI/2; b.position.set(x,-9.5,6.85); tube.add(b);
+    const ic=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9),
+      new THREE.MeshBasicMaterial({map:collGlyphTex(THREE,drawIcon),transparent:true}));
+    ic.position.set(x,-9.5,7.14); tube.add(ic);
+  };
+  const txtGlyph=(t,f)=>(g,s)=>{ g.fillStyle='#33322c'; g.font=f||'bold 84px Arial'; g.textAlign='center'; g.fillText(t,s/2,s/2+30); };
+  mkBtn(-4.9,(g,s)=>{ g.strokeStyle='#33322c'; g.lineWidth=8; g.beginPath();
+    g.moveTo(s/2,18); g.lineTo(s/2,s-40); g.moveTo(s/2-16,s-58); g.lineTo(s/2,s-38); g.lineTo(s/2+16,s-58);
+    g.moveTo(24,s-18); g.lineTo(s-24,s-18); g.stroke(); });
+  mkBtn(-1.5,txtGlyph('M'));
+  mkBtn(2.7,txtGlyph('−','bold 96px Arial'));
+  mkBtn(4.5,txtGlyph('+','bold 96px Arial'));
+  // square lamp key between the knobs (light-field icon: square + diagonals)
+  const lb=new THREE.Mesh(collRBox(THREE,1.9,1.9,0.6,0.32,0.14), std(0xb9bbb7,0.4));
+  lb.position.set(0,-12.7,6.85); tube.add(lb);
+  const li=new THREE.Mesh(new THREE.PlaneGeometry(1.2,1.2),
+    new THREE.MeshBasicMaterial({map:collGlyphTex(THREE,(g,s)=>{ g.strokeStyle='#33322c'; g.lineWidth=7;
+      g.strokeRect(28,28,s-56,s-56); g.beginPath(); g.moveTo(28,28); g.lineTo(s-28,s-28);
+      g.moveTo(s-28,28); g.lineTo(28,s-28); g.stroke(); }),transparent:true}));
+  li.position.set(0,-12.7,7.22); tube.add(li);
+  // twin field-size knobs with knurled rim + white pointer tab (refs)
+  [-3.6,3.6].forEach(x=>{
+    const knb=new THREE.Mesh(new THREE.CylinderGeometry(1.62,1.75,1.3,48), std(0xb4b6b4,0.38));
+    knb.rotation.x=Math.PI/2; knb.position.set(x,-12.7,7.2); tube.add(knb);
+    const grip=new THREE.Mesh(new THREE.TorusGeometry(1.45,0.16,12,48), std(0xa9aba9,0.42));
+    grip.position.set(x,-12.7,7.86); tube.add(grip);
+    const tab=new THREE.Mesh(collRBox(THREE,0.5,0.75,0.5,0.12,0.08), std(0xf1f0ea,0.35));
+    tab.position.set(x,-14.42,7.45); tube.add(tab);
+  });
+  // grey base plinth, corner feet, and the dark beam-exit aperture underneath
+  const plinth=new THREE.Mesh(collRBox(THREE,16.4,13.4,1.2,0.6,0.3), std(0x9ba0a4,0.5,0.15));
+  plinth.rotation.x=-Math.PI/2; plinth.position.set(0,-16.1,0); tube.add(plinth);
+  [[-6.9,-5.7],[6.9,-5.7],[-6.9,5.7],[6.9,5.7]].forEach(([fx,fz])=>{
+    const foot=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.7,1.6), std(0x6f7377,0.5,0.2));
+    foot.position.set(fx,-17.0,fz); tube.add(foot);
+  });
+  const apert=new THREE.Mesh(new THREE.BoxGeometry(4.6,0.1,4.2), std(0x14181c,0.3,0.4));
+  apert.position.set(0,-16.75,0); tube.add(apert);
+  return {cv,tex,last:''};
+}
+/* Redraw the collimator's live LCD when its values change: filter, light-field
+   size (the collimation sliders), mode/status, and the actual SID. */
+function updateCollimatorLCD(){
+  const L=three.collLCD; if(!L) return;
+  const fx=(S.collX||0).toFixed(1), fz=(S.collZ||0).toFixed(1), sid=Math.round(S.sid||100);
+  const k=fx+'x'+fz+'@'+sid; if(k===L.last) return; L.last=k;
+  const g=L.cv.getContext('2d'), W=L.cv.width, H=L.cv.height;
+  const grad=g.createLinearGradient(0,0,0,H); grad.addColorStop(0,'#b6c6c9'); grad.addColorStop(1,'#9fb1b5');
+  g.fillStyle=grad; g.fillRect(0,0,W,H);
+  g.fillStyle='#8ea1a6'; g.fillRect(W*0.27,6,3,H-12); g.fillRect(W*0.73,6,3,H-12);
+  g.fillStyle='#233238'; g.textAlign='center';
+  g.font='bold 30px "Courier New", monospace'; g.fillText('0 mm Cu',W*0.135,H*0.62);
+  g.font='24px "Courier New", monospace'; g.fillText('Manual',W*0.5,H*0.36);
+  g.font='bold 30px "Courier New", monospace'; g.fillText(fx+' cm x '+fz+' cm',W*0.5,H*0.78);
+  g.font='24px "Courier New", monospace'; g.fillText('Ready',W*0.865,H*0.36);
+  g.font='bold 30px "Courier New", monospace'; g.fillText(sid+' cm',W*0.865,H*0.78);
+  L.tex.needsUpdate=true;
 }
 
 /* Tube geometry frame. The central ray is angulated by TWO independent tilts,
