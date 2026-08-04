@@ -586,7 +586,7 @@ function syncScene(){
   const aim=[S.tubeX,0,S.tubeZ];
   three.tube.position.set(src[0],src[1],src[2]);
   three.tube.lookAt(new THREE.Vector3(...aim)); three.tube.rotateX(Math.PI/2);
-  three.tube.rotateY(-0.9);        // spin about the beam so the front panel faces the default camera
+  three.tube.rotateY(-Math.PI/2);  // square the housing with the light field it projects (field W along x, L along z)
   updateCollimatorLCD();           // live LCD strip: filter / field size / status / SID
   three.cr.geometry.setFromPoints([new THREE.Vector3(...src), new THREE.Vector3(...aim)]);
   three.cr.geometry.attributes.position.needsUpdate=true;
