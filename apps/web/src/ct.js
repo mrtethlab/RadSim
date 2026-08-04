@@ -453,11 +453,11 @@ function buildGantry(THREE, look) {
   // ring, red stops sit above the pads, and the oval grips sit tangentially on the lower flanks.
   if (look.v === 'canon') {
     const cy0 = ISO_Y - 26;                                    // the BODY circle's centre (below the bore)
-    // signature blue ring — concentric with the BODY circle (not the bore), at 0.87·R like the ref,
-    // plus the faint tilt-section seam line just inside it
-    const accent = new THREE.Mesh(new THREE.TorusGeometry(88, 1.6, 20, 280), std(0xa9c3d9, 0.2, 0.45));
+    // signature blue ring — concentric with the BODY circle (not the bore), close to the disc's
+    // outer edge (R 101), plus the faint tilt-section seam line just inside it
+    const accent = new THREE.Mesh(new THREE.TorusGeometry(96, 1.6, 20, 280), std(0xa9c3d9, 0.2, 0.45));
     accent.position.set(0, cy0, FACE_Z + 0.8); gantryShell.add(accent);
-    const seam = new THREE.Mesh(new THREE.TorusGeometry(85, 0.35, 8, 280), std(0xc9c6bb, 0.1, 0.6));
+    const seam = new THREE.Mesh(new THREE.TorusGeometry(93, 0.35, 8, 280), std(0xc9c6bb, 0.1, 0.6));
     seam.position.set(0, cy0, FACE_Z + 0.35); gantryShell.add(seam);
     // PIVOT PILLARS: narrow stationary towers tucked BEHIND the disc — only a ~15-unit sliver shows
     // beyond the body edge (ref). Front face 3 behind the cover face → a visible shadow seam (the
@@ -470,10 +470,11 @@ function buildGantry(THREE, look) {
       gantryShell.add(pil);
     });
     const domeG = (r) => { const gg = new THREE.SphereGeometry(r, 28, 18); gg.scale(1, 1, 0.5); return gg; };
-    // ONE red emergency-stop dome per side, just above each pad (ref)
+    // ONE red emergency-stop dome per side — MEDIAL, flanking the crown module (the screens sit
+    // laterally, further out from the bore's midline)
     [-1, 1].forEach(s => {
       const stop = new THREE.Mesh(domeG(1.5), new THREE.MeshStandardMaterial({ color: 0xd23c30, roughness: 0.35 }));
-      stop.position.set(s * 38, ISO_Y + 50, FACE_Z + 1.4); gantryShell.add(stop);
+      stop.position.set(s * 18, ISO_Y + 54, FACE_Z + 1.4); gantryShell.add(stop);
     });
     // oval grip mouldings just outside the bore on the mound's inner slope (ref)
     [-1, 1].forEach(s => {
@@ -553,8 +554,8 @@ function buildGantry(THREE, look) {
   } else {
     // two-line "ONE / Aquilion" wordmark on the FLAT face annulus (it previously intersected the
     // donut bulge, which sliced the text — that was the "clipping")
-    const wm = new THREE.Mesh(new THREE.PlaneGeometry(22, 11), new THREE.MeshBasicMaterial({ map: makeAquilionTex(THREE), transparent: true }));
-    wm.position.set(-34, ISO_Y + 60, FACE_Z + 2.5); gantryShell.add(wm);   // above the left pad, in FRONT of its plate (no clipping)
+    const wm = new THREE.Mesh(new THREE.PlaneGeometry(20, 10), new THREE.MeshBasicMaterial({ map: makeAquilionTex(THREE), transparent: true }));
+    wm.position.set(-31, ISO_Y + 52, FACE_Z + 2.5); gantryShell.add(wm);   // upper-left, fully INSIDE the edge ring (no clipping)
   }
   // dark slate base plinth (full width, slightly stepped — ref)
   if (look.plinth) {
@@ -627,25 +628,26 @@ function buildPanel(THREE, look, side) {
       base.rotation.x = Math.PI / 2; base.position.set(x, y, 0.65); gp.add(base);
       key(x, y, r, color, glow);
     };
-    // LIVE 4-line readout — level, tucked at the inner-top near the crown module
+    // LIVE 4-line readout — level, LATERAL of the bore's upper corner (the red stops sit medially,
+    // flanking the crown module; the bore axis is the midline)
     if (!liveScr.panel) liveScr.panel = mkScreen(THREE, 168, 108);
     const bez = new THREE.Mesh(roundedBoxGeo(THREE, 15, 9.6, 2, 1), S(0x1c2126, 0.2, 0.45));
-    bez.position.set(sx * 30, 48, 0.6); gp.add(bez);
+    bez.position.set(sx * 44, 40, 0.6); gp.add(bez);
     const tt = liveScr.panel.tex;
     const scrn = new THREE.Mesh(new THREE.PlaneGeometry(13.8, 8.6), new THREE.MeshStandardMaterial({ map: tt, emissive: 0xffffff, emissiveMap: tt, emissiveIntensity: 0.9, roughness: 0.3 }));
-    scrn.position.set(sx * 30, 48, 1.75); gp.add(scrn);
+    scrn.position.set(sx * 44, 40, 1.75); gp.add(scrn);
     const GREY = 0x9aa4ad, WHITE = 0xf0f2f4, BLUE = 0x5aa7dc, GLOW = 0x2f7fc0;
     const K = [
-      // grey utility rows below the readout, each row stepping outward as the cascade turns
-      [36.8, 42, 1.1, GREY], [40, 42, 1.1, GREY], [43.2, 42, 1.1, WHITE],
-      [40.3, 38.2, 1.1, GREY], [43.5, 38.2, 1.15, BLUE, GLOW], [46.7, 38.2, 1.1, GREY],
+      // grey utility rows BELOW the readout (clear of its bezel), stepping outward down the cascade
+      [36.8, 32.5, 1.1, GREY], [40, 32.5, 1.1, GREY], [43.2, 32.5, 1.1, WHITE],
+      [40.3, 28.7, 1.1, GREY], [43.5, 28.7, 1.15, BLUE, GLOW], [46.7, 28.7, 1.1, GREY],
       // table-motion cross at the bore's upper corner
-      [49, 30, 1.35, BLUE, GLOW],
-      [45.8, 26, 1.1, GREY], [49, 26, 1.2, WHITE], [52.2, 26, 1.1, GREY],
-      [49, 22, 1.35, BLUE, GLOW],
+      [49, 20.5, 1.35, BLUE, GLOW],
+      [45.8, 16.5, 1.1, GREY], [49, 16.5, 1.2, WHITE], [52.2, 16.5, 1.1, GREY],
+      [49, 12.5, 1.35, BLUE, GLOW],
       // lit-blue pairs finishing the cascade down the bore's side
-      [48.3, 14.5, 1.25, BLUE, GLOW], [51.7, 14.5, 1.25, BLUE, GLOW],
-      [47.3, 9.5, 1.25, BLUE, GLOW], [50.7, 9.5, 1.25, BLUE, GLOW],
+      [48.3, 5, 1.25, BLUE, GLOW], [51.7, 5, 1.25, BLUE, GLOW],
+      [47.3, 0, 1.25, BLUE, GLOW], [50.7, 0, 1.25, BLUE, GLOW],
     ];
     K.forEach(([x, y, r, c, gl]) => kkey(sx * x, y, r, c, gl));
   }
