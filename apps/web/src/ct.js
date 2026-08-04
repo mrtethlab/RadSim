@@ -530,11 +530,9 @@ function buildGantry(THREE, look) {
   // side control panels + patient-indicator pills — mounted ON the true front face (never buried)
   [-1, 1].forEach(s => {
     const panel = buildPanel(THREE, look, s);
-    // Aquilion: the pads sit FLUSH on the flat face annulus between donut and ring — only the
-    // pad OUTLINE is tilted (inside buildPanel); the screen and key rows stay upright (ref)
-    // Aquilion: the whole pad points RADIALLY at the bore — screen at the outer end, keys marching
-    // down toward the bore centre (rotation ≈ atan2(38, 36) from vertical). Flush on the face.
-    if (look.v === 'canon') { panel.position.set(s * 38, ISO_Y + 36, FACE_Z + 1.0); panel.rotation.z = -s * 0.71; }
+    // Aquilion: NO group rotation — the screen and key rows stay level with the floor; the layout
+    // inside buildPanel cascades diagonally around the bore (group origin = bore centre)
+    if (look.v === 'canon') { panel.position.set(0, ISO_Y, FACE_Z + 0.4); }
     else { panel.position.set(s * 91, ISO_Y + 38, FACE_Z + 0.2); panel.rotation.z = -s * 0.10; }
     gantryShell.add(panel);
     if (look.v === 'ge') {                                      // GE-only patient-indicator pills
@@ -618,40 +616,38 @@ function buildPanel(THREE, look, side) {
     key(0, -4.5, 1.7);                                            // blue key ring + centre key (ref keypad)
     key(9.2, -1.5, 0.8); key(9.2, -7.5, 0.8);                     // two small side keys
   } else {
-    // Canon Aquilion pad — FLUSH with the face (a thin plate, not a protruding block). The pad
-    // OUTLINE is a tapered plate tilted along the arch, but the screen and key rows stay UPRIGHT
-    // (in the reference the zone is diagonal while its content is not). Layout is defined for the
-    // right pad and mirrored via `side`.
-    const taper = (geo, k) => {                                  // widen towards +y (trapezoid plate)
-      const p = geo.attributes.position;
-      for (let i = 0; i < p.count; i++) p.setX(i, p.getX(i) * (1 + k * (p.getY(i) / 17)));
-      geo.computeVertexNormals(); return geo;
+    // Canon Aquilion pad — NO plate at all: the screen and keys mount DIRECTLY on the gantry face
+    // (perfectly flush, nothing to clip). The screen and every key row stay HORIZONTAL (parallel
+    // to the floor); only the CLUSTER cascades diagonally down around the bore rim, hugging its
+    // upper corner like the reference. Group origin = bore centre; `side` mirrors the layout.
+    const sx = side;
+    // each key gets a low collar disc so it reads as mounted on the face (which is gently domed here)
+    const kkey = (x, y, r, color, glow) => {
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(r + 0.35, r + 0.55, 1.3, 36), S(0xe8ebee, 0.06, 0.5));
+      base.rotation.x = Math.PI / 2; base.position.set(x, y, 0.65); gp.add(base);
+      key(x, y, r, color, glow);
     };
-    // THIN plates (flush — no raised block); the GROUP is rotated radially by the caller, so a
-    // symmetric centred layout serves both sides: screen at the outer end, key column marching
-    // straight down the radial toward the bore.
-    const rim = new THREE.Mesh(taper(roundedBoxGeo(THREE, 27.4, 33.4, 0.8, 6), 0.22), S(look.shoulder, 0.06, 0.5));
-    rim.position.z = -0.1; gp.add(rim);                          // seam outline, barely proud
-    const plate = new THREE.Mesh(taper(roundedBoxGeo(THREE, 26, 32, 1.2, 5.5), 0.22), S(look.cover, 0.04, 0.5));
-    plate.position.z = 0.35; gp.add(plate);
-    // LIVE 4-line readout at the outer (top) end
+    // LIVE 4-line readout — level, tucked at the inner-top near the crown module
     if (!liveScr.panel) liveScr.panel = mkScreen(THREE, 168, 108);
-    const bez = new THREE.Mesh(roundedBoxGeo(THREE, 15, 9.6, 1.2, 1), S(0x1c2126, 0.2, 0.45));
-    bez.position.set(0, 10.6, 1.3); gp.add(bez);
+    const bez = new THREE.Mesh(roundedBoxGeo(THREE, 15, 9.6, 2, 1), S(0x1c2126, 0.2, 0.45));
+    bez.position.set(sx * 30, 48, 0.6); gp.add(bez);
     const tt = liveScr.panel.tex;
     const scrn = new THREE.Mesh(new THREE.PlaneGeometry(13.8, 8.6), new THREE.MeshStandardMaterial({ map: tt, emissive: 0xffffff, emissiveMap: tt, emissiveIntensity: 0.9, roughness: 0.3 }));
-    scrn.position.set(0, 10.6, 1.95); gp.add(scrn);
+    scrn.position.set(sx * 30, 48, 1.75); gp.add(scrn);
     const GREY = 0x9aa4ad, WHITE = 0xf0f2f4, BLUE = 0x5aa7dc, GLOW = 0x2f7fc0;
     const K = [
-      [-3.2, 4.6, 1.1, GREY], [0, 4.6, 1.1, GREY], [3.2, 4.6, 1.1, WHITE],
-      [-3.2, 1.8, 1.1, GREY], [0, 1.8, 1.15, BLUE, GLOW], [3.2, 1.8, 1.1, GREY],
-      [0, -1.2, 1.35, BLUE, GLOW],                               // table-motion cross: up
-      [-3.0, -3.4, 1.1, GREY], [0, -3.4, 1.2, WHITE], [3.0, -3.4, 1.1, GREY],
-      [0, -5.6, 1.35, BLUE, GLOW],                               // cross: down
-      [-1.7, -8.4, 1.25, BLUE, GLOW], [1.7, -8.4, 1.25, BLUE, GLOW],
-      [-1.7, -11.0, 1.25, BLUE, GLOW], [1.7, -11.0, 1.25, BLUE, GLOW],
+      // grey utility rows below the readout, each row stepping outward as the cascade turns
+      [36.8, 42, 1.1, GREY], [40, 42, 1.1, GREY], [43.2, 42, 1.1, WHITE],
+      [40.3, 38.2, 1.1, GREY], [43.5, 38.2, 1.15, BLUE, GLOW], [46.7, 38.2, 1.1, GREY],
+      // table-motion cross at the bore's upper corner
+      [49, 30, 1.35, BLUE, GLOW],
+      [45.8, 26, 1.1, GREY], [49, 26, 1.2, WHITE], [52.2, 26, 1.1, GREY],
+      [49, 22, 1.35, BLUE, GLOW],
+      // lit-blue pairs finishing the cascade down the bore's side
+      [48.3, 14.5, 1.25, BLUE, GLOW], [51.7, 14.5, 1.25, BLUE, GLOW],
+      [47.3, 9.5, 1.25, BLUE, GLOW], [50.7, 9.5, 1.25, BLUE, GLOW],
     ];
-    K.forEach(([x, y, r, c, gl]) => key(x, y, r, c, gl));
+    K.forEach(([x, y, r, c, gl]) => kkey(sx * x, y, r, c, gl));
   }
   return gp;
 }
