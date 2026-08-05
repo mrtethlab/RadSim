@@ -391,6 +391,7 @@ function setDetOrient(o){ S.detOrient=o; applyDet(); }
 const S = {
   pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
+  objOff:{x:0,z:0},            // x-ray object offset on the receptor (cm): x cross / z long axis
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
   lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
@@ -398,11 +399,11 @@ const S = {
   detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
-  resolution:'std', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
+  resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
   detW:35, detH:43,            // effective receptor W×H (derived from size + orientation)
-  detNx:2500, detNy:3070,      // detector native pixel matrix (true ray-cast resolution)
+  detNx:320, detNy:400,        // detector native pixel matrix (true ray-cast resolution; quick default)
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
   voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
@@ -527,10 +528,11 @@ function baseLift(skin, bone, R){
    detector so bone is nested inside soft tissue. */
 // Anatomical axis flips for the voxel chest (volume axes: x=Left, y=Posterior,
 // z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first (anterior
-// up, head toward −z into the bore). X-ray = PA upright feel (posterior up / anterior
-// toward the detector), long axis left→right on the plate.
+// up, head toward −z into the bore). X-ray = AP supine (anterior up toward the tube,
+// posterior on the detector): flipping x AND y is a 180° roll about the long axis —
+// a true rotation (chirality preserved), the patient turned over on the plate.
 function voxelFlips(){
-  return S.mode==='ct' ? [false,true,true] : [false,false,false];
+  return S.mode==='ct' ? [false,true,true] : [true,true,false];
 }
 function buildPhantom(){
   // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
@@ -539,9 +541,9 @@ function buildPhantom(){
   const R=objMat();
   if(S.subject!=='hand' && S.voxelModel){
     const vm=S.voxelModel;
-    const cx = S.mode==='ct' ? S.ct.patient.x : 0;
+    const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
     const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
-    const cz = S.mode==='ct' ? S.ct.patient.z : 0;
+    const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
     return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
   }
   const ph=new Phantom();
@@ -549,9 +551,10 @@ function buildPhantom(){
   // x-ray: rest on the receptor (rotation-aware) + OID. CT: sit at the table height
   // (patientY), so the 3D model and the traced phantom share one vertical position.
   const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,R)+S.oid;
-  // in CT the patient is offset from the gantry isocentre by the direction pad
-  const cx = S.mode==='ct' ? S.ct.patient.x : 0;
-  const cz = S.mode==='ct' ? S.ct.patient.z : 0;
+  // in CT the patient is offset from the gantry isocentre by the direction pad;
+  // in x-ray by the object offset sliders
+  const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
+  const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
   function xf(p){                // rotate the object (about origin), then lift, then CT offset
     const q=applyMat3(R,p);
     return [q[0]+cx, q[1]+liftY, q[2]+cz];
@@ -570,14 +573,15 @@ function syncScene(){
   document.body.classList.toggle('subj-hand', S.subject==='hand');   // finger-spread control is hand-only
   // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips).
   // The voxel chest is placed by ctSyncScene instead, so skip the hand transforms.
+  const ox=S.mode!=='ct'?S.objOff.x:0, oz=S.mode!=='ct'?S.objOff.z:0;   // x-ray object offset sliders
   if(S.subject==='hand'){
     const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-    three.handGroup.position.set(0, baseLift(skin,bone,objMat())+S.oid, 0);
+    three.handGroup.position.set(ox, baseLift(skin,bone,objMat())+S.oid, oz);
   } else {
     three.handGroup.rotation.z = 0;
     if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);   // flips are mode-dependent
     if(S.mode!=='ct' && S.voxelModel){                                // x-ray: rest the model on the detector
-      three.handGroup.position.set(0, (S.voxelModel.extentMM[1]/2)/10, 0);
+      three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10, oz);
     }
   }
 
@@ -923,8 +927,15 @@ function bind(){
     $(id)?.addEventListener('input',e=>{ S.objRot[ax]=parseInt(e.target.value);
       $(id+'v').textContent=S.objRot[ax]+'°'; resetPrep(); syncScene(); });
   }
-  $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0};
+  // x-ray object offset sliders (cm on the receptor: z long axis / x cross axis)
+  const offAxes=[['objOffX','x'],['objOffZ','z']];
+  for(const [id,ax] of offAxes){
+    $(id)?.addEventListener('input',e=>{ S.objOff[ax]=parseFloat(e.target.value);
+      $(id+'v').textContent=S.objOff[ax]+' cm'; resetPrep(); syncScene(); });
+  }
+  $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0};
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
+    for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
     resetPrep(); syncScene(); });
   $('spread')?.addEventListener('input',e=>{ S.spread=e.target.value/100;
     buildHandMeshes(); resetPrep(); });

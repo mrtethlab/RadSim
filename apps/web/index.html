@@ -202,7 +202,15 @@
           <div class="row" style="margin-top:8px"><div class="rl">Roll <small>long axis</small></div>
             <div class="valchip" id="objRotZv">0°</div></div>
           <input type="range" id="objRotZ" min="-180" max="180" value="0" step="1">
-          <div class="mini"><button id="objRotReset">↺ reset orientation</button></div>
+          <div class="xray-only">
+            <div class="row" style="margin-top:8px"><div class="rl">Offset <small>long axis</small></div>
+              <div class="valchip" id="objOffZv">0 cm</div></div>
+            <input type="range" id="objOffZ" min="-15" max="15" value="0" step="0.5">
+            <div class="row" style="margin-top:8px"><div class="rl">Offset <small>cross axis</small></div>
+              <div class="valchip" id="objOffXv">0 cm</div></div>
+            <input type="range" id="objOffX" min="-15" max="15" value="0" step="0.5">
+          </div>
+          <div class="mini"><button id="objRotReset">↺ reset orientation &amp; offset</button></div>
         </div>
       </div>
 
@@ -339,9 +347,9 @@
           <div class="row" style="margin-top:12px"><div class="rl">Resolution</div>
             <div class="valchip" id="resV">320×400</div></div>
           <div class="seg" id="resSeg">
-            <button data-res="quick">Quick</button>
+            <button data-res="quick" class="on">Quick</button>
             <button data-res="low">Low</button>
-            <button data-res="std" class="on">Std</button>
+            <button data-res="std">Std</button>
             <button data-res="high">High</button>
           </div>
           <div class="note warn" id="resWarn" style="margin-top:4px; display:none">⚠ Full-resolution ray-casting is computationally heavy — expect long processing times. A detected GPU (Python compute engine) is strongly recommended.</div>

@@ -874,8 +874,9 @@ export function ctSyncScene() {
     three.cr.visible = false;
     three.amb.intensity = 1.55; three.key.intensity = 1.35;   // brighter — the big rig read too dark
   } else {
-    three.handGroup.position.x = 0;
-    three.handGroup.position.z = 0;
+    // x-ray mode: honour the object offset sliders (syncScene runs first; don't zero them)
+    three.handGroup.position.x = S.objOff ? S.objOff.x : 0;
+    three.handGroup.position.z = S.objOff ? S.objOff.z : 0;
     if (couchBase) couchBase.visible = false;
   }
   updateScanMarkers();
