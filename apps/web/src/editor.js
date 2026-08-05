@@ -129,7 +129,7 @@ export function initEditor(context) {
   $('edDownload')?.addEventListener('click', downloadModel);
   $('edUpload')?.addEventListener('click', () => $('edFile').click());
   $('edFile')?.addEventListener('change', e => { const f = e.target.files[0]; if (f) uploadModel(f); e.target.value = ''; });
-  window.addEventListener('resize', () => { if (ctx.S.mode === 'editor') fitCanvas(); });
+  window.addEventListener('resize', () => { if (ctx.S.mode === 'editor') { fitCanvas(); editorSyncScene(); } });
 }
 
 /* ---- model lifecycle ---- */
@@ -324,10 +324,14 @@ export function editorSyncScene() {
   const { S, three } = ctx;
   const on = S.mode === 'editor';
   if (edGroup) edGroup.visible = on;
-  if (!on) return;
+  if (!on) { if (three.cam.view) three.cam.clearViewOffset(); return; }
   for (const k of ['det', 'detMarks', 'detArrow', 'tube', 'handGroup', 'aecGroup']) { if (three[k]) three[k].visible = false; }
   three.lamp.intensity = 0; three.lamp.castShadow = false; three.cr.visible = false;
   three.amb.intensity = 1.2; three.key.intensity = 1.0;
+  // the slice panel covers the left 56% of the bay — shift the projection window left so
+  // the orbit target (the model) lands in the centre of the VISIBLE strip on the right
+  const cv = three.renderer.domElement, w = cv.clientWidth || 1, h = cv.clientHeight || 1;
+  three.cam.setViewOffset(w, h, -0.28 * w, 0, w, h);
 }
 
 /* ---- save to session / download / upload ---- */

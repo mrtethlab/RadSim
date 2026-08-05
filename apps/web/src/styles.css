@@ -354,6 +354,7 @@
 .modebar button:hover{color:var(--txt)}
 .modebar button[data-mode="xray"].on{color:#06121a; background:var(--cyan); box-shadow:0 0 14px rgba(53,198,214,.55)}
 .modebar button[data-mode="ct"].on{color:#1a1204; background:var(--amber); box-shadow:0 0 14px rgba(255,178,62,.55)}
+.modebar button[data-mode="editor"].on{color:#07160c; background:var(--green); box-shadow:0 0 14px rgba(70,209,127,.55)}
 
 /* ---- AEC (auto exposure control) ---- */
 .aectgl{font-family:var(--seg); font-size:11px; letter-spacing:1.5px; padding:4px 14px;
@@ -374,6 +375,10 @@ body.mode-ct .xray-only{display:none}
 .ed-only{display:none}
 body.mode-editor .ed-only{display:block}
 body.mode-editor .xray-only, body.mode-editor .ct-only{display:none}
+/* the editor has no imaging chain: hide the console/monitor column and the Simulation
+   group, and give the freed width back to the bay */
+body.mode-editor #consoleCol, body.mode-editor #simGrp{display:none}
+body.mode-editor .app{grid-template-columns:1fr 284px}
 
 /* ---- MODEL EDITOR page: left = slice painter (solid), right = transparent so the
    live 3D voxel preview in the main canvas shows through (orbit/zoom still work) ---- */
