@@ -363,6 +363,29 @@ async function setSubject(sub){
   if(sel) sel.value=sub;
   syncScene();
 }
+/* ---- custom (Model Editor) subjects: session-saved models become selectable under
+   View Options exactly like the preset models. The editor hands over a ready voxel-model
+   object (same shape loadVoxelModel returns) + a display mesh in raw volume mm axes, so
+   setSubject's cache-hit path and applyVoxelMeshTransform work unchanged. ---- */
+function registerCustomSubject(key, title, vm, meshGroup){
+  VOXEL_MODELS[key]={ title, scoutKv:100, scoutMa:100, xrayKv:80 };
+  S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
+  S.voxelCache[key]=vm;
+  if(meshGroup){ meshGroup.visible=false; three.handGroup.add(meshGroup); three.voxelMeshes[key]=meshGroup; }
+  const sel=$('subjectSel'); if(!sel) return;
+  let opt=sel.querySelector('option[value="'+key+'"]');
+  if(!opt){ opt=document.createElement('option'); opt.value=key; sel.appendChild(opt); }
+  opt.textContent='Custom: '+title;
+}
+function unregisterCustomSubject(key){
+  if(S.subject===key) setSubject('hand');
+  delete VOXEL_MODELS[key];
+  if(S.voxelCache) delete S.voxelCache[key];
+  const m=three.voxelMeshes&&three.voxelMeshes[key];
+  if(m){ three.handGroup.remove(m); m.traverse(o=>{ if(o.isMesh){ o.geometry.dispose(); o.material.dispose(); } }); delete three.voxelMeshes[key]; }
+  $('subjectSel')?.querySelector('option[value="'+key+'"]')?.remove();
+}
+
 /* Position + orient the chest display mesh so it matches the VoxelPhantom (same axis
    flips) and is scaled from mm to world units. The mesh is a child of handGroup, so
    handGroup's translation (CT patient offset) then places it at the isocentre. */
@@ -1945,6 +1968,7 @@ window.addEventListener('load',()=>{
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram,
            editorMode: (on) => editorApplyMode(on) });
-  initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene });
+  initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
+               registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
 });

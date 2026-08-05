@@ -9,6 +9,7 @@
    (anterior at the top, patient left on the viewer's right).
    ============================================================================ */
 import { loadVoxelModel } from './model/voxelLoader.js';
+import { VoxelPhantom } from './core/voxelPhantom.js';
 
 // The predetermined HU materials list (matches the baked models' legend).
 export const ED_MATERIALS = [
@@ -269,13 +270,13 @@ function schedule3D(delay) {
   clearTimeout(rebuildTimer);
   rebuildTimer = setTimeout(rebuild3D, delay ?? 280);
 }
-function rebuild3D() {
+/* Surface voxels (any 6-neighbour empty) as one InstancedMesh in mm, centred at the
+   origin. viewFlip=true negates y for the editor preview (anterior up); false keeps the
+   RAW volume axes — what applyVoxelMeshTransform expects of a subject display mesh. */
+function buildVoxelInstanced(model, viewFlip) {
   const { THREE } = ctx;
-  if (!ED) return;
-  if (edMesh) { edGroup.remove(edMesh); edMesh.geometry.dispose(); edMesh.material.dispose(); edMesh = null; }
-  const { nx, ny, nz, data, sp } = ED, nxy = nx * ny;
+  const { nx, ny, nz, data, sp } = model, nxy = nx * ny;
   const at = (x, y, z) => (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) ? 0 : data[x + nx * y + nxy * z];
-  // count + collect surface voxels (any 6-neighbour empty)
   const idx = [];
   for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
     const id = data[x + nx * y + nxy * z]; if (!id) continue;
@@ -283,21 +284,30 @@ function rebuild3D() {
       idx.push(x, y, z, id);
   }
   const n = idx.length / 4;
-  if (!n) return;
+  if (!n) return null;
   const geo = new THREE.BoxGeometry(sp[0], sp[1], sp[2]);
   const mat = new THREE.MeshStandardMaterial({ roughness: 0.7, metalness: 0.05 });
-  edMesh = new THREE.InstancedMesh(geo, mat, n);
+  const mesh = new THREE.InstancedMesh(geo, mat, n);
   const m = new THREE.Matrix4(), col = new THREE.Color();
   const cx = nx * sp[0] / 2, cy = ny * sp[1] / 2, cz = nz * sp[2] / 2;
   for (let i = 0; i < n; i++) {
     const x = idx[i * 4], y = idx[i * 4 + 1], z = idx[i * 4 + 2], id = idx[i * 4 + 3];
-    // volume -> preview axes: x lateral, ANTERIOR up (y=Posterior, so negate), z long axis
-    m.makeTranslation((x + 0.5) * sp[0] - cx, cy - (y + 0.5) * sp[1], (z + 0.5) * sp[2] - cz);
-    edMesh.setMatrixAt(i, m);
-    edMesh.setColorAt(i, col.set(MAT_BY_ID[id]?.color || '#ff00ff'));
+    const py = viewFlip ? cy - (y + 0.5) * sp[1] : (y + 0.5) * sp[1] - cy;
+    m.makeTranslation((x + 0.5) * sp[0] - cx, py, (z + 0.5) * sp[2] - cz);
+    mesh.setMatrixAt(i, m);
+    mesh.setColorAt(i, col.set(MAT_BY_ID[id]?.color || '#ff00ff'));
   }
-  edMesh.instanceMatrix.needsUpdate = true;
-  if (edMesh.instanceColor) edMesh.instanceColor.needsUpdate = true;
+  mesh.instanceMatrix.needsUpdate = true;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  return { mesh, count: n };
+}
+function rebuild3D() {
+  if (!ED) return;
+  if (edMesh) { edGroup.remove(edMesh); edMesh.geometry.dispose(); edMesh.material.dispose(); edMesh = null; }
+  const built = buildVoxelInstanced(ED, true);   // preview convention: anterior up
+  if (!built) return;
+  const n = built.count;
+  edMesh = built.mesh;
   edGroup.add(edMesh);
   // mm -> world units (1 unit = 10 mm), rest the model just above the floor of the view
   edGroup.scale.setScalar(0.1);
@@ -324,7 +334,11 @@ export function editorSyncScene() {
   const { S, three } = ctx;
   const on = S.mode === 'editor';
   if (edGroup) edGroup.visible = on;
-  if (!on) { if (three.cam.view) three.cam.clearViewOffset(); return; }
+  if (!on) {                                       // leaving: restore what the editor hid
+    if (three.cam.view) three.cam.clearViewOffset();
+    three.handGroup.visible = true;                // ctSyncScene never touches this flag
+    return;
+  }
   for (const k of ['det', 'detMarks', 'detArrow', 'tube', 'handGroup', 'aecGroup']) { if (three[k]) three[k].visible = false; }
   three.lamp.intensity = 0; three.lamp.castShadow = false; three.cr.visible = false;
   three.amb.intensity = 1.2; three.key.intensity = 1.0;
@@ -335,11 +349,27 @@ export function editorSyncScene() {
 }
 
 /* ---- save to session / download / upload ---- */
+let customUid = 0;
 function saveToSession() {
-  const { S, $ } = ctx;
+  const { S, $, THREE } = ctx;
   const name = ($('edName').value || 'custom model').trim();
   ED.name = name;
-  S.editor.saved.push({ name, nx: ED.nx, ny: ED.ny, nz: ED.nz, sp: ED.sp.slice(), data: ED.data.slice(), when: new Date().toLocaleTimeString() });
+  const key = 'custom_' + (++customUid);
+  const dims = [ED.nx, ED.ny, ED.nz], sp = ED.sp.slice(), data = ED.data.slice(), vs = sp.map(s => s / 10);
+  S.editor.saved.push({ key, name, nx: ED.nx, ny: ED.ny, nz: ED.nz, sp, data, when: new Date().toLocaleTimeString() });
+  // register as a scannable subject (View Options → Subject), like any preset model:
+  // a voxel-model object mirroring loadVoxelModel's shape + an instanced display mesh
+  // in RAW volume axes (applyVoxelMeshTransform applies the mode flips + mm→world scale)
+  const vm = {
+    header: { name }, dims, spacingMM: sp, vs, data, backendOnly: false,
+    legend: ED_MATERIALS, meshUrl: null,
+    extentMM: [dims[0] * sp[0], dims[1] * sp[1], dims[2] * sp[2]],
+    makePhantom(center, flip, rot) { return new VoxelPhantom({ dims, vs, data }, center, flip, rot); },
+  };
+  const built = buildVoxelInstanced({ nx: ED.nx, ny: ED.ny, nz: ED.nz, sp, data }, false);
+  let grp = null;
+  if (built) { grp = new THREE.Group(); grp.add(built.mesh); }
+  ctx.registerCustomSubject?.(key, name, vm, grp);
   renderSaved();
 }
 function renderSaved() {
@@ -353,7 +383,7 @@ function renderSaved() {
   box.onclick = e => {
     const l = e.target.closest('button[data-load]'), d = e.target.closest('button[data-del]');
     if (l) { const m = S.editor.saved[+l.dataset.load]; adoptModel({ nx: m.nx, ny: m.ny, nz: m.nz, sp: m.sp.slice(), data: m.data.slice(), name: m.name }); }
-    if (d) { S.editor.saved.splice(+d.dataset.del, 1); renderSaved(); }
+    if (d) { const m = S.editor.saved.splice(+d.dataset.del, 1)[0]; if (m?.key) ctx.unregisterCustomSubject?.(m.key); renderSaved(); }
   };
 }
 const b64enc = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
