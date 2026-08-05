@@ -928,12 +928,14 @@ function resetCTSession() {
 function applyMode(mode) {
   ctx.S.mode = mode;
   document.body.classList.toggle('mode-ct', mode === 'ct');
-  document.body.classList.toggle('mode-xray', mode !== 'ct');
+  document.body.classList.toggle('mode-xray', mode === 'xray');
+  document.body.classList.toggle('mode-editor', mode === 'editor');
   ctApplyColorTheme();                            // x-ray drops any vendor theme; CT re-applies it
   const bar = ctx.$('modeBar');
   if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
-  if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition' : 'Digit · Hand phantom';
+  if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition'
+    : mode === 'editor' ? 'Model editor · voxel builder' : 'Digit · Hand phantom';
   const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Planning window in CT
   if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Planning' : 'Image';
   const consoleLbl = ctx.$('consoleLbl');    // x-ray generator vs CT console
@@ -954,6 +956,7 @@ function applyMode(mode) {
   greyHelical(mode === 'ct');     // helical params don't apply to a scout
   if (mode === 'ct') renderStorage();   // reflect any scans still held from before
   setHint(mode === 'ct' ? 'Set the isocentre, then acquire scouts to plan the scan.' : '');
+  ctx.editorMode?.(mode === 'editor');  // enter/leave the Model Editor overlay + 3D preview
   ctx.syncScene();
   updateCTReadouts();
 }

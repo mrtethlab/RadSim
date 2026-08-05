@@ -17,6 +17,37 @@
     <div class="modebar" id="modeBar">
       <button data-mode="xray" class="on">X-RAY</button>
       <button data-mode="ct">CT</button>
+      <button data-mode="editor">MODEL EDITOR</button>
+    </div>
+    <!-- ============ MODEL EDITOR (paint voxel slices; 3D preview shows through on the right) ============ -->
+    <div class="edpage" id="edPage">
+      <div class="edleft">
+        <div class="edhdr"><span class="edtitle">SLICE EDITOR · TRANSVERSE</span>
+          <span class="edslicelab" id="edSliceLab">—</span></div>
+        <div class="edcanvaswrap" id="edWrap">
+          <canvas id="edCanvas"></canvas>
+          <canvas id="edOverlay"></canvas>
+        </div>
+        <div class="edrow"><span class="sllab">Slice</span>
+          <input type="range" id="edSlice" min="0" max="95" value="48">
+          <span class="slhint">scroll / drag</span></div>
+        <div class="edtoolrow" id="edTools">
+          <button data-tool="brush" class="on" title="Brush">✏ Brush</button>
+          <button data-tool="eraser" title="Eraser (paints Air)">◻ Erase</button>
+          <button data-tool="fill" title="Flood fill">▨ Fill</button>
+          <button data-tool="line" title="Line (drag)">╱ Line</button>
+          <button data-tool="rect" title="Filled rectangle (drag)">▮ Rect</button>
+          <button data-tool="circle" title="Filled circle (drag from centre)">● Circle</button>
+          <span class="sllab" style="margin-left:10px">Size</span>
+          <input type="range" id="edSize" min="1" max="24" value="3" style="max-width:100px">
+          <span class="valchip" id="edSizeV">3</span>
+        </div>
+        <div class="edmats" id="edMats"></div>
+        <div class="note" id="edHint"></div>
+      </div>
+      <div class="edright">
+        <div class="edhint3d">3D PREVIEW <span id="edVoxLab"></span><br><small>drag to orbit · wheel to zoom</small></div>
+      </div>
     </div>
     <div class="ctscouts" id="ctScouts">
       <div class="scoutrow">
@@ -212,6 +243,45 @@
             <input type="range" id="objOffX" min="-45" max="45" value="0" step="0.5">
           </div>
           <div class="mini"><button id="objRotReset">↺ reset orientation &amp; offset</button></div>
+        </div>
+      </div>
+
+      <div class="grp ed-only">
+        <div class="lab">Model</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Name</div>
+            <input id="edName" class="edname" value="custom model" spellcheck="false"></div>
+          <div class="row" style="margin-top:8px"><div class="rl">New model</div>
+            <select id="edNewSize" class="slsel">
+              <option value="64,3">64³ · 3 mm</option>
+              <option value="96,2" selected>96³ · 2 mm</option>
+              <option value="128,1.5">128³ · 1.5 mm</option>
+            </select></div>
+          <div class="mini"><button id="edNew">＋ New blank model</button></div>
+          <div class="row" style="margin-top:10px"><div class="rl">Load preset</div>
+            <select id="edPreset" class="slsel">
+              <option value="chest">Chest</option>
+              <option value="headneck">Head &amp; neck</option>
+              <option value="chestabdopelvis">Chest / abdo / pelvis</option>
+              <option value="upperextremity">Upper extremity</option>
+              <option value="lowerextremity">Lower extremity</option>
+              <option value="totalhipreplacement">Total Hip Replacement</option>
+              <option value="wholebody">Whole body</option>
+              <option value="metalphantom">Metal Test Phantom</option>
+            </select></div>
+          <div class="mini"><button id="edLoadPreset">⬇ Load preset into editor</button></div>
+        </div>
+      </div>
+      <div class="grp ed-only">
+        <div class="lab">Save / load</div>
+        <div class="bod">
+          <div class="mini">
+            <button id="edSaveSession">💾 Save to session</button>
+            <button id="edDownload">⭳ Download file</button>
+            <button id="edUpload">⭱ Load file</button>
+          </div>
+          <input type="file" id="edFile" accept=".json,application/json" style="display:none">
+          <div id="edSaved" class="edsaved"></div>
         </div>
       </div>
 

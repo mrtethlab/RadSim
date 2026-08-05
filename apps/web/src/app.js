@@ -16,6 +16,7 @@ import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme } from './ct.js';
+import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -671,6 +672,7 @@ function syncScene(){
     }
   }
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
+  editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. Hand meshes ride handGroup; a voxel mesh
   // is centred at its own origin so it rotates in place inside handGroup.
@@ -1941,6 +1943,8 @@ window.addEventListener('load',()=>{
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
-           refreshFilmViewer, compute, drawHistogram });
+           refreshFilmViewer, compute, drawHistogram,
+           editorMode: (on) => editorApplyMode(on) });
+  initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
 });
