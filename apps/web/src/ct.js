@@ -1238,6 +1238,17 @@ function resetToScanStart() {
   ctx.syncScene();
   updateCTReadouts();
 }
+// Position the patient/couch at a scan GROUP's first slice. For group 1 this is where
+// "Move to Scan" already parked the couch (a visual no-op); later groups step to their
+// own start. The couch must NOT return to the isocentre during the breath hold — that
+// disconnects the 3D scene from the scan state until the sweep's first frame.
+function resetToGroupStart(g) {
+  const { S } = ctx;
+  S.ct.patient.z = clampPatientZ(tablePosToPatientZ(scanStartMM() + g.box.top * S.ct.scanLen));
+  S.ct.tablePos = (S.ct.isoZ - S.ct.patient.z) * MM_PER_UNIT;
+  ctx.syncScene();
+  updateCTReadouts();
+}
 // Largest lateral (x) offset that keeps the couch clear of the bore wall: the bore is a
 // cylinder of radius BORE_R about the isocentre; at the couch's height the horizontal
 // clearance is √(BORE_R² − Δy²), and the couch half-width + a margin must fit inside it.
@@ -2789,7 +2800,7 @@ function animateHelicalScan(g, setup, alive) {
 // After the acquisition, wait for the reconstruction to resolve (PREVIEW stays up), then
 // reveal the fully computed slices, store, and breathe-normal.
 async function scanGroupExposure(g, i, alive) {
-  resetToIsocentre();
+  resetToGroupStart(g);                        // couch waits AT the scan start through the breath hold
   setHint('G' + (i + 1) + ' · breathe in and hold…');
   Sound.play('breathIn');
   await sleep((Sound.duration('breathIn') || 2) * 1000); if (!alive()) return null;
@@ -2797,7 +2808,12 @@ async function scanGroupExposure(g, i, alive) {
   setHint('G' + (i + 1) + ' · acquiring…');
   startGantrySpin(g.rotSpeed);
   Sound.startScan(ctx.S.ct.scanSound);
+  // the recon geometry anchors the phantom at the COMMITTED isocentre (patient.z = isoZ,
+  // see scanSetup) — hold that for the phantom build only; the visible couch stays put
+  const zHold = ctx.S.ct.patient.z;
+  ctx.S.ct.patient.z = ctx.S.ct.isoZ;
   const setup = scanSetup(g);
+  ctx.S.ct.patient.z = zHold;
   // 1) time-paced acquisition: advance the couch + show cheap degraded previews (PREVIEW
   //    badge up), timed by the physical scan speed — NOT by reconstruction cost. Runs FIRST
   //    and alone so the previews stay smooth even when the full recon is heavy (a heavy
