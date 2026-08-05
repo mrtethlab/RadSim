@@ -2,11 +2,12 @@ import { AUDIO_B64 } from './data.js';
 
 // CT patient sounds shipped as assets (public/sounds); the CT scan-exposure sound
 // reuses the x-ray 'buzz'. Loaded from URL on init alongside the embedded set.
+const BASE = import.meta.env.BASE_URL;      // '/' in dev; relative under a subpath deploy
 const URL_SOUNDS = {
-  breathIn: '/sounds/CTBreathIn.wav',
-  breathNormal: '/sounds/CTBreathNormal.wav',
-  tableMove: '/sounds/TableMovement.wav',
-  ctExposureS1: '/sounds/CTExposure_S1.wav',
+  breathIn: BASE+'sounds/CTBreathIn.wav',
+  breathNormal: BASE+'sounds/CTBreathNormal.wav',
+  tableMove: BASE+'sounds/TableMovement.wav',
+  ctExposureS1: BASE+'sounds/CTExposure_S1.wav',
 };
 
 export const Sound=(()=>{

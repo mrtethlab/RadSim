@@ -13,7 +13,7 @@ const loader = new GLTFLoader();
 // Many exported models (incl. the bundled overview-skeleton.glb) are Draco-
 // compressed; wire a DRACOLoader so those decode. Decoder served from public/draco.
 const draco = new DRACOLoader();
-draco.setDecoderPath('/draco/');
+draco.setDecoderPath(import.meta.env.BASE_URL+'draco/');
 loader.setDRACOLoader(draco);
 
 // Load a File (from an <input type=file>) -> resolves to a THREE.Group (gltf.scene).

@@ -26,7 +26,9 @@ Thumbs.db
 # local-only notes (not for the repo)
 SUMMARY.md
 
-# generated voxel-model assets (large, regenerable via services/compute/app/build_chest.py)
+# generated voxel-model assets (regenerable via services/compute/app/build_chest.py).
+# Models are committed so GitHub Pages can serve them — EXCEPT hires_shoulder, whose
+# 254 MB .mat.bin exceeds GitHub's 100 MB per-file limit (kept local-only).
 services/compute/data/
-apps/web/public/models/**/*.mat.bin
-apps/web/public/models/**/*.glb
+apps/web/public/models/hires_shoulder/*.mat.bin
+apps/web/public/models/hires_shoulder/*.glb
