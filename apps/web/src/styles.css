@@ -355,6 +355,18 @@
 .modebar button[data-mode="xray"].on{color:#06121a; background:var(--cyan); box-shadow:0 0 14px rgba(53,198,214,.55)}
 .modebar button[data-mode="ct"].on{color:#1a1204; background:var(--amber); box-shadow:0 0 14px rgba(255,178,62,.55)}
 
+/* ---- AEC (auto exposure control) ---- */
+.aectgl{font-family:var(--seg); font-size:11px; letter-spacing:1.5px; padding:4px 14px;
+  background:#10161c; color:var(--muted); border:1px solid var(--edge2); border-radius:4px; cursor:pointer}
+.aectgl.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
+/* three ionisation-chamber buttons in the bucky pattern: outer pair high, centre cell lower */
+.aec-cells{display:flex; gap:16px; justify-content:center; align-items:flex-start; padding:4px 0 2px}
+.aec-cells button{width:36px; height:27px; font-family:var(--seg); font-size:11px; letter-spacing:1px;
+  background:#0d1319; color:var(--muted2); border:1.5px solid var(--edge2); border-radius:5px; cursor:pointer}
+.aec-cells button[data-cell="c"]{margin-top:16px}
+.aec-cells button.on{background:rgba(53,198,214,.18); color:#bdf3fa; border-color:var(--cyan)}
+.aec-cells button:hover{border-color:var(--cyan-dim)}
+
 /* mode-scoped visibility (body class set by ct.js applyMode) */
 .ct-only{display:none}
 body.mode-ct .ct-only{display:block}

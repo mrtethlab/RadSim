@@ -483,10 +483,17 @@
             <div class="stepper"><button data-step="ma" data-d="-1">−</button>
               <div class="sv" id="maSv">100</div><button data-step="ma" data-d="1">+</button></div></div>
           <input type="range" id="ma" min="0" max="10" value="2" step="1">
-          <div class="row" style="margin-top:12px"><div class="rl">mAs</div>
+          <div class="row" style="margin-top:12px"><div class="rl" id="masLbl">mAs</div>
             <div class="stepper"><button data-step="mas" data-d="-1">−</button>
               <div class="sv" id="masSv">2.0</div><button data-step="mas" data-d="1">+</button></div></div>
-          <input type="range" id="mas" min="0" max="24" value="7" step="1">
+          <input type="range" id="mas" min="0" max="31" value="7" step="1">
+          <div class="row" style="margin-top:10px"><div class="rl">AEC <small>auto exposure control</small></div>
+            <button class="aectgl" id="aecBtn" type="button" aria-pressed="false">OFF</button></div>
+          <div class="aec-cells" id="aecCellsBox" style="display:none" title="Ionisation chambers — select any combination">
+            <button data-cell="l" id="aecL" class="on">L</button>
+            <button data-cell="c" id="aecC">C</button>
+            <button data-cell="r" id="aecR" class="on">R</button>
+          </div>
           <div class="row xray-only" style="margin-top:6px"><div class="rl">Exposure time</div>
             <div style="font-family:var(--seg);color:var(--green);font-size:14px" id="timeInline">20 ms</div></div>
         </div>
