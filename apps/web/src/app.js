@@ -304,7 +304,7 @@ async function setSubject(sub){
     if(hint) hint.textContent='Loading '+cfg.title+'…';
     S.subjectLoading=true;   // guards CT START/exposure until the swap completes
     try{
-      vm=await loadVoxelModel('/models/'+sub, sub);
+      vm=await loadVoxelModel(import.meta.env.BASE_URL+'models/'+sub, sub);
       S.voxelCache[sub]=vm;
       if(vm.meshUrl){
         const grp=await loadModelUrl(vm.meshUrl);
