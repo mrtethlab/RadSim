@@ -1610,6 +1610,14 @@ const activeGrp = () => grp(ctx.S.ct.activeGroup);
 const clampV = (v, a, b) => Math.max(a, Math.min(b, v));
 function fmtNum(x) { return (Math.round(x * 1000) / 1000).toString(); }
 function sanitizeNum(s, fallback) { const n = parseFloat(String(s).replace(/[^0-9.\-]/g, '')); return isFinite(n) ? n : fallback; }
+// Parse a typed table position. Accepts the DISPLAY convention ('S10' = superior = −10 mm,
+// 'I10' = inferior = +10 mm) as well as raw signed mm — otherwise typing the value exactly
+// as the table shows it ('S10.0') silently became +10 (inferior).
+function parseTablePos(s, fallback) {
+  const m = String(s).trim().match(/^([SsIi])\s*(\d+\.?\d*)/);
+  if (m) { const v = parseFloat(m[2]); if (isFinite(v)) return /[Ss]/.test(m[1]) ? -v : v; }
+  return sanitizeNum(s, fallback);
+}
 
 // calculated fields
 function groupScanLenMM(g) { return Math.abs(g.box.bot - g.box.top) * ctx.S.ct.scanLen; }
@@ -1931,10 +1939,12 @@ function openFieldEditor(gi, act) {
   ctx.S.ct.activeGroup = gi; renderScanBoxes();
   const done = () => { renderScanBoxes(); updatePlan(); };
   const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
+  // table positions display + parse the S/I convention ('S10' = −10 mm)
+  const typePos = (label, cur, apply) => openTypedPopup(label, fmtTablePos(cur), (v) => { apply(parseTablePos(v, cur)); done(); });
   const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
   const off = scanStartMM();
-  if (act === 'start') type('Start location (table position, mm)', Math.round(off + g.box.top * len), (v) => { g.box.top = clampV((v - off) / len, -0.6, g.box.bot - boxMinLenN()); });
-  else if (act === 'end') type('End location (table position, mm)', Math.round(off + g.box.bot * len), (v) => { g.box.bot = clampV((v - off) / len, g.box.top + boxMinLenN(), 1.6); });
+  if (act === 'start') typePos('Start location (mm · S superior / I inferior)', Math.round(off + g.box.top * len), (v) => { g.box.top = clampV((v - off) / len, -0.6, g.box.bot - boxMinLenN()); });
+  else if (act === 'end') typePos('End location (mm · S superior / I inferior)', Math.round(off + g.box.bot * len), (v) => { g.box.bot = clampV((v - off) / len, g.box.top + boxMinLenN(), 1.6); });
   else if (act === 'interval') type('Slice interval (mm)', fmtNum(g.interval), (v) => { g.interval = clampV(v, 0.1, 50); });
   else if (act === 'tilt') type('Gantry tilt (degrees)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
@@ -2028,13 +2038,13 @@ function wireScoutTable() {
     const span = e.target.closest('.sg-edit'); if (!span) return;
     const row = span.closest('.sg-row'); const i = +row.dataset.plane, act = span.dataset.act;
     const c = ctx.S.ct, t = c.scoutTech[i];
-    if (act === 'start') openTypedPopup('Scout start (table position, mm)', Math.round(scanStartMM()), (v) => {
-      const nv = sanitizeNum(v, scanStartMM()), end = c.scanStart + c.scanLen;
+    if (act === 'start') openTypedPopup('Scout start (mm · S superior / I inferior)', fmtTablePos(scanStartMM()), (v) => {
+      const nv = parseTablePos(v, scanStartMM()), end = c.scanStart + c.scanLen;
       c.scanStart = Math.min(nv, end - 50); c.scanLen = Math.round(end - c.scanStart); c.protocol = 'whole';
       renderScanBoxes(); updateScanMarkers(); if (c.phase === 'planning') updatePlan(); updateCTReadouts();
     });
-    else if (act === 'end') openTypedPopup('Scout end (table position, mm)', Math.round(scanStartMM() + c.scanLen), (v) => {
-      const nv = sanitizeNum(v, scanStartMM() + c.scanLen);
+    else if (act === 'end') openTypedPopup('Scout end (mm · S superior / I inferior)', fmtTablePos(scanStartMM() + c.scanLen), (v) => {
+      const nv = parseTablePos(v, scanStartMM() + c.scanLen);
       c.scanLen = Math.max(50, Math.round(nv - c.scanStart)); c.protocol = 'whole';
       renderScanBoxes(); updateScanMarkers(); if (c.phase === 'planning') updatePlan(); updateCTReadouts();
     });
@@ -2151,6 +2161,7 @@ function editRecon(ri, act) {
   const len = c.scanLen, off = scanStartMM(), gTop = off + g.box.top * len, span = (off + g.box.bot * len) - gTop;
   const done = () => { renderReconPlan(); renderScanBoxes(); };
   const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
+  const typePos = (label, cur, apply) => openTypedPopup(label, fmtTablePos(cur), (v) => { apply(parseTablePos(v, cur)); done(); });
   const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
   if (act === 'rp-plane') station('Recon plane', RP_PLANES.map((p, i) => i), RP_PLANES.findIndex((p) => p.v === r.plane), (i) => RP_PLANES[i].l, (i) => { r.plane = RP_PLANES[i].v; });
   else if (act === 'rp-algo') station('Processing algorithm', RP_ALGOS.map((a, i) => i), Math.max(0, RP_ALGOS.findIndex((a) => a.v === r.algo)), (i) => RP_ALGOS[i].l, (i) => { r.algo = RP_ALGOS[i].v; });
@@ -2159,8 +2170,8 @@ function editRecon(ri, act) {
   else if (act === 'rp-interval') type('Slice interval (mm)', fmtNum(r.interval), (v) => { r.interval = clampV(v, 0.1, 50); });
   else if (act === 'rp-ww') type('Window width (WW)', Math.round(r.ww), (v) => { r.ww = clampV(Math.round(v), 1, 4000); });
   else if (act === 'rp-wl') type('Window level (WL)', Math.round(r.wl), (v) => { r.wl = clampV(Math.round(v), -1000, 3000); });
-  else if (act === 'rp-substart') type('Recon sub-area start (table position, mm)', Math.round(gTop + r.subTop * span), (v) => { r.subTop = clampV((v - gTop) / span, 0, r.subBot - 0.02); });
-  else if (act === 'rp-subend') type('Recon sub-area end (table position, mm)', Math.round(gTop + r.subBot * span), (v) => { r.subBot = clampV((v - gTop) / span, r.subTop + 0.02, 1); });
+  else if (act === 'rp-substart') typePos('Recon sub-area start (mm · S/I)', Math.round(gTop + r.subTop * span), (v) => { r.subTop = clampV((v - gTop) / span, 0, r.subBot - 0.02); });
+  else if (act === 'rp-subend') typePos('Recon sub-area end (mm · S/I)', Math.round(gTop + r.subBot * span), (v) => { r.subBot = clampV((v - gTop) / span, r.subTop + 0.02, 1); });
   else done();
 }
 
