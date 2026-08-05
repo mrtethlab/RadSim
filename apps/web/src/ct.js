@@ -3654,7 +3654,9 @@ function obliquePlane() {
   if (ob.view === 'axial') { a1 = [1, 0, 0]; a2 = [0, 1, 0]; a3 = [0, 0, 1]; }
   else if (ob.view === 'coronal') { a1 = [1, 0, 0]; a2 = [0, 0, 1]; a3 = [0, 1, 0]; }
   else { a1 = [0, 1, 0]; a2 = [0, 0, 1]; a3 = [1, 0, 0]; }
-  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
+  // image vertical: when the out-of-plane axis is z, use −z so SUPERIOR renders at the TOP
+  // (image rows run top = +v; z mm grows inferior) — otherwise cor/sag planes come out flipped
+  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3[2] ? [0, 0, -1] : a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
     C: v3add(v3scl(a1, ob.cu), v3scl(a2, ob.cv)) };
 }
 // clamp the localizer centre to the volume (a1 = ±fov/2; a2 = ±fov/2 for axial, ±zExt/2 else)
@@ -3962,7 +3964,10 @@ function localizerBasis(scan, P, ang, cu, cv, srcPos) {
   else if (P === 'coronal') { a1 = [1, 0, 0]; a2 = [0, 0, 1]; a3 = [0, 1, 0]; }
   else { a1 = [0, 1, 0]; a2 = [0, 0, 1]; a3 = [1, 0, 0]; }                            // sagittal
   const s3 = P === 'axial' ? ((srcPos || 0) - zc) : (srcPos || 0);                    // a3 offset in centred coords (z is centred)
-  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
+  // image vertical: when the out-of-plane axis is z (planning ON an axial), use −z so SUPERIOR
+  // renders at the TOP of the new recon (rows run top = +v; z mm grows inferior). The raw a3
+  // still anchors C so the plane passes through the source slice.
+  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3[2] ? [0, 0, -1] : a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
     C: v3add(v3add(v3scl(a1, cu), v3scl(a2, cv)), v3scl(a3, s3)), fov: g.fov, vExt: P === 'axial' ? g.zExt : g.fov, view: P };
 }
 // Set the planned plane from the live table (auto-orients the box). 'parallel' → crop rectangle.
