@@ -1577,7 +1577,11 @@ function cancelScout() { scoutToken++; }
 // ==================== Phase 4: scan groups (up to 4 planned scans) ====================
 // Each scan group has its own coloured box on both scouts (per-group AP↔LAT cylinder
 // lock) and its own parameters, shown as a colour-coded row in the scan-group table.
-const BOX_MIN = 0.05;                 // smallest box extent (normalized)
+const BOX_MIN = 0.05;                 // smallest cross-extent (normalized to the scout FOV)
+// Smallest SCAN LENGTH is PHYSICAL (mm), not scout-relative: 5% of a whole-body scout
+// would force a ~57 mm minimum and block short ranges like S10→I10 (20 mm).
+const BOX_MIN_MM = 10;
+const boxMinLenN = () => Math.max(1e-4, BOX_MIN_MM / Math.max(1, ctx.S.ct.scanLen));
 const MOVE_THRESH = 0.5;              // mm: below this, no table move is needed
 const TABLE_SPEED = 45;              // mm/s couch reposition speed (NOT the acquisition table speed)
 const N_GROUPS = 4;
@@ -1833,9 +1837,9 @@ function applyBoxDrag(gi, view, edge, s0, du, dv) {
   } else if (edge === scanLo) {
     // scan-length edges move INDEPENDENTLY: extend the superior border without touching
     // the inferior one (the cross-axis width, below, stays symmetric).
-    b.top = clampV(s0.top + scanD, SCAN_LO, s0.bot - BOX_MIN);
+    b.top = clampV(s0.top + scanD, SCAN_LO, s0.bot - boxMinLenN());
   } else if (edge === scanHi) {
-    b.bot = clampV(s0.bot + scanD, s0.top + BOX_MIN, SCAN_HI);
+    b.bot = clampV(s0.bot + scanD, s0.top + boxMinLenN(), SCAN_HI);
   } else {
     // Cross-axis RESIZE, symmetric about the box centre. AP (mediolateral) and LAT (AP) extents
     // are LINKED to one half-width (the scan volume is a circular cylinder, never an ellipse).
@@ -1929,8 +1933,8 @@ function openFieldEditor(gi, act) {
   const type = (label, cur, apply) => openTypedPopup(label, cur, (v) => { apply(sanitizeNum(v, cur)); done(); });
   const station = (label, list, cur, fmt, apply) => openStationPopup(label, list, cur, fmt, (v) => { apply(v); done(); });
   const off = scanStartMM();
-  if (act === 'start') type('Start location (table position, mm)', Math.round(off + g.box.top * len), (v) => { g.box.top = clampV((v - off) / len, -0.6, g.box.bot - BOX_MIN); });
-  else if (act === 'end') type('End location (table position, mm)', Math.round(off + g.box.bot * len), (v) => { g.box.bot = clampV((v - off) / len, g.box.top + BOX_MIN, 1.6); });
+  if (act === 'start') type('Start location (table position, mm)', Math.round(off + g.box.top * len), (v) => { g.box.top = clampV((v - off) / len, -0.6, g.box.bot - boxMinLenN()); });
+  else if (act === 'end') type('End location (table position, mm)', Math.round(off + g.box.bot * len), (v) => { g.box.bot = clampV((v - off) / len, g.box.top + boxMinLenN(), 1.6); });
   else if (act === 'interval') type('Slice interval (mm)', fmtNum(g.interval), (v) => { g.interval = clampV(v, 0.1, 50); });
   else if (act === 'tilt') type('Gantry tilt (degrees)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
