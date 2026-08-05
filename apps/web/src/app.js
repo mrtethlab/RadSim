@@ -16,6 +16,7 @@ import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme } from './ct.js';
+import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -55,6 +56,28 @@ function initScene(){
     bracket( hx, hz,-1,-1); bracket(-hx, hz, 1,-1);
     bracket( hx,-hz,-1, 1); bracket(-hx,-hz, 1, 1);
   })();
+  // AEC ionisation chambers: three outlined cells on the receptor (bucky pattern —
+  // outer pair toward the head end, centre cell lower). Shown only when AEC is on;
+  // selected cells fill translucent cyan. Fixed to the bucky (never scale with the plate).
+  const aecGroup=new THREE.Group(); scene.add(aecGroup);
+  const aecCellMeshes={};
+  for(const [k,p] of Object.entries(AEC_CELLS)){
+    const fill=new THREE.Mesh(new THREE.PlaneGeometry(AEC_W,AEC_L),
+      new THREE.MeshBasicMaterial({color:0x35c6d6, transparent:true, opacity:0.16, side:THREE.DoubleSide, depthWrite:false}));
+    fill.rotation.x=-Math.PI/2; fill.position.set(p.x,0.09,p.z); aecGroup.add(fill);
+    const edge=new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.PlaneGeometry(AEC_W,AEC_L)),
+      new THREE.LineBasicMaterial({color:0x35c6d6, transparent:true, opacity:0.9}));
+    edge.rotation.x=-Math.PI/2; edge.position.set(p.x,0.1,p.z); aecGroup.add(edge);
+    const lc=document.createElement('canvas'); lc.width=lc.height=64;
+    const lg=lc.getContext('2d'); lg.fillStyle='#bdf3fa'; lg.font='bold 40px Arial';
+    lg.textAlign='center'; lg.textBaseline='middle'; lg.fillText(k.toUpperCase(),32,34);
+    const lbl=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.8),
+      new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(lc), transparent:true, opacity:0.9, depthWrite:false}));
+    lbl.rotation.x=-Math.PI/2; lbl.position.set(p.x,0.11,p.z); aecGroup.add(lbl);
+    aecCellMeshes[k]={fill,edge,lbl};
+  }
+  aecGroup.visible=false;
+
   // hang-direction arrow: a small white arrow printed on the plate pointing +z
   // (toward the fingertips) — the end the processed image is hung from.
   const detArrow=new THREE.Group();
@@ -103,7 +126,7 @@ function initScene(){
   const handGroup=new THREE.Group(); scene.add(handGroup);
 
   three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
-         amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD};
+         amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD,aecGroup,aecCellMeshes};
   buildHandMeshes();
 
   // camera: free orbit OR tube's-eye bird's view
@@ -340,6 +363,29 @@ async function setSubject(sub){
   if(sel) sel.value=sub;
   syncScene();
 }
+/* ---- custom (Model Editor) subjects: session-saved models become selectable under
+   View Options exactly like the preset models. The editor hands over a ready voxel-model
+   object (same shape loadVoxelModel returns) + a display mesh in raw volume mm axes, so
+   setSubject's cache-hit path and applyVoxelMeshTransform work unchanged. ---- */
+function registerCustomSubject(key, title, vm, meshGroup){
+  VOXEL_MODELS[key]={ title, scoutKv:100, scoutMa:100, xrayKv:80 };
+  S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
+  S.voxelCache[key]=vm;
+  if(meshGroup){ meshGroup.visible=false; three.handGroup.add(meshGroup); three.voxelMeshes[key]=meshGroup; }
+  const sel=$('subjectSel'); if(!sel) return;
+  let opt=sel.querySelector('option[value="'+key+'"]');
+  if(!opt){ opt=document.createElement('option'); opt.value=key; sel.appendChild(opt); }
+  opt.textContent='Custom: '+title;
+}
+function unregisterCustomSubject(key){
+  if(S.subject===key) setSubject('hand');
+  delete VOXEL_MODELS[key];
+  if(S.voxelCache) delete S.voxelCache[key];
+  const m=three.voxelMeshes&&three.voxelMeshes[key];
+  if(m){ three.handGroup.remove(m); m.traverse(o=>{ if(o.isMesh){ o.geometry.dispose(); o.material.dispose(); } }); delete three.voxelMeshes[key]; }
+  $('subjectSel')?.querySelector('option[value="'+key+'"]')?.remove();
+}
+
 /* Position + orient the chest display mesh so it matches the VoxelPhantom (same axis
    flips) and is scaled from mm to world units. The mesh is a child of handGroup, so
    handGroup's translation (CT patient offset) then places it at the isocentre. */
@@ -394,6 +440,7 @@ const S = {
   objOff:{x:0,z:0},            // x-ray object offset on the receptor (cm): x cross / z long axis
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
+  aecOn:false, aecCells:{l:true,c:false,r:true}, aecResult:null,   // AEC: cells + achieved mAs of the last exposure
   lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
   showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
   detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
@@ -491,7 +538,31 @@ const S = {
 // pixels — not a real DR resolution) so a voxel-body exposure returns in well
 // under a second; low/std/high are true modern DR matrices (~100 µm pixels).
 const RES_MAP={ quick:[320,400], low:[2000,2450], std:[2500,3070], high:[3500,4300] };
-const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125];
+const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125,160,200,250,320,400,500,600];
+
+/* ---- AEC (automatic exposure control) ----
+   Three ionisation chambers fixed in the bucky in the standard pattern: two outer
+   cells side-by-side toward the cathode/head end (~15 cm apart) and one centre cell
+   lower — behind the anatomy of interest. The chambers integrate receptor-plane air
+   kerma and terminate the exposure when the AVERAGE over the selected cells reaches
+   the calibrated target; the set mAs acts as the BACKUP (safety) limit. Chambers are
+   fixed to the bucky, so they do not move or scale with the cassette. */
+const AEC_CELLS={ l:{x:-7.5,z:4.5}, c:{x:0,z:-4.5}, r:{x:7.5,z:4.5} };   // centres (cm on the receptor)
+const AEC_W=5, AEC_L=6.5;                                                // chamber size (cm): x × z
+const AEC_MIN_MAS=0.2;                                                   // minimum response (~2 ms at 100 mA)
+function aecActive(){ return S.aecOn && (S.aecCells.l||S.aecCells.c||S.aecCells.r); }
+/* Mean receptor dose over the selected chambers (all pixels — a collimated-off chamber
+   reads ~0 and correctly drives the exposure to the backup limit). */
+function aecCellDose(dose,nx,ny,pxU,pxV){
+  const halfU=(nx-1)/2, halfV=(ny-1)/2; let sum=0,n=0;
+  for(const k of ['l','c','r']){
+    if(!S.aecCells[k]) continue; const c=AEC_CELLS[k];
+    const i0=Math.max(0,Math.round((c.x-AEC_W/2)/pxU+halfU)), i1=Math.min(nx-1,Math.round((c.x+AEC_W/2)/pxU+halfU));
+    const j0=Math.max(0,Math.round((c.z-AEC_L/2)/pxV+halfV)), j1=Math.min(ny-1,Math.round((c.z+AEC_L/2)/pxV+halfV));
+    for(let j=j0;j<=j1;j++)for(let i=i0;i<=i1;i++){ sum+=dose[j*nx+i]; n++; }
+  }
+  return n? sum/n : 0;
+}
 const maSteps=[25,50,100,150,200,250,300,400,500,630,800];
 function exposureTimeSec(){ return S.mas / S.ma; }              // t = mAs / mA
 function fmtTime(t){ return t<1 ? Math.round(t*1000)+' ms' : t.toFixed(t<10?2:1)+' s'; }
@@ -612,7 +683,19 @@ function syncScene(){
   three.cr.visible = !on;                       // crosshair now comes from the lamp
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
   updateDetector();                             // receptor size (25x30 / 35x43)
+  // AEC chamber overlay: x-ray mode + AEC on; selected cells fill, others outline only
+  if(three.aecGroup){
+    three.aecGroup.visible = S.mode!=='ct' && S.aecOn;
+    for(const k of ['l','c','r']){
+      const m=three.aecCellMeshes[k]; if(!m) continue;
+      const on=!!S.aecCells[k];
+      m.fill.material.opacity = on?0.20:0.03;
+      m.edge.material.opacity = on?0.95:0.35;
+      m.lbl.material.opacity  = on?0.95:0.4;
+    }
+  }
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
+  editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. Hand meshes ride handGroup; a voxel mesh
   // is centred at its own origin so it rotates in place inside handGroup.
@@ -970,6 +1053,23 @@ function bind(){
   $('kv').addEventListener('input',e=>{S.kv=parseInt(e.target.value);refreshReadouts();});
   $('ma').addEventListener('input',e=>{S.ma=maSteps[e.target.value];refreshReadouts();});
   $('mas').addEventListener('input',e=>{S.mas=masSteps[e.target.value];refreshReadouts();});
+  // ---- AEC: toggle + chamber selection. Enabling swaps the mAs control to the BACKUP
+  // limit (bumped to a sensible safety value); disabling restores the manual mAs.
+  $('aecBtn')?.addEventListener('click',()=>{
+    S.aecOn=!S.aecOn;
+    const b=$('aecBtn'); b.classList.toggle('on',S.aecOn); b.textContent=S.aecOn?'ON':'OFF';
+    b.setAttribute('aria-pressed',S.aecOn);
+    $('aecCellsBox').style.display=S.aecOn?'flex':'none';
+    $('masLbl').textContent=S.aecOn?'Backup mAs':'mAs';
+    if(S.aecOn){ S._masPreAec=S.mas; if(S.mas<200){ S.mas=320; $('mas').value=nearestMasIdx(); } }
+    else if(S._masPreAec!=null){ S.mas=S._masPreAec; $('mas').value=nearestMasIdx(); }
+    S.aecResult=null; resetPrep(); refreshReadouts(); syncScene();
+  });
+  $('aecCellsBox')?.addEventListener('click',e=>{
+    const b=e.target.closest('button[data-cell]'); if(!b) return;
+    const k=b.dataset.cell; S.aecCells[k]=!S.aecCells[k]; b.classList.toggle('on',S.aecCells[k]);
+    S.aecResult=null; resetPrep(); syncScene();
+  });
   // rotor: latches on until an exposure completes
   $('rotor').addEventListener('click',toggleRotor);
   // exposure switch: press AND HOLD for the exposure time
@@ -1084,9 +1184,12 @@ function refreshReadouts(){
   $('maV').textContent=S.ma; $('maSv').textContent=S.ma;
   $('masV').textContent=S.mas.toFixed(S.mas<10?1:0); $('masSv').textContent=S.mas.toFixed(S.mas<10?1:0);
   $('fsV').innerHTML=(S.ma>400?'1.0':'0.6')+'<small>mm</small>';
-  const t=exposureTimeSec();
-  $('timeV').innerHTML = t<1 ? Math.round(t*1000)+'<small>ms</small>' : t.toFixed(t<10?2:1)+'<small>s</small>';
-  $('timeInline').textContent=fmtTime(t);
+  if(aecActive()){ $('timeV').innerHTML='AEC'; $('timeInline').textContent='AEC · backup '+fmtTime(exposureTimeSec()); }
+  else{
+    const t=exposureTimeSec();
+    $('timeV').innerHTML = t<1 ? Math.round(t*1000)+'<small>ms</small>' : t.toFixed(t<10?2:1)+'<small>s</small>';
+    $('timeInline').textContent=fmtTime(t);
+  }
 }
 
 /* ---- ROTOR + EXPOSURE (press-and-hold) ---- */
@@ -1118,7 +1221,9 @@ const EXP={holding:false, done:false, t0:0, dur:0, raf:0, timer:0};
 function startExposure(){
   if(!S.prepped || S.exposing) return;
   S.exposing=true; EXP.done=false; EXP.holding=true;
-  EXP.dur=Math.max(0.02, exposureTimeSec())*1000;   // ms the switch must be held
+  // AEC terminates the exposure itself — the operator just holds through it (ms-scale);
+  // manual technique requires holding the switch for the full set exposure time.
+  EXP.dur=Math.max(0.02, aecActive()? 0.05 : exposureTimeSec())*1000;   // ms the switch must be held
   EXP.t0=performance.now();
   setWarn('live'); $('clock').textContent='EXPOSING';
   $('fire').classList.remove('armed'); $('fire').classList.add('firing');
@@ -1279,6 +1384,25 @@ async function computeRadiograph(){
   }
   // add the diffuse scatter fog (already grid-attenuated) onto the primary
   if(scatterFog>0) for(let k=0;k<dose.length;k++) if(mask[k]) dose[k]+=scatterFog;
+
+  // ---- AEC: the chambers integrate receptor-plane kerma DURING the exposure and cut it
+  // when the average over the selected cells reaches the calibrated target (the same
+  // receptor-dose calibration the EI uses: EI = 900 × dose, so target dose = EI_target/900).
+  // Everything upstream is linear in mAs, so the projection computed at the BACKUP mAs is
+  // simply rescaled to the terminated mAs — noise is applied after, at the true exposure.
+  // If the target is never reached (cells behind dense anatomy / collimated off), the
+  // exposure runs to the backup limit — exactly how a real backup timer trips.
+  S.aecResult=null;
+  if(aecActive()){
+    const cd=aecCellDose(dose,nx,ny,pxU,pxV);       // mean chamber dose at backup mAs
+    const target=S.eiTarget/900;                     // calibrated receptor dose (EI 100 = 1 µGy)
+    const backup=S.mas;
+    const ideal = cd>1e-12 ? backup*target/cd : Infinity;
+    const masA=Math.max(AEC_MIN_MAS, Math.min(backup, ideal));
+    const f=masA/backup;
+    if(f<1) for(let k=0;k<dose.length;k++) dose[k]*=f;
+    S.aecResult={mas:masA, backupHit: ideal>=backup};
+  }
 
   const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask);
   pushImage(signal,nx,ny,mask,buildMeta(spectrum));   // -> active image + drawFilm + meta + strip
@@ -1615,8 +1739,12 @@ function buildMeta(spec){
   const subjName=(S.subject==='hand'?'HAND':(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase());
   return {
     tl: subjName+' · '+S.pose,
-    tr: S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs',
-    bl: 'SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime(exposureTimeSec())+'  Ē '+spec.meanE.toFixed(0)+'keV',
+    tr: S.aecResult
+      ? S.kv+' kVp  '+S.ma+' mA  AEC '+S.aecResult.mas.toFixed(S.aecResult.mas<10?1:0)+' mAs'
+        +' ['+['l','c','r'].filter(k=>S.aecCells[k]).join('').toUpperCase()+']'
+        +(S.aecResult.backupHit?'  ⚠ BACKUP':'')
+      : S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs',
+    bl: 'SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime((S.aecResult?S.aecResult.mas:S.mas)/S.ma)+'  Ē '+spec.meanE.toFixed(0)+'keV',
     br: 'DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID'),
   };
 }
@@ -1838,6 +1966,9 @@ window.addEventListener('load',()=>{
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
-           refreshFilmViewer, compute, drawHistogram });
+           refreshFilmViewer, compute, drawHistogram,
+           editorMode: (on) => editorApplyMode(on) });
+  initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
+               registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
 });
