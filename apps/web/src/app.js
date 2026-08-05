@@ -532,7 +532,11 @@ function baseLift(skin, bone, R){
 // posterior on the detector): flipping x AND y is a 180° roll about the long axis —
 // a true rotation (chirality preserved), the patient turned over on the plate.
 function voxelFlips(){
-  return S.mode==='ct' ? [false,true,true] : [true,true,false];
+  const f = S.mode==='ct' ? [false,true,true] : [true,true,false];
+  // the head & neck volume is stored rolled 180° vs the other models (it came out prone
+  // where the rest are supine) — roll it back: flip x AND y = 180° about the long axis
+  if(S.subject==='headneck'){ f[0]=!f[0]; f[1]=!f[1]; }
+  return f;
 }
 function buildPhantom(){
   // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
