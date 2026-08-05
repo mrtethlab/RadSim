@@ -874,8 +874,9 @@ export function ctSyncScene() {
     three.cr.visible = false;
     three.amb.intensity = 1.55; three.key.intensity = 1.35;   // brighter — the big rig read too dark
   } else {
-    three.handGroup.position.x = 0;
-    three.handGroup.position.z = 0;
+    // x-ray mode: honour the object offset sliders (syncScene runs first; don't zero them)
+    three.handGroup.position.x = S.objOff ? S.objOff.x : 0;
+    three.handGroup.position.z = S.objOff ? S.objOff.z : 0;
     if (couchBase) couchBase.visible = false;
   }
   updateScanMarkers();
@@ -1589,7 +1590,10 @@ const ROT_STATIONS = [0.25, 0.4, 0.5, 0.75, 1.0, 1.5, 2.0];   // s / rotation
 // element, so element (min recon thickness) = beamColl / rows; table speed (mm/rot)
 // = pitch × beam collimation (⇒ pitch = table speed / beam collimation).
 const acqThkOf = (g) => g.beamColl / g.detRows;             // detector element = min recon thickness (mm)
-const tableSpeedOf = (g) => g.pitch * g.beamColl;           // table travel per rotation (mm/rot)
+// table travel per rotation (mm/rot) = pitch × beam collimation. SSCT collimates the beam to
+// the ACQUIRED SLICE THICKNESS (the collimator sets slice width on a single-row detector), not
+// to the 0.625 mm element — otherwise a 240 mm scan reads 200+ s instead of a realistic ~25 s.
+const tableSpeedOf = (g) => g.pitch * (g.detRows === 1 ? Math.max(groupBaseThk(g), g.beamColl) : g.beamColl);
 const validColls = (rows) => ELEMENTS.map((e) => rows * e); // beam-collimation stations for a row count
 const detConfig = (g) => g.detRows + ' × ' + fmtNum(acqThkOf(g));
 const nearestIn = (list, v) => list.reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a, list[0]);
@@ -1608,6 +1612,15 @@ function groupScanLenMM(g) { return Math.abs(g.box.bot - g.box.top) * ctx.S.ct.s
 function groupBaseThk(g) { const el = acqThkOf(g); return Math.max(el, Math.min(...groupRecons(g).map((r) => Math.max(r.thk || el, el)))); }
 function groupBaseInterval(g) { return Math.max(0.1, Math.min(...groupRecons(g).map((r) => r.interval || 5))); }
 function groupImages(g) { return Math.max(1, Math.round(groupScanLenMM(g) / groupBaseInterval(g))); }
+// # of slices for ONE recon = its coverage along its slice-advance axis / its interval:
+// transverse advances along the scan (sub-range of the scan length); coronal / sagittal
+// advance across the DFOV (A/P and R/L respectively).
+function reconSliceCount(g, r) {
+  const span = (!r.plane || r.plane === 'transverse')
+    ? Math.abs((r.subBot != null ? r.subBot : 1) - (r.subTop != null ? r.subTop : 0)) * groupScanLenMM(g)
+    : groupDFOV(g);
+  return Math.max(1, Math.round(span / Math.max(r.interval || 1, 0.1)));
+}
 // scan time = scan length / (table feed per second); feed/s = tableSpeed(mm/rot) / rotSpeed(s/rot)
 function groupExpTime(g) { const feed = Math.max(tableSpeedOf(g), 1e-3); return (groupScanLenMM(g) / feed) * g.rotSpeed; }
 
@@ -1945,7 +1958,7 @@ function addGroup() {
 const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>';
 const EYE_CLOSED = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M3 10c2.2 2.9 5.6 4.6 9 4.6S18.8 12.9 21 10"/><path stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6 13.3l-1.6 2M12 15.1v2.4M18 13.3l1.6 2"/></svg>';
 const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff" d="M9 3l-1 1H4v2h16V4h-4l-1-1H9zM6 8l1.2 12.2c.1.9.9 1.8 1.9 1.8h5.8c1 0 1.8-.9 1.9-1.8L18 8H6zm4 2h1v9h-1v-9zm3 0h1v9h-1v-9z"/></svg>';
-const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'SFOV', 'DFOV', 'Total Images', 'Detector Config',
+const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'SFOV', 'DFOV', 'Detector Config',
   'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time',
   'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
 // DFOV-centre offset from the SFOV centre (isocentre): anteroposterior + mediolateral (mm).
@@ -2043,7 +2056,6 @@ function renderScanGroups() {
         + (dfovOutOfSfov(g) ? ' <span class="sfov-ico" title="DFOV extends beyond the SFOV — anatomy outside the measured field is not scanned">⚠</span>' : '')
         + '</span></td>'
       + '<td><span class="sg-edit" data-act="dfov">' + (groupDFOV(g) / 10).toFixed(1) + ' cm</span><span class="sg-sub">' + dfovCenterStr(g) + '</span></td>'
-      + cell('sg-calc', '', groupImages(g))
       + cell('sg-station', 'acq', detConfig(g))
       + cell('sg-station', 'acq', fmtNum(g.beamColl) + ' mm')
       + cell('sg-station', 'acq', fmtNum(g.pitch) + ':1')
@@ -2059,6 +2071,8 @@ function renderScanGroups() {
   const anyOff = c.groups.some((g) => !g.on);
   cont.innerHTML = '<table class="sg-table"><thead><tr>' + SG_HEADERS.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>'
     + rows + '</tbody></table>' + (anyOff ? '<button class="sg-add">+ Add scan group</button>' : '');
+  // table height changed (rows added/removed) → re-fit the scouts so nothing overlaps
+  if (ctx.$('ctScouts')?.classList.contains('show')) layoutScouts();
 }
 
 // ---- recon planning table (per scan group; up to N_RECONS reconstructions) ----
@@ -2066,7 +2080,7 @@ const N_RECONS = 10;
 const RP_PLANES = [{ v: 'transverse', l: 'Transverse' }, { v: 'sagittal', l: 'Sagittal' }, { v: 'coronal', l: 'Coronal' }];
 const RP_PLANE_PANE = { transverse: 'axial', sagittal: 'sagittal', coronal: 'coronal' };  // recon plane → MPR pane
 const RP_ALGOS = [{ v: 'standard', l: 'Average' }, { v: 'mip', l: 'MiP' }, { v: 'minip', l: 'MiniP' }, { v: 'edge', l: 'Edge Enh' }, { v: 'blur', l: 'Blur' }];
-const RP_HEADERS = ['Recon', 'Plane', 'Thickness', 'Interval', 'WW', 'WL', 'Algorithm', 'MAR', 'Sub Start', 'Sub End'];
+const RP_HEADERS = ['Recon', 'Plane', 'Thickness', 'Interval', '# of Slices', 'WW', 'WL', 'Algorithm', 'MAR', 'Sub Start', 'Sub End'];
 const rpPlaneLabel = (p) => (RP_PLANES.find((x) => x.v === p) || { l: p }).l;
 const rpAlgoLabel = (a) => (RP_ALGOS.find((x) => x.v === a) || { l: a }).l;
 function defaultRecon() { return { plane: 'transverse', thk: 5, interval: 5, ww: 400, wl: 40, algo: 'standard', mar: false, subTop: 0, subBot: 1 }; }
@@ -2094,6 +2108,7 @@ function renderReconPlan() {
       + cell('sg-station', 'rp-plane', rpPlaneLabel(r.plane))
       + cell('sg-edit', 'rp-thk', fmtNum(r.thk) + ' mm')
       + cell('sg-edit', 'rp-interval', fmtNum(r.interval) + ' mm')
+      + cell('sg-calc', '', reconSliceCount(g, r))
       + cell('sg-edit', 'rp-ww', Math.round(r.ww))
       + cell('sg-edit', 'rp-wl', Math.round(r.wl))
       + cell('sg-station', 'rp-algo', rpAlgoLabel(r.algo))
@@ -2107,6 +2122,8 @@ function renderReconPlan() {
     + '<table class="sg-table"><thead><tr>' + RP_HEADERS.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>'
     + rows + '</tbody></table>' + (canAdd ? '<button class="sg-add rp-add">+ Add recon</button>' : '');
   renderReconBoxes();
+  // recon-table height changed → re-fit the scouts so nothing overlaps
+  if (ctx.$('ctScouts')?.classList.contains('show')) layoutScouts();
 }
 function wireReconPlan() {
   const cont = ctx.$('ctReconPlan'); if (!cont) return;
@@ -3427,16 +3444,23 @@ function slab(scan, axis, x, yrel, d, ns, step, algo) {
 // Shared volume geometry for the linked MPR grid: in-plane pixel size, the z-extent,
 // and the isotropic vertical pixel count for the coronal/sagittal (x/y-z) reformats.
 function mprGeom(scan) {
-  const N = scan.gridN, p = scan.fovMM / N, zExt = Math.max(scan.dz, (scan.nz - 1) * scan.dz);
+  // Canonical z-range regardless of SCAN DIRECTION: a scan planned inferior→superior stores
+  // DESCENDING positions (negative dz) — naive z0/zExt then flips the coronal / sagittal
+  // reformats upside down (and collapses their height). Use the sorted [zLo, zHi] instead,
+  // so the vertical axis always runs superior (top) → inferior (bottom).
+  const N = scan.gridN, p = scan.fovMM / N;
+  const zEnd = scan.z0 + (scan.nz - 1) * scan.dz;
+  const zLo = Math.min(scan.z0, zEnd), zHi = Math.max(scan.z0, zEnd);
+  const zExt = Math.max(Math.abs(scan.dz), zHi - zLo);
   const zh = clampV(Math.round(N * zExt / scan.fovMM), 16, 512), psz = zExt / zh;
-  return { N, p, zExt, zh, psz, fov: scan.fovMM, z0: scan.z0 };
+  return { N, p, zExt, zh, psz, fov: scan.fovMM, z0: zLo };
 }
 // Reformat one linked-MPR pane at the current cross-reference position → {data,w,h}.
 // axial = x-y at z; coronal = x-z at y; sagittal = y-z at x (anterior left); oblique =
 // a true arbitrary plane sampled from its {u,v,n} basis (see obliquePlane). Slab-combined.
 function paneImage(scan, pane, cur, prm) {
   const g = mprGeom(scan), N = g.N, p = g.p;
-  const nsZ = Math.max(1, Math.round(prm.thk / scan.dz)), nsP = Math.max(1, Math.round(prm.thk / p));
+  const nsZ = Math.max(1, Math.round(prm.thk / (Math.abs(scan.dz) || 1))), nsP = Math.max(1, Math.round(prm.thk / p));
   let w, h, data;
   if (pane === 'axial') {
     w = N; h = N; data = new Float32Array(N * N);
@@ -3583,15 +3607,16 @@ function winRecon(wi) { const w = ctx.S.ct.mpr.wins[wi]; return (w && w.recon) |
 // Scroll axis + range (mm) for a recon's plane: which cross-reference coord its slices step along.
 function winAxis(scan, recon) {
   const g = mprGeom(scan);
-  if (recon.pane === 'oblique') { const r = (recon.ob && recon.ob.range) || g.fov; return { axis: 'n', lo: -r / 2, hi: r / 2, step: Math.max(recon.interval || scan.dz, 0.5) }; }   // scroll along the plane normal, bounded by the box width
-  if (recon.pane === 'coronal') return { axis: 'y', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || scan.dz, 0.5) };
-  if (recon.pane === 'sagittal') return { axis: 'x', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || scan.dz, 0.5) };
-  return { axis: 'z', lo: g.z0, hi: g.z0 + g.zExt, step: Math.max(recon.interval || scan.dz, scan.dz) };   // axial
+  const adz = Math.abs(scan.dz) || 1;                       // slice spacing magnitude (direction-safe)
+  if (recon.pane === 'oblique') { const r = (recon.ob && recon.ob.range) || g.fov; return { axis: 'n', lo: -r / 2, hi: r / 2, step: Math.max(recon.interval || adz, 0.5) }; }   // scroll along the plane normal, bounded by the box width
+  if (recon.pane === 'coronal') return { axis: 'y', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || adz, 0.5) };
+  if (recon.pane === 'sagittal') return { axis: 'x', lo: -scan.fovMM / 2, hi: scan.fovMM / 2, step: Math.max(recon.interval || adz, 0.5) };
+  return { axis: 'z', lo: g.z0, hi: g.z0 + g.zExt, step: Math.max(recon.interval || adz, adz) };   // axial
 }
 const winMid = (scan, recon) => { const a = winAxis(scan, recon); return (a.lo + a.hi) / 2; };
 // Build a cross-reference point for a window's current scroll position (the other axes centred).
 function winCur(scan, recon, pos) {
-  const g = mprGeom(scan), cur = { x: 0, y: 0, z: g.z0 + (scan.nz - 1) * scan.dz / 2 };
+  const g = mprGeom(scan), cur = { x: 0, y: 0, z: g.z0 + g.zExt / 2 };
   cur[winAxis(scan, recon).axis] = pos; return cur;
 }
 function winPosLabel(recon, pos) {
@@ -3629,7 +3654,9 @@ function obliquePlane() {
   if (ob.view === 'axial') { a1 = [1, 0, 0]; a2 = [0, 1, 0]; a3 = [0, 0, 1]; }
   else if (ob.view === 'coronal') { a1 = [1, 0, 0]; a2 = [0, 0, 1]; a3 = [0, 1, 0]; }
   else { a1 = [0, 1, 0]; a2 = [0, 0, 1]; a3 = [1, 0, 0]; }
-  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
+  // image vertical: when the out-of-plane axis is z, use −z so SUPERIOR renders at the TOP
+  // (image rows run top = +v; z mm grows inferior) — otherwise cor/sag planes come out flipped
+  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3[2] ? [0, 0, -1] : a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
     C: v3add(v3scl(a1, ob.cu), v3scl(a2, ob.cv)) };
 }
 // clamp the localizer centre to the volume (a1 = ±fov/2; a2 = ±fov/2 for axial, ±zExt/2 else)
@@ -3937,7 +3964,10 @@ function localizerBasis(scan, P, ang, cu, cv, srcPos) {
   else if (P === 'coronal') { a1 = [1, 0, 0]; a2 = [0, 0, 1]; a3 = [0, 1, 0]; }
   else { a1 = [0, 1, 0]; a2 = [0, 0, 1]; a3 = [1, 0, 0]; }                            // sagittal
   const s3 = P === 'axial' ? ((srcPos || 0) - zc) : (srcPos || 0);                    // a3 offset in centred coords (z is centred)
-  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
+  // image vertical: when the out-of-plane axis is z (planning ON an axial), use −z so SUPERIOR
+  // renders at the TOP of the new recon (rows run top = +v; z mm grows inferior). The raw a3
+  // still anchors C so the plane passes through the source slice.
+  return { u: v3add(v3scl(a1, c), v3scl(a2, s)), v: a3[2] ? [0, 0, -1] : a3, n: v3add(v3scl(a1, -s), v3scl(a2, c)),
     C: v3add(v3add(v3scl(a1, cu), v3scl(a2, cv)), v3scl(a3, s3)), fov: g.fov, vExt: P === 'axial' ? g.zExt : g.fov, view: P };
 }
 // Set the planned plane from the live table (auto-orients the box). 'parallel' → crop rectangle.

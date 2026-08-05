@@ -72,6 +72,16 @@
   body.theme-ge .scangroups .sg-add:hover{border-color:#7fc8d8; color:#eafcff}
   /* The SCOUT planning table sits on the light settings panel — only its header was hardcoded dark. */
   body.theme-ge .scouttable .sg-table th{background:#96a8bc; color:#123a5e; border-color:#7d92a8}
+  /* Elements floating OVER the always-dark 3D canvas keep needing LIGHT text in the light GE
+     theme: the RadSim tag, the X-RAY/CT mode pill, and the view/sound dropdown menus (their
+     dark popover panels re-scope the text vars to light values). */
+  body.theme-ge .baytag .k{color:#d9e7f3}
+  body.theme-ge .credit{color:#5c6a77}
+  body.theme-ge .modebar button{color:#8fa5b8}
+  body.theme-ge .modebar button:hover{color:#e8f2fa}
+  body.theme-ge .modebar button[data-mode="xray"].on{color:#06121a; background:#35c6d6; box-shadow:0 0 14px rgba(53,198,214,.55)}
+  body.theme-ge .modebar button[data-mode="ct"].on{color:#1a1204; background:#ffb23e; box-shadow:0 0 14px rgba(255,178,62,.55)}
+  body.theme-ge .baymenu{--txt:#e0eaf3; --muted:#a2b6c8; --muted2:#7f94a8; --cyan:#7fc8d8}
   body.theme-ge .warn{background:#c3d1df; border-color:#7d92a8}                          /* console status strip → light */
   body.theme-ge .warn .wt{color:#2a3f54}
   body.theme-ge .lamp{background:#8a97a4; box-shadow:inset 0 0 4px rgba(0,0,0,.4)}        /* LED off state (visible on light) */
@@ -120,6 +130,9 @@
   .baytag{position:absolute; top:12px; left:14px; z-index:5; pointer-events:none}
   .baytag .k{font-family:var(--seg); color:var(--cyan); letter-spacing:2px; font-size:12px}
   .baytag .s{color:var(--muted); font-size:12px; letter-spacing:3px; text-transform:uppercase}
+  /* authorship line — bottom of the 3D render bay, subtle on the dark canvas */
+  .credit{position:absolute; left:14px; bottom:10px; z-index:5; pointer-events:none;
+    font-family:var(--seg); font-size:9px; line-height:1.6; letter-spacing:.4px; color:#49545f}
   .hint{position:absolute; bottom:10px; left:14px; color:var(--muted2); font-size:11px;
         letter-spacing:1px; z-index:5; pointer-events:none; text-transform:uppercase}
 
@@ -511,7 +524,7 @@ body.mode-ct .di{display:none}
 
 /* ---- scan-group table (below the scouts, horizontal scroll) — capped so the scouts get most
    of the height; each table scrolls internally when it has many rows. ---- */
-.scangroups{flex:0 1 auto; min-height:0; max-height:22vh; overflow:auto; border:1px solid var(--edge2);
+.scangroups{flex:0 1 auto; min-height:0; max-height:27vh; overflow:auto; border:1px solid var(--edge2);
   background:rgba(8,11,14,.9); border-radius:4px}
 .sg-table{border-collapse:collapse; width:100%; font-family:var(--disp); font-size:13px; white-space:nowrap}
 .sg-table th{position:sticky; top:0; z-index:1; background:#0c1218; color:var(--muted);
