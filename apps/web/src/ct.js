@@ -2038,14 +2038,16 @@ function wireScoutTable() {
     const span = e.target.closest('.sg-edit'); if (!span) return;
     const row = span.closest('.sg-row'); const i = +row.dataset.plane, act = span.dataset.act;
     const c = ctx.S.ct, t = c.scoutTech[i];
+    // minimum scout length is the same physical floor as the scan box (10 mm) — a 50 mm
+    // floor silently pushed short ranges out (start S20 + end I20 became end I30)
     if (act === 'start') openTypedPopup('Scout start (mm · S superior / I inferior)', fmtTablePos(scanStartMM()), (v) => {
       const nv = parseTablePos(v, scanStartMM()), end = c.scanStart + c.scanLen;
-      c.scanStart = Math.min(nv, end - 50); c.scanLen = Math.round(end - c.scanStart); c.protocol = 'whole';
+      c.scanStart = Math.min(nv, end - BOX_MIN_MM); c.scanLen = Math.round(end - c.scanStart); c.protocol = 'whole';
       renderScanBoxes(); updateScanMarkers(); if (c.phase === 'planning') updatePlan(); updateCTReadouts();
     });
     else if (act === 'end') openTypedPopup('Scout end (mm · S superior / I inferior)', fmtTablePos(scanStartMM() + c.scanLen), (v) => {
       const nv = parseTablePos(v, scanStartMM() + c.scanLen);
-      c.scanLen = Math.max(50, Math.round(nv - c.scanStart)); c.protocol = 'whole';
+      c.scanLen = Math.max(BOX_MIN_MM, Math.round(nv - c.scanStart)); c.protocol = 'whole';
       renderScanBoxes(); updateScanMarkers(); if (c.phase === 'planning') updatePlan(); updateCTReadouts();
     });
     else if (act === 'kv') openTypedPopup('Scout kV — ' + SCOUT_PLANES[i].label, t.kv, (v) => { t.kv = Math.max(70, Math.min(140, Math.round(v))); updateCTReadouts(); });
