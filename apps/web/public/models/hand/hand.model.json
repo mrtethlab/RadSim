@@ -2,9 +2,9 @@
   "name": "Hand",
   "source": "Scan the World \u00b7 'Hand bones' CT scan of a human hand (Zenodo 10.5281/zenodo.21244925, CC BY-NC-SA 4.0); soft-tissue envelope derived morphologically from the scanned skeleton",
   "dims": [
-    308,
-    80,
-    449
+    337,
+    124,
+    486
   ],
   "spacing": [
     0.5,

@@ -131,8 +131,8 @@ def fingertips_at_high_z(bone: np.ndarray) -> bool:
 
 
 def build_materials(bone: np.ndarray, spacing: float,
-                    soft_mm=4.2, palm_mm=8.5, close_mm=1.5, smooth_mm=1.4,
-                    skin_mm=1.2, fat_mm=3.0, muscle_mm=5.0):
+                    soft_mm=5.0, palm_mm=9.5, close_mm=1.5, smooth_mm=1.4,
+                    skin_mm=1.2, fat_mm=3.5, muscle_mm=6.0):
     """Bone mask → full material volume.
 
     Soft tissue is grown from the skeleton so the hand carries a real radiographic
@@ -159,7 +159,7 @@ def build_materials(bone: np.ndarray, spacing: float,
     zs = np.where(bone.any(axis=(1, 2)))[0]
     z0, z1 = (zs.min(), zs.max()) if zs.size else (0, nz - 1)
     t = np.clip((np.arange(nz) - z0) / max(1, z1 - z0), 0, 1)      # 0 = wrist end, 1 = fingertips
-    thick = palm_mm + (soft_mm - palm_mm) * np.clip((t - 0.35) / 0.35, 0, 1)
+    thick = palm_mm + (soft_mm - palm_mm) * np.clip((t - 0.40) / 0.30, 0, 1)
 
     # one distance transform, thresholded by the per-slice thickness → a smooth ramp
     dist = ndi.distance_transform_edt(~bone, sampling=spacing)
@@ -251,6 +251,13 @@ def build(glb, out_dir, name, title, spacing, component, flip, mesh, source):
     print(f"      volume axes {bone.shape} (z,y,x); flip={tuple(int(x) for x in flip)}")
 
     print("[3/4] materials …")
+    # The voxel grid is exactly the BONE bounding box, so without a margin every
+    # soft-tissue dilation was silently clipped at the array edge — the envelope could
+    # not grow past the skeleton (no fingertip pads, no dorsal/palmar flesh). Pad first;
+    # the tight crop below trims back to the real extent.
+    margin = int(np.ceil(18.0 / spacing))
+    bone = np.pad(bone, margin, mode='constant', constant_values=False)
+    print(f"      padded by {margin} vox ({margin*spacing:.0f} mm) so soft tissue can grow: {bone.shape}")
     mat = build_materials(bone, spacing)
 
     # tight crop with a small air margin so the model is not padded with empty space
