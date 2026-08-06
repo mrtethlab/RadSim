@@ -169,6 +169,35 @@ def build_materials(bone: np.ndarray, spacing: float,
 
     occ = ndi.gaussian_filter(soft.astype(np.float32), sigma=smooth_mm / spacing)
     soft = occ > 0.45                                              # <0.5 keeps the bulk
+
+    # --- keep the DIGITS separate ------------------------------------------------
+    # Neighbouring fingers sit close enough that their (correct) ~5 mm margins meet and
+    # merge into one blob, so each finger loses its own soft-tissue outline and the
+    # phalanges read as bare bone floating in a grey mass. Split the envelope along the
+    # watershed between digits: label the bones per digit (a small dilation chains each
+    # finger's phalanges together while the spread digits stay apart), give every voxel
+    # the label of its nearest bone, and carve where two labels meet. Applied only
+    # DISTAL to the metacarpal heads — the palm must stay one solid mass.
+    # Seed ONLY in the digit zone: below the MCP heads every bone is connected through the
+    # carpus, so labelling the whole skeleton yields ONE group and separates nothing.
+    # Chain each finger's phalanges along z ONLY (a 3x1x1 structuring element): that bridges
+    # the interphalangeal joint gaps so one finger = one label, and being purely axial it can
+    # never merge two side-by-side digits the way an isotropic dilation does.
+    digit_zone = (t > 0.55)[:, None, None]
+    zonly = np.zeros((3, 1, 1), bool); zonly[:, 0, 0] = True
+    seeds = ndi.binary_dilation(bone & digit_zone, structure=zonly, iterations=r(4.0))
+    lab, nlab = ndi.label(seeds)
+    _, idx = ndi.distance_transform_edt(lab == 0, return_indices=True)
+    owner = lab[idx[0], idx[1], idx[2]]
+    ridge = ndi.maximum_filter(owner, size=3) != ndi.minimum_filter(owner, size=3)
+    ridge = ndi.binary_dilation(ridge, iterations=1)                # ~1 mm visible cleft
+    ridge &= (t > 0.58)[:, None, None]                              # digits only
+    zc = int(z0 + 0.75 * (z1 - z0))                                 # a proximal-phalanx slice
+    n_before = ndi.label(soft[zc])[1]
+    soft &= ~ridge
+    print(f"        digit split: {nlab} digit groups; soft blobs at the phalanges "
+          f"{n_before} -> {ndi.label(soft[zc])[1]}")
+
     soft |= bone                                                   # never carve into bone
     soft = ndi.binary_fill_holes(soft)
 

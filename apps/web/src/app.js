@@ -1407,7 +1407,12 @@ function computeRescale(sig,mask){
   // end and the whole anatomy is crammed into a bright, flat band (washed-out chest). By
   // dropping pixels brighter than `cut`, the window locks onto the anatomy so the well-
   // penetrated lung fields stretch to dark and the mediastinum/spine to bright.
-  const cut=mx*(_t.rcut??0.72);
+  // The cut must sit JUST below the unattenuated level, which by definition is the image
+  // maximum — nothing attenuates less than nothing. A loose fraction (this was 0.72) also
+  // discards genuinely thin anatomy: at 55 kVp a few mm of soft tissue still transmits
+  // ~80-90 % of the raw beam, so a hand's whole finger envelope was being treated as
+  // direct exposure and clipped to white, leaving the phalanges looking like bare bone.
+  const cut=mx*(_t.rcut??0.95);
   const a=40, denom=Math.log(1+a), NB=1024, hist=new Uint32Array(NB); let total=0;
   for(let k=0;k<sig.length;k++){ if(!mask[k]||sig[k]>=cut) continue;   // skip direct exposure
     let t=Math.log(1+a*sig[k]/mx)/denom, b=Math.round((1-t)*(NB-1));
