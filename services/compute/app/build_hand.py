@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import struct
 
 import numpy as np
@@ -106,33 +107,78 @@ def to_volume_axes(vol: np.ndarray, flip=(0, 0, 0)) -> np.ndarray:
     return np.ascontiguousarray(out)
 
 
+def fingertips_at_high_z(bone: np.ndarray) -> bool:
+    """Which end of the long axis holds the fingertips.
+
+    The digits are five separate bones in cross-section while the wrist end is the
+    radius + ulna, so counting connected components per slice over each end band
+    identifies the distal end without assuming the source mesh's axis direction.
+    """
+    nz = bone.shape[0]
+    band = max(1, nz // 8)
+
+    def comps(rng):
+        n = 0
+        for z in rng:
+            if bone[z].any():
+                n += ndi.label(bone[z])[1]
+        return n
+
+    lo, hi = comps(range(0, band)), comps(range(nz - band, nz))
+    print(f"      slice-component count: low-z {lo}, high-z {hi}; "
+          f"fingertips at {'high' if hi > lo else 'low'} z")
+    return hi > lo
+
+
 def build_materials(bone: np.ndarray, spacing: float,
-                    soft_mm=4.5, close_mm=8.0, skin_mm=1.0, fat_mm=2.0, muscle_mm=4.0):
+                    soft_mm=4.2, palm_mm=8.5, close_mm=1.5, smooth_mm=1.4,
+                    skin_mm=1.2, fat_mm=3.0, muscle_mm=5.0):
     """Bone mask → full material volume.
 
-    Soft tissue is grown from the skeleton: a `soft_mm` dilation wraps every bone, then a
-    `close_mm` closing bridges the gaps between neighbouring bones — which merges the
-    metacarpals into a palm (with webbing) while leaving the spread fingers separate,
-    exactly like a real hand outline. The envelope is then layered by depth:
-    skin shell → subcutaneous fat → intrinsic muscle in the thick palm → soft tissue.
-    Bone is split into a cortical shell and a trabecular core by depth as well.
+    Soft tissue is grown from the skeleton so the hand carries a real radiographic
+    envelope — the reference PA hand shows fingertip pads well beyond the tufts, a
+    broad palm, a full thenar eminence and concave web spaces:
+
+      1. dilate every bone by `soft_mm` (fingers) blending up to `palm_mm` over the
+         carpus/palm — the closely-spaced metacarpals merge into one palm on their own,
+         while the spread digits keep the air gaps between them;
+      2. a SMALL `close_mm` fills crevices only (a large one would web the fingers
+         together into a mitten);
+      3. blur the occupancy and re-threshold: this is what turns a knobbly per-bone
+         "shrink-wrap" into one smooth organic surface with concave webbing.
+
+    The envelope is then layered by depth: skin shell → subcutaneous fat → intrinsic
+    muscle in the thick palm → soft tissue. Bone is split cortical-shell/trabecular-core.
     """
     r = lambda mm: max(1, int(round(mm / spacing)))
 
     print("      growing the soft-tissue envelope …")
-    soft = ndi.binary_dilation(bone, iterations=r(soft_mm))
+    # thickness ramps from the digits (soft_mm) to the palm/wrist (palm_mm): the ramp runs
+    # along the long axis (z), proximal = low z after the fingertip-up orientation fix
+    nz = bone.shape[0]
+    zs = np.where(bone.any(axis=(1, 2)))[0]
+    z0, z1 = (zs.min(), zs.max()) if zs.size else (0, nz - 1)
+    t = np.clip((np.arange(nz) - z0) / max(1, z1 - z0), 0, 1)      # 0 = wrist end, 1 = fingertips
+    thick = palm_mm + (soft_mm - palm_mm) * np.clip((t - 0.35) / 0.35, 0, 1)
+
+    # one distance transform, thresholded by the per-slice thickness → a smooth ramp
+    dist = ndi.distance_transform_edt(~bone, sampling=spacing)
+    soft = dist <= thick[:, None, None]
     soft = ndi.binary_closing(soft, iterations=r(close_mm))
     soft = ndi.binary_fill_holes(soft)
-    soft |= bone                                                  # never carve into bone
 
-    # depth of every soft-tissue voxel below the skin surface (mm)
-    depth = ndi.distance_transform_edt(soft, sampling=spacing)
+    occ = ndi.gaussian_filter(soft.astype(np.float32), sigma=smooth_mm / spacing)
+    soft = occ > 0.45                                              # <0.5 keeps the bulk
+    soft |= bone                                                   # never carve into bone
+    soft = ndi.binary_fill_holes(soft)
+
+    depth = ndi.distance_transform_edt(soft, sampling=spacing)     # mm below the skin surface
 
     mat = np.full(bone.shape, AIR, dtype=np.uint8)
     mat[soft] = SOFT
-    mat[soft & (depth > muscle_mm)] = MUSCLE                      # thenar / hypothenar / interossei
-    mat[soft & (depth <= fat_mm)] = FAT                           # subcutaneous layer
-    mat[soft & (depth <= skin_mm)] = SKIN                         # thin skin shell
+    mat[soft & (depth > muscle_mm)] = MUSCLE                       # thenar / hypothenar / interossei
+    mat[soft & (depth <= fat_mm)] = FAT                            # subcutaneous layer
+    mat[soft & (depth <= skin_mm)] = SKIN                          # thin skin shell
 
     # bone: cortical shell (outer ~1 mm) over a trabecular core — phalanges are almost all
     # cortex, the carpals mostly trabecular, which falls out of the same depth rule
@@ -144,6 +190,39 @@ def build_materials(bone: np.ndarray, spacing: float,
                   ('cortical', CORTICAL), ('trabecular', TRABECULAR)):
         print(f"        {nm:11s} {int((mat == m).sum()):>9d}")
     return mat
+
+
+def build_hand_mesh(mat: np.ndarray, spacing: float, path: str,
+                    skin_rgba=(0xe6, 0xb4, 0x98, 255), smooth_mm=1.1):
+    """Display mesh for the positioning view: ONE smooth, opaque, skin-toned surface.
+
+    The generic body mesh (build_model._build_mesh) draws translucent skin over an
+    independently-meshed skeleton, which on a hand reads as bones poking through a
+    lumpy, decaying glove. Here the outer surface is meshed from a blurred occupancy
+    field and Taubin-smoothed, then rendered opaque — a lifelike hand.
+    """
+    import trimesh
+    from skimage import measure
+
+    nz, ny, nx = mat.shape
+    centre = np.array([nx, ny, nz]) * spacing / 2.0
+    # pad with air so the isosurface closes at the fingertips/wrist instead of leaving
+    # holes where the body would otherwise touch the array boundary
+    pad = 3
+    body = np.pad((mat > AIR), pad, mode='constant', constant_values=False)
+    field = ndi.gaussian_filter(body.astype(np.float32), sigma=smooth_mm / spacing)
+    verts, faces, _, _ = measure.marching_cubes(field, level=0.5, step_size=2)
+    verts = verts - pad
+    v = np.column_stack([verts[:, 2], verts[:, 1], verts[:, 0]]) * spacing - centre
+    mesh = trimesh.Trimesh(vertices=v, faces=faces, process=True)
+    mesh.update_faces(mesh.nondegenerate_faces())
+    mesh.remove_unreferenced_vertices()
+    mesh = trimesh.smoothing.filter_taubin(mesh, lamb=0.55, nu=-0.58, iterations=14)
+    mesh.visual.vertex_colors = np.tile(np.array(skin_rgba, np.uint8), (len(mesh.vertices), 1))
+    scene = trimesh.Scene()
+    scene.add_geometry(mesh)
+    scene.export(path)
+    print(f"      wrote {path}  ({len(mesh.faces)} faces, smooth opaque skin)")
 
 
 def synth_hu(mat: np.ndarray) -> np.ndarray:
@@ -164,6 +243,11 @@ def build(glb, out_dir, name, title, spacing, component, flip, mesh, source):
     print(f"[2/4] voxelising at {spacing} mm …")
     bone = voxelize(comp, spacing)
     bone = to_volume_axes(bone, flip)
+    # the app hangs every subject superior-end-up and the plate arrow points at the
+    # fingertips, so force fingertips to +z (this also anchors the palm/digit thickness ramp)
+    if not fingertips_at_high_z(bone):
+        bone = np.ascontiguousarray(bone[::-1, :, :])
+        print("      flipped z so the fingertips are at +z")
     print(f"      volume axes {bone.shape} (z,y,x); flip={tuple(int(x) for x in flip)}")
 
     print("[3/4] materials …")
@@ -178,7 +262,18 @@ def build(glb, out_dir, name, title, spacing, component, flip, mesh, source):
     mat = np.ascontiguousarray(mat[sl])
 
     print("[4/4] writing volume …")
-    write_model(out_dir, name, title, mat, synth_hu(mat), spacing, mesh, source)
+    # mesh=False so write_model skips the generic translucent-skin-over-skeleton mesh;
+    # the hand gets its own smooth opaque one, then the header is pointed back at it
+    write_model(out_dir, name, title, mat, synth_hu(mat), spacing, False, source)
+    if mesh:
+        print("      building the smooth skin mesh …")
+        build_hand_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"))
+        hdr_path = os.path.join(out_dir, f"{name}.model.json")
+        with open(hdr_path) as f:
+            hdr = json.load(f)
+        hdr["mesh"] = f"{name}.glb"
+        with open(hdr_path, "w") as f:
+            json.dump(hdr, f, indent=2)
     ext = [round(s * spacing, 1) for s in mat.shape[::-1]]
     print(f"done -> {out_dir}   extent {ext[0]} x {ext[1]} x {ext[2]} mm (x,y,z)")
 
@@ -191,8 +286,15 @@ if __name__ == "__main__":
     ap.add_argument("--title", default="Hand")
     ap.add_argument("--spacing", type=float, default=0.5)
     ap.add_argument("--component", type=int, default=0, help="which hand (0 = largest)")
-    ap.add_argument("--flip", type=int, nargs=3, default=(0, 0, 0), metavar=("Z", "Y", "X"),
-                    help="negate volume axes (z=long, y=palmar, x=lateral)")
+    # Default (0,1,1) = a 180 deg ROLL about the long axis (negating y AND x preserves
+    # chirality). The source scan is stored palm-toward-low-y, and the app maps low-y
+    # upward in x-ray mode, which would lay the hand palm-UP (an AP projection). Rolling
+    # it puts the palm on the receptor = the standard PA hand. Verified from bone
+    # landmarks: the low-y face carries the pisiform + scaphoid tubercle (palmar), the
+    # high-y face the metacarpal ridges (dorsal).
+    ap.add_argument("--flip", type=int, nargs=3, default=(0, 1, 1), metavar=("Z", "Y", "X"),
+                    help="negate volume axes (z=long, y=palmar, x=lateral); "
+                         "default 0 1 1 rolls the hand palm-down for PA")
     ap.add_argument("--no-mesh", action="store_true")
     ap.add_argument("--source", default=SOURCE)
     a = ap.parse_args()
