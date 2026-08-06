@@ -225,6 +225,10 @@ const VOXEL_MODELS = {
   wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
   hires_shoulder:  { title:'Shoulder · 0.25 mm',    scoutKv:110, scoutMa:120, xrayKv:70  },
   metalphantom:    { title:'Metal Test Phantom',    scoutKv:120, scoutMa:200, xrayKv:120 },
+  // QC tools, not anatomy: a lead bar-pattern gauge for measuring limiting spatial
+  // resolution in lp/mm. Shot at low kV / high mAs like real resolution QC, so the
+  // lead-to-air contrast is maximal and the bars are not lost in mottle.
+  linepair:        { title:'Line-pair test pattern', scoutKv:80, scoutMa:100, xrayKv:60 },
 };
 
 /* Prepare a freshly loaded display mesh so it lights + shadows like the hand: the
@@ -1691,6 +1695,15 @@ function pushImage(signal,nx,ny,mask,meta){
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
 }
+/* QC hook: the PRE-display signal of the last exposure, for measuring the line-pair
+   phantom. Modulation has to be read off the detector signal, not the windowed canvas —
+   brightness/contrast would rescale the very numbers being measured. */
+if(typeof window!=='undefined') window.radsimQC={
+  lastImage(){ const im=S.imgHistory[S.imgHistory.length-1]; if(!im) return null;
+    return {nx:im.nx, ny:im.ny, sig:im.sig, mask:im.mask, subject:im.subject,
+            pxU:S.detW*10/im.nx, pxV:S.detH*10/im.ny};   // mm per pixel
+  }
+};
 /* Point the render state at history[idx] and refresh the view + strip + meta. */
 function setActiveImage(idx){
   if(!S.imgHistory.length){ S.histIdx=-1; S.hasImage=false; return; }
