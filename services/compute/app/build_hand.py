@@ -132,7 +132,7 @@ def fingertips_at_high_z(bone: np.ndarray) -> bool:
 
 def build_materials(bone: np.ndarray, spacing: float,
                     soft_mm=5.0, palm_mm=9.5, close_mm=1.5, smooth_mm=1.4,
-                    skin_mm=1.2, fat_mm=3.5, muscle_mm=6.0):
+                    skin_mm=1.2, fat_mm=3.5, muscle_mm=6.0, web_t=0.68):
     """Bone mask → full material volume.
 
     Soft tissue is grown from the skeleton so the hand carries a real radiographic
@@ -191,7 +191,13 @@ def build_materials(bone: np.ndarray, spacing: float,
     owner = lab[idx[0], idx[1], idx[2]]
     ridge = ndi.maximum_filter(owner, size=3) != ndi.minimum_filter(owner, size=3)
     ridge = ndi.binary_dilation(ridge, iterations=1)                # ~1 mm visible cleft
-    ridge &= (t > 0.58)[:, None, None]                              # digits only
+    # The interdigital WEB reaches well distal to the MCP joints — on a PA hand the
+    # commissure sits around the proximal third of the proximal phalanx. Splitting from
+    # the MCP heads (t 0.58) left the fingers separated too far proximally, which reads
+    # as abnormally long, isolated digits. Keep the envelope solid until `web_t`; the
+    # space between the diverging digits tapers to nothing there, so the fused region
+    # ends in a natural V rather than a flat wall.
+    ridge &= (t > web_t)[:, None, None]
     zc = int(z0 + 0.75 * (z1 - z0))                                 # a proximal-phalanx slice
     n_before = ndi.label(soft[zc])[1]
     soft &= ~ridge
