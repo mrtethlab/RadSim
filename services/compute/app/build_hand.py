@@ -130,6 +130,69 @@ def fingertips_at_high_z(bone: np.ndarray) -> bool:
     return hi > lo
 
 
+def _trab_texture(shape, spacing, sigma_vox=1.1, frac=0.68, seed=7, block=96):
+    """A tiled, band-limited random field for trabecular texture.
+
+    Generated as one small periodic block and tiled rather than drawn at full size: a
+    0.25 mm hand is 162 M voxels, and a float32 noise field that big costs 650 MB for
+    something whose whole point is to look random. The block wraps seamlessly (the blur
+    is taken with mode='wrap'), and at ~3 voxels per cell the 96-voxel repeat is far
+    below anything the eye picks up as a pattern.
+
+    sigma is in VOXELS, not mm, on purpose: the texture should be as fine as the grid can
+    carry, so a finer rebuild automatically gains finer trabeculae.
+    """
+    rng = np.random.default_rng(seed)
+    blk = rng.standard_normal((block, block, block)).astype(np.float32)
+    blk = ndi.gaussian_filter(blk, sigma=sigma_vox, mode='wrap')
+    keep = blk > float(np.quantile(blk, 1.0 - frac))
+    nz, ny, nx = shape
+    return keep[np.ix_(np.arange(nz) % block, np.arange(ny) % block, np.arange(nx) % block)]
+
+
+def bone_architecture(mat: np.ndarray, bone: np.ndarray, spacing: float,
+                      cort_shaft=1.25, cort_end=0.45, tube_r=4.6,
+                      trab_frac=0.68, seed=7):
+    """Cortex, medullary canal and trabecular texture — written into `mat` in place.
+
+    What makes a real hand film look sharp is the bone's INTERNAL architecture, not the
+    detector: every metacarpal and phalanx is a TUBE — two bright cortical lines with a
+    dark marrow canal between them — and the carpus is a mesh of trabeculae. Filling each
+    bone with one uniform density (which is what a plain depth rule does) projects as a
+    smooth white rod, and no amount of detector resolution can recover structure that was
+    never in the phantom.
+
+    Shaft and end are told apart by the bone's LOCAL half-width rather than by naming
+    bones, so no per-bone labelling is needed (and the carpals, which touch, would defeat
+    it anyway): a diaphysis is slender and carries THICK cortex around a canal, while an
+    epiphysis or carpal is wide with THIN cortex over cancellous bone. Both fall out of
+    one distance transform plus a maximum filter.
+    """
+    r = lambda mm: max(1, int(round(mm / spacing)))
+    bdepth = ndi.distance_transform_edt(bone, sampling=spacing).astype(np.float32)
+    half = ndi.maximum_filter(bdepth, size=r(5.0))          # local half-width, mm
+
+    # cortex tapers from thick on a slender shaft to thin over a wide end
+    t = np.clip((half - 3.0) / max(1e-6, (tube_r + 1.5) - 3.0), 0, 1)
+    cort = cort_shaft + (cort_end - cort_shaft) * t
+
+    cortex = bone & (bdepth <= cort)
+    interior = bone & ~cortex
+    tubular = half < tube_r
+    canal = interior & tubular                              # medullary cavity
+    cancellous = interior & ~tubular
+
+    tex = _trab_texture(bone.shape, spacing, frac=trab_frac, seed=seed)
+    mat[cortex] = CORTICAL
+    mat[canal] = FAT                                        # yellow marrow: the dark canal
+    mat[cancellous] = FAT                                   # inter-trabecular marrow …
+    mat[cancellous & tex] = TRABECULAR                      # … around the trabeculae
+
+    tot = int(bone.sum())
+    for nm, m in (('cortex', cortex), ('canal', canal), ('cancellous', cancellous)):
+        print(f"        bone {nm:11s} {int(m.sum()):>9d}  ({100*m.sum()/max(1,tot):.0f} %)")
+
+
 def build_materials(bone: np.ndarray, spacing: float,
                     soft_mm=5.0, palm_mm=9.5, close_mm=1.5, smooth_mm=1.4,
                     skin_mm=1.2, fat_mm=3.5, muscle_mm=6.0, web_t=0.68):
@@ -215,11 +278,7 @@ def build_materials(bone: np.ndarray, spacing: float,
     mat[soft & (depth <= fat_mm)] = FAT                            # subcutaneous layer
     mat[soft & (depth <= skin_mm)] = SKIN                          # thin skin shell
 
-    # bone: cortical shell (outer ~1 mm) over a trabecular core — phalanges are almost all
-    # cortex, the carpals mostly trabecular, which falls out of the same depth rule
-    bdepth = ndi.distance_transform_edt(bone, sampling=spacing)
-    mat[bone] = CORTICAL
-    mat[bone & (bdepth > 1.2)] = TRABECULAR
+    bone_architecture(mat, bone, spacing)
 
     for nm, m in (('skin', SKIN), ('fat', FAT), ('muscle', MUSCLE), ('soft', SOFT),
                   ('cortical', CORTICAL), ('trabecular', TRABECULAR)):
@@ -269,7 +328,8 @@ def synth_hu(mat: np.ndarray) -> np.ndarray:
     return hu
 
 
-def build(glb, out_dir, name, title, spacing, component, flip, mesh, source):
+def build(glb, out_dir, name, title, spacing, component, flip, mesh, source,
+          backend_only=False, mesh_from=None):
     print(f"[1/4] decoding {glb} …")
     v, f = load_draco_glb(glb)
     print(f"      {len(v)} verts / {len(f)} faces")
@@ -306,10 +366,19 @@ def build(glb, out_dir, name, title, spacing, component, flip, mesh, source):
     print("[4/4] writing volume …")
     # mesh=False so write_model skips the generic translucent-skin-over-skeleton mesh;
     # the hand gets its own smooth opaque one, then the header is pointed back at it
-    write_model(out_dir, name, title, mat, synth_hu(mat), spacing, False, source)
+    write_model(out_dir, name, title, mat, synth_hu(mat), spacing, False, source,
+                backend_only=backend_only)
     if mesh:
         print("      building the smooth skin mesh …")
         build_hand_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"))
+    elif mesh_from:
+        # A fine rebuild is the SAME hand, so meshing it again would spend minutes on a
+        # far heavier surface that only ever gets used to aim the tube. Reuse the mesh
+        # from the coarse build instead.
+        import shutil
+        shutil.copyfile(mesh_from, os.path.join(out_dir, f"{name}.glb"))
+        print(f"      display mesh copied from {mesh_from}")
+    if mesh or mesh_from:
         hdr_path = os.path.join(out_dir, f"{name}.model.json")
         with open(hdr_path) as f:
             hdr = json.load(f)
@@ -338,7 +407,13 @@ if __name__ == "__main__":
                     help="negate volume axes (z=long, y=palmar, x=lateral); "
                          "default 0 1 1 rolls the hand palm-down for PA")
     ap.add_argument("--no-mesh", action="store_true")
+    ap.add_argument("--mesh-from", default=None,
+                    help="copy this .glb as the display mesh instead of building one")
+    ap.add_argument("--backend-only", action="store_true",
+                    help="mark the model GPU-backend-only: the browser skips the .mat.bin "
+                         "download and never ray-casts it in JS")
     ap.add_argument("--source", default=SOURCE)
     a = ap.parse_args()
     build(a.glb, a.out, a.name, a.title, a.spacing, a.component, a.flip,
-          mesh=not a.no_mesh, source=a.source)
+          mesh=not a.no_mesh, source=a.source,
+          backend_only=a.backend_only, mesh_from=a.mesh_from)

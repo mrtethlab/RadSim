@@ -216,6 +216,11 @@ function initScene(){
    (thin extremities need far less than a thick torso). */
 const VOXEL_MODELS = {
   hand:            { title:'Hand',                  scoutKv:80,  scoutMa:40,  xrayKv:55  },
+  // Same hand at 0.25 mm: four times the voxels per slice, so the cortical margins and
+  // trabeculae carry to ~2 lp/mm instead of ~1. 162 MB, GPU backend only — the volume is
+  // not committed (over GitHub's 100 MB file limit) and so is absent from the hosted
+  // build; run services/compute/app/build_hand.py to make it locally.
+  hand_hires:      { title:'Hand · 0.25 mm',        scoutKv:80,  scoutMa:40,  xrayKv:55  },
   chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
   headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },

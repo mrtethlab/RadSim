@@ -32,6 +32,30 @@ backend is reachable (it pings `GET /health`).
 | POST   | `/ct`                      | 🚧 planned     | CT acquisition + reconstruction                      |
 | POST   | `/convert/blend-to-glb`    | 🚧 needs Blender | Convert uploaded `.blend` → `.glb`                 |
 
+## Sub-mm models (backend only)
+
+Two models are too large to commit or to serve over the web, so only their
+`.model.json` is in the repo — they appear in the Subject picker but need this backend
+running plus a local rebuild of the volume. Selecting one forces the Python GPU engine
+and disables the browser engine, since there is no volume in the browser to ray-cast.
+
+| Model            | Grid           | Volume | Rebuild                                        |
+| ---------------- | -------------- | ------ | ---------------------------------------------- |
+| `hand_hires`     | 674×247×971 @ 0.25 mm | 162 MB | see below                               |
+| `hires_shoulder` | 619×606×679 @ 0.25 mm | 254 MB | `app.build_model` on the source CT       |
+
+```bash
+./.venv/Scripts/python.exe -m app.build_hand \
+    --glb data/hand/hand_bones.glb \
+    --out ../../apps/web/public/models/hand_hires --name hand_hires \
+    --title "Hand · 0.25 mm" --spacing 0.25 --no-mesh --backend-only \
+    --mesh-from ../../apps/web/public/models/hand/hand.glb
+```
+
+Needs ~8 GB of RAM (the distance transforms run over 240 M voxels) and a few minutes.
+The display mesh is copied from the 0.5 mm hand rather than rebuilt: it is the same
+hand, and the mesh is only ever used to aim the tube.
+
 ## Where to build next
 
 - `app/engine.py` — port the polyenergetic Beer-Lambert ray-cast from

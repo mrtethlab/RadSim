@@ -28,6 +28,14 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run build
+      # Belt and braces on the sub-mm volumes. They are gitignored, so a CI checkout has
+      # them absent and Vite copies nothing — but Vite mirrors public/ wholesale, so a
+      # manual deploy from a working tree that HAS been built locally would otherwise
+      # push a few hundred MB of .mat.bin to Pages. Drop them explicitly.
+      - name: Drop sub-mm voxel volumes from the published site
+        run: |
+          find apps/web/dist/models -name '*.mat.bin' -size +90M -print -delete || true
+          du -sh apps/web/dist
       - uses: actions/upload-pages-artifact@v3
         with:
           path: apps/web/dist
