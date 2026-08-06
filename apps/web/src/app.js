@@ -6,7 +6,6 @@ import { Spectrum } from './core/spectrum.js';
 import { Phantom } from './core/phantom.js';
 import { AttenuationEngine } from './core/engine.js';
 import { Detector } from './core/detector.js';
-import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
 import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
@@ -127,7 +126,6 @@ function initScene(){
 
   three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
          amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD,aecGroup,aecCellMeshes};
-  buildHandMeshes();
 
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
@@ -211,66 +209,13 @@ function initScene(){
   })();
 }
 
-/* ---- DETAILED HAND ANATOMY (single source of truth) ----------------------
-   Local frame: -x = radial (thumb) side, +x = ulnar (little) side,
-                +z = distal (fingertips), -z = proximal (wrist), y = dorsal.
-   buildHandPrimitives(spread) returns {skin:[{a,b,r}], bone:[{a,b,r1,r2}]} in
-   LOCAL coords. SKIN capsules form the soft-tissue envelope shown opaque in 3D
-   and used as the 'soft' attenuator. BONE is a list of tapered capsules (rounded
-   cones): each carries end radii r1,r2 so shafts stay thin and epiphyses flare,
-   giving true skeletal form. Bones are physics-only (revealed on exposure).
-   Every long bone = narrow diaphysis with flared metaphyseal ends, with small
-   gaps left at the joints so articular spaces read as radiolucent lines.
-   Full complement: distal radius+ulna, 8 carpals, 5 metacarpals, 14 phalanges. */
-let handMeshes=[];
-function buildHandMeshes(){
-  handMeshes.forEach(m=>three.handGroup.remove(m)); handMeshes=[];
-  const skinMat=new THREE.MeshStandardMaterial({color:0xe6b291, roughness:.9, metalness:0,
-     emissive:0x2a1712, emissiveIntensity:.12});
-  const boneMat=new THREE.MeshStandardMaterial({color:0xeae3cf, roughness:.7, metalness:0,
-     emissive:0x161310, emissiveIntensity:.08});
-  // rounded-cone mesh: frustum (radii r1@a -> r2@b) + spherical end caps
-  function coneMesh(a,b,r1,r2,mat){
-    const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b);
-    const len=Math.max(A.distanceTo(B),1e-4), e=1e-3;
-    const grp=new THREE.Group();
-    const cyl=new THREE.Mesh(new THREE.CylinderGeometry(Math.max(r2,e),Math.max(r1,e),len,16),mat);
-    cyl.position.copy(A).add(B).multiplyScalar(0.5);
-    cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.clone().sub(A).normalize());
-    cyl.castShadow=true; cyl.receiveShadow=true; grp.add(cyl);
-    for(const [p,r] of [[A,r1],[B,r2]]){ const s=new THREE.Mesh(new THREE.SphereGeometry(Math.max(r,e),16,12),mat);
-      s.position.copy(p); s.castShadow=true; s.receiveShadow=true; grp.add(s); }
-    return grp;
-  }
-  const softGrp=new THREE.Group(), boneGrp=new THREE.Group();
-  const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-  for(const c of skin){ const r1=c.r1!==undefined?c.r1:c.r, r2=c.r1!==undefined?c.r2:c.r;
-    softGrp.add(coneMesh(c.a,c.b,r1,r2,skinMat)); }
-  for(const c of bone){ if(c.mat==='marrow') continue;    // canal is internal — not shown in 3D
-    boneGrp.add(coneMesh(c.a,c.b,c.r1,c.r2,boneMat)); }
-  three.handGroup.add(softGrp); three.handGroup.add(boneGrp);
-  three.softGrp=softGrp; three.boneGrp=boneGrp; handMeshes=[softGrp,boneGrp];
-  applyHandView();
-}
-/* Toggle which model is visible (display only). */
-function applyHandView(){
-  if(!three.softGrp||!three.boneGrp) return;
-  if(S.subject!=='hand'){ three.softGrp.visible=false; three.boneGrp.visible=false; if(three.chestGroup) three.chestGroup.visible=true; return; }
-  const boneOnly=(S.handView==='bone');
-  three.softGrp.visible=!boneOnly; three.boneGrp.visible=boneOnly;
-}
-function setHandView(v){
-  S.handView=v;
-  const seg=$('renderSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.hv===v));
-  applyHandView();
-}
-
-/* Voxel model registry: the analytic hand plus every folder in public/models/. The
-   `id` is BOTH the folder name and the file basename (…/<id>/<id>.model.json) and the
-   model name sent to the Python backend, so keep them in sync with the build output.
+/* Voxel model registry: every folder in public/models/. The `id` is BOTH the folder
+   name and the file basename (…/<id>/<id>.model.json) and the model name sent to the
+   Python backend, so keep them in sync with the build output.
    scoutKv/scoutMa are the default CT scout technique; xrayKv the default x-ray kV
    (thin extremities need far less than a thick torso). */
 const VOXEL_MODELS = {
+  hand:            { title:'Hand',                  scoutKv:80,  scoutMa:40,  xrayKv:55  },
   chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
   headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
@@ -300,26 +245,14 @@ function prepVoxelMesh(grp, translucent){
       m.needsUpdate=true; } } } });
 }
 
-/* Switch the scan subject between the analytic hand and any voxel model. Models
-   (material volume + display mesh) are fetched on first use and cached; the meshes
-   all live in handGroup so the CT positioning offsets apply to them like the hand. */
+/* Switch the scan subject to any voxel model. Models (material volume + display mesh)
+   are fetched on first use and cached; the meshes all live in handGroup so the CT
+   positioning offsets apply to every subject the same way. */
 async function setSubject(sub){
   const sel=$('subjectSel'); const hint=$('subjectHint');
   S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
   const showActive=(id)=>{ for(const k in three.voxelMeshes) three.voxelMeshes[k].visible=(k===id);
                            three.chestGroup=three.voxelMeshes[id]||null; };
-  if(sub==='hand'){
-    S.subject='hand';
-    S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scanStart=-150; S.ct.protocol='whole';
-    S.ct.scoutKv=80; S.ct.scoutMa=20;
-    S.ct.scoutTech=[{kv:80,ma:20},{kv:80,ma:20}];
-    S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
-    applyBackendOnly(false);
-    showActive(null); applyHandView();
-    if(hint) hint.textContent='Analytic hand phantom';
-    if(sel) sel.value='hand';
-    syncScene(); return;
-  }
   const cfg=VOXEL_MODELS[sub];
   if(!cfg){ console.warn('unknown subject',sub); return; }
   let vm=S.voxelCache[sub];
@@ -357,8 +290,6 @@ async function setSubject(sub){
   // backend-only models (large, no volume in the browser) MUST use the Python engine
   applyBackendOnly(!!vm.backendOnly);
   showActive(sub);
-  if(three.softGrp) three.softGrp.visible=false;
-  if(three.boneGrp) three.boneGrp.visible=false;
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
   if(sel) sel.value=sub;
   syncScene();
@@ -582,21 +513,8 @@ function applyMat3(R,p){ return [R[0]*p[0]+R[1]*p[1]+R[2]*p[2], R[3]*p[0]+R[4]*p
 function setGroupRot(grp,R){ const m=new THREE.Matrix4();
   m.set(R[0],R[1],R[2],0, R[3],R[4],R[5],0, R[6],R[7],R[8],0, 0,0,0,1); grp.setRotationFromMatrix(m); }
 
-/* Base lift (cm, before OID) that rests the hand on the receptor after the object
-   rotation R: finds the lowest surface point of the rotated hand and lifts it so
-   nothing clips through the detector. */
-function baseLift(skin, bone, R){
-  if(!isObjRotated()) return REST_LIFT;
-  let minY=Infinity;
-  const low=(p,r)=>{ const yr=applyMat3(R,p)[1]-r; if(yr<minY) minY=yr; };
-  for(const c of skin){ const r1=c.r1!==undefined?c.r1:c.r, r2=c.r1!==undefined?c.r2:c.r; low(c.a,r1); low(c.b,r2); }
-  for(const c of bone){ low(c.a,c.r1); low(c.b,c.r2); }
-  return -minY + 0.05;   // +margin so the edge rests just above the receptor
-}
-
-/* Build the world-space physics phantom from current pose (bakes transform).
-   Same skin+bone primitives shown in 3D, rotated by pose and lifted onto the
-   detector so bone is nested inside soft tissue. */
+/* Build the world-space physics phantom: the selected voxel model, placed at the CT
+   patient offset / x-ray object offset so the traced volume and the 3D scene agree. */
 // Anatomical axis flips for the voxel chest (volume axes: x=Left, y=Posterior,
 // z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first (anterior
 // up, head toward −z into the bore). X-ray = AP supine (anterior up toward the tube,
@@ -610,54 +528,27 @@ function voxelFlips(){
   return f;
 }
 function buildPhantom(){
-  // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
-  // CT patient offset (couch position / table height) so scout + recon sweep the real
-  // anatomy. Uses the expanded BodyMaterials via its labelled volume.
+  // Return a VoxelPhantom centred at the CT patient offset (couch position / table
+  // height) or the x-ray object offset, so scout + recon sweep the real anatomy.
+  // Uses the expanded BodyMaterials via its labelled volume.
   const R=objMat();
-  if(S.subject!=='hand' && S.voxelModel){
-    const vm=S.voxelModel;
-    const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
-    const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
-    const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
-    return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
-  }
-  const ph=new Phantom();
-  const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-  // x-ray: rest on the receptor (rotation-aware) + OID. CT: sit at the table height
-  // (patientY), so the 3D model and the traced phantom share one vertical position.
-  const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,R)+S.oid;
-  // in CT the patient is offset from the gantry isocentre by the direction pad;
-  // in x-ray by the object offset sliders
+  const vm=S.voxelModel;
+  if(!vm) return new Phantom();          // nothing loaded yet (first frames during boot)
   const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
+  const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
-  function xf(p){                // rotate the object (about origin), then lift, then CT offset
-    const q=applyMat3(R,p);
-    return [q[0]+cx, q[1]+liftY, q[2]+cz];
-  }
-  for(const c of skin){
-    if(c.r1!==undefined) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,'soft');
-    else ph.addCapsule(xf(c.a),xf(c.b),c.r,'soft');
-  }
-  for(const c of bone) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,c.mat||'bone');
-  return ph;
+  return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
 }
 
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
-  document.body.classList.toggle('subj-hand', S.subject==='hand');   // finger-spread control is hand-only
-  // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips).
-  // The voxel chest is placed by ctSyncScene instead, so skip the hand transforms.
+  // The voxel model is placed by ctSyncScene in CT mode; in x-ray it rests on the receptor.
   const ox=S.mode!=='ct'?S.objOff.x:0, oz=S.mode!=='ct'?S.objOff.z:0;   // x-ray object offset sliders
-  if(S.subject==='hand'){
-    const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-    three.handGroup.position.set(ox, baseLift(skin,bone,objMat())+S.oid, oz);
-  } else {
-    three.handGroup.rotation.z = 0;
-    if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);   // flips are mode-dependent
-    if(S.mode!=='ct' && S.voxelModel){                                // x-ray: rest the model on the detector
-      three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10, oz);
-    }
+  three.handGroup.rotation.z = 0;
+  if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);       // flips are mode-dependent
+  if(S.mode!=='ct' && S.voxelModel){                                    // x-ray: rest the model on the detector
+    three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10, oz);
   }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
@@ -697,11 +588,10 @@ function syncScene(){
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
   editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
-  // its centre to match the traced phantom. Hand meshes ride handGroup; a voxel mesh
-  // is centred at its own origin so it rotates in place inside handGroup.
+  // its centre to match the traced phantom. A voxel mesh is centred at its own origin
+  // so it rotates in place inside handGroup.
   const R=objMat();
-  if(S.subject==='hand') setGroupRot(three.handGroup, R);
-  else if(three.chestGroup) setGroupRot(three.chestGroup, R);
+  if(three.chestGroup) setGroupRot(three.chestGroup, R);
 }
 
 /* Redraw the collimator cookie: bright rectangular aperture sized to the field
@@ -1024,8 +914,6 @@ function bind(){
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
     resetPrep(); syncScene(); });
-  $('spread')?.addEventListener('input',e=>{ S.spread=e.target.value/100;
-    buildHandMeshes(); resetPrep(); });
   // sliders that only affect geometry (update chips + scene)
   const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ'];
   for(const id of geoSliders){
@@ -1483,15 +1371,11 @@ function renderRadiograph(target,entry){
   }
   cctx.putImageData(img,0,0);
   // orient (rotate + flip) into the target, sizing target to the exposed crop.
-  // A per-subject hanging default is applied first, then the user's adjustments:
-  //  - hand: fingertips (+z, the plate arrow) up -> 180° rotation. A rotation, NOT a
-  //    vertical mirror, so left/right chirality is preserved.
-  //  - voxel body (chest, etc.): the superior end is world +z, which the raw detector
-  //    mapping lands at the image BOTTOM, so flip vertically to hang it head-up; mirror
-  //    horizontally too because a PA projection is displayed as if facing the patient.
-  const baseRot = subject!=='hand' ? 0 : 180;
-  const baseFlipH = subject!=='hand';
-  const baseFlipV = subject!=='hand';
+  // Hanging default for every voxel subject, applied before the user's adjustments:
+  // the superior end (fingertips on the hand) is world +z, which the raw detector
+  // mapping lands at the image BOTTOM, so flip vertically to hang it superior-up;
+  // mirror horizontally too because a PA projection is displayed as if facing the patient.
+  const baseRot = 0, baseFlipH = true, baseFlipV = true;
   const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
@@ -1706,7 +1590,7 @@ function applyProtocol(p,part){
   const pv=$('protocolV'); if(pv) pv.textContent=p.proj;
   refreshReadouts();
   // switch the subject model when the protocol targets one we have
-  if(p.subject && p.subject!==S.subject && (p.subject==='hand'||VOXEL_MODELS[p.subject])) setSubject(p.subject);
+  if(p.subject && p.subject!==S.subject && VOXEL_MODELS[p.subject]) setSubject(p.subject);
   else { syncScene(); if(S.hasImage) drawFilm(); }
 }
 function openProtocolPopup(){
@@ -1736,7 +1620,7 @@ function updateDI(EI){
 /* Build the 4-corner image metadata for the CURRENT technique (shown on the big
    Image view, not the small live monitor). */
 function buildMeta(spec){
-  const subjName=(S.subject==='hand'?'HAND':(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase());
+  const subjName=(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase();
   return {
     tl: subjName+' · '+S.pose,
     tr: S.aecResult
@@ -1964,11 +1848,12 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
-           syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
+           syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram,
            editorMode: (on) => editorApplyMode(on) });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
+  setSubject('hand');                           // default subject: the voxel hand phantom
 });
