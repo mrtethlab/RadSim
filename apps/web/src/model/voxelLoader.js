@@ -30,6 +30,9 @@ export async function loadVoxelModel(baseUrl, name) {
     backendOnly,
     legend: hdr.materials,
     meshUrl: hdr.mesh ? `${baseUrl}/${hdr.mesh}` : null,
+    // optional photo-textured display skin (build_hand_skin.py). Display ONLY — the
+    // physics always uses the material volume, never this mesh.
+    skinUrl: hdr.skinMesh ? `${baseUrl}/${hdr.skinMesh}` : null,
     extentMM: [nx * hdr.spacing[0], ny * hdr.spacing[1], nz * hdr.spacing[2]],
     // build a VoxelPhantom centred at `center` (world cm) with optional axis flips.
     // With data=null it is geometry-only (extent/flip for placement; trace unused —

@@ -263,9 +263,21 @@ async function setSubject(sub){
       vm=await loadVoxelModel(import.meta.env.BASE_URL+'models/'+sub, sub);
       S.voxelCache[sub]=vm;
       if(vm.meshUrl){
+        // Display meshes live in one wrapper so the CT/x-ray transforms treat the subject
+        // as a single object: the material-shaded mesh plus, when the model ships one, a
+        // photo-textured SKIN. Only one child is visible at a time (see applyPhotoSkin).
         const grp=await loadModelUrl(vm.meshUrl);
         prepVoxelMesh(grp, sub==='metalphantom');
-        grp.visible=false; three.handGroup.add(grp); three.voxelMeshes[sub]=grp;
+        grp.userData.role='plain';
+        const wrap=new THREE.Group(); wrap.add(grp);
+        if(vm.skinUrl){
+          try{
+            const sk=await loadModelUrl(vm.skinUrl);
+            prepSkinMesh(sk); sk.userData.role='skin'; wrap.add(sk);
+          }catch(e){ console.warn(sub+' skin mesh failed to load',e); }
+        }
+        wrap.visible=false; three.handGroup.add(wrap); three.voxelMeshes[sub]=wrap;
+        applyPhotoSkin();
       }
     }catch(err){ console.error(sub+' load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
       if(sel) sel.value=S.subject; return; }
@@ -294,6 +306,33 @@ async function setSubject(sub){
   if(sel) sel.value=sub;
   syncScene();
 }
+/* Photo-textured display skin. Purely cosmetic: the attenuation always comes from the
+   voxel material volume, so switching this never changes an image. Keeps the textured
+   map and gives it skin-like shading (matte, no metalness). */
+function prepSkinMesh(grp){
+  grp.traverse(o=>{ if(o.isMesh){
+    o.castShadow=true; o.receiveShadow=true;
+    if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    const vc=!!o.geometry.attributes.color;   // photo colour is baked per-vertex
+    const ms=Array.isArray(o.material)?o.material:[o.material];
+    for(const m of ms){ if(!m) continue;
+      m.metalness=0; m.roughness=0.72; m.transparent=false; m.opacity=1;
+      if(vc){ m.vertexColors=true; m.color.setRGB(1,1,1); }
+      m.side=THREE.FrontSide; m.needsUpdate=true; }
+  } });
+}
+/* Show either the photographic skin or the material-shaded mesh for every loaded subject.
+   Models without a skin mesh always show the plain one. */
+function applyPhotoSkin(){
+  const want=!!S.photoSkin;
+  for(const k in (three.voxelMeshes||{})){
+    const wrap=three.voxelMeshes[k]; if(!wrap||!wrap.children) continue;
+    const hasSkin=wrap.children.some(c=>c.userData&&c.userData.role==='skin');
+    wrap.children.forEach(c=>{ const r=c.userData&&c.userData.role; if(!r) return;
+      c.visible = hasSkin ? (r==='skin')===want : r==='plain'; });
+  }
+}
+
 /* ---- custom (Model Editor) subjects: session-saved models become selectable under
    View Options exactly like the preset models. The editor hands over a ready voxel-model
    object (same shape loadVoxelModel returns) + a display mesh in raw volume mm axes, so
@@ -302,7 +341,8 @@ function registerCustomSubject(key, title, vm, meshGroup){
   VOXEL_MODELS[key]={ title, scoutKv:100, scoutMa:100, xrayKv:80 };
   S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
   S.voxelCache[key]=vm;
-  if(meshGroup){ meshGroup.visible=false; three.handGroup.add(meshGroup); three.voxelMeshes[key]=meshGroup; }
+  if(meshGroup){ meshGroup.visible=false; three.handGroup.add(meshGroup); three.voxelMeshes[key]=meshGroup;
+                 applyPhotoSkin(); }   // editor models have no skin: keeps the plain mesh shown
   const sel=$('subjectSel'); if(!sel) return;
   let opt=sel.querySelector('option[value="'+key+'"]');
   if(!opt){ opt=document.createElement('option'); opt.value=key; sel.appendChild(opt); }
@@ -377,6 +417,7 @@ const S = {
   detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
+  photoSkin:true,              // show the photo-textured display skin (cosmetic only)
   resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
@@ -607,8 +648,10 @@ function updateCookie(){
   const cx=SZ/2, cy=SZ/2, w=hu*SZ, h=hv*SZ;
   // aperture (lit)
   g.fillStyle='#fff'; g.fillRect(cx-w, cy-h, 2*w, 2*h);
-  // crosshair wires (dark), spanning the aperture, with a small central gap
-  g.strokeStyle='#000'; g.lineWidth=Math.max(2, SZ*0.006);
+  // Crosshair wires, spanning the aperture with a small central gap. Grey, not black: a real
+  // wire casts a soft shadow inside a bright field, and a fully opaque one reads as a stripe
+  // painted across the anatomy rather than as a centring aid.
+  g.strokeStyle='rgba(0,0,0,0.45)'; g.lineWidth=Math.max(2, SZ*0.004);
   const gap=Math.min(w,h)*0.12;
   g.beginPath();
   g.moveTo(cx, cy-h); g.lineTo(cx, cy-gap); g.moveTo(cx, cy+gap); g.lineTo(cx, cy+h);
@@ -1036,6 +1079,8 @@ function bind(){
     [...$(id).children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); fn(b);
   });
   segPick('resSeg', b=>{ S.resolution=b.dataset.res; applyDet(); });
+  // photo skin vs material shading — display only, never touches the physics
+  segPick('skinSeg', b=>{ S.photoSkin=(b.dataset.skin==='photo'); applyPhotoSkin(); });
   $('detSizeSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
     [...$('detSizeSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
     setDetSize(parseInt(b.dataset.w),parseInt(b.dataset.h));});

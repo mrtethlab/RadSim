@@ -204,5 +204,6 @@
     -1000,
     1200
   ],
-  "backendOnly": false
+  "backendOnly": false,
+  "skinMesh": "hand_skin.glb"
 }
