@@ -1633,11 +1633,8 @@ function setCurvePoint(pt,v){
   // to some "expected" sub-range would stop the toe and shoulder reaching the part of the
   // axis where the anatomy actually sits, which on a chest is the bottom fifth.
   v=Math.max(0,Math.min(1,v));
-  if(pt==='lo')  c.lo=Math.min(v, c.mid-CURVE_GAP);
-  if(pt==='mid') c.mid=Math.max(c.lo+CURVE_GAP, Math.min(v, c.hi-CURVE_GAP));
-  if(pt==='hi')  c.hi=Math.max(v, c.mid+CURVE_GAP);
-  // moving an outer point can squeeze the mid; keep it inside rather than let it stick
-  c.mid=Math.max(c.lo+CURVE_GAP, Math.min(c.mid, c.hi-CURVE_GAP));
+  if(pt==='lo') c.lo=Math.min(v, c.hi-CURVE_GAP);
+  else          c.hi=Math.max(v, c.lo+CURVE_GAP);
   S.curveManual=true;                       // stop re-seeding: a pinned curve is the point
   syncCurveBar();
   if(S.hasImage) drawFilm();
@@ -1657,8 +1654,8 @@ function initCurveBar(){
   bar.addEventListener('pointerdown',e=>{
     const h=e.target.closest('.cb-h');
     // clicking the bare track grabs the nearest point, so the control is not fiddly
-    const pt=h? h.dataset.pt
-             : ['lo','mid','hi'].reduce((a,b)=>Math.abs(S.curve[b]-xOf(e))<Math.abs(S.curve[a]-xOf(e))?b:a);
+    const c=S.curve||(S.curve=curveFromRescale(S.rescale));
+    const pt=h? h.dataset.pt : (Math.abs(c.lo-xOf(e))<=Math.abs(c.hi-xOf(e))?'lo':'hi');
     drag=bar.querySelector('.cb-h[data-pt="'+pt+'"]');
     drag.classList.add('drag');
     try{ bar.setPointerCapture(e.pointerId); }catch(_){}
@@ -1678,25 +1675,25 @@ function initCurveBar(){
    seeded from this, so they START on the toe, inflection and shoulder of the curve as
    drawn rather than at an abstract 0 / 0.5 / 1 that corresponds to nothing on screen. */
 function curveFromRescale(rs){
-  const lo=(S.autoRescale && rs)? rs.lo : 0;
-  const hi=(S.autoRescale && rs)? rs.hi : 1;
-  const c=(S.lut && S.lut.sigmoid)? S.lut.center : 0.5;
-  return {lo, hi, mid: lo + (hi-lo)*c};
+  return { lo:(S.autoRescale && rs)? rs.lo : 0,
+           hi:(S.autoRescale && rs)? rs.hi : 1 };
 }
 /* The one display mapping, in the histogram's own x units so the handles sit on the axis
    they are drawn against.
 
    The handles ARE the curve, rather than a second stage bolted after it: low and high are
-   the window (below low everything is black, above high everything is white — the toe and
-   the shoulder by construction), and mid is the LUT's centre expressed on the same axis,
-   which is the inflection. Seeded from the auto-rescale, this reproduces the previous
-   mapping exactly; dragging a handle then moves the feature it is sitting on. */
+   the window — below low everything is black, above high everything is white, so they are
+   the toe and the shoulder by construction. Seeded from the auto-rescale, this reproduces
+   the previous mapping exactly; dragging a handle moves the feature it sits on.
+
+   There is deliberately no third handle for the inflection. It would set the sigmoid's
+   centre, and toneMap already computes that centre as (centre - brightness) — so a mid
+   handle and the Brightness slider write the same term, and the two would fight. */
 function displayTone(x, rs){
   const c=S.curve||curveFromRescale(rs);
   const span=c.hi-c.lo;
   let t = span>1e-6 ? (x-c.lo)/span : (x<c.lo?0:1);
-  t = t<0?0:t>1?1:t;
-  return toneMap(t, span>1e-6 ? (c.mid-c.lo)/span : undefined);
+  return toneMap(t<0?0:t>1?1:t);
 }
 function displayCurve(x){ return displayTone(x, S.rescale); }
 

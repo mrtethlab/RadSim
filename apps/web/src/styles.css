@@ -903,4 +903,3 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
   box-shadow:0 0 6px rgba(233,169,74,.55); }
 .curvebar .cb-h:hover{ background:#f7c477; }
 .curvebar .cb-h.drag{ background:#ffe0ad; box-shadow:0 0 10px rgba(255,200,120,.9); }
-.curvebar .cb-h[data-pt="mid"]{ width:11px; height:11px; margin:-5.5px 0 0 -5.5px; }
