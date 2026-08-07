@@ -31,7 +31,7 @@ SUMMARY.md
 # volumes exceed GitHub's 100 MB per-file limit and would be far too much to download
 # over the web anyway. Only their .model.json is committed, so the subject still appears
 # in the picker; rebuild the volume locally and run the GPU backend to use it.
-#   hires_shoulder  254 MB    hand_hires  162 MB
+#   hires_shoulder  254 MB    hand_hires  316 MB
 services/compute/data/
 apps/web/public/models/hires_shoulder/*.mat.bin
 apps/web/public/models/hires_shoulder/*.glb

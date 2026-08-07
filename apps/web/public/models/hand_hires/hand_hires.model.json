@@ -1,15 +1,15 @@
 {
-  "name": "Hand \u00b7 0.25 mm",
+  "name": "Hand \u00b7 0.2 mm",
   "source": "Scan the World \u00b7 'Hand bones' CT scan of a human hand (Zenodo 10.5281/zenodo.21244925, CC BY-NC-SA 4.0); soft-tissue envelope derived morphologically from the scanned skeleton",
   "dims": [
-    674,
-    247,
-    971
+    842,
+    309,
+    1214
   ],
   "spacing": [
-    0.25,
-    0.25,
-    0.25
+    0.2,
+    0.2,
+    0.2
   ],
   "order": "x-fastest: i = x + nx*(y + ny*z)",
   "volume": "hand_hires.mat.bin",
@@ -196,7 +196,6 @@
     2,
     7,
     10,
-    17,
     18,
     23
   ],

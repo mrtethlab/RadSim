@@ -130,29 +130,92 @@ def fingertips_at_high_z(bone: np.ndarray) -> bool:
     return hi > lo
 
 
-def _trab_texture(shape, spacing, sigma_vox=1.1, frac=0.68, seed=7, block=96):
-    """A tiled, band-limited random field for trabecular texture.
+# Trabecular morphometry MEASURED from a 20 um micro-CT capitate (app.trab_morphometry):
+# KU Leuven "Multimodal CT Dataset of Cadaveric Wrist Joints", doi:10.48804/DWF4RG,
+# CC BY-SA 4.0 — specimen 6, an 88-year-old female. Only these NUMBERS are used; no voxel
+# of that scan is copied into the model, so what ships here is our own generated texture
+# matched to real morphometry rather than a derivative of a share-alike scan (which could
+# not be combined with this hand's CC BY-NC-SA source anyway).
+#
+# Being from an elderly donor, the bone is on the sparse side of young-adult reference.
+TRAB = dict(bvtv=0.310,          # bone volume fraction of cancellous bone
+            period_mm=0.962,     # Tb.Th + Tb.Sp: the repeat distance of the lattice
+            tb_th_mm=0.334,      # mean chord through a trabecula
+            tb_sp_mm=0.629)      # mean chord through the marrow space
+
+
+def _solve_sigma(period_vox, bvtv, block=64, seed=3, iters=14):
+    """Find the Gaussian sigma whose thresholded field repeats every `period_vox`.
+
+    The texture is a thresholded Gaussian random field, which has exactly two knobs —
+    smoothing length and threshold — and they map one-to-one onto the two measured
+    quantities: the threshold is fixed by BV/TV, and sigma by the period. Rather than
+    trusting an analytic relation between sigma and the post-threshold chord length,
+    this measures the generated block with the SAME chord-length code used on the real
+    micro-CT and bisects. Self-verifying, and cheap on a 64-voxel block.
+    """
+    from .trab_morphometry import chord_lengths
+    rng = np.random.default_rng(seed)
+    white = rng.standard_normal((block, block, block)).astype(np.float32)
+    one = (1.0, 1.0, 1.0)
+
+    def period_of(sig):
+        blk = ndi.gaussian_filter(white, sigma=sig, mode='wrap')
+        m = blk > float(np.quantile(blk, 1.0 - bvtv))
+        _, th = chord_lengths(m, one)
+        _, sp = chord_lengths(~m, one)
+        return th + sp
+
+    lo, hi = 0.35, 10.0
+    if period_of(lo) >= period_vox:
+        return lo, period_of(lo)            # grid too coarse to carry the real period
+    for _ in range(iters):
+        mid = 0.5 * (lo + hi)
+        if period_of(mid) < period_vox:
+            lo = mid
+        else:
+            hi = mid
+    sig = 0.5 * (lo + hi)
+    return sig, period_of(sig)
+
+
+def _trab_texture(shape, spacing, seed=7, block=96):
+    """A tiled, band-limited random field reproducing the measured trabecular lattice.
 
     Generated as one small periodic block and tiled rather than drawn at full size: a
     0.25 mm hand is 162 M voxels, and a float32 noise field that big costs 650 MB for
     something whose whole point is to look random. The block wraps seamlessly (the blur
-    is taken with mode='wrap'), and at ~3 voxels per cell the 96-voxel repeat is far
-    below anything the eye picks up as a pattern.
+    uses mode='wrap').
 
-    sigma is in VOXELS, not mm, on purpose: the texture should be as fine as the grid can
-    carry, so a finer rebuild automatically gains finer trabeculae.
+    The length scale is in MILLIMETRES, taken from the micro-CT. That is the correction
+    that matters: trabecular spacing is a property of bone, not of our grid, so a finer
+    rebuild must resolve the SAME lattice better rather than inventing a finer one.
     """
+    period_vox = TRAB['period_mm'] / spacing
+    sigma, got = _solve_sigma(period_vox, TRAB['bvtv'], block=min(block, 64), seed=seed)
+    print(f"        trabeculae: target period {TRAB['period_mm']:.2f} mm = "
+          f"{period_vox:.1f} vox -> sigma {sigma:.2f}, achieved {got:.1f} vox "
+          f"({got*spacing:.2f} mm)")
+    # The floor is not Nyquist. Even UNSMOOTHED binary noise at fill p has a mean period of
+    # 1/(1-p) + 1/p voxels — 4.7 at BV/TV 0.31 — so a grid coarser than that cannot produce
+    # the real lattice at the real density however the field is filtered.
+    p = TRAB['bvtv']
+    floor = 1.0 / (1.0 - p) + 1.0 / p
+    if period_vox < floor:
+        print(f'        ! floor is {floor:.1f} vox at BV/TV {p:.2f}: {spacing} mm voxels '
+              f'cannot carry a {TRAB["period_mm"]:.2f} mm lattice. Mean density is still '
+              f'right, texture is {got*spacing/TRAB["period_mm"]:.1f}x too coarse '
+              f'(would need <= {TRAB["period_mm"]/floor:.3f} mm voxels)')
     rng = np.random.default_rng(seed)
     blk = rng.standard_normal((block, block, block)).astype(np.float32)
-    blk = ndi.gaussian_filter(blk, sigma=sigma_vox, mode='wrap')
-    keep = blk > float(np.quantile(blk, 1.0 - frac))
+    blk = ndi.gaussian_filter(blk, sigma=sigma, mode='wrap')
+    keep = blk > float(np.quantile(blk, 1.0 - TRAB['bvtv']))
     nz, ny, nx = shape
     return keep[np.ix_(np.arange(nz) % block, np.arange(ny) % block, np.arange(nx) % block)]
 
 
 def bone_architecture(mat: np.ndarray, bone: np.ndarray, spacing: float,
-                      cort_shaft=1.25, cort_end=0.45, tube_r=4.6,
-                      trab_frac=0.68, seed=7):
+                      cort_shaft=1.25, cort_end=0.45, tube_r=4.6, seed=7):
     """Cortex, medullary canal and trabecular texture — written into `mat` in place.
 
     What makes a real hand film look sharp is the bone's INTERNAL architecture, not the
@@ -169,6 +232,22 @@ def bone_architecture(mat: np.ndarray, bone: np.ndarray, spacing: float,
     one distance transform plus a maximum filter.
     """
     r = lambda mm: max(1, int(round(mm / spacing)))
+
+    # Work on a tight crop around the skeleton. The full array is padded by 18 mm on every
+    # side so soft tissue can grow into it, and scipy's EDT allocates a (3, *shape) float64
+    # workspace — 10.5 GB at 0.2 mm on the padded grid, which is what made the fine build
+    # run out of memory. Bone occupies a much smaller box, and a margin of a few voxels
+    # past the widest filter keeps the interior values identical to the uncropped result.
+    m = r(5.0) + 2
+    zz, yy, xx = np.where(bone)
+    sl = tuple(slice(max(0, v.min() - m), min(s, v.max() + m + 1))
+               for v, s in zip((zz, yy, xx), bone.shape))
+    del zz, yy, xx
+    bone = bone[sl]
+    sub = mat[sl]
+    print(f'        bone crop {tuple(s.stop - s.start for s in sl)} '
+          f'of {bone.shape if False else mat.shape}')
+
     bdepth = ndi.distance_transform_edt(bone, sampling=spacing).astype(np.float32)
     half = ndi.maximum_filter(bdepth, size=r(5.0))          # local half-width, mm
 
@@ -182,11 +261,19 @@ def bone_architecture(mat: np.ndarray, bone: np.ndarray, spacing: float,
     canal = interior & tubular                              # medullary cavity
     cancellous = interior & ~tubular
 
-    tex = _trab_texture(bone.shape, spacing, frac=trab_frac, seed=seed)
-    mat[cortex] = CORTICAL
-    mat[canal] = FAT                                        # yellow marrow: the dark canal
-    mat[cancellous] = FAT                                   # inter-trabecular marrow …
-    mat[cancellous & tex] = TRABECULAR                      # … around the trabeculae
+    del bdepth, half, t, cort, interior, tubular
+
+    tex = _trab_texture(bone.shape, spacing, seed=seed)
+    sub[cortex] = CORTICAL
+    sub[canal] = FAT                                        # yellow marrow: the dark canal
+    sub[cancellous] = FAT                                   # inter-trabecular marrow …
+    # … around struts of CORTICAL, not TRABECULAR: a trabecula is made of ordinary dense
+    # bone tissue, and the 300 HU "trabecular" value is the AVERAGE of struts and marrow.
+    # Now that the marrow is modelled explicitly, using 300 HU for the struts would count
+    # the marrow twice and leave the carpus far too lucent. At the measured BV/TV the mix
+    # averages 0.31*1200 + 0.69*(-90) = 310 HU, i.e. back to the right mean density — but
+    # now with the real lattice on top of it instead of a flat fill.
+    sub[cancellous & tex] = CORTICAL
 
     tot = int(bone.sum())
     for nm, m in (('cortex', cortex), ('canal', canal), ('cancellous', cancellous)):
@@ -252,7 +339,9 @@ def build_materials(bone: np.ndarray, spacing: float,
     lab, nlab = ndi.label(seeds)
     _, idx = ndi.distance_transform_edt(lab == 0, return_indices=True)
     owner = lab[idx[0], idx[1], idx[2]]
+    del idx, seeds, lab                                             # 3 int32 grids: GBs at 0.2 mm
     ridge = ndi.maximum_filter(owner, size=3) != ndi.minimum_filter(owner, size=3)
+    del owner
     ridge = ndi.binary_dilation(ridge, iterations=1)                # ~1 mm visible cleft
     # The interdigital WEB reaches well distal to the MCP joints — on a PA hand the
     # commissure sits around the proximal third of the proximal phalanx. Splitting from
@@ -277,6 +366,7 @@ def build_materials(bone: np.ndarray, spacing: float,
     mat[soft & (depth > muscle_mm)] = MUSCLE                       # thenar / hypothenar / interossei
     mat[soft & (depth <= fat_mm)] = FAT                            # subcutaneous layer
     mat[soft & (depth <= skin_mm)] = SKIN                          # thin skin shell
+    del depth, soft, dist, occ, ridge                              # free before the bone pass
 
     bone_architecture(mat, bone, spacing)
 
