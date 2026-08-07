@@ -426,7 +426,7 @@ const S = {
   objOff:{x:0,z:0},            // x-ray object offset on the receptor (cm): x cross / z long axis
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
-  aecOn:false, aecCells:{l:true,c:false,r:true}, aecResult:null,   // AEC: cells + achieved mAs of the last exposure
+  aecOn:false, aecCells:{l:false,c:true,r:false}, aecResult:null,  // AEC: cells + achieved mAs of the last exposure
   lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
   showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
   detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
@@ -543,11 +543,50 @@ const AEC_CELLS={ l:{x:7.5,z:4.5}, c:{x:0,z:-4.5}, r:{x:-7.5,z:4.5} };
 const AEC_W=5, AEC_L=6.5;                                                // chamber size (cm): x × z
 const AEC_MIN_MAS=0.2;                                                   // minimum response (~2 ms at 100 mA)
 function aecActive(){ return S.aecOn && (S.aecCells.l||S.aecCells.c||S.aecCells.r); }
-/* AEC selected with no chamber: there is nothing for the generator to terminate on, so a
-   real console interlocks and refuses to expose. Falling through to the backup timer — as
-   this used to — silently delivers a full manual exposure at the backup mAs, which is the
-   worst possible outcome: a large unintended dose that looks like an AEC exposure. */
-function aecNoCell(){ return S.aecOn && !(S.aecCells.l||S.aecCells.c||S.aecCells.r); }
+function anyAecCell(){ return !!(S.aecCells.l||S.aecCells.c||S.aecCells.r); }
+
+/* ---- AEC state: ONE invariant, ONE writer ---------------------------------
+   "AEC on" and "at least one chamber selected" are the same state, so the UI never lets
+   them come apart: switching AEC on selects the centre chamber, and clearing the last
+   chamber switches AEC off. Previously the toggle and the cell buttons each poked at the
+   state and at their own bits of the panel, which is exactly how they drifted into the
+   meaningless on-with-no-chamber combination. Everything now goes through these three. */
+function applyAecUI(){
+  const on=S.aecOn, b=$('aecBtn');
+  if(b){ b.classList.toggle('on',on); b.textContent=on?'ON':'OFF'; b.setAttribute('aria-pressed',on); }
+  const box=$('aecCellsBox');
+  if(box){
+    box.style.display=on?'flex':'none';
+    box.querySelectorAll('button[data-cell]').forEach(cb=>
+      cb.classList.toggle('on', on && !!S.aecCells[cb.dataset.cell]));
+  }
+  const ml=$('masLbl'); if(ml) ml.textContent=on?'Backup mAs':'mAs';
+  S.aecResult=null; resetPrep(); refreshReadouts(); syncScene();
+}
+function setAecOn(on){
+  if(on===S.aecOn) return;
+  S.aecOn=on;
+  if(on){
+    // AEC on always means a chamber is metering. Centre is the safe default: it is the
+    // one cell that lies under the anatomy for nearly every projection.
+    S.aecCells={l:false, c:true, r:false};
+    // hold the manual mAs aside and raise the backup, restoring it when AEC goes off
+    S._masPreAec=S.mas;
+    if(S.mas<200){ S.mas=320; $('mas').value=nearestMasIdx(); }
+  } else if(S._masPreAec!=null){ S.mas=S._masPreAec; $('mas').value=nearestMasIdx(); }
+  applyAecUI();
+}
+function toggleAecCell(k){
+  S.aecCells[k]=!S.aecCells[k];
+  if(!anyAecCell()){ setAecOn(false); return; }   // clearing the last chamber IS AEC off
+  applyAecUI();
+}
+/* AEC on with no chamber to meter: nothing for the generator to terminate on. The UI can
+   no longer produce this (see setAecOn / toggleAecCell — AEC on and at least one chamber
+   are the same state), so this is a backstop for any future path that sets AEC directly,
+   such as a protocol preset. It is worth keeping: the failure it prevents is not a visible
+   error but a silent full-manual exposure at the backup mAs, dressed up as an AEC one. */
+function aecNoCell(){ return S.aecOn && !anyAecCell(); }
 /* Mean receptor dose over the selected chambers (all pixels — a collimated-off chamber
    reads ~0 and correctly drives the exposure to the backup limit). */
 function aecCellDose(dose,nx,ny,pxU,pxV){
@@ -1011,22 +1050,10 @@ function bind(){
   $('mas').addEventListener('input',e=>{S.mas=masSteps[e.target.value];refreshReadouts();});
   // ---- AEC: toggle + chamber selection. Enabling swaps the mAs control to the BACKUP
   // limit (bumped to a sensible safety value); disabling restores the manual mAs.
-  $('aecBtn')?.addEventListener('click',()=>{
-    S.aecOn=!S.aecOn;
-    const b=$('aecBtn'); b.classList.toggle('on',S.aecOn); b.textContent=S.aecOn?'ON':'OFF';
-    b.setAttribute('aria-pressed',S.aecOn);
-    $('aecCellsBox').style.display=S.aecOn?'flex':'none';
-    $('masLbl').textContent=S.aecOn?'Backup mAs':'mAs';
-    if(S.aecOn){ S._masPreAec=S.mas; if(S.mas<200){ S.mas=320; $('mas').value=nearestMasIdx(); } }
-    else if(S._masPreAec!=null){ S.mas=S._masPreAec; $('mas').value=nearestMasIdx(); }
-    S.aecResult=null; resetPrep(); refreshReadouts(); syncScene();
-  });
+  $('aecBtn')?.addEventListener('click',()=>setAecOn(!S.aecOn));
   $('aecCellsBox')?.addEventListener('click',e=>{
     const b=e.target.closest('button[data-cell]'); if(!b) return;
-    const k=b.dataset.cell; S.aecCells[k]=!S.aecCells[k]; b.classList.toggle('on',S.aecCells[k]);
-    // refresh the readouts too: deselecting the last chamber arms the interlock, and the
-    // exposure-time line is where that is announced before the switch is pressed.
-    S.aecResult=null; resetPrep(); refreshReadouts(); syncScene();
+    toggleAecCell(b.dataset.cell);
   });
   // rotor: latches on until an exposure completes
   $('rotor').addEventListener('click',toggleRotor);
