@@ -69,7 +69,13 @@ function initScene(){
     edge.rotation.x=-Math.PI/2; edge.position.set(p.x,0.1,p.z); aecGroup.add(edge);
     const lc=document.createElement('canvas'); lc.width=lc.height=64;
     const lg=lc.getContext('2d'); lg.fillStyle='#bdf3fa'; lg.font='bold 40px Arial';
-    lg.textAlign='center'; lg.textBaseline='middle'; lg.fillText(k.toUpperCase(),32,34);
+    lg.textAlign='center'; lg.textBaseline='middle';
+    // Turn the glyph 180 deg: a plane laid flat by rotation.x = -PI/2 presents its texture
+    // to the camera upside down, so drawn as-is the letters read inverted against the
+    // hang arrow. Rotating the canvas rather than the mesh keeps the label's transform
+    // identical to the fill and edge it sits on.
+    lg.translate(32,32); lg.rotate(Math.PI); lg.translate(-32,-32);
+    lg.fillText(k.toUpperCase(),32,30);
     const lbl=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.8),
       new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(lc), transparent:true, opacity:0.9, depthWrite:false}));
     lbl.rotation.x=-Math.PI/2; lbl.position.set(p.x,0.11,p.z); aecGroup.add(lbl);
@@ -528,7 +534,12 @@ const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16
    kerma and terminate the exposure when the AVERAGE over the selected cells reaches
    the calibrated target; the set mAs acts as the BACKUP (safety) limit. Chambers are
    fixed to the bucky, so they do not move or scale with the cassette. */
-const AEC_CELLS={ l:{x:-7.5,z:4.5}, c:{x:0,z:-4.5}, r:{x:7.5,z:4.5} };   // centres (cm on the receptor)
+// Centres (cm on the receptor). +z is the hang-direction arrow, i.e. the TOP of the plate,
+// so the outer pair sits toward it and the centre cell below — the standard bucky pattern.
+// L and R are named from the receptor as the arrow orients it: with the arrow at the top,
+// the left-hand cell is L. Swapping these swaps both the overlay and the chamber the
+// physics integrates, so the two can never disagree.
+const AEC_CELLS={ l:{x:7.5,z:4.5}, c:{x:0,z:-4.5}, r:{x:-7.5,z:4.5} };
 const AEC_W=5, AEC_L=6.5;                                                // chamber size (cm): x × z
 const AEC_MIN_MAS=0.2;                                                   // minimum response (~2 ms at 100 mA)
 function aecActive(){ return S.aecOn && (S.aecCells.l||S.aecCells.c||S.aecCells.r); }
