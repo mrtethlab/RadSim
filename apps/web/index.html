@@ -645,12 +645,12 @@
         <div class="lab">Display · window / level</div>
         <div class="bod">
           <canvas id="xrayHist" class="histcanvas xray-only" width="256" height="96" title="Pixel histogram + brightness/contrast response curve"></canvas>
-          <div class="curvebar xray-only" id="curveBar" title="Response curve — drag the low, mid and high points. Double-click to reset.">
+          <div class="curvebar xray-only" id="curveBar" title="Response curve — drag the toe, inflection and shoulder. Double-click to reset.">
             <div class="cb-track"></div>
             <div class="cb-fill" id="cbFill"></div>
-            <div class="cb-h" data-pt="lo" title="Low — input tone driven to black"></div>
-            <div class="cb-h" data-pt="mid" title="Mid — input tone driven to 50% grey"></div>
-            <div class="cb-h" data-pt="hi" title="High — input tone driven to white"></div>
+            <div class="cb-h" data-pt="lo" title="Low — toe: where the curve lifts off black"></div>
+            <div class="cb-h" data-pt="mid" title="Mid — inflection: the steepest part of the curve"></div>
+            <div class="cb-h" data-pt="hi" title="High — shoulder: where the curve levels off into white"></div>
           </div>
           <div class="row"><div class="rl">Brightness</div>
             <input type="range" id="level" min="-120" max="120" value="0"></div>

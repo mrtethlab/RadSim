@@ -1663,12 +1663,17 @@ function initCurveBar(){
 
 function levelsTone(x){
   const c=S.curve; if(!c) return x;
-  const lo=c.lo, hi=c.hi;
-  if(hi-lo<1e-6) return x<lo?0:1;
-  let t=(x-lo)/(hi-lo); t=t<0?0:t>1?1:t;
-  const m=(c.mid-lo)/(hi-lo);
-  if(m<=0.001||m>=0.999) return t;
-  return Math.pow(t, Math.log(0.5)/Math.log(m));   // input mid -> output 0.5
+  const lo=c.lo, mid=c.mid, hi=c.hi;
+  if(x<=lo) return 0;
+  if(x>=hi) return 1;
+  // Two quadratic halves joined at the mid point. Each half is flat at its outer end and
+  // steepest at the middle, which puts the three handles on the three features of the
+  // curve you can actually see: LOW is the toe, where output lifts off black; MID is the
+  // inflection, the steepest part; HIGH is the shoulder, where it levels off into white.
+  // A gamma ramp (what this was) has no shoulder at all — it drives straight into max —
+  // so the high handle had nothing visible to grab.
+  if(x<=mid){ const t=(x-lo)/Math.max(1e-6, mid-lo); return 0.5*t*t; }
+  const u=(hi-x)/Math.max(1e-6, hi-mid); return 1-0.5*u*u;
 }
 /* The one display mapping: VOI rescale -> manual levels -> LUT. The image and the curve
    drawn on the histogram both go through this, so the curve cannot lie about the image. */
