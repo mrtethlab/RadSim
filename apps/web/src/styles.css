@@ -887,3 +887,20 @@ body.hist-off .histcanvas{display:none}
 /* ---- controls greyed out while a scan is executing ---- */
 body.ct-busy #ctSettings, body.ct-busy #ctTableGrp, body.ct-busy #ctStorageGrp,
 body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:none; filter:saturate(.4)}
+
+/* ---- response-curve points (low / mid / high) --------------------------------
+   Three diamonds on one track under the histogram. Diamonds rather than the round
+   thumbs used elsewhere: these set the tone mapping, not a technique factor, and the
+   different shape stops them reading as another brightness slider. */
+.curvebar{ position:relative; height:26px; margin:2px 2px 6px; touch-action:none; }
+.curvebar .cb-track{ position:absolute; left:0; right:0; top:11px; height:4px;
+  background:var(--line,#2a3442); border-radius:2px; }
+.curvebar .cb-fill{ position:absolute; top:11px; height:4px; border-radius:2px;
+  background:linear-gradient(90deg,#8a6a2e,#e9a94a); opacity:.55; }
+.curvebar .cb-h{ position:absolute; top:13px; width:13px; height:13px; margin:-6.5px 0 0 -6.5px;
+  background:#e9a94a; border:1px solid #f7d9a4; border-radius:2px;
+  transform:rotate(45deg); cursor:ew-resize;
+  box-shadow:0 0 6px rgba(233,169,74,.55); }
+.curvebar .cb-h:hover{ background:#f7c477; }
+.curvebar .cb-h.drag{ background:#ffe0ad; box-shadow:0 0 10px rgba(255,200,120,.9); }
+.curvebar .cb-h[data-pt="mid"]{ width:11px; height:11px; margin:-5.5px 0 0 -5.5px; }

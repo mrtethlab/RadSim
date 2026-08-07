@@ -433,6 +433,7 @@ const S = {
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   photoSkin:true,              // show the photo-textured display skin (cosmetic only)
+  curve:{lo:0, mid:0.5, hi:1},                     // manual response-curve points (levels)
   resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
@@ -1050,6 +1051,7 @@ function bind(){
   $('mas').addEventListener('input',e=>{S.mas=masSteps[e.target.value];refreshReadouts();});
   // ---- AEC: toggle + chamber selection. Enabling swaps the mAs control to the BACKUP
   // limit (bumped to a sensible safety value); disabling restores the manual mAs.
+  initCurveBar();
   $('aecBtn')?.addEventListener('click',()=>setAecOn(!S.aecOn));
   $('aecCellsBox')?.addEventListener('click',e=>{
     const b=e.target.closest('button[data-cell]'); if(!b) return;
@@ -1481,7 +1483,7 @@ function renderRadiograph(target,entry){
     let v;
     if(!mask[k]) v=0;
     else { const base=baseArr? baseArr[k] : 1-Math.log(1+a*sig[k]/mx)/denom;
-      v=toneMap(rescaleTone(base, rescale)); }  // (enhanced) base -> auto-rescale -> LUT
+      v=displayTone(base, rescale); }   // (enhanced) base -> auto-rescale -> levels -> LUT
     const g=Math.round(v*255), o=(j*cw+i)*4;
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
@@ -1608,9 +1610,70 @@ function toneMap(x){
   }
   const v=(x-0.5)*contrast+0.5+bright; return v<0?0:v>1?1:v;
 }
-/* Full display mapping for the histogram curve: rescale (VOI) then LUT. Uses the active
-   image's rescale window. */
-function displayCurve(x){ return toneMap(rescaleTone(x, S.rescale)); }
+/* ---- manual response-curve points (low / mid / high) ----
+   The three diamonds under the histogram. Low and high are the input tones driven to
+   black and to white; mid is the tone driven to 0.5, i.e. a gamma. This is the classic
+   levels control, and it sits AFTER the auto-rescale on purpose: the rescale normalises
+   every exposure to the same appearance, which is correct for DR but hides dose. Pulling
+   the points by hand pins the mapping so two exposures can be compared as exposures. */
+/* ---- the three diamonds under the histogram ----
+   Not an <input type=range>: three thumbs on one track, each constrained by its
+   neighbours (low < mid < high), which a native range cannot express. */
+const CURVE_GAP=0.02;                                   // keep the points distinguishable
+function syncCurveBar(){
+  const bar=$('curveBar'); if(!bar) return;
+  const c=S.curve;
+  bar.querySelectorAll('.cb-h').forEach(h=>{ h.style.left=(c[h.dataset.pt]*100).toFixed(2)+'%'; });
+  const f=$('cbFill'); if(f){ f.style.left=(c.lo*100).toFixed(2)+'%';
+                              f.style.width=((c.hi-c.lo)*100).toFixed(2)+'%'; }
+}
+function setCurvePoint(pt,v){
+  const c=S.curve;
+  v=Math.max(0,Math.min(1,v));
+  if(pt==='lo')  c.lo=Math.min(v, c.mid-CURVE_GAP);
+  if(pt==='mid') c.mid=Math.max(c.lo+CURVE_GAP, Math.min(v, c.hi-CURVE_GAP));
+  if(pt==='hi')  c.hi=Math.max(v, c.mid+CURVE_GAP);
+  // moving an outer point can squeeze the mid; keep it inside rather than let it stick
+  c.mid=Math.max(c.lo+CURVE_GAP, Math.min(c.mid, c.hi-CURVE_GAP));
+  syncCurveBar();
+  if(S.hasImage) drawFilm();
+}
+function initCurveBar(){
+  const bar=$('curveBar'); if(!bar) return;
+  let drag=null;
+  const xOf=e=>{ const r=bar.getBoundingClientRect(); return (e.clientX-r.left)/Math.max(1,r.width); };
+  bar.addEventListener('pointerdown',e=>{
+    const h=e.target.closest('.cb-h');
+    // clicking the bare track grabs the nearest point, so the control is not fiddly
+    const pt=h? h.dataset.pt
+             : ['lo','mid','hi'].reduce((a,b)=>Math.abs(S.curve[b]-xOf(e))<Math.abs(S.curve[a]-xOf(e))?b:a);
+    drag=bar.querySelector('.cb-h[data-pt="'+pt+'"]');
+    drag.classList.add('drag');
+    try{ bar.setPointerCapture(e.pointerId); }catch(_){}
+    setCurvePoint(pt, xOf(e)); e.preventDefault();
+  });
+  bar.addEventListener('pointermove',e=>{ if(drag) setCurvePoint(drag.dataset.pt, xOf(e)); });
+  const end=()=>{ if(drag) drag.classList.remove('drag'); drag=null; };
+  bar.addEventListener('pointerup',end);
+  bar.addEventListener('pointercancel',end);
+  bar.addEventListener('dblclick',()=>{ S.curve={lo:0,mid:0.5,hi:1}; syncCurveBar();
+                                        if(S.hasImage) drawFilm(); });
+  syncCurveBar();
+}
+
+function levelsTone(x){
+  const c=S.curve; if(!c) return x;
+  const lo=c.lo, hi=c.hi;
+  if(hi-lo<1e-6) return x<lo?0:1;
+  let t=(x-lo)/(hi-lo); t=t<0?0:t>1?1:t;
+  const m=(c.mid-lo)/(hi-lo);
+  if(m<=0.001||m>=0.999) return t;
+  return Math.pow(t, Math.log(0.5)/Math.log(m));   // input mid -> output 0.5
+}
+/* The one display mapping: VOI rescale -> manual levels -> LUT. The image and the curve
+   drawn on the histogram both go through this, so the curve cannot lie about the image. */
+function displayTone(x, rs){ return toneMap(levelsTone(rescaleTone(x, rs))); }
+function displayCurve(x){ return displayTone(x, S.rescale); }
 
 /* ---- display histogram + LUT response curve ----
    Draws a proper histogram (blue bars, axis ticks) of the image's base grey values,
@@ -1730,6 +1793,17 @@ function openProtocolPopup(){
 function closeProtocolPopup(){ $('protoPop')?.classList.remove('show'); }
 
 function updateDI(EI){
+  // Post-exposure, an AEC console reports what it ACTUALLY delivered. Showing only the
+  // backup mAs — which is all this did — makes every AEC exposure read as the same
+  // technique no matter which chamber metered it, hiding the whole point of the exercise:
+  // metering the mediastinum runs the tube several times longer than metering the lungs.
+  if(S.aecResult){
+    const m=S.aecResult.mas;
+    $('masV').textContent = m.toFixed(m<10?2:0);
+    const t=m/S.ma;
+    $('timeV').innerHTML = t<1 ? Math.round(t*1000)+'<small>ms</small>' : t.toFixed(t<10?2:1)+'<small>s</small>';
+    $('timeInline').textContent = 'AEC '+fmtTime(t)+(S.aecResult.backupHit?' · BACKUP':'');
+  }
   const DI = 10*Math.log10(EI/S.eiTarget);
   $('eiV').textContent=EI;
   $('eitV').textContent=S.eiTarget;
@@ -1768,7 +1842,8 @@ function pushImage(signal,nx,ny,mask,meta){
 if(typeof window!=='undefined') window.radsimQC={
   lastImage(){ const im=S.imgHistory[S.imgHistory.length-1]; if(!im) return null;
     return {nx:im.nx, ny:im.ny, sig:im.sig, mask:im.mask, subject:im.subject,
-            pxU:S.detW*10/im.nx, pxV:S.detH*10/im.ny};   // mm per pixel
+            pxU:S.detW*10/im.nx, pxV:S.detH*10/im.ny,    // mm per pixel
+            meta:im.meta, aec:S.aecResult && {...S.aecResult}, mas:S.mas};
   }
 };
 /* Point the render state at history[idx] and refresh the view + strip + meta. */
