@@ -433,7 +433,7 @@ const S = {
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   photoSkin:true,              // show the photo-textured display skin (cosmetic only)
-  curve:{lo:0, mid:0.5, hi:1},                     // manual response-curve points (levels)
+  curve:null, curveManual:false,                   // response-curve handles; null = follow the image
   resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
@@ -1602,10 +1602,10 @@ function rescaleTone(x,rs){
    SIGMOID VOI LUT (out = 1/(1+exp(-4(x-c)/w))) when the LUT is a sigmoid, else a linear
    window/level. Brightness shifts the centre, contrast scales the width. The LUT always
    applies (the toggle now only shows/hides the curve on the histogram). */
-function toneMap(x){
+function toneMap(x, centre){
   const bright=S.lev/100, contrast=S.win/100;
   if(S.lut && S.lut.sigmoid){
-    const c=S.lut.center - bright, w=Math.max(0.05, S.lut.width/contrast);
+    const c=(centre??S.lut.center) - bright, w=Math.max(0.05, S.lut.width/contrast);
     return 1/(1+Math.exp(-4*(x-c)/w));
   }
   const v=(x-0.5)*contrast+0.5+bright; return v<0?0:v>1?1:v;
@@ -1622,21 +1622,33 @@ function toneMap(x){
 const CURVE_GAP=0.02;                                   // keep the points distinguishable
 function syncCurveBar(){
   const bar=$('curveBar'); if(!bar) return;
-  const c=S.curve;
+  const c=S.curve||curveFromRescale(S.rescale);   // before the first image: the identity curve
   bar.querySelectorAll('.cb-h').forEach(h=>{ h.style.left=(c[h.dataset.pt]*100).toFixed(2)+'%'; });
   const f=$('cbFill'); if(f){ f.style.left=(c.lo*100).toFixed(2)+'%';
                               f.style.width=((c.hi-c.lo)*100).toFixed(2)+'%'; }
 }
 function setCurvePoint(pt,v){
-  const c=S.curve;
+  const c=S.curve||(S.curve=curveFromRescale(S.rescale));
+  // Free over the whole histogram axis — the only limit is the ordering. Clamping these
+  // to some "expected" sub-range would stop the toe and shoulder reaching the part of the
+  // axis where the anatomy actually sits, which on a chest is the bottom fifth.
   v=Math.max(0,Math.min(1,v));
   if(pt==='lo')  c.lo=Math.min(v, c.mid-CURVE_GAP);
   if(pt==='mid') c.mid=Math.max(c.lo+CURVE_GAP, Math.min(v, c.hi-CURVE_GAP));
   if(pt==='hi')  c.hi=Math.max(v, c.mid+CURVE_GAP);
   // moving an outer point can squeeze the mid; keep it inside rather than let it stick
   c.mid=Math.max(c.lo+CURVE_GAP, Math.min(c.mid, c.hi-CURVE_GAP));
+  S.curveManual=true;                       // stop re-seeding: a pinned curve is the point
   syncCurveBar();
   if(S.hasImage) drawFilm();
+}
+/* Re-seed the handles onto the new image's own toe/inflection/shoulder — unless they have
+   been dragged, in which case the pinned curve is deliberately being held across images so
+   two exposures can be compared as exposures. */
+function reseedCurve(){
+  if(S.curveManual) return;
+  S.curve=curveFromRescale(S.rescale);
+  syncCurveBar();
 }
 function initCurveBar(){
   const bar=$('curveBar'); if(!bar) return;
@@ -1656,28 +1668,36 @@ function initCurveBar(){
   const end=()=>{ if(drag) drag.classList.remove('drag'); drag=null; };
   bar.addEventListener('pointerup',end);
   bar.addEventListener('pointercancel',end);
-  bar.addEventListener('dblclick',()=>{ S.curve={lo:0,mid:0.5,hi:1}; syncCurveBar();
+  // double-click gives the image's own auto curve back, not an abstract 0/0.5/1
+  bar.addEventListener('dblclick',()=>{ S.curveManual=false; reseedCurve();
                                         if(S.hasImage) drawFilm(); });
   syncCurveBar();
 }
 
-function levelsTone(x){
-  const c=S.curve; if(!c) return x;
-  const lo=c.lo, mid=c.mid, hi=c.hi;
-  if(x<=lo) return 0;
-  if(x>=hi) return 1;
-  // Two quadratic halves joined at the mid point. Each half is flat at its outer end and
-  // steepest at the middle, which puts the three handles on the three features of the
-  // curve you can actually see: LOW is the toe, where output lifts off black; MID is the
-  // inflection, the steepest part; HIGH is the shoulder, where it levels off into white.
-  // A gamma ramp (what this was) has no shoulder at all — it drives straight into max —
-  // so the high handle had nothing visible to grab.
-  if(x<=mid){ const t=(x-lo)/Math.max(1e-6, mid-lo); return 0.5*t*t; }
-  const u=(hi-x)/Math.max(1e-6, hi-mid); return 1-0.5*u*u;
+/* Where the auto-rescale + LUT put the three features for a given image. The handles are
+   seeded from this, so they START on the toe, inflection and shoulder of the curve as
+   drawn rather than at an abstract 0 / 0.5 / 1 that corresponds to nothing on screen. */
+function curveFromRescale(rs){
+  const lo=(S.autoRescale && rs)? rs.lo : 0;
+  const hi=(S.autoRescale && rs)? rs.hi : 1;
+  const c=(S.lut && S.lut.sigmoid)? S.lut.center : 0.5;
+  return {lo, hi, mid: lo + (hi-lo)*c};
 }
-/* The one display mapping: VOI rescale -> manual levels -> LUT. The image and the curve
-   drawn on the histogram both go through this, so the curve cannot lie about the image. */
-function displayTone(x, rs){ return toneMap(levelsTone(rescaleTone(x, rs))); }
+/* The one display mapping, in the histogram's own x units so the handles sit on the axis
+   they are drawn against.
+
+   The handles ARE the curve, rather than a second stage bolted after it: low and high are
+   the window (below low everything is black, above high everything is white — the toe and
+   the shoulder by construction), and mid is the LUT's centre expressed on the same axis,
+   which is the inflection. Seeded from the auto-rescale, this reproduces the previous
+   mapping exactly; dragging a handle then moves the feature it is sitting on. */
+function displayTone(x, rs){
+  const c=S.curve||curveFromRescale(rs);
+  const span=c.hi-c.lo;
+  let t = span>1e-6 ? (x-c.lo)/span : (x<c.lo?0:1);
+  t = t<0?0:t>1?1:t;
+  return toneMap(t, span>1e-6 ? (c.mid-c.lo)/span : undefined);
+}
 function displayCurve(x){ return displayTone(x, S.rescale); }
 
 /* ---- display histogram + LUT response curve ----
@@ -1858,6 +1878,7 @@ function setActiveImage(idx){
   const e=S.imgHistory[idx];
   S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
   S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true;
+  reseedCurve();                     // handles land on THIS image's toe/inflection/shoulder
   drawFilm();
   updateImageMeta(); renderImageStrip();
 }
