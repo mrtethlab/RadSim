@@ -543,6 +543,11 @@ const AEC_CELLS={ l:{x:7.5,z:4.5}, c:{x:0,z:-4.5}, r:{x:-7.5,z:4.5} };
 const AEC_W=5, AEC_L=6.5;                                                // chamber size (cm): x × z
 const AEC_MIN_MAS=0.2;                                                   // minimum response (~2 ms at 100 mA)
 function aecActive(){ return S.aecOn && (S.aecCells.l||S.aecCells.c||S.aecCells.r); }
+/* AEC selected with no chamber: there is nothing for the generator to terminate on, so a
+   real console interlocks and refuses to expose. Falling through to the backup timer — as
+   this used to — silently delivers a full manual exposure at the backup mAs, which is the
+   worst possible outcome: a large unintended dose that looks like an AEC exposure. */
+function aecNoCell(){ return S.aecOn && !(S.aecCells.l||S.aecCells.c||S.aecCells.r); }
 /* Mean receptor dose over the selected chambers (all pixels — a collimated-off chamber
    reads ~0 and correctly drives the exposure to the backup limit). */
 function aecCellDose(dose,nx,ny,pxU,pxV){
@@ -1019,7 +1024,9 @@ function bind(){
   $('aecCellsBox')?.addEventListener('click',e=>{
     const b=e.target.closest('button[data-cell]'); if(!b) return;
     const k=b.dataset.cell; S.aecCells[k]=!S.aecCells[k]; b.classList.toggle('on',S.aecCells[k]);
-    S.aecResult=null; resetPrep(); syncScene();
+    // refresh the readouts too: deselecting the last chamber arms the interlock, and the
+    // exposure-time line is where that is announced before the switch is pressed.
+    S.aecResult=null; resetPrep(); refreshReadouts(); syncScene();
   });
   // rotor: latches on until an exposure completes
   $('rotor').addEventListener('click',toggleRotor);
@@ -1137,7 +1144,10 @@ function refreshReadouts(){
   $('maV').textContent=S.ma; $('maSv').textContent=S.ma;
   $('masV').textContent=S.mas.toFixed(S.mas<10?1:0); $('masSv').textContent=S.mas.toFixed(S.mas<10?1:0);
   $('fsV').innerHTML=(S.ma>400?'1.0':'0.6')+'<small>mm</small>';
-  if(aecActive()){ $('timeV').innerHTML='AEC'; $('timeInline').textContent='AEC · backup '+fmtTime(exposureTimeSec()); }
+  if(aecNoCell()){   // say so BEFORE the switch is pressed, not after
+    $('timeV').innerHTML='AEC'; $('timeInline').textContent='AEC · NO CELL SELECTED';
+  }
+  else if(aecActive()){ $('timeV').innerHTML='AEC'; $('timeInline').textContent='AEC · backup '+fmtTime(exposureTimeSec()); }
   else{
     const t=exposureTimeSec();
     $('timeV').innerHTML = t<1 ? Math.round(t*1000)+'<small>ms</small>' : t.toFixed(t<10?2:1)+'<small>s</small>';
@@ -1173,6 +1183,17 @@ const EXP={holding:false, done:false, t0:0, dur:0, raf:0, timer:0};
 
 function startExposure(){
   if(!S.prepped || S.exposing) return;
+  // Interlock BEFORE anything is delivered: no rotor sound, no timer, no image. The tube
+  // never fires, so this is not a terminated exposure — it is an exposure that never
+  // happened, and the fault screen says which.
+  if(aecNoCell()){
+    S.prepped=false; $('rotor').classList.remove('on');
+    $('fire').disabled=true; $('fire').classList.remove('armed');
+    setWarn('standby'); $('clock').textContent='EXPOSURE INHIBITED';
+    showExposureError(['NO AEC CHAMBER SELECTED'],
+                      'SELECT L, C OR R - OR SWITCH AEC OFF', 'EXPOSURE', 'INHIBITED');
+    return;
+  }
   S.exposing=true; EXP.done=false; EXP.holding=true;
   // AEC terminates the exposure itself — the operator just holds through it (ms-scale);
   // manual technique requires holding the switch for the full set exposure time.
@@ -1367,29 +1388,32 @@ async function computeRadiograph(){
 }
 
 /* Early-release error: replace the image with an error message. */
-function showExposureError(){
+function showExposureError(why, hint, l1, l2){
   S.hasImage=false;
   $('noexp').style.display='none';
-  drawError($('film'));
-  if(S.bayContent==='image'){ $('bigFilm').style.display='block'; $('bignote').style.display='none'; drawError($('bigFilm')); }
+  const draw=cv=>drawError(cv, why, hint, l1, l2);
+  draw($('film'));
+  if(S.bayContent==='image'){ $('bigFilm').style.display='block'; $('bignote').style.display='none'; draw($('bigFilm')); }
   $('eiV').textContent='—';  $('eiV').className='v';
   $('eitV').textContent='—'; $('diV').textContent='ERR'; $('diV').className='v bad';
   ['fnTL','fnTR','fnBL','fnBR'].forEach(id=>$(id).textContent='');
   $('prog').style.width='0%';
 }
-function drawError(cv){
+function drawError(cv,
+                   why=['EXPOSURE SWITCH RELEASED', 'BEFORE EXPOSURE COMPLETE'],
+                   hint='RE-ENGAGE ROTOR AND REPEAT',
+                   l1='EXPOSURE', l2='TERMINATED'){
   cv.width=400; cv.height=500;
   const c=cv.getContext('2d');
   c.fillStyle='#000'; c.fillRect(0,0,cv.width,cv.height);
   c.textAlign='center';
   c.fillStyle='#ff3b30'; c.font='bold 30px "Share Tech Mono",monospace';
-  c.fillText('EXPOSURE', cv.width/2, 210);
-  c.fillText('TERMINATED', cv.width/2, 248);
+  c.fillText(l1, cv.width/2, 210);
+  c.fillText(l2, cv.width/2, 248);
   c.fillStyle='#ff8a80'; c.font='14px "Share Tech Mono",monospace';
-  c.fillText('EXPOSURE SWITCH RELEASED', cv.width/2, 296);
-  c.fillText('BEFORE EXPOSURE COMPLETE', cv.width/2, 318);
+  why.forEach((s,i)=>c.fillText(s, cv.width/2, 296+i*22));
   c.fillStyle='#8a96a3'; c.font='12px "Share Tech Mono",monospace';
-  c.fillText('RE-ENGAGE ROTOR AND REPEAT', cv.width/2, 356);
+  c.fillText(hint, cv.width/2, 296+why.length*22+16);
 }
 
 /* ---- render stored signal: crop to exposed field, window/level, invert,
