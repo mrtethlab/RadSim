@@ -454,6 +454,20 @@ def build(glb, out_dir, name, title, spacing, component, flip, mesh, source,
     mat = np.ascontiguousarray(mat[sl])
 
     print("[4/4] writing volume …")
+    # write_model rewrites the header from scratch, which silently drops keys added by other
+    # tools. The photo skin (build_hand_skin.py) lives in skinMesh, and two rebuilds threw it
+    # away without a word — the toggle stayed in the UI, pointing at nothing. Carry it over
+    # if the file it names is still on disk.
+    hdr_path = os.path.join(out_dir, f"{name}.model.json")
+    keep_skin = None
+    if os.path.exists(hdr_path):
+        try:
+            prev = json.load(open(hdr_path))
+            sk = prev.get("skinMesh")
+            if sk and os.path.exists(os.path.join(out_dir, sk)):
+                keep_skin = sk
+        except Exception:
+            pass
     # mesh=False so write_model skips the generic translucent-skin-over-skeleton mesh;
     # the hand gets its own smooth opaque one, then the header is pointed back at it
     write_model(out_dir, name, title, mat, synth_hu(mat), spacing, False, source,
@@ -468,11 +482,14 @@ def build(glb, out_dir, name, title, spacing, component, flip, mesh, source,
         import shutil
         shutil.copyfile(mesh_from, os.path.join(out_dir, f"{name}.glb"))
         print(f"      display mesh copied from {mesh_from}")
-    if mesh or mesh_from:
-        hdr_path = os.path.join(out_dir, f"{name}.model.json")
+    if mesh or mesh_from or keep_skin:
         with open(hdr_path) as f:
             hdr = json.load(f)
-        hdr["mesh"] = f"{name}.glb"
+        if mesh or mesh_from:
+            hdr["mesh"] = f"{name}.glb"
+        if keep_skin:
+            hdr["skinMesh"] = keep_skin
+            print(f"      kept photo skin: {keep_skin}")
         with open(hdr_path, "w") as f:
             json.dump(hdr, f, indent=2)
     ext = [round(s * spacing, 1) for s in mat.shape[::-1]]
