@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from .gpu import DEVICE, get_volume, sample_ids, rot_tensor
+from .gpu import DEVICE, get_volume, sample_ids, rot_tensor, mat_columns
 
 STEP = 0.05          # ray-march step, world units (= 0.5 mm; voxels are ~1 mm)
 CHUNK = 1 << 14      # rays per batch (memory: CHUNK x nsteps indices)
@@ -37,6 +37,7 @@ def project_voxel(p: dict[str, Any]) -> np.ndarray:
     w = torch.tensor(p["binsW"], dtype=torch.float32, device=DEVICE)          # (nb,)
     mu = torch.tensor(p["muMat"], dtype=torch.float32, device=DEVICE)         # (nmat, nb)
     mu[0].zero_()                                                             # air contributes nothing
+    nmat, mu = mat_columns(vv, mu)      # legend and mu table can differ in length
     I0, refDist = float(p["I0"]), float(p["refDist"])
 
     # collimation (same tube-frame test as the browser's mask)
@@ -85,7 +86,7 @@ def project_voxel(p: dict[str, Any]) -> np.ndarray:
             pts = src + dir_.unsqueeze(1) * ts.unsqueeze(2)                   # (R, S, 3)
             ids = sample_ids(vv, pts, center, rot)                            # (R, S)
             ids = torch.where(valid, ids, torch.zeros_like(ids))
-            L = torch.zeros(sel.numel(), vv.nmat, dtype=torch.float32, device=DEVICE)
+            L = torch.zeros(sel.numel(), nmat, dtype=torch.float32, device=DEVICE)
             L.scatter_add_(1, ids, torch.full_like(ts, STEP) * valid)         # path length per material
             E = L @ mu                                                        # (R, nb)
             T = torch.exp(-E) @ w                                             # polyenergetic transmission
