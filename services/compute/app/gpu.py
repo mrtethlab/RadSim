@@ -61,6 +61,26 @@ class VoxelVolume:
         self.nmat = len(hdr["materials"])
 
 
+def mat_columns(vv: "VoxelVolume", mu):
+    """Columns for a path-length matrix, and a mu table guaranteed to match them.
+
+    The volume's legend and the browser's mu table can disagree. Models built before Lead
+    and Acrylic joined the legend carry 28 entries; the browser always sends 29, because
+    its material table is the current one. Sizing the path matrix from the header then made
+    (rays, 28) @ (29, bins) fail outright — CT scout 500'd for every older model.
+
+    Take the wider of the two and pad mu if it is the shorter. A legend that is short just
+    leaves unused columns, and they contribute nothing: no voxel carries those ids, so their
+    path length stays zero. A model with MORE materials than the browser knows about gets
+    zero attenuation for the extra ones, which is the safe direction to be wrong in.
+    """
+    n = max(vv.nmat, mu.shape[0])
+    if mu.shape[0] < n:
+        mu = torch.cat([mu, torch.zeros(n - mu.shape[0], mu.shape[1],
+                                        dtype=mu.dtype, device=mu.device)], dim=0)
+    return n, mu
+
+
 _cache: dict[tuple, VoxelVolume] = {}
 
 

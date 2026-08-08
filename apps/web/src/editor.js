@@ -55,7 +55,12 @@ let edGroup = null;             // 3D preview group in the main scene
 let edMesh = null;              // current InstancedMesh
 let rebuildTimer = 0;
 let drag = null;                // active paint stroke / shape drag
-const EDITABLE_MAX = 150;       // presets are downsampled to at most this many voxels per axis
+// Presets are downsampled so slice painting and the live 3D rebuild stay responsive.
+// The budget is on the TOTAL voxel count (what actually costs time) with a loose
+// per-axis cap — a per-axis-only rule needlessly coarsened small models like the hand
+// (449 long but only 80 thick: ÷3 to 1.5 mm, when ÷2 fits the same budget at 1 mm).
+const EDITABLE_MAX_AXIS = 260;
+const EDITABLE_MAX_VOXELS = 2.2e6;
 
 export function initEditor(context) {
   ctx = context;
@@ -160,8 +165,10 @@ async function loadPreset(id) {
     const vm = await loadVoxelModel(import.meta.env.BASE_URL + 'models/' + id, id);
     if (!vm.data) throw new Error('backend-only model — no volume in the browser');
     let [nx, ny, nz] = vm.dims, sp = vm.spacingMM.slice(), data = vm.data;
-    // downsample big presets so slice painting stays practical (max EDITABLE_MAX per axis)
-    const k = Math.max(1, Math.ceil(Math.max(nx, ny, nz) / EDITABLE_MAX));
+    // downsample big presets so slice painting + the live 3D rebuild stay practical
+    let k = 1;
+    while (Math.max(nx, ny, nz) / k > EDITABLE_MAX_AXIS
+           || (nx / k) * (ny / k) * (nz / k) > EDITABLE_MAX_VOXELS) k++;
     if (k > 1) {
       const mx = Math.floor(nx / k), my = Math.floor(ny / k), mz = Math.floor(nz / k);
       const out = new Uint8Array(mx * my * mz);
@@ -311,7 +318,7 @@ function rebuild3D() {
   edGroup.add(edMesh);
   // mm -> world units (1 unit = 10 mm), rest the model just above the floor of the view
   edGroup.scale.setScalar(0.1);
-  edGroup.position.set(0, (ny * sp[1] / 2) * 0.1, 0);
+  edGroup.position.set(0, (ED.ny * ED.sp[1] / 2) * 0.1, 0);
   const lab = ctx.$('edVoxLab'); if (lab) lab.textContent = n.toLocaleString() + ' surface voxels';
 }
 

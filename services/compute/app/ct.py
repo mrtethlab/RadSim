@@ -22,7 +22,7 @@ from typing import Any
 import numpy as np
 import torch
 
-from .gpu import DEVICE, get_volume, sample_ids, rot_tensor
+from .gpu import DEVICE, get_volume, sample_ids, rot_tensor, mat_columns
 
 STEP = 0.05          # in-plane march step, world units (0.5 mm)
 FWD_BATCH = 16       # forward-projection angle batching ((a,K,S,3) points tensor)
@@ -236,6 +236,7 @@ def scout(p: dict[str, Any]) -> np.ndarray:
     w = torch.tensor(p["binsW"], dtype=torch.float32, device=DEVICE)          # (nb,)
     mu = torch.tensor(p["muMat"], dtype=torch.float32, device=DEVICE)         # (nmat, nb)
     mu[0].zero_()
+    nmat, mu = mat_columns(vv, mu)      # legend and mu table can differ in length
     I0 = float(p["I0"])
     rot = rot_tensor(p.get("rot"))
     refDist2 = (sx - dcx) ** 2 + (sy - dcy) ** 2
@@ -261,7 +262,7 @@ def scout(p: dict[str, Any]) -> np.ndarray:
         valid = ts.unsqueeze(0) < dist.unsqueeze(1)
         pts = torch.stack([px, py, pz], dim=-1)                              # (nw, S, 3)
         ids = sample_ids(vv, pts, center, rot)
-        L = torch.zeros(nw, vv.nmat, device=DEVICE)
+        L = torch.zeros(nw, nmat, device=DEVICE)
         L.scatter_add_(1, ids, torch.full_like(px, STEPn) * valid)
         T = torch.exp(-(L @ mu)) @ w                                         # polyenergetic transmission
         out[j] = (I0 * (refDist2 / (dist * dist)) * T).cpu().numpy()

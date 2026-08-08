@@ -180,7 +180,8 @@
         <div>
           <div class="cl">Subject</div>
           <select id="subjectSel" class="subjectsel">
-            <option value="hand" selected>Hand (analytic)</option>
+            <option value="hand" selected>Hand</option>
+            <option value="hand_hires">Hand · 0.2 mm (GPU)</option>
             <option value="chest">Chest</option>
             <option value="headneck">Head &amp; neck</option>
             <option value="chestabdopelvis">Chest / abdo / pelvis</option>
@@ -190,8 +191,13 @@
             <option value="wholebody">Whole body</option>
             <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
             <option value="metalphantom">Metal Test Phantom</option>
+            <option value="linepair">Line-pair test pattern (QC)</option>
           </select>
           <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:4px; text-align:left; letter-spacing:.3px; max-width:190px"></div>
+          <div class="segmini" id="skinSeg" style="margin-top:6px" title="Display only — the image is always made from the voxel volume">
+            <button data-skin="photo" class="on">Photo skin</button>
+            <button data-skin="mat">Materials</button>
+          </div>
         </div>
       </div>
       </div>
@@ -260,6 +266,7 @@
           <div class="mini"><button id="edNew">＋ New blank model</button></div>
           <div class="row" style="margin-top:10px"><div class="rl">Load preset</div>
             <select id="edPreset" class="slsel">
+              <option value="hand" selected>Hand</option>
               <option value="chest">Chest</option>
               <option value="headneck">Head &amp; neck</option>
               <option value="chestabdopelvis">Chest / abdo / pelvis</option>
@@ -560,9 +567,9 @@
           <div class="row" style="margin-top:10px"><div class="rl">AEC <small>auto exposure control</small></div>
             <button class="aectgl" id="aecBtn" type="button" aria-pressed="false">OFF</button></div>
           <div class="aec-cells" id="aecCellsBox" style="display:none" title="Ionisation chambers — select any combination">
-            <button data-cell="l" id="aecL" class="on">L</button>
-            <button data-cell="c" id="aecC">C</button>
-            <button data-cell="r" id="aecR" class="on">R</button>
+            <button data-cell="l" id="aecL">L</button>
+            <button data-cell="c" id="aecC" class="on">C</button>
+            <button data-cell="r" id="aecR">R</button>
           </div>
           <div class="row xray-only" style="margin-top:6px"><div class="rl">Exposure time</div>
             <div style="font-family:var(--seg);color:var(--green);font-size:14px" id="timeInline">20 ms</div></div>
@@ -638,6 +645,12 @@
         <div class="lab">Display · window / level</div>
         <div class="bod">
           <canvas id="xrayHist" class="histcanvas xray-only" width="256" height="96" title="Pixel histogram + brightness/contrast response curve"></canvas>
+          <div class="curvebar xray-only" id="curveBar" title="Response curve — drag the toe and shoulder. Double-click to re-seed from the image.">
+            <div class="cb-track"></div>
+            <div class="cb-fill" id="cbFill"></div>
+            <div class="cb-h" data-pt="lo" title="Low — toe: where the curve lifts off black"></div>
+            <div class="cb-h" data-pt="hi" title="High — shoulder: where the curve levels off into white"></div>
+          </div>
           <div class="row"><div class="rl">Brightness</div>
             <input type="range" id="level" min="-120" max="120" value="0"></div>
           <div class="row"><div class="rl">Contrast</div>

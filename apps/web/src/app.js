@@ -6,7 +6,6 @@ import { Spectrum } from './core/spectrum.js';
 import { Phantom } from './core/phantom.js';
 import { AttenuationEngine } from './core/engine.js';
 import { Detector } from './core/detector.js';
-import { buildHandPrimitives, REST_LIFT } from './phantom/hand.js';
 import { Sound } from './audio/sound.js';
 import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
@@ -70,7 +69,13 @@ function initScene(){
     edge.rotation.x=-Math.PI/2; edge.position.set(p.x,0.1,p.z); aecGroup.add(edge);
     const lc=document.createElement('canvas'); lc.width=lc.height=64;
     const lg=lc.getContext('2d'); lg.fillStyle='#bdf3fa'; lg.font='bold 40px Arial';
-    lg.textAlign='center'; lg.textBaseline='middle'; lg.fillText(k.toUpperCase(),32,34);
+    lg.textAlign='center'; lg.textBaseline='middle';
+    // Turn the glyph 180 deg: a plane laid flat by rotation.x = -PI/2 presents its texture
+    // to the camera upside down, so drawn as-is the letters read inverted against the
+    // hang arrow. Rotating the canvas rather than the mesh keeps the label's transform
+    // identical to the fill and edge it sits on.
+    lg.translate(32,32); lg.rotate(Math.PI); lg.translate(-32,-32);
+    lg.fillText(k.toUpperCase(),32,30);
     const lbl=new THREE.Mesh(new THREE.PlaneGeometry(1.8,1.8),
       new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(lc), transparent:true, opacity:0.9, depthWrite:false}));
     lbl.rotation.x=-Math.PI/2; lbl.position.set(p.x,0.11,p.z); aecGroup.add(lbl);
@@ -127,7 +132,6 @@ function initScene(){
 
   three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
          amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD,aecGroup,aecCellMeshes};
-  buildHandMeshes();
 
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
@@ -211,66 +215,18 @@ function initScene(){
   })();
 }
 
-/* ---- DETAILED HAND ANATOMY (single source of truth) ----------------------
-   Local frame: -x = radial (thumb) side, +x = ulnar (little) side,
-                +z = distal (fingertips), -z = proximal (wrist), y = dorsal.
-   buildHandPrimitives(spread) returns {skin:[{a,b,r}], bone:[{a,b,r1,r2}]} in
-   LOCAL coords. SKIN capsules form the soft-tissue envelope shown opaque in 3D
-   and used as the 'soft' attenuator. BONE is a list of tapered capsules (rounded
-   cones): each carries end radii r1,r2 so shafts stay thin and epiphyses flare,
-   giving true skeletal form. Bones are physics-only (revealed on exposure).
-   Every long bone = narrow diaphysis with flared metaphyseal ends, with small
-   gaps left at the joints so articular spaces read as radiolucent lines.
-   Full complement: distal radius+ulna, 8 carpals, 5 metacarpals, 14 phalanges. */
-let handMeshes=[];
-function buildHandMeshes(){
-  handMeshes.forEach(m=>three.handGroup.remove(m)); handMeshes=[];
-  const skinMat=new THREE.MeshStandardMaterial({color:0xe6b291, roughness:.9, metalness:0,
-     emissive:0x2a1712, emissiveIntensity:.12});
-  const boneMat=new THREE.MeshStandardMaterial({color:0xeae3cf, roughness:.7, metalness:0,
-     emissive:0x161310, emissiveIntensity:.08});
-  // rounded-cone mesh: frustum (radii r1@a -> r2@b) + spherical end caps
-  function coneMesh(a,b,r1,r2,mat){
-    const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b);
-    const len=Math.max(A.distanceTo(B),1e-4), e=1e-3;
-    const grp=new THREE.Group();
-    const cyl=new THREE.Mesh(new THREE.CylinderGeometry(Math.max(r2,e),Math.max(r1,e),len,16),mat);
-    cyl.position.copy(A).add(B).multiplyScalar(0.5);
-    cyl.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),B.clone().sub(A).normalize());
-    cyl.castShadow=true; cyl.receiveShadow=true; grp.add(cyl);
-    for(const [p,r] of [[A,r1],[B,r2]]){ const s=new THREE.Mesh(new THREE.SphereGeometry(Math.max(r,e),16,12),mat);
-      s.position.copy(p); s.castShadow=true; s.receiveShadow=true; grp.add(s); }
-    return grp;
-  }
-  const softGrp=new THREE.Group(), boneGrp=new THREE.Group();
-  const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-  for(const c of skin){ const r1=c.r1!==undefined?c.r1:c.r, r2=c.r1!==undefined?c.r2:c.r;
-    softGrp.add(coneMesh(c.a,c.b,r1,r2,skinMat)); }
-  for(const c of bone){ if(c.mat==='marrow') continue;    // canal is internal — not shown in 3D
-    boneGrp.add(coneMesh(c.a,c.b,c.r1,c.r2,boneMat)); }
-  three.handGroup.add(softGrp); three.handGroup.add(boneGrp);
-  three.softGrp=softGrp; three.boneGrp=boneGrp; handMeshes=[softGrp,boneGrp];
-  applyHandView();
-}
-/* Toggle which model is visible (display only). */
-function applyHandView(){
-  if(!three.softGrp||!three.boneGrp) return;
-  if(S.subject!=='hand'){ three.softGrp.visible=false; three.boneGrp.visible=false; if(three.chestGroup) three.chestGroup.visible=true; return; }
-  const boneOnly=(S.handView==='bone');
-  three.softGrp.visible=!boneOnly; three.boneGrp.visible=boneOnly;
-}
-function setHandView(v){
-  S.handView=v;
-  const seg=$('renderSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.hv===v));
-  applyHandView();
-}
-
-/* Voxel model registry: the analytic hand plus every folder in public/models/. The
-   `id` is BOTH the folder name and the file basename (…/<id>/<id>.model.json) and the
-   model name sent to the Python backend, so keep them in sync with the build output.
+/* Voxel model registry: every folder in public/models/. The `id` is BOTH the folder
+   name and the file basename (…/<id>/<id>.model.json) and the model name sent to the
+   Python backend, so keep them in sync with the build output.
    scoutKv/scoutMa are the default CT scout technique; xrayKv the default x-ray kV
    (thin extremities need far less than a thick torso). */
 const VOXEL_MODELS = {
+  hand:            { title:'Hand',                  scoutKv:80,  scoutMa:40,  xrayKv:55  },
+  // Same hand at 0.2 mm — the coarsest grid that can carry the measured trabecular lattice
+  // (Tb.Th+Tb.Sp = 0.96 mm at BV/TV 0.31 needs <= 0.206 mm). 316 MB, GPU backend only —
+  // the volume is not committed (over GitHub 100 MB per-file) so it is absent from the
+  // hosted build; run services/compute/app/build_hand.py to make it locally.
+  hand_hires:      { title:'Hand · 0.2 mm',        scoutKv:80,  scoutMa:40,  xrayKv:55  },
   chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
   headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
@@ -280,6 +236,10 @@ const VOXEL_MODELS = {
   wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
   hires_shoulder:  { title:'Shoulder · 0.25 mm',    scoutKv:110, scoutMa:120, xrayKv:70  },
   metalphantom:    { title:'Metal Test Phantom',    scoutKv:120, scoutMa:200, xrayKv:120 },
+  // QC tools, not anatomy: a lead bar-pattern gauge for measuring limiting spatial
+  // resolution in lp/mm. Shot at low kV / high mAs like real resolution QC, so the
+  // lead-to-air contrast is maximal and the bars are not lost in mottle.
+  linepair:        { title:'Line-pair test pattern', scoutKv:80, scoutMa:100, xrayKv:60 },
 };
 
 /* Prepare a freshly loaded display mesh so it lights + shadows like the hand: the
@@ -300,26 +260,14 @@ function prepVoxelMesh(grp, translucent){
       m.needsUpdate=true; } } } });
 }
 
-/* Switch the scan subject between the analytic hand and any voxel model. Models
-   (material volume + display mesh) are fetched on first use and cached; the meshes
-   all live in handGroup so the CT positioning offsets apply to them like the hand. */
+/* Switch the scan subject to any voxel model. Models (material volume + display mesh)
+   are fetched on first use and cached; the meshes all live in handGroup so the CT
+   positioning offsets apply to every subject the same way. */
 async function setSubject(sub){
   const sel=$('subjectSel'); const hint=$('subjectHint');
   S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
   const showActive=(id)=>{ for(const k in three.voxelMeshes) three.voxelMeshes[k].visible=(k===id);
                            three.chestGroup=three.voxelMeshes[id]||null; };
-  if(sub==='hand'){
-    S.subject='hand';
-    S.ct.scoutFovMM=180; S.ct.scanLen=300; S.ct.scanStart=-150; S.ct.protocol='whole';
-    S.ct.scoutKv=80; S.ct.scoutMa=20;
-    S.ct.scoutTech=[{kv:80,ma:20},{kv:80,ma:20}];
-    S.ct.patient.x=0; S.ct.patient.z=0; S.ct.isoZ=0; S.ct.isocentred=false;
-    applyBackendOnly(false);
-    showActive(null); applyHandView();
-    if(hint) hint.textContent='Analytic hand phantom';
-    if(sel) sel.value='hand';
-    syncScene(); return;
-  }
   const cfg=VOXEL_MODELS[sub];
   if(!cfg){ console.warn('unknown subject',sub); return; }
   let vm=S.voxelCache[sub];
@@ -330,9 +278,21 @@ async function setSubject(sub){
       vm=await loadVoxelModel(import.meta.env.BASE_URL+'models/'+sub, sub);
       S.voxelCache[sub]=vm;
       if(vm.meshUrl){
+        // Display meshes live in one wrapper so the CT/x-ray transforms treat the subject
+        // as a single object: the material-shaded mesh plus, when the model ships one, a
+        // photo-textured SKIN. Only one child is visible at a time (see applyPhotoSkin).
         const grp=await loadModelUrl(vm.meshUrl);
         prepVoxelMesh(grp, sub==='metalphantom');
-        grp.visible=false; three.handGroup.add(grp); three.voxelMeshes[sub]=grp;
+        grp.userData.role='plain';
+        const wrap=new THREE.Group(); wrap.add(grp);
+        if(vm.skinUrl){
+          try{
+            const sk=await loadModelUrl(vm.skinUrl);
+            prepSkinMesh(sk); sk.userData.role='skin'; wrap.add(sk);
+          }catch(e){ console.warn(sub+' skin mesh failed to load',e); }
+        }
+        wrap.visible=false; three.handGroup.add(wrap); three.voxelMeshes[sub]=wrap;
+        applyPhotoSkin();
       }
     }catch(err){ console.error(sub+' load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
       if(sel) sel.value=S.subject; return; }
@@ -357,12 +317,37 @@ async function setSubject(sub){
   // backend-only models (large, no volume in the browser) MUST use the Python engine
   applyBackendOnly(!!vm.backendOnly);
   showActive(sub);
-  if(three.softGrp) three.softGrp.visible=false;
-  if(three.boneGrp) three.boneGrp.visible=false;
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
   if(sel) sel.value=sub;
   syncScene();
 }
+/* Photo-textured display skin. Purely cosmetic: the attenuation always comes from the
+   voxel material volume, so switching this never changes an image. Keeps the textured
+   map and gives it skin-like shading (matte, no metalness). */
+function prepSkinMesh(grp){
+  grp.traverse(o=>{ if(o.isMesh){
+    o.castShadow=true; o.receiveShadow=true;
+    if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+    const vc=!!o.geometry.attributes.color;   // photo colour is baked per-vertex
+    const ms=Array.isArray(o.material)?o.material:[o.material];
+    for(const m of ms){ if(!m) continue;
+      m.metalness=0; m.roughness=0.72; m.transparent=false; m.opacity=1;
+      if(vc){ m.vertexColors=true; m.color.setRGB(1,1,1); }
+      m.side=THREE.FrontSide; m.needsUpdate=true; }
+  } });
+}
+/* Show either the photographic skin or the material-shaded mesh for every loaded subject.
+   Models without a skin mesh always show the plain one. */
+function applyPhotoSkin(){
+  const want=!!S.photoSkin;
+  for(const k in (three.voxelMeshes||{})){
+    const wrap=three.voxelMeshes[k]; if(!wrap||!wrap.children) continue;
+    const hasSkin=wrap.children.some(c=>c.userData&&c.userData.role==='skin');
+    wrap.children.forEach(c=>{ const r=c.userData&&c.userData.role; if(!r) return;
+      c.visible = hasSkin ? (r==='skin')===want : r==='plain'; });
+  }
+}
+
 /* ---- custom (Model Editor) subjects: session-saved models become selectable under
    View Options exactly like the preset models. The editor hands over a ready voxel-model
    object (same shape loadVoxelModel returns) + a display mesh in raw volume mm axes, so
@@ -371,7 +356,8 @@ function registerCustomSubject(key, title, vm, meshGroup){
   VOXEL_MODELS[key]={ title, scoutKv:100, scoutMa:100, xrayKv:80 };
   S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
   S.voxelCache[key]=vm;
-  if(meshGroup){ meshGroup.visible=false; three.handGroup.add(meshGroup); three.voxelMeshes[key]=meshGroup; }
+  if(meshGroup){ meshGroup.visible=false; three.handGroup.add(meshGroup); three.voxelMeshes[key]=meshGroup;
+                 applyPhotoSkin(); }   // editor models have no skin: keeps the plain mesh shown
   const sel=$('subjectSel'); if(!sel) return;
   let opt=sel.querySelector('option[value="'+key+'"]');
   if(!opt){ opt=document.createElement('option'); opt.value=key; sel.appendChild(opt); }
@@ -440,12 +426,14 @@ const S = {
   objOff:{x:0,z:0},            // x-ray object offset on the receptor (cm): x cross / z long axis
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
-  aecOn:false, aecCells:{l:true,c:false,r:true}, aecResult:null,   // AEC: cells + achieved mAs of the last exposure
+  aecOn:false, aecCells:{l:false,c:true,r:false}, aecResult:null,  // AEC: cells + achieved mAs of the last exposure
   lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
   showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
   detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
+  photoSkin:true,              // show the photo-textured display skin (cosmetic only)
+  curve:null, curveManual:false,                   // response-curve handles; null = follow the image
   resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
@@ -547,10 +535,59 @@ const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16
    kerma and terminate the exposure when the AVERAGE over the selected cells reaches
    the calibrated target; the set mAs acts as the BACKUP (safety) limit. Chambers are
    fixed to the bucky, so they do not move or scale with the cassette. */
-const AEC_CELLS={ l:{x:-7.5,z:4.5}, c:{x:0,z:-4.5}, r:{x:7.5,z:4.5} };   // centres (cm on the receptor)
+// Centres (cm on the receptor). +z is the hang-direction arrow, i.e. the TOP of the plate,
+// so the outer pair sits toward it and the centre cell below — the standard bucky pattern.
+// L and R are named from the receptor as the arrow orients it: with the arrow at the top,
+// the left-hand cell is L. Swapping these swaps both the overlay and the chamber the
+// physics integrates, so the two can never disagree.
+const AEC_CELLS={ l:{x:7.5,z:4.5}, c:{x:0,z:-4.5}, r:{x:-7.5,z:4.5} };
 const AEC_W=5, AEC_L=6.5;                                                // chamber size (cm): x × z
 const AEC_MIN_MAS=0.2;                                                   // minimum response (~2 ms at 100 mA)
 function aecActive(){ return S.aecOn && (S.aecCells.l||S.aecCells.c||S.aecCells.r); }
+function anyAecCell(){ return !!(S.aecCells.l||S.aecCells.c||S.aecCells.r); }
+
+/* ---- AEC state: ONE invariant, ONE writer ---------------------------------
+   "AEC on" and "at least one chamber selected" are the same state, so the UI never lets
+   them come apart: switching AEC on selects the centre chamber, and clearing the last
+   chamber switches AEC off. Previously the toggle and the cell buttons each poked at the
+   state and at their own bits of the panel, which is exactly how they drifted into the
+   meaningless on-with-no-chamber combination. Everything now goes through these three. */
+function applyAecUI(){
+  const on=S.aecOn, b=$('aecBtn');
+  if(b){ b.classList.toggle('on',on); b.textContent=on?'ON':'OFF'; b.setAttribute('aria-pressed',on); }
+  const box=$('aecCellsBox');
+  if(box){
+    box.style.display=on?'flex':'none';
+    box.querySelectorAll('button[data-cell]').forEach(cb=>
+      cb.classList.toggle('on', on && !!S.aecCells[cb.dataset.cell]));
+  }
+  const ml=$('masLbl'); if(ml) ml.textContent=on?'Backup mAs':'mAs';
+  S.aecResult=null; resetPrep(); refreshReadouts(); syncScene();
+}
+function setAecOn(on){
+  if(on===S.aecOn) return;
+  S.aecOn=on;
+  if(on){
+    // AEC on always means a chamber is metering. Centre is the safe default: it is the
+    // one cell that lies under the anatomy for nearly every projection.
+    S.aecCells={l:false, c:true, r:false};
+    // hold the manual mAs aside and raise the backup, restoring it when AEC goes off
+    S._masPreAec=S.mas;
+    if(S.mas<200){ S.mas=320; $('mas').value=nearestMasIdx(); }
+  } else if(S._masPreAec!=null){ S.mas=S._masPreAec; $('mas').value=nearestMasIdx(); }
+  applyAecUI();
+}
+function toggleAecCell(k){
+  S.aecCells[k]=!S.aecCells[k];
+  if(!anyAecCell()){ setAecOn(false); return; }   // clearing the last chamber IS AEC off
+  applyAecUI();
+}
+/* AEC on with no chamber to meter: nothing for the generator to terminate on. The UI can
+   no longer produce this (see setAecOn / toggleAecCell — AEC on and at least one chamber
+   are the same state), so this is a backstop for any future path that sets AEC directly,
+   such as a protocol preset. It is worth keeping: the failure it prevents is not a visible
+   error but a silent full-manual exposure at the backup mAs, dressed up as an AEC one. */
+function aecNoCell(){ return S.aecOn && !anyAecCell(); }
 /* Mean receptor dose over the selected chambers (all pixels — a collimated-off chamber
    reads ~0 and correctly drives the exposure to the backup limit). */
 function aecCellDose(dose,nx,ny,pxU,pxV){
@@ -582,21 +619,8 @@ function applyMat3(R,p){ return [R[0]*p[0]+R[1]*p[1]+R[2]*p[2], R[3]*p[0]+R[4]*p
 function setGroupRot(grp,R){ const m=new THREE.Matrix4();
   m.set(R[0],R[1],R[2],0, R[3],R[4],R[5],0, R[6],R[7],R[8],0, 0,0,0,1); grp.setRotationFromMatrix(m); }
 
-/* Base lift (cm, before OID) that rests the hand on the receptor after the object
-   rotation R: finds the lowest surface point of the rotated hand and lifts it so
-   nothing clips through the detector. */
-function baseLift(skin, bone, R){
-  if(!isObjRotated()) return REST_LIFT;
-  let minY=Infinity;
-  const low=(p,r)=>{ const yr=applyMat3(R,p)[1]-r; if(yr<minY) minY=yr; };
-  for(const c of skin){ const r1=c.r1!==undefined?c.r1:c.r, r2=c.r1!==undefined?c.r2:c.r; low(c.a,r1); low(c.b,r2); }
-  for(const c of bone){ low(c.a,c.r1); low(c.b,c.r2); }
-  return -minY + 0.05;   // +margin so the edge rests just above the receptor
-}
-
-/* Build the world-space physics phantom from current pose (bakes transform).
-   Same skin+bone primitives shown in 3D, rotated by pose and lifted onto the
-   detector so bone is nested inside soft tissue. */
+/* Build the world-space physics phantom: the selected voxel model, placed at the CT
+   patient offset / x-ray object offset so the traced volume and the 3D scene agree. */
 // Anatomical axis flips for the voxel chest (volume axes: x=Left, y=Posterior,
 // z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first (anterior
 // up, head toward −z into the bore). X-ray = AP supine (anterior up toward the tube,
@@ -610,54 +634,27 @@ function voxelFlips(){
   return f;
 }
 function buildPhantom(){
-  // Voxel subject (chest): return a VoxelPhantom placed like the hand — centred at the
-  // CT patient offset (couch position / table height) so scout + recon sweep the real
-  // anatomy. Uses the expanded BodyMaterials via its labelled volume.
+  // Return a VoxelPhantom centred at the CT patient offset (couch position / table
+  // height) or the x-ray object offset, so scout + recon sweep the real anatomy.
+  // Uses the expanded BodyMaterials via its labelled volume.
   const R=objMat();
-  if(S.subject!=='hand' && S.voxelModel){
-    const vm=S.voxelModel;
-    const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
-    const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
-    const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
-    return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
-  }
-  const ph=new Phantom();
-  const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-  // x-ray: rest on the receptor (rotation-aware) + OID. CT: sit at the table height
-  // (patientY), so the 3D model and the traced phantom share one vertical position.
-  const liftY = S.mode==='ct' ? S.ct.patientY : baseLift(skin,bone,R)+S.oid;
-  // in CT the patient is offset from the gantry isocentre by the direction pad;
-  // in x-ray by the object offset sliders
+  const vm=S.voxelModel;
+  if(!vm) return new Phantom();          // nothing loaded yet (first frames during boot)
   const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
+  const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
-  function xf(p){                // rotate the object (about origin), then lift, then CT offset
-    const q=applyMat3(R,p);
-    return [q[0]+cx, q[1]+liftY, q[2]+cz];
-  }
-  for(const c of skin){
-    if(c.r1!==undefined) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,'soft');
-    else ph.addCapsule(xf(c.a),xf(c.b),c.r,'soft');
-  }
-  for(const c of bone) ph.addCone(xf(c.a),xf(c.b),c.r1,c.r2,c.mat||'bone');
-  return ph;
+  return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
 }
 
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
-  document.body.classList.toggle('subj-hand', S.subject==='hand');   // finger-spread control is hand-only
-  // hand pose (lifted by OID above the receptor; pose-aware rest so it never clips).
-  // The voxel chest is placed by ctSyncScene instead, so skip the hand transforms.
+  // The voxel model is placed by ctSyncScene in CT mode; in x-ray it rests on the receptor.
   const ox=S.mode!=='ct'?S.objOff.x:0, oz=S.mode!=='ct'?S.objOff.z:0;   // x-ray object offset sliders
-  if(S.subject==='hand'){
-    const {skin,bone}=buildHandPrimitives(S.spread, S.pose);
-    three.handGroup.position.set(ox, baseLift(skin,bone,objMat())+S.oid, oz);
-  } else {
-    three.handGroup.rotation.z = 0;
-    if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);   // flips are mode-dependent
-    if(S.mode!=='ct' && S.voxelModel){                                // x-ray: rest the model on the detector
-      three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10, oz);
-    }
+  three.handGroup.rotation.z = 0;
+  if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);       // flips are mode-dependent
+  if(S.mode!=='ct' && S.voxelModel){                                    // x-ray: rest the model on the detector
+    three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10, oz);
   }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
@@ -697,11 +694,10 @@ function syncScene(){
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
   editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
-  // its centre to match the traced phantom. Hand meshes ride handGroup; a voxel mesh
-  // is centred at its own origin so it rotates in place inside handGroup.
+  // its centre to match the traced phantom. A voxel mesh is centred at its own origin
+  // so it rotates in place inside handGroup.
   const R=objMat();
-  if(S.subject==='hand') setGroupRot(three.handGroup, R);
-  else if(three.chestGroup) setGroupRot(three.chestGroup, R);
+  if(three.chestGroup) setGroupRot(three.chestGroup, R);
 }
 
 /* Redraw the collimator cookie: bright rectangular aperture sized to the field
@@ -717,8 +713,10 @@ function updateCookie(){
   const cx=SZ/2, cy=SZ/2, w=hu*SZ, h=hv*SZ;
   // aperture (lit)
   g.fillStyle='#fff'; g.fillRect(cx-w, cy-h, 2*w, 2*h);
-  // crosshair wires (dark), spanning the aperture, with a small central gap
-  g.strokeStyle='#000'; g.lineWidth=Math.max(2, SZ*0.006);
+  // Crosshair wires, spanning the aperture with a small central gap. Grey, not black: a real
+  // wire casts a soft shadow inside a bright field, and a fully opaque one reads as a stripe
+  // painted across the anatomy rather than as a centring aid.
+  g.strokeStyle='rgba(0,0,0,0.45)'; g.lineWidth=Math.max(2, SZ*0.004);
   const gap=Math.min(w,h)*0.12;
   g.beginPath();
   g.moveTo(cx, cy-h); g.lineTo(cx, cy-gap); g.moveTo(cx, cy+gap); g.lineTo(cx, cy+h);
@@ -1024,8 +1022,6 @@ function bind(){
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
     resetPrep(); syncScene(); });
-  $('spread')?.addEventListener('input',e=>{ S.spread=e.target.value/100;
-    buildHandMeshes(); resetPrep(); });
   // sliders that only affect geometry (update chips + scene)
   const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ'];
   for(const id of geoSliders){
@@ -1055,20 +1051,11 @@ function bind(){
   $('mas').addEventListener('input',e=>{S.mas=masSteps[e.target.value];refreshReadouts();});
   // ---- AEC: toggle + chamber selection. Enabling swaps the mAs control to the BACKUP
   // limit (bumped to a sensible safety value); disabling restores the manual mAs.
-  $('aecBtn')?.addEventListener('click',()=>{
-    S.aecOn=!S.aecOn;
-    const b=$('aecBtn'); b.classList.toggle('on',S.aecOn); b.textContent=S.aecOn?'ON':'OFF';
-    b.setAttribute('aria-pressed',S.aecOn);
-    $('aecCellsBox').style.display=S.aecOn?'flex':'none';
-    $('masLbl').textContent=S.aecOn?'Backup mAs':'mAs';
-    if(S.aecOn){ S._masPreAec=S.mas; if(S.mas<200){ S.mas=320; $('mas').value=nearestMasIdx(); } }
-    else if(S._masPreAec!=null){ S.mas=S._masPreAec; $('mas').value=nearestMasIdx(); }
-    S.aecResult=null; resetPrep(); refreshReadouts(); syncScene();
-  });
+  initCurveBar();
+  $('aecBtn')?.addEventListener('click',()=>setAecOn(!S.aecOn));
   $('aecCellsBox')?.addEventListener('click',e=>{
     const b=e.target.closest('button[data-cell]'); if(!b) return;
-    const k=b.dataset.cell; S.aecCells[k]=!S.aecCells[k]; b.classList.toggle('on',S.aecCells[k]);
-    S.aecResult=null; resetPrep(); syncScene();
+    toggleAecCell(b.dataset.cell);
   });
   // rotor: latches on until an exposure completes
   $('rotor').addEventListener('click',toggleRotor);
@@ -1148,6 +1135,8 @@ function bind(){
     [...$(id).children].forEach(x=>x.classList.remove('on')); b.classList.add('on'); fn(b);
   });
   segPick('resSeg', b=>{ S.resolution=b.dataset.res; applyDet(); });
+  // photo skin vs material shading — display only, never touches the physics
+  segPick('skinSeg', b=>{ S.photoSkin=(b.dataset.skin==='photo'); applyPhotoSkin(); });
   $('detSizeSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
     [...$('detSizeSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
     setDetSize(parseInt(b.dataset.w),parseInt(b.dataset.h));});
@@ -1184,7 +1173,10 @@ function refreshReadouts(){
   $('maV').textContent=S.ma; $('maSv').textContent=S.ma;
   $('masV').textContent=S.mas.toFixed(S.mas<10?1:0); $('masSv').textContent=S.mas.toFixed(S.mas<10?1:0);
   $('fsV').innerHTML=(S.ma>400?'1.0':'0.6')+'<small>mm</small>';
-  if(aecActive()){ $('timeV').innerHTML='AEC'; $('timeInline').textContent='AEC · backup '+fmtTime(exposureTimeSec()); }
+  if(aecNoCell()){   // say so BEFORE the switch is pressed, not after
+    $('timeV').innerHTML='AEC'; $('timeInline').textContent='AEC · NO CELL SELECTED';
+  }
+  else if(aecActive()){ $('timeV').innerHTML='AEC'; $('timeInline').textContent='AEC · backup '+fmtTime(exposureTimeSec()); }
   else{
     const t=exposureTimeSec();
     $('timeV').innerHTML = t<1 ? Math.round(t*1000)+'<small>ms</small>' : t.toFixed(t<10?2:1)+'<small>s</small>';
@@ -1220,6 +1212,17 @@ const EXP={holding:false, done:false, t0:0, dur:0, raf:0, timer:0};
 
 function startExposure(){
   if(!S.prepped || S.exposing) return;
+  // Interlock BEFORE anything is delivered: no rotor sound, no timer, no image. The tube
+  // never fires, so this is not a terminated exposure — it is an exposure that never
+  // happened, and the fault screen says which.
+  if(aecNoCell()){
+    S.prepped=false; $('rotor').classList.remove('on');
+    $('fire').disabled=true; $('fire').classList.remove('armed');
+    setWarn('standby'); $('clock').textContent='EXPOSURE INHIBITED';
+    showExposureError(['NO AEC CHAMBER SELECTED'],
+                      'SELECT L, C OR R - OR SWITCH AEC OFF', 'EXPOSURE', 'INHIBITED');
+    return;
+  }
   S.exposing=true; EXP.done=false; EXP.holding=true;
   // AEC terminates the exposure itself — the operator just holds through it (ms-scale);
   // manual technique requires holding the switch for the full set exposure time.
@@ -1414,29 +1417,32 @@ async function computeRadiograph(){
 }
 
 /* Early-release error: replace the image with an error message. */
-function showExposureError(){
+function showExposureError(why, hint, l1, l2){
   S.hasImage=false;
   $('noexp').style.display='none';
-  drawError($('film'));
-  if(S.bayContent==='image'){ $('bigFilm').style.display='block'; $('bignote').style.display='none'; drawError($('bigFilm')); }
+  const draw=cv=>drawError(cv, why, hint, l1, l2);
+  draw($('film'));
+  if(S.bayContent==='image'){ $('bigFilm').style.display='block'; $('bignote').style.display='none'; draw($('bigFilm')); }
   $('eiV').textContent='—';  $('eiV').className='v';
   $('eitV').textContent='—'; $('diV').textContent='ERR'; $('diV').className='v bad';
   ['fnTL','fnTR','fnBL','fnBR'].forEach(id=>$(id).textContent='');
   $('prog').style.width='0%';
 }
-function drawError(cv){
+function drawError(cv,
+                   why=['EXPOSURE SWITCH RELEASED', 'BEFORE EXPOSURE COMPLETE'],
+                   hint='RE-ENGAGE ROTOR AND REPEAT',
+                   l1='EXPOSURE', l2='TERMINATED'){
   cv.width=400; cv.height=500;
   const c=cv.getContext('2d');
   c.fillStyle='#000'; c.fillRect(0,0,cv.width,cv.height);
   c.textAlign='center';
   c.fillStyle='#ff3b30'; c.font='bold 30px "Share Tech Mono",monospace';
-  c.fillText('EXPOSURE', cv.width/2, 210);
-  c.fillText('TERMINATED', cv.width/2, 248);
+  c.fillText(l1, cv.width/2, 210);
+  c.fillText(l2, cv.width/2, 248);
   c.fillStyle='#ff8a80'; c.font='14px "Share Tech Mono",monospace';
-  c.fillText('EXPOSURE SWITCH RELEASED', cv.width/2, 296);
-  c.fillText('BEFORE EXPOSURE COMPLETE', cv.width/2, 318);
+  why.forEach((s,i)=>c.fillText(s, cv.width/2, 296+i*22));
   c.fillStyle='#8a96a3'; c.font='12px "Share Tech Mono",monospace';
-  c.fillText('RE-ENGAGE ROTOR AND REPEAT', cv.width/2, 356);
+  c.fillText(hint, cv.width/2, 296+why.length*22+16);
 }
 
 /* ---- render stored signal: crop to exposed field, window/level, invert,
@@ -1477,21 +1483,17 @@ function renderRadiograph(target,entry){
     let v;
     if(!mask[k]) v=0;
     else { const base=baseArr? baseArr[k] : 1-Math.log(1+a*sig[k]/mx)/denom;
-      v=toneMap(rescaleTone(base, rescale)); }  // (enhanced) base -> auto-rescale -> LUT
+      v=displayTone(base, rescale); }   // (enhanced) base -> auto-rescale -> levels -> LUT
     const g=Math.round(v*255), o=(j*cw+i)*4;
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
   cctx.putImageData(img,0,0);
   // orient (rotate + flip) into the target, sizing target to the exposed crop.
-  // A per-subject hanging default is applied first, then the user's adjustments:
-  //  - hand: fingertips (+z, the plate arrow) up -> 180° rotation. A rotation, NOT a
-  //    vertical mirror, so left/right chirality is preserved.
-  //  - voxel body (chest, etc.): the superior end is world +z, which the raw detector
-  //    mapping lands at the image BOTTOM, so flip vertically to hang it head-up; mirror
-  //    horizontally too because a PA projection is displayed as if facing the patient.
-  const baseRot = subject!=='hand' ? 0 : 180;
-  const baseFlipH = subject!=='hand';
-  const baseFlipV = subject!=='hand';
+  // Hanging default for every voxel subject, applied before the user's adjustments:
+  // the superior end (fingertips on the hand) is world +z, which the raw detector
+  // mapping lands at the image BOTTOM, so flip vertically to hang it superior-up;
+  // mirror horizontally too because a PA projection is displayed as if facing the patient.
+  const baseRot = 0, baseFlipH = true, baseFlipV = true;
   const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
@@ -1523,7 +1525,12 @@ function computeRescale(sig,mask){
   // end and the whole anatomy is crammed into a bright, flat band (washed-out chest). By
   // dropping pixels brighter than `cut`, the window locks onto the anatomy so the well-
   // penetrated lung fields stretch to dark and the mediastinum/spine to bright.
-  const cut=mx*(_t.rcut??0.72);
+  // The cut must sit JUST below the unattenuated level, which by definition is the image
+  // maximum — nothing attenuates less than nothing. A loose fraction (this was 0.72) also
+  // discards genuinely thin anatomy: at 55 kVp a few mm of soft tissue still transmits
+  // ~80-90 % of the raw beam, so a hand's whole finger envelope was being treated as
+  // direct exposure and clipped to white, leaving the phalanges looking like bare bone.
+  const cut=mx*(_t.rcut??0.95);
   const a=40, denom=Math.log(1+a), NB=1024, hist=new Uint32Array(NB); let total=0;
   for(let k=0;k<sig.length;k++){ if(!mask[k]||sig[k]>=cut) continue;   // skip direct exposure
     let t=Math.log(1+a*sig[k]/mx)/denom, b=Math.round((1-t)*(NB-1));
@@ -1595,17 +1602,100 @@ function rescaleTone(x,rs){
    SIGMOID VOI LUT (out = 1/(1+exp(-4(x-c)/w))) when the LUT is a sigmoid, else a linear
    window/level. Brightness shifts the centre, contrast scales the width. The LUT always
    applies (the toggle now only shows/hides the curve on the histogram). */
-function toneMap(x){
+function toneMap(x, centre){
   const bright=S.lev/100, contrast=S.win/100;
   if(S.lut && S.lut.sigmoid){
-    const c=S.lut.center - bright, w=Math.max(0.05, S.lut.width/contrast);
+    const c=(centre??S.lut.center) - bright, w=Math.max(0.05, S.lut.width/contrast);
     return 1/(1+Math.exp(-4*(x-c)/w));
   }
   const v=(x-0.5)*contrast+0.5+bright; return v<0?0:v>1?1:v;
 }
-/* Full display mapping for the histogram curve: rescale (VOI) then LUT. Uses the active
-   image's rescale window. */
-function displayCurve(x){ return toneMap(rescaleTone(x, S.rescale)); }
+/* ---- manual response-curve points (low / mid / high) ----
+   The three diamonds under the histogram. Low and high are the input tones driven to
+   black and to white; mid is the tone driven to 0.5, i.e. a gamma. This is the classic
+   levels control, and it sits AFTER the auto-rescale on purpose: the rescale normalises
+   every exposure to the same appearance, which is correct for DR but hides dose. Pulling
+   the points by hand pins the mapping so two exposures can be compared as exposures. */
+/* ---- the three diamonds under the histogram ----
+   Not an <input type=range>: three thumbs on one track, each constrained by its
+   neighbours (low < mid < high), which a native range cannot express. */
+const CURVE_GAP=0.02;                                   // keep the points distinguishable
+function syncCurveBar(){
+  const bar=$('curveBar'); if(!bar) return;
+  const c=S.curve||curveFromRescale(S.rescale);   // before the first image: the identity curve
+  bar.querySelectorAll('.cb-h').forEach(h=>{ h.style.left=(c[h.dataset.pt]*100).toFixed(2)+'%'; });
+  const f=$('cbFill'); if(f){ f.style.left=(c.lo*100).toFixed(2)+'%';
+                              f.style.width=((c.hi-c.lo)*100).toFixed(2)+'%'; }
+}
+function setCurvePoint(pt,v){
+  const c=S.curve||(S.curve=curveFromRescale(S.rescale));
+  // Free over the whole histogram axis — the only limit is the ordering. Clamping these
+  // to some "expected" sub-range would stop the toe and shoulder reaching the part of the
+  // axis where the anatomy actually sits, which on a chest is the bottom fifth.
+  v=Math.max(0,Math.min(1,v));
+  if(pt==='lo') c.lo=Math.min(v, c.hi-CURVE_GAP);
+  else          c.hi=Math.max(v, c.lo+CURVE_GAP);
+  S.curveManual=true;                       // stop re-seeding: a pinned curve is the point
+  syncCurveBar();
+  if(S.hasImage) drawFilm();
+}
+/* Re-seed the handles onto the new image's own toe/inflection/shoulder — unless they have
+   been dragged, in which case the pinned curve is deliberately being held across images so
+   two exposures can be compared as exposures. */
+function reseedCurve(){
+  if(S.curveManual) return;
+  S.curve=curveFromRescale(S.rescale);
+  syncCurveBar();
+}
+function initCurveBar(){
+  const bar=$('curveBar'); if(!bar) return;
+  let drag=null;
+  const xOf=e=>{ const r=bar.getBoundingClientRect(); return (e.clientX-r.left)/Math.max(1,r.width); };
+  bar.addEventListener('pointerdown',e=>{
+    const h=e.target.closest('.cb-h');
+    // clicking the bare track grabs the nearest point, so the control is not fiddly
+    const c=S.curve||(S.curve=curveFromRescale(S.rescale));
+    const pt=h? h.dataset.pt : (Math.abs(c.lo-xOf(e))<=Math.abs(c.hi-xOf(e))?'lo':'hi');
+    drag=bar.querySelector('.cb-h[data-pt="'+pt+'"]');
+    drag.classList.add('drag');
+    try{ bar.setPointerCapture(e.pointerId); }catch(_){}
+    setCurvePoint(pt, xOf(e)); e.preventDefault();
+  });
+  bar.addEventListener('pointermove',e=>{ if(drag) setCurvePoint(drag.dataset.pt, xOf(e)); });
+  const end=()=>{ if(drag) drag.classList.remove('drag'); drag=null; };
+  bar.addEventListener('pointerup',end);
+  bar.addEventListener('pointercancel',end);
+  // double-click gives the image's own auto curve back, not an abstract 0/0.5/1
+  bar.addEventListener('dblclick',()=>{ S.curveManual=false; reseedCurve();
+                                        if(S.hasImage) drawFilm(); });
+  syncCurveBar();
+}
+
+/* Where the auto-rescale + LUT put the three features for a given image. The handles are
+   seeded from this, so they START on the toe, inflection and shoulder of the curve as
+   drawn rather than at an abstract 0 / 0.5 / 1 that corresponds to nothing on screen. */
+function curveFromRescale(rs){
+  return { lo:(S.autoRescale && rs)? rs.lo : 0,
+           hi:(S.autoRescale && rs)? rs.hi : 1 };
+}
+/* The one display mapping, in the histogram's own x units so the handles sit on the axis
+   they are drawn against.
+
+   The handles ARE the curve, rather than a second stage bolted after it: low and high are
+   the window — below low everything is black, above high everything is white, so they are
+   the toe and the shoulder by construction. Seeded from the auto-rescale, this reproduces
+   the previous mapping exactly; dragging a handle moves the feature it sits on.
+
+   There is deliberately no third handle for the inflection. It would set the sigmoid's
+   centre, and toneMap already computes that centre as (centre - brightness) — so a mid
+   handle and the Brightness slider write the same term, and the two would fight. */
+function displayTone(x, rs){
+  const c=S.curve||curveFromRescale(rs);
+  const span=c.hi-c.lo;
+  let t = span>1e-6 ? (x-c.lo)/span : (x<c.lo?0:1);
+  return toneMap(t<0?0:t>1?1:t);
+}
+function displayCurve(x){ return displayTone(x, S.rescale); }
 
 /* ---- display histogram + LUT response curve ----
    Draws a proper histogram (blue bars, axis ticks) of the image's base grey values,
@@ -1706,7 +1796,7 @@ function applyProtocol(p,part){
   const pv=$('protocolV'); if(pv) pv.textContent=p.proj;
   refreshReadouts();
   // switch the subject model when the protocol targets one we have
-  if(p.subject && p.subject!==S.subject && (p.subject==='hand'||VOXEL_MODELS[p.subject])) setSubject(p.subject);
+  if(p.subject && p.subject!==S.subject && VOXEL_MODELS[p.subject]) setSubject(p.subject);
   else { syncScene(); if(S.hasImage) drawFilm(); }
 }
 function openProtocolPopup(){
@@ -1725,6 +1815,17 @@ function openProtocolPopup(){
 function closeProtocolPopup(){ $('protoPop')?.classList.remove('show'); }
 
 function updateDI(EI){
+  // Post-exposure, an AEC console reports what it ACTUALLY delivered. Showing only the
+  // backup mAs — which is all this did — makes every AEC exposure read as the same
+  // technique no matter which chamber metered it, hiding the whole point of the exercise:
+  // metering the mediastinum runs the tube several times longer than metering the lungs.
+  if(S.aecResult){
+    const m=S.aecResult.mas;
+    $('masV').textContent = m.toFixed(m<10?2:0);
+    const t=m/S.ma;
+    $('timeV').innerHTML = t<1 ? Math.round(t*1000)+'<small>ms</small>' : t.toFixed(t<10?2:1)+'<small>s</small>';
+    $('timeInline').textContent = 'AEC '+fmtTime(t)+(S.aecResult.backupHit?' · BACKUP':'');
+  }
   const DI = 10*Math.log10(EI/S.eiTarget);
   $('eiV').textContent=EI;
   $('eitV').textContent=S.eiTarget;
@@ -1736,7 +1837,7 @@ function updateDI(EI){
 /* Build the 4-corner image metadata for the CURRENT technique (shown on the big
    Image view, not the small live monitor). */
 function buildMeta(spec){
-  const subjName=(S.subject==='hand'?'HAND':(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase());
+  const subjName=(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase();
   return {
     tl: subjName+' · '+S.pose,
     tr: S.aecResult
@@ -1757,6 +1858,16 @@ function pushImage(signal,nx,ny,mask,meta){
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
 }
+/* QC hook: the PRE-display signal of the last exposure, for measuring the line-pair
+   phantom. Modulation has to be read off the detector signal, not the windowed canvas —
+   brightness/contrast would rescale the very numbers being measured. */
+if(typeof window!=='undefined') window.radsimQC={
+  lastImage(){ const im=S.imgHistory[S.imgHistory.length-1]; if(!im) return null;
+    return {nx:im.nx, ny:im.ny, sig:im.sig, mask:im.mask, subject:im.subject,
+            pxU:S.detW*10/im.nx, pxV:S.detH*10/im.ny,    // mm per pixel
+            meta:im.meta, aec:S.aecResult && {...S.aecResult}, mas:S.mas};
+  }
+};
 /* Point the render state at history[idx] and refresh the view + strip + meta. */
 function setActiveImage(idx){
   if(!S.imgHistory.length){ S.histIdx=-1; S.hasImage=false; return; }
@@ -1764,6 +1875,7 @@ function setActiveImage(idx){
   const e=S.imgHistory[idx];
   S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
   S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true;
+  reseedCurve();                     // handles land on THIS image's toe/inflection/shoulder
   drawFilm();
   updateImageMeta(); renderImageStrip();
 }
@@ -1964,11 +2076,12 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
-           syncScene, refreshReadouts, updateGeomReadouts, buildHandMeshes,
+           syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram,
            editorMode: (on) => editorApplyMode(on) });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
+  setSubject('hand');                           // default subject: the voxel hand phantom
 });
