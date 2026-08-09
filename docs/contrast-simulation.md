@@ -4,7 +4,7 @@ Real-time iodinated contrast for CT, and barium/CO₂ GI studies for x-ray. This
 records the architecture, the physics, and the decisions behind them. It is the reference
 for the work; the phases at the end are the plan of record.
 
-Status: **Phase 0 in progress.** Nothing below is implemented unless a phase says so.
+Status: **Phase 0 done. Phase 1 solver runs and is partly validated — see §6.1.** Nothing below is implemented unless a phase says so.
 
 ---
 
@@ -263,6 +263,51 @@ Stomach, small bowel and colon are already segmented. Oesophagus coverage needs 
 | **5** | GI studies: swallow, enema, double contrast. |
 
 First vertical slice: **CT chest through to a working PE double-rule-out**, before any GI work.
+
+### 6.1 Phase 1 status — runs, partly validated
+
+`app/contrast_solver.py`. A 90 s solve takes **1.2 s**, so the on-demand design of §1 holds.
+
+Getting there needed the scheme changed, not tuned. Explicit upwind + explicit diffusion was
+limited by the SVC's *diffusive* stability to dt = 5.4e-6 s — **16.5 million steps**, and the
+diffusive limit was 10-30x stricter than the advective one in every vessel, so no grid tuning
+would have rescued it. Advection is now semi-Lagrangian and diffusion implicit (LAPACK banded
+solve, factorised once per vessel since u and D are constant for a given flow). Both are
+unconditionally stable, so dt = 10 ms is an accuracy choice: **9000 steps**.
+
+**What is validated**
+
+| check | result | expected |
+| --- | --- | --- |
+| CTPA 60 mL @ 5 mL/s — PA peak | **13.0 s** | 12–15 s |
+| PA → aorta delay | **6.0 s** | 4–8 s (pulmonary transit) |
+| IVC peak | 48 s | 50–70 s |
+| Opacification order | SVC → PA → PV → aorta → IVC | correct |
+| Organ order | kidney > spleen > pancreas > liver | correct |
+| Cardiac output (Bae) | CO 3 → 653 HU @ 39 s; CO 8 → 404 HU @ 30 s | low CO ⇒ higher *and* later |
+
+Two timing errors were found by attribution rather than guesswork, both physiological. The arm
+vein was carrying only the injectate, giving tau = 60/4 = 15 s and putting **every** downstream
+peak 15 s late — it carries the patient's own arm venous return too. And 750 mL of mixing
+chamber on the RV→LA path was ~1.7x the real transit volume, stretching PA→aorta to 11 s.
+
+**What is NOT validated — do not trust these yet**
+
+- **Arterial peak exceeds the first-pass mass-balance ceiling** (iodine flux ÷ cardiac output)
+  by up to 54 % in some configurations: ratio 0.78 for CTPA, but 1.39 for 100 mL @ 3 mL/s and
+  1.54 at CO 8. Recirculation legitimately adds to first pass, so a ratio above 1 is not
+  automatically wrong, but 1.5x wants a full mass audit across chambers before it is believed.
+  One real leak was found and fixed (arm venous return was drawn from the body pool without
+  debiting it, creating iodine every step); it did not account for the excess.
+- **Absolute peak HU runs high** — 491 HU where 300–350 is typical for 100 mL @ 4 mL/s. Partly
+  the ceiling issue above, partly that HU_PER_MGI_ML is a stand-in until §3.1 gives iodine a
+  real mu(E).
+- **Liver, spleen and pancreas still peak at the end of the 90 s window.** Their EES time
+  constants (V_ees/PS ~150 s for liver) are too long, so they fill monotonically instead of
+  peaking near 60–70 s.
+
+None of these are architectural. The next work on the solver is a mass audit, then organ
+calibration — both changes to constants and bookkeeping, not to the scheme.
 
 ---
 
