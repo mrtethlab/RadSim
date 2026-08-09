@@ -139,6 +139,9 @@ class CTSlicesRequest(BaseModel):
     photons0: float
     rot: list[float] | None = None
     kernel: str = "ramlak"      # 'ramlak' (quick preview) | 'shepp' (realistic detector)
+    # contrast for this batch of slices (see /contrast/timeline)
+    concLUT: list[float] | None = None
+    iodineCol: int | None = None
 
 
 @app.post("/ct/slices")

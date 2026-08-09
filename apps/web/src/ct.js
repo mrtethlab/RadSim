@@ -11,6 +11,7 @@
 import { Spectrum } from './core/spectrum.js';
 import { Materials, BodyMaterials } from './core/materials.js';
 import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
+import { buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
 import { Sound } from './audio/sound.js';
 
 let ctx = null;
@@ -3159,6 +3160,17 @@ function buildWaterBHC(binW, muWbins, muWeff) {
   };
 }
 
+/* Couch speed (mm/s) = table travel per rotation / rotation time. */
+export function couchSpeedMMps(g) {
+  return tableSpeedOf(g) / Math.max(g.rotSpeed, 1e-6);
+}
+/* When slice i is acquired, in seconds since the injection started.
+   Distance is measured from the FIRST slice in acquisition order, so a caudocranial scan
+   times correctly too (|z - z0| rather than a signed offset). */
+export function sliceTime(g, positions, i, t0) {
+  return t0 + Math.abs(positions[i] - positions[0]) / Math.max(couchSpeedMMps(g), 1e-6);
+}
+
 function scanSetup(g) {
   const spec = Spectrum.make(g.kv), bins = spec.bins, effE = spec.meanE;
   const phantom = ctx.buildPhantom();            // built at the committed table position (patient.z = isoZ)
@@ -3228,6 +3240,24 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   // up live (the couch advances to that slice's position as it appears).
   const N = geo.m.gridN, nz = positions.length, vol = new Float32Array(nz * N * N);
   const meta = { gridN: N, fovMM, muWater: muW };
+  /* ---- when each slice is actually acquired ------------------------------------------
+     A CT scan is not an instant. The couch travels at pitch x beam collimation per
+     rotation, so a chest-abdomen helical takes 8-12 s end to end and the liver is imaged
+     seconds after the lungs — often in a different contrast phase. Imaging every slice at
+     one moment is what makes "you scanned too early" invisible, so each slice gets its own
+     time and its own concentration table.
+     Distance is measured from the FIRST slice in acquisition order, so a caudocranial scan
+     times correctly too (|z - z0| rather than a signed offset). */
+  const mmPerSec = couchSpeedMMps(g);
+  const tOfSlice = (i) => sliceTime(g, positions, i, ctx.S.contrast.scanTime);
+  const contrastAt = (t) => {
+    const C = ctx.S.contrast;
+    return (C.on && C.timeline && C.sVol) ? buildConcLUT(C.timeline, t) : null;
+  };
+  if (ctx.S.contrast.on && ctx.S.contrast.timeline) {
+    meta.contrast = { tStart: +tOfSlice(0).toFixed(1), tEnd: +tOfSlice(nz - 1).toFixed(1),
+                      mmPerSec: +mmPerSec.toFixed(1) };
+  }
   // ---- Python GPU engine (voxel subjects): reconstruct in slice batches ----
   let done = false;
   if (voxel && ctx.S.ct.backend === 'python' && ctx.S.computeInfo && ctx.compute) {
@@ -3250,7 +3280,14 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
       for (let s0 = 0; s0 < nz; s0 += BATCH) {
         if (!alive()) return null;
         const zs = positions.slice(s0, s0 + BATCH).map(d => d / MM_PER_UNIT);
-        const batch = await ctx.compute.ctSlices({ ...base, z0List: zs });
+        // One concentration table per batch, at the batch's middle slice. Four slices span
+        // ~0.3 s of couch travel at a typical 75 mm/s, which is well inside the timeline's
+        // 1 s temporal resolution — so this is not a compromise, it is below the resolution
+        // of the data underneath it. Sending a table per slice would be ~96 KB of JSON each.
+        const bl = contrastAt(tOfSlice(Math.min(s0 + (zs.length >> 1), nz - 1)));
+        const batch = await ctx.compute.ctSlices({ ...base, z0List: zs,
+          concLUT: bl ? Array.from(bl) : null,
+          iodineCol: bl ? BodyMaterials.IODINE_COL : null });
         for (let b = 0; b < zs.length; b++) {
           const si = s0 + b;
           vol.set(batch.subarray(b * N * N, (b + 1) * N * N), si * N * N);
@@ -3275,6 +3312,10 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
     for (let si = 0; si < nz; si++) {
       if (!alive()) return null;
       const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
+      // This slice's own moment in the bolus — the browser engine can afford a table per
+      // slice, so it takes one.
+      const sl = contrastAt(tOfSlice(si));
+      if (sl) phantom.setContrast(sl, ctx.S.contrast.sVol, CONTRAST_NS);
       const sino = projectSlice(phantom, zw, mu, photons0, geo, cone);
       const q = filterSino(blurOn ? sinoBlur(sino, geo.m) : sino, h, geo.ds, geo.m);
       const img = backproject(q, geo);

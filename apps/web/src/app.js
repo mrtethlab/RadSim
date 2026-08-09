@@ -15,7 +15,7 @@ import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
-import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme } from './ct.js';
+import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 
 /* ============================================================================
@@ -711,6 +711,16 @@ window.radsimContrast={
   },
   disable(){ S.contrast.on=false; S.contrast.lut=null; },
   setScanTime(t){ S.contrast.scanTime=t; },
+  // Acquisition timing for the currently selected scan group — a helical scan images each
+  // slice at its own moment, which is the whole point of per-slice timing.
+  ctTiming(){
+    const g=(S.ct.groups||[])[S.ct.sel||0]; if(!g) return null;
+    const lo=S.ct.scanStart, hi=lo+S.ct.scanLen, n=12;
+    const pos=Array.from({length:n},(_,i)=>lo+(hi-lo)*i/(n-1));
+    return { mmPerSec:+couchSpeedMMps(g).toFixed(1), lenMM:+(hi-lo).toFixed(0),
+             pitch:g.pitch, beamCollMM:g.beamColl, rotS:g.rotSpeed,
+             t:pos.map((_,i)=>+sliceTime(g,pos,i,S.contrast.scanTime).toFixed(2)) };
+  },
 };
 
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */

@@ -411,12 +411,42 @@ would draw a smooth ramp through it and erase the effect that makes iodine work 
   | --- | --- | --- | --- | --- | --- |
   | signal vs unenhanced | -6.2 % | -19.8 % | **-25.4 %** | -15.6 % | -12.1 % |
 
+**Per-slice acquisition time (wired)**
+
+A CT scan is not an instant. The couch travels at pitch x beam collimation per rotation, so
+each slice is acquired at its own moment and gets its own concentration table:
+
+```
+couch speed (mm/s) = tableSpeedOf(g) / rotation time
+slice time         = scan delay + |z_i - z_0| / couch speed
+```
+
+`sliceTime()` and `couchSpeedMMps()` are exported from ct.js so the model is testable rather
+than buried in the scan loop, and they reuse the app's existing `tableSpeedOf` instead of
+deriving a second table-speed model that could drift from the scan planner.
+
+Distance is measured from the first slice **in acquisition order**, so a caudocranial scan
+times correctly (|z - z0|, not a signed offset).
+
+Measured in the app, 243 mm scan, 20 s delay:
+
+| config | couch speed | first slice | last slice |
+| --- | --- | --- | --- |
+| SSCT 1 x 5 mm, pitch 0.938 | 9.4 mm/s | 20.0 s | **45.9 s** |
+| MSCT 64 x 0.625 mm, pitch 0.938 | 75 mm/s | 20.0 s | 23.2 s |
+
+The SSCT row is not a bug — it is why single-slice CT could not do CTA. The bolus washes out
+before the scan finishes, and the model now shows that rather than asserting it. (SSCT
+collimates to the slice thickness, not the 0.625 mm detector element, which `tableSpeedOf`
+already encoded.)
+
+The browser engine rebuilds the table per slice; the GPU engine does one per 4-slice batch,
+which spans ~0.3 s of couch travel at 75 mm/s — inside the timeline's own 1 s resolution, so
+it is below the resolution of the data underneath it rather than a compromise.
+
 **Not done in Phase 2**
 
 - No UI yet — `window.radsimContrast` drives it until the panel lands (Phase 3).
-- Per-slice acquisition time is written (`acquisitionTime` in contrast.js) but **not yet wired
-  into the CT scan loop**, so a helical scan still images every slice at one instant. That is
-  the piece that makes "you scanned too early" visible in CT rather than only in radiography.
 - The aortic peak is still ~15 % high. Real mu(E) did not explain it — 26.1 against the
   assumed 25 is 4 % — so it stays a solver concentration matter, recorded in §6.1.
 
