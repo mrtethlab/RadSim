@@ -208,26 +208,49 @@ class OrganBed:
     organ keeps enhancing after its feeding artery has begun to wash out.
     """
 
-    def __init__(self, name, flow_frac, vol_iv_ml, vol_ees_ml, ps_ml_s):
+    def __init__(self, name, flow_frac, vol_iv_ml, vol_ees_ml, ps_ml_s, portal_frac=0.0,
+                 vol_total_ml=None):
         self.name = name
         self.flow_frac = flow_frac
+        # The liver is the one organ with a dual blood supply, and it is not a detail: the
+        # portal vein carries ~3x the hepatic artery, and it arrives LATE because that blood
+        # has already crossed the gut. That lag is the entire reason a liver peaks in the
+        # portal venous phase at 60-70 s rather than with the aorta. Draining the portal vein
+        # to the right heart instead — as this did — leaves the liver on 6.5 % of cardiac
+        # output and it never peaks at all, it just seeps.
+        self.portal_frac = portal_frac
         self.v_iv, self.v_ees, self.ps = vol_iv_ml, vol_ees_ml, ps_ml_s
+        # The volume a CT voxel actually averages over. Most of an organ is cells, which hold
+        # no contrast but are still in the voxel: 600 mL of the liver's 1500 mL takes up
+        # iodine, so the enhancement CT reads is 40 % of the concentration in the spaces that
+        # carry it. Dividing by v_iv + v_ees instead reported the liver at 160 HU where a real
+        # one enhances 50-60.
+        self.v_total = float(vol_total_ml or (vol_iv_ml + vol_ees_ml))
         self.c_iv = 0.0
         self.c_ees = 0.0
 
-    def step(self, dt, q_ml_s, c_art, gfr_ml_s=0.0):
+    @property
+    def total_frac(self):
+        return self.flow_frac + self.portal_frac
+
+    def step(self, dt, q_ml_s, c_art, gfr_ml_s=0.0, q_portal=0.0, c_portal=0.0, q_out=None):
         ex = self.ps * (self.c_iv - self.c_ees)
         # Iodinated contrast is cleared by glomerular filtration. Only the kidney gets a
         # non-zero GFR, but it is the only sink in the whole loop: without it total body
         # iodine is conserved and every curve plateaus instead of washing out.
-        self.c_iv += dt * (q_ml_s * (c_art - self.c_iv) - ex - gfr_ml_s * self.c_iv) / self.v_iv
+        inflow = q_ml_s * c_art + q_portal * c_portal
+        # Drainage is not always the same flow that fed the bed: the upper body also loses
+        # blood to the arm vein carrying the injection back, and that has to be debited here
+        # or the loop mints iodine.
+        qo = (q_ml_s + q_portal) if q_out is None else q_out
+        self.c_iv += dt * (inflow - qo * self.c_iv - ex - gfr_ml_s * self.c_iv) / self.v_iv
         self.c_ees += dt * ex / self.v_ees
         self.c_iv = max(self.c_iv, 0.0)
         self.c_ees = max(self.c_ees, 0.0)
 
     @property
     def c_mean(self):
-        return (self.c_iv * self.v_iv + self.c_ees * self.v_ees) / (self.v_iv + self.v_ees)
+        return (self.c_iv * self.v_iv + self.c_ees * self.v_ees) / self.v_total
 
     def outflow_c(self):
         return self.c_iv
@@ -236,21 +259,34 @@ class OrganBed:
 # ---- circulation topology ---------------------------------------------------
 # Fractions of cardiac output. Systemic values are standard resting distribution; they must
 # sum to 1 across the aortic outlets or the loop leaks mass.
+# V_ees is the volume contrast actually distributes into outside the vessels, which is the
+# organ's interstitium — roughly 20 % of its volume, NOT most of it. Oversizing it (the liver
+# had 900 mL for a 1500 mL organ) makes the extravascular compartment dominate the mean
+# enhancement, and since it only fills while c_iv > c_ees the organ then rises monotonically
+# for the whole scan instead of peaking with its feeding vessel. The kidney is the exception
+# and keeps a large one: it concentrates contrast in the tubular lumen.
+# V_iv is sized so the intravascular mean transit time V_iv/Q lands at a physiological
+# 5-20 s. Getting that wrong is what stalls an organ: the pancreas at V_iv = 50 mL on 1 % of
+# cardiac output had a 60 s turnover and could not peak inside a 90 s scan no matter what the
+# EES did. PS is set from the target EES time constant V_ees/PS, which is what puts the peak
+# in the right phase (liver ~60 s, kidney ~12 s).
 ORGANS = [
-    # name,      flow frac, V_iv,  V_ees,  PS
-    ('liver',      0.065,   400.0, 900.0,  6.0),   # arterial supply only; portal handled below
-    ('spleen',     0.030,   150.0, 200.0,  8.0),
-    ('kidney',     0.190,   120.0, 300.0, 25.0),   # fast, high-flow: enhances early and hard
-    ('pancreas',   0.010,    50.0, 120.0,  5.0),
+    # name,      flow frac, V_iv,  V_ees,  PS,  portal, V_total
+    ('liver',      0.065,   300.0, 300.0, 15.0,  0.20,  1500.0),  # hepatic artery + portal
+    ('spleen',     0.035,    55.0,  40.0,  6.0,  0.0,    200.0),
+    ('kidney',     0.190,    90.0, 150.0, 25.0,  0.0,    300.0),  # tubular lumen -> big EES
+    ('pancreas',   0.010,    12.0,  25.0,  8.0,  0.0,    100.0),
 ]
 HEAD_ARM_FRAC = 0.19      # carotids + subclavians
-GUT_FRAC = 0.20           # -> portal vein -> liver
-LOWER_FRAC = 0.315        # everything else, returns via the IVC
+GUT_FRAC = 0.20           # -> portal vein -> liver (counted as the liver's portal_frac)
+LOWER_FRAC = 0.310        # everything else, returns via the IVC
+# arterial outlets must sum to 1.0 or the loop leaks: organs + gut + head/arm + lower
+assert abs(sum(o[1] for o in ORGANS) + GUT_FRAC + HEAD_ARM_FRAC + LOWER_FRAC - 1.0) < 1e-9
 
 
 def solve(vessels_path, injection: Injection = None, patient: Patient = None,
           duration_s: float = 90.0, out_hz: float = 1.0, cfl: float = 0.4,
-          verbose: bool = False):
+          verbose: bool = False, recirculation: bool = True):
     inj = injection or Injection()
     pat = patient or Patient()
     meta = json.load(open(vessels_path))
@@ -271,8 +307,17 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     right_heart = Mixer('right_heart', 150.0)
     lungs = Mixer('lungs', 150.0)          # pulmonary capillary/transit bed
     left_heart = Mixer('left_heart', 150.0)
-    body = Mixer('body', 0.30 * pat.blood_volume_ml)     # systemic pool that returns via IVC
     arm = Mixer('arm_vein', 30.0)          # injection site -> subclavian/brachiocephalic vein
+    # Head/arms and lower body/gut are two-compartment beds, not well-mixed pools, because
+    # the ~9 L of muscle/fat/skin interstitium they wrap is the LARGEST sink in the body and
+    # the reason blood iodine falls. PS is set for a ~70 s redistribution half-life, which is
+    # what a compartment audit calls for: at 3 min a real patient holds 35-45 % of the dose
+    # intravascularly, and at PS 4.5/2.0 this held 66 %, pinning the aorta at 158 HU where a
+    # real 3-minute blood pool reads 90-120. With the kidney's
+    # 2 mL/s GFR as the only sink the blood pool decays over 42 min instead, so nothing ever
+    # washes out and every organ EES fills monotonically to the end of the window.
+    upper = OrganBed('upper_body', HEAD_ARM_FRAC, 0.12 * pat.blood_volume_ml, 3000.0, 5.0)
+    body = OrganBed('body', LOWER_FRAC + GUT_FRAC, 0.30 * pat.blood_volume_ml, 6000.0, 12.0)
     # The arm vein carries the patient's own arm venous return as well as the injectate.
     # Flowing only the injection through it gave tau = 60/4 = 15 s and made every downstream
     # peak ~15 s late — the single largest timing error in the first working version.
@@ -284,7 +329,13 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     # would quadruple its velocity and distort its transit time.
     q_upper = HEAD_ARM_FRAC * CO
     q_lower = LOWER_FRAC * CO
-    q_of = {29: CO, 30: CO, 31: CO, 32: q_upper, 33: q_lower, 34: GUT_FRAC * CO,
+    # A vessel's transport flow MUST equal the flow charged to whatever it drains into. The
+    # SVC transported q_upper but the right heart was charged c_out * (q_arm + q_upper) —
+    # 21.3 vs 15.8 mL/s, which minted iodine at exactly the 1.35x the right heart showed, and
+    # every downstream compartment inherited it. The SVC carries upper-body return PLUS the
+    # injected volume, so that is what it must be given here and charged with below.
+    q_svc = q_upper + inj.rate_ml_s
+    q_of = {29: CO, 30: CO, 31: CO, 32: q_svc, 33: q_lower, 34: GUT_FRAC * CO,
             35: 0.04 * CO, 36: 0.04 * CO, 37: 0.04 * CO, 38: 0.04 * CO, 39: 0.04 * CO,
             40: 0.5 * q_upper, 41: 0.5 * q_upper, 42: 0.05 * CO}
 
@@ -292,7 +343,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     # one. A bolus feature is seconds wide and output is sampled at 1 Hz, so 10 ms resolves
     # everything physical. (Explicitly: the old explicit scheme was forced to 5.4e-6 s by the
     # SVC's diffusive limit — 16.5 M steps. This is 9000.)
-    dt = min(1.0 / out_hz, 0.01)
+    dt = min(1.0 / out_hz, cfl * 0.025)
     for k, v in V.items():
         if v is not None:
             v.set_flow(max(q_of.get(k, 0.04 * CO), 1e-6), dt)
@@ -301,6 +352,23 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         print(f'      dt {dt*1000:.2f} ms, {n_steps} steps, CO {CO:.0f} mL/s')
 
     out_every = max(1, int(round((1.0 / out_hz) / dt)))
+    injected_mgi = excreted_mgi = 0.0
+    mixers = [arm, right_heart, lungs, left_heart]
+    beds = organs + [upper, body]
+
+    def breakdown():
+        return dict(
+            vessels=sum(float((v.c * v.area).sum()) * v.dx for v in V.values() if v is not None),
+            chambers=sum(m.c * m.v for m in mixers),
+            organ_blood=sum(o.c_iv * o.v_iv for o in beds),
+            interstitium=sum(o.c_ees * o.v_ees for o in beds))
+
+    def stored_mgi():
+        """Total iodine held anywhere. Vessels: c * A * dx summed along the line."""
+        tot = sum(float((v.c * v.area).sum()) * v.dx for v in V.values() if v is not None)
+        tot += sum(m.c * m.v for m in mixers)
+        tot += sum(o.c_iv * o.v_iv + o.c_ees * o.v_ees for o in beds)
+        return tot
     frames, times = {k: [] for k in vmeta}, []
     organ_series = {o.name: [] for o in organs}
 
@@ -310,23 +378,39 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         # --- injection into the arm vein, carried by the injected volume itself ----------
         q_inj = inj.volume_flux_ml_s(t)
         q_arm = q_inj + q_arm_return
-        arm.step(dt, inj.flux_mgi_s(t) + q_arm_return * body.c, q_arm)
+        arm.step(dt, inj.flux_mgi_s(t) + q_arm_return * upper.c_iv, q_arm)
         # upper-body venous return joins the arm blood on its way to the SVC
-        c_bc = (arm.c * q_arm + body.c * q_upper) / max(q_arm + q_upper, 1e-9)
+        # The arm's return is part of the upper body's drainage, not extra to it: the direct
+        # SVC path carries what is left after the arm vein takes its share, so the upper body
+        # is always drained exactly the q_upper it was supplied.
+        #
+        # The junction hands its mass over AT THE SVC'S TRANSPORT FLOW. A constant-Q vessel
+        # takes in c_bc * q_svc and puts out c_out * q_svc, so expressing the inlet as
+        # mass-flux / q_svc makes the coupling exactly conservative no matter how the arm
+        # flow varies with the injection. Dividing by the instantaneous junction flow instead
+        # leaves the vessel charged at a rate it never carried, which leaked up to 9.7 % of
+        # the dose once injection stopped and the arm flow dropped.
+        q_direct = max(q_upper - q_arm_return, 0.0)
+        c_bc = (arm.c * q_arm + upper.c_iv * q_direct) / q_svc
         if V[40]: V[40].step(c_bc)
         if V[41]: V[41].step(c_bc)
         svc.step(c_bc)
 
-        # --- lower body -> IVC, gut -> portal -> liver -----------------------------------
-        ivc.step(body.c)
-        if portal: portal.step(body.c)
+        # --- lower body -> IVC, gut -> portal --------------------------------------------
+        ivc.step(body.c_iv)
+        if portal: portal.step(body.c_iv)
 
-        # --- right heart: SVC + IVC + portal(via liver) ----------------------------------
-        q_rh = CO
-        mgi_rh = (svc.c_out * (q_arm + q_upper) + ivc.c_out * q_lower
-                  + (portal.c_out if portal else body.c) * GUT_FRAC * CO
-                  + sum(o.outflow_c() * o.flow_frac * CO for o in organs))
-        right_heart.step(dt, mgi_rh, q_rh)
+        # --- right heart: SVC + IVC + portal + organ venous return -----------------------
+        # Organs return their TOTAL flow (the liver's includes the portal share, which is
+        # why the portal vein no longer appears here on its own).
+        # recirculation=False severs every returning path and leaves only the fresh SVC
+        # bolus. It is a diagnostic, not a physiological mode: it is how you tell a genuine
+        # recirculation peak from a mass leak, since a leak survives the cut and returning
+        # iodine does not.
+        rc = 1.0 if recirculation else 0.0
+        mgi_rh = (svc.c_out * q_svc + rc * (ivc.c_out * q_lower
+                  + sum(o.outflow_c() * o.total_frac * CO for o in organs)))
+        right_heart.step(dt, mgi_rh, CO)
 
         # --- pulmonary circuit ------------------------------------------------------------
         pa.step(right_heart.c)
@@ -334,19 +418,28 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         pv.step(lungs.c)
         left_heart.step(dt, pv.c_out * CO, CO)
 
-        # --- systemic ---------------------------------------------------------------------
+        # --- systemic -----------------------------------------------------------------------
+        # Everything systemic is fed DOWNSTREAM of the aorta, and the fractions sum to 1.0.
+        # Feeding the beds in parallel with the aorta straight off the left heart drew
+        # 2.2 x CO of arterial blood while debiting the left heart only CO — manufacturing
+        # 1.2 x CO x c_art of iodine every second, which is what pushed arterial peaks past
+        # the first-pass flux/CO ceiling.
         aorta.step(left_heart.c)
-        c_art = left_heart.c                     # arterial supply to every bed
+        c_ao = aorta.c_out                       # systemic arterial concentration
+        c_prox = float(aorta.c[max(0, aorta.n // 8)])   # arch branches tap the proximal aorta
         for key in (35, 36, 37, 38, 39):
-            if V[key]: V[key].step(c_art)
+            if V[key]: V[key].step(c_prox)
+        c_portal = portal.c_out if portal else body.c_iv
         for o in organs:
-            o.step(dt, o.flow_frac * CO, c_art, GFR_ML_S if o.name == 'kidney' else 0.0)
-        # the systemic pool: everything not itemised, returning via the IVC
-        # The arm's venous return is drawn FROM this pool, so the pool has to be debited for
-        # it. Taking it without debiting created iodine every step — a slow leak that inflates
-        # the recirculating concentration.
-        q_body = (GUT_FRAC + LOWER_FRAC + HEAD_ARM_FRAC) * CO
-        body.step(dt, c_art * q_body, q_body + q_arm_return)
+            o.step(dt, o.flow_frac * CO, c_ao, GFR_ML_S if o.name == 'kidney' else 0.0,
+                   o.portal_frac * CO, c_portal)
+        # upper body: fed by the arch branches, drained by the SVC (and the arm return)
+        upper.step(dt, q_upper, c_prox)
+        # lower body + gut: fed by the distal aorta, drained by the IVC and the portal vein
+        body.step(dt, (LOWER_FRAC + GUT_FRAC) * CO, c_ao)
+
+        injected_mgi += inj.flux_mgi_s(t) * dt
+        excreted_mgi += GFR_ML_S * next(o for o in organs if o.name == 'kidney').c_iv * dt
 
         if step % out_every == 0:
             times.append(round(t, 3))
@@ -356,8 +449,13 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
             for o in organs:
                 organ_series[o.name].append(round(o.c_mean, 4))
 
+    audit = dict(injected_mgi=injected_mgi, excreted_mgi=excreted_mgi,
+                 stored_mgi=stored_mgi(), **breakdown())
+    audit['balance'] = audit['stored_mgi'] + audit['excreted_mgi'] - audit['injected_mgi']
+    audit['error_frac'] = audit['balance'] / max(audit['injected_mgi'], 1e-9)
+
     return dict(
-        times_s=times, dt_s=dt,
+        times_s=times, dt_s=dt, audit=audit,
         vessels={k: dict(name=vmeta[k]['name'], c_mgi_ml=frames[k])
                  for k in frames if frames[k]},
         organs={k: dict(c_mgi_ml=v) for k, v in organ_series.items()},

@@ -4,7 +4,7 @@ Real-time iodinated contrast for CT, and barium/CO₂ GI studies for x-ray. This
 records the architecture, the physics, and the decisions behind them. It is the reference
 for the work; the phases at the end are the plan of record.
 
-Status: **Phase 0 done. Phase 1 solver runs and is partly validated — see §6.1.** Nothing below is implemented unless a phase says so.
+Status: **Phase 0 done. Phase 1 solver runs, mass-audited and calibrated — see §6.1.** Nothing below is implemented unless a phase says so.
 
 ---
 
@@ -291,23 +291,77 @@ vein was carrying only the injectate, giving tau = 60/4 = 15 s and putting **eve
 peak 15 s late — it carries the patient's own arm venous return too. And 750 mL of mixing
 chamber on the RV→LA path was ~1.7x the real transit volume, stretching PA→aorta to 11 s.
 
-**What is NOT validated — do not trust these yet**
+**The mass audit** (`solve()` returns `audit`)
 
-- **Arterial peak exceeds the first-pass mass-balance ceiling** (iodine flux ÷ cardiac output)
-  by up to 54 % in some configurations: ratio 0.78 for CTPA, but 1.39 for 100 mL @ 3 mL/s and
-  1.54 at CO 8. Recirculation legitimately adds to first pass, so a ratio above 1 is not
-  automatically wrong, but 1.5x wants a full mass audit across chambers before it is believed.
-  One real leak was found and fixed (arm venous return was drawn from the body pool without
-  debiting it, creating iodine every step); it did not account for the excess.
-- **Absolute peak HU runs high** — 491 HU where 300–350 is typical for 100 mL @ 4 mL/s. Partly
-  the ceiling issue above, partly that HU_PER_MGI_ML is a stand-in until §3.1 gives iodine a
-  real mu(E).
-- **Liver, spleen and pancreas still peak at the end of the 90 s window.** Their EES time
-  constants (V_ees/PS ~150 s for liver) are too long, so they fill monotonically instead of
-  peaking near 60–70 s.
+Every compartment's iodine is summed each step — vessels as `c·A·dx`, chambers as `c·V`, beds
+as both compartments — and compared against injected minus excreted. It found **three genuine
+leaks**, all in the coupling rather than the scheme:
 
-None of these are architectural. The next work on the solver is a mass audit, then organ
-calibration — both changes to constants and bookkeeping, not to the scheme.
+1. **Arterial over-draw of 2.2 × CO.** The aorta, the arch branches, the organ beds and the
+   body pool were each fed `left_heart.c` *in parallel*, while the left heart was debited only
+   CO. That minted `1.2 × CO × c_art` of iodine every second. The systemic beds are now fed
+   **downstream of the aorta** and the outlet fractions are asserted to sum to 1.0.
+2. **Arm venous return** drawn from the body pool without debiting it.
+3. **SVC flow inconsistency** — the vessel transported `q_upper` but the right heart was
+   charged `c_out × (q_arm + q_upper)`. A vessel's transport flow must equal the flow charged
+   to whatever it drains into; the junction now hands over its mass at the transport flow,
+   which stays conservative however the injection rate varies.
+
+Balance now closes to **0.34–0.44 % of injected dose**, uniformly across configurations. It
+converges to 0.33 % as dt → 0, so the residual is the semi-Lagrangian scheme's spatial
+non-conservation, not a leak. In HU terms it is 115 mg over 5 L: **0.6 HU**, below noise.
+
+**The ceiling excess was recirculation, not a leak.** With mass closed, `recirculation=False`
+severs the returning paths — a leak would survive that cut, returning iodine would not:
+
+| case | ceiling | full | ratio | no recirc | ratio |
+| --- | --- | --- | --- | --- | --- |
+| CTPA 60 @ 5 | 525 | 408 | 0.78 | 407 | **0.77** |
+| 100 @ 4 | 420 | 456 | 1.09 | 417 | **0.99** |
+| routine 100 @ 3 | 315 | 395 | 1.25 | 326 | **1.04** |
+| CO 3 | 700 | 639 | 0.91 | 633 | **0.90** |
+| CO 8 | 262 | 359 | 1.37 | 276 | **1.05** |
+
+Every case falls to ≤ 1.05 — the first-pass bound holds exactly. The pattern is physiological:
+CTPA (12 s injection) and CO 3 (100 s loop) do not move at all, because nothing has time to
+return before the peak; CO 8, with the shortest loop at 38 s, drops the furthest. **flux ÷ CO
+is only a valid bound for injections short relative to loop transit time** — that was the wrong
+yardstick, not a broken model.
+
+**Organ calibration.** Four errors, each found by the audit rather than by tuning:
+
+- **The portal vein bypassed the liver**, draining straight to the right heart. The liver ran
+  on the hepatic artery alone — 6.5 % of CO instead of ~26 % — and could not show a portal
+  venous phase at all. `OrganBed` now takes a dual supply.
+- **Organ EES was 2–3 × oversized** (liver 900 mL for a 1500 mL organ). Since the EES only
+  fills while `c_iv > c_ees`, an oversized one dominates the mean and the organ rises
+  monotonically for the whole scan instead of peaking. Interstitium is ~20 % of organ volume.
+- **Enhancement was averaged over `V_iv + V_ees`, not organ volume.** Most of an organ is
+  cells, which hold no contrast but are still in the voxel — the liver reported 160 HU where a
+  real one enhances 50–60.
+- **No whole-body interstitium.** With the kidney's 2 mL/s GFR as the only sink, the 5 L blood
+  pool decayed over 42 minutes, so nothing washed out. The ~9 L of muscle/fat/skin
+  interstitium is the largest sink in the body; the two body beds now carry it, tuned to a
+  ~70 s redistribution half-life against the audit's intravascular fraction.
+
+| | model | real |
+| --- | --- | --- |
+| liver | 61 HU, broad 70–180 s plateau | 50–60 HU, portal venous plateau |
+| spleen | 102 HU @ 49 s | 80–100 HU @ 50–60 s |
+| kidney | 218 HU @ 43 s | 150–250 HU @ 40–60 s |
+| pancreas | 69 HU @ 71 s | 80–100 HU @ 40–50 s |
+| aorta | 456 HU @ 33 s | 300–400 HU @ 30–40 s |
+| aorta at 3 min | 123 HU | 90–120 HU |
+| intravascular at 3 min | 49 % of dose | 35–45 % |
+
+**Still not right**
+
+- **Aortic peak ~15 % high** (456 vs 300–400). Not a leak — the no-recirculation ratio is 0.99.
+  Most likely `HU_PER_MGI_ML = 25` standing in for a real mu(E), which §3.1 replaces.
+- **Pancreas peaks ~25 s late and low**; liver plateau is broad rather than peaked at 60–70 s.
+- **Intravascular fraction 49 % vs 35–45 %** — whole-body redistribution still slightly slow.
+- **Arch branches (ids 35–39) are visualisation-only taps**: fed from the proximal aorta but
+  draining nowhere, so they hold iodine never debited from the aorta. Worth ~0.2 % of dose.
 
 ---
 
