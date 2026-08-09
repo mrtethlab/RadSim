@@ -151,11 +151,48 @@ nothing looks or images differently until contrast is added.
 Legend grows 29 → ~50. Today's `mat_columns()` fix already makes a legend-length change safe
 across old and new models.
 
-### 4.2 Arclength field
+### 4.2 Arclength field — DONE (`app/build_vessels.py`)
 
-Vessels additionally need a normalised position along the centerline per voxel, for the
-`C(s,t)` lookup. Stored sparsely — vessel voxels are a small fraction of the volume
-(404 k in the chest).
+`s` is the **geodesic** distance from the vessel's inlet, measured inside the mask. Not
+Euclidean: the aorta is a hairpin, and straight-line distance from the root would put the
+descending aorta next to the arch, so a bolus would reach the abdomen without traversing the
+arch. Not a fitted centreline either: the pulmonary artery is a tree, and geodesic distance
+generalises to branching for free where a longest-path polyline would discard every branch it
+did not pick.
+
+Verified on the chest: aorta geodesic **338.9 mm against a 298.5 mm bounding-box diagonal** —
+longer than the straight line, so it is following the lumen. The PA's ratio is the inverse
+(135 mm geodesic against a 400 mm diagonal) because tree *depth* is much less than the extent
+the mask spans across both lungs. Directions check out: the aorta runs root → caudal, the PA
+starts 65 mm from the heart centroid and ends 104 mm out.
+
+Output is `<name>.vessels.json` (length, volume, flow direction, and the area profile A(s) the
+solver needs for u = Q/A) plus `<name>.arclen.bin` — uint16 normalised s, one per vessel voxel
+in raster order. Which voxels are vessels is already in `mat.bin` (id ≥ 29), so no index is
+stored: **1.49 MB for 743 317 voxels**, against ~80 MB for a dense uint16 volume.
+
+Two things the extraction had to handle, both worth keeping in mind:
+
+- **Orphans.** A 1 mm grid breaks the peripheral pulmonary tree into ~281 disconnected
+  islands. Left alone they keep s = 0, so a subsegmental branch would opacify with the main
+  trunk. Each is given the s of the nearest connected voxel instead.
+- **Seed thickness.** Every seed voxel starts the walk at 0, so a thick inlet band flattens a
+  slab to s = 0. A 5 mm band gave the aorta a 10 717 mm² first bin — a 117 mm "vessel" — which
+  would have handed the solver a near-zero inlet velocity. One voxel layer fixes it (aorta
+  bin 0 is now 4× the median, which is genuinely the widest part).
+
+### 4.2.1 The pulmonary artery inlet is approximate — follows from §4.3.1
+
+The PA's first bin is still **21× its median area**: ~16 k voxels, 10 % of the vessel, sit at
+s ≈ 0. The cause is anatomical, not a tuning problem. The inlet rule is "the end nearest the
+heart", and the central PA lies against the heart over a broad contiguous surface, so that
+rule selects a contact shell rather than a cross-section. Isolating the true inlet means
+finding the **right ventricular outflow tract**, which needs heart chambers — the licence-gated
+task in §4.3.1.
+
+Until then, Phase 1 should clamp A(s) rather than trust the first few bins for the PA. The
+build prints a warning naming the vessel whenever a first bin exceeds 6× the median, so this
+cannot regress unnoticed, and it currently fires for the PA alone.
 
 ### 4.3 Pulmonary arteries — RESOLVED for the chest, blocked elsewhere
 

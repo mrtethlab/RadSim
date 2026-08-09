@@ -334,5 +334,7 @@
     -3024,
     3071
   ],
-  "backendOnly": false
+  "backendOnly": false,
+  "vessels": "chest.vessels.json",
+  "arclen": "chest.arclen.bin"
 }
