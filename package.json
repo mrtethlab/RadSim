@@ -8,8 +8,9 @@
   ],
   "scripts": {
     "dev": "npm run dev --workspace @radsim/web",
-    "build": "npm run build --workspace @radsim/web",
-    "preview": "npm run preview --workspace @radsim/web"
+    "build": "npm run check:legends && npm run build --workspace @radsim/web",
+    "preview": "npm run preview --workspace @radsim/web",
+    "check:legends": "node scripts/check-legends.mjs"
   },
   "engines": {
     "node": ">=18"

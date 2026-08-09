@@ -113,6 +113,30 @@ export const BodyMaterials = (()=>{
     { id:26, name:'Stainless steel',  hu:null,  kind:'elem',   key:'steel',    color:0xd0d4d8 },
     { id:27, name:'Lead',             hu:null,  kind:'elem',   key:'lead',     color:0x6a6f77 },
     { id:28, name:'Acrylic',          hu:120,   kind:'tissue',                 color:0x9fb6a8 },
+    // ---- named vessels (29+) ------------------------------------------------
+    // One id per great vessel, because the contrast simulation has to know WHICH vessel a
+    // voxel belongs to — the aorta and the SVC opacify ~15 s apart and a single 'Blood' id
+    // cannot express that. All carry blood's 45 HU, so an unenhanced scan is unchanged;
+    // only the contrast layer distinguishes them. MUST stay in lockstep with
+    // build_model.py VESSELS (id, order and name) — see scripts/check-legends.mjs.
+    { id:29, name:'Aorta',                 hu:45, kind:'tissue', color:0xb23a3a },
+    { id:30, name:'Pulmonary artery',      hu:45, kind:'tissue', color:0xb23a3a },
+    { id:31, name:'Pulmonary vein',        hu:45, kind:'tissue', color:0xb23a3a },
+    { id:32, name:'Superior vena cava',    hu:45, kind:'tissue', color:0xb23a3a },
+    { id:33, name:'Inferior vena cava',    hu:45, kind:'tissue', color:0xb23a3a },
+    { id:34, name:'Portal / splenic vein', hu:45, kind:'tissue', color:0xb23a3a },
+    { id:35, name:'Brachiocephalic trunk', hu:45, kind:'tissue', color:0xb23a3a },
+    { id:36, name:'Subclavian artery R',   hu:45, kind:'tissue', color:0xb23a3a },
+    { id:37, name:'Subclavian artery L',   hu:45, kind:'tissue', color:0xb23a3a },
+    { id:38, name:'Common carotid R',      hu:45, kind:'tissue', color:0xb23a3a },
+    { id:39, name:'Common carotid L',      hu:45, kind:'tissue', color:0xb23a3a },
+    { id:40, name:'Brachiocephalic vein R',hu:45, kind:'tissue', color:0xb23a3a },
+    { id:41, name:'Brachiocephalic vein L',hu:45, kind:'tissue', color:0xb23a3a },
+    { id:42, name:'Left atrial appendage', hu:45, kind:'tissue', color:0xb23a3a },
+    { id:43, name:'Iliac artery R',        hu:45, kind:'tissue', color:0xb23a3a },
+    { id:44, name:'Iliac artery L',        hu:45, kind:'tissue', color:0xb23a3a },
+    { id:45, name:'Iliac vein R',          hu:45, kind:'tissue', color:0xb23a3a },
+    { id:46, name:'Iliac vein L',          hu:45, kind:'tissue', color:0xb23a3a },
   ];
   const idByName = {}; LIST.forEach(m=> idByName[m.name]=m.id);
 

@@ -34,6 +34,48 @@ AIR, LUNG, FAT, WATER, CSF, SIMPLE_FLUID, BILE, MUSCLE, BLOOD, CLOT, SOFT, \
     LIVER, SPLEEN, KIDNEY, PANCREAS, HEART, CARTILAGE, TRABECULAR, CORTICAL, \
     ENAMEL, IODINE, CALCIF, STONE, SKIN, ALUMINUM, TITANIUM, STEEL, LEAD, PLASTIC = range(29)
 
+# ---- named vessels (ids 29+) ------------------------------------------------
+# Every one of these used to collapse into BLOOD, which threw away the only thing the
+# contrast simulation needs: WHICH vessel a voxel belongs to. The aorta and the SVC opacify
+# ~15 s apart, and a single id cannot express that. Giving each its own material id makes
+# vessel identity == material identity, so it costs nothing per voxel.
+#
+# They all carry blood's 45 HU, so an unenhanced scan is byte-identical to before; only the
+# contrast layer (which indexes by material id) can tell them apart.
+AORTA, PULM_ARTERY, PULM_VEIN, SVC, IVC, PORTAL_VEIN, \
+    BRACHIOceph_TRUNK, SUBCLAV_A_R, SUBCLAV_A_L, CAROTID_R, CAROTID_L, \
+    BRACHIOceph_V_R, BRACHIOceph_V_L, ATRIAL_APP_L, \
+    ILIAC_A_R, ILIAC_A_L, ILIAC_V_R, ILIAC_V_L = range(29, 47)
+
+BLOOD_HU = 45          # every vessel is unenhanced blood until the contrast layer says otherwise
+VESSELS = [
+    (AORTA, "Aorta"), (PULM_ARTERY, "Pulmonary artery"), (PULM_VEIN, "Pulmonary vein"),
+    (SVC, "Superior vena cava"), (IVC, "Inferior vena cava"),
+    (PORTAL_VEIN, "Portal / splenic vein"),
+    (BRACHIOceph_TRUNK, "Brachiocephalic trunk"),
+    (SUBCLAV_A_R, "Subclavian artery R"), (SUBCLAV_A_L, "Subclavian artery L"),
+    (CAROTID_R, "Common carotid R"), (CAROTID_L, "Common carotid L"),
+    (BRACHIOceph_V_R, "Brachiocephalic vein R"), (BRACHIOceph_V_L, "Brachiocephalic vein L"),
+    (ATRIAL_APP_L, "Left atrial appendage"),
+    (ILIAC_A_R, "Iliac artery R"), (ILIAC_A_L, "Iliac artery L"),
+    (ILIAC_V_R, "Iliac vein R"), (ILIAC_V_L, "Iliac vein L"),
+]
+
+# TotalSegmentator structure name -> vessel material id. Sided names are explicit rather
+# than matched on a substring, so a left/right mix-up cannot pass silently.
+VESSEL_BY_TS_NAME = {
+    "aorta": AORTA, "pulmonary_artery": PULM_ARTERY, "pulmonary_vein": PULM_VEIN,
+    "superior_vena_cava": SVC, "inferior_vena_cava": IVC,
+    "portal_vein_and_splenic_vein": PORTAL_VEIN,
+    "brachiocephalic_trunk": BRACHIOceph_TRUNK,
+    "subclavian_artery_right": SUBCLAV_A_R, "subclavian_artery_left": SUBCLAV_A_L,
+    "common_carotid_artery_right": CAROTID_R, "common_carotid_artery_left": CAROTID_L,
+    "brachiocephalic_vein_right": BRACHIOceph_V_R, "brachiocephalic_vein_left": BRACHIOceph_V_L,
+    "atrial_appendage_left": ATRIAL_APP_L,
+    "iliac_artery_right": ILIAC_A_R, "iliac_artery_left": ILIAC_A_L,
+    "iliac_vena_right": ILIAC_V_R, "iliac_vena_left": ILIAC_V_L,
+}
+
 LEGEND = [
     (AIR, "Air", -1000, 0x000000), (LUNG, "Lung", -700, 0x3a4a63),
     (FAT, "Fat", -90, 0xf2e2b0), (WATER, "Water", 0, 0x2f6fb0),
@@ -50,7 +92,7 @@ LEGEND = [
     (ALUMINUM, "Aluminum", None, 0x9fb4c0), (TITANIUM, "Titanium", None, 0xb8c2cc),
     (STEEL, "Stainless steel", None, 0xd0d4d8), (LEAD, "Lead", None, 0x6a6f77),
     (PLASTIC, "Acrylic", 120, 0x9fb6a8),
-]
+] + [(vid, nm, BLOOD_HU, 0xb23a3a) for vid, nm in VESSELS]
 
 BONE_PREFIX = ("vertebrae", "rib", "sternum", "scapula", "clavicula", "humerus",
                "femur", "hip", "sacrum", "skull", "costal", "radius", "ulna",
@@ -89,7 +131,10 @@ def name_to_material(name: str) -> int:
         return MUSCLE
     if n == "brain":
         return SOFT
-    # great vessels + venous/arterial structures -> blood
+    # named great vessels keep their identity (the contrast layer needs to know WHICH
+    # vessel a voxel is); anything else vascular still falls back to generic blood
+    if n in VESSEL_BY_TS_NAME:
+        return VESSEL_BY_TS_NAME[n]
     if any(k in n for k in ("aorta", "vena_cava", "pulmonary_vein", "pulmonary_artery",
                             "brachiocephalic", "subclavian", "carotid", "iliac", "portal",
                             "atrial_appendage", "artery", "vein")):
