@@ -220,7 +220,7 @@ def _region_bounds(region, lab, cmap, shape, spacing):
     return (max(0, zs.min() - mg), min(zN, zs.max() + mg + 1), 0, yN, 0, xN)
 
 
-def materialize(hu, lab, spacing, body_restrict=None):
+def materialize(hu, lab, spacing, body_restrict=None, overlay=None):
     """Assign a body-material id to every voxel of an (already-resampled) HU + label
     volume. Returns (mat uint8, body mask). Reused by build() and build_highres.
     body_restrict: optional bool mask (e.g. TotalSegmentator's `body` task) to clip the
@@ -260,6 +260,18 @@ def materialize(hu, lab, spacing, body_restrict=None):
             mat_of[lid] = mm
     for lid, mm in mat_of.items():
         mat[lab == lid] = mm
+    # Extra single-structure masks from other TotalSegmentator tasks (the `total` task has
+    # no pulmonary artery, so the PE study's tracker vessel has to come from lung_vessels).
+    # Stamped AFTER the label pass so they win over the lung parenchyma they run through,
+    # but only over materials a vessel could plausibly be mistaken for — never over heart,
+    # aorta or bone, so a mask that bleeds slightly cannot carve holes in solid anatomy.
+    if overlay:
+        takeable = np.isin(mat, [LUNG, SOFT, MUSCLE, BLOOD, FAT])
+        for mm, mask in overlay.items():
+            sel = mask & takeable
+            mat[sel] = mm
+            print(f"        overlay -> id {mm}: {int(sel.sum())} voxels "
+                  f"({int(mask.sum() - sel.sum())} rejected as solid anatomy)")
     if bone_ids:
         bone_mask = np.isin(lab, bone_ids)
         mat[bone_mask & (hu >= 350)] = CORTICAL
@@ -340,7 +352,7 @@ def add_hip_prosthesis(mat, lab, cmap, spacing):
     return mat
 
 
-def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None, flip=(0, 0, 0), hip_titanium=False):
+def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None, flip=(0, 0, 0), hip_titanium=False, lung_vessels=None):
     print(f"[1/4] loading + resampling to {spacing} mm iso …")
     ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
     seg = sitk.ReadImage(seg_path)
@@ -362,8 +374,27 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
         body_restrict = ndi.binary_fill_holes(body_restrict)
         print(f"      body-envelope restrict (+{r}vox): {body_restrict.sum()/1e6:.0f} M voxels")
 
+    # Extra masks from TotalSegmentator's lung_vessels task. The `total` task has no
+    # pulmonary artery at all, so without this the PE study has no vessel to put a bolus
+    # tracker on. That task separates arteries from veins (its LEGACY version does not).
+    overlay = None
+    if lung_vessels:
+        overlay = {}
+        for fn, mm, what in (("lung_arteries.nii.gz", PULM_ARTERY, "arteries"),
+                             ("lung_veins.nii.gz",    PULM_VEIN,   "veins")):
+            path = os.path.join(lung_vessels, fn)
+            if not os.path.exists(path):
+                print(f"      ! {fn} missing — skipped")
+                continue
+            img = sitk.ReadImage(path)
+            img = sitk.Resample(img, ct, sitk.Transform(), sitk.sitkNearestNeighbor, 0,
+                                img.GetPixelID())
+            m = sitk.GetArrayFromImage(img) > 0
+            overlay[mm] = m
+            print(f"      lung {what}: {int(m.sum())} voxels")
+
     print("[2/4] materials …")
-    mat, body = materialize(hu, lab, spacing, body_restrict=body_restrict)
+    mat, body = materialize(hu, lab, spacing, body_restrict=body_restrict, overlay=overlay)
 
     print("[3/4] region crop + tight body bbox …")
     if box is not None:
@@ -461,10 +492,14 @@ if __name__ == "__main__":
     ap.add_argument("--flip", type=int, nargs=3, default=(0, 0, 0), metavar=("Z", "Y", "X"),
                     help="bake anatomical axis flips (z y x) into the volume+mesh, e.g. "
                          "--flip 1 0 0 for VSD head-first scans")
+    ap.add_argument("--lung-vessels", default=None,
+                    help="directory of TotalSegmentator lung_vessels output "
+                         "(lung_arteries.nii.gz / lung_veins.nii.gz) — the `total` task has "
+                         "no pulmonary artery, which the PE bolus tracker needs")
     ap.add_argument("--hip-titanium", action="store_true",
                     help="replace both native hip joints with a titanium total hip replacement "
                          "(femoral ball + stem + acetabular cup) — for metal-artifact demos")
     a = ap.parse_args()
     build(a.ct, a.seg, a.out, a.name, a.title or a.name, a.region, a.spacing,
           mesh=not a.no_mesh, source=a.source, box=a.box, body_path=a.body, flip=a.flip,
-          hip_titanium=a.hip_titanium)
+          hip_titanium=a.hip_titanium, lung_vessels=a.lung_vessels)
