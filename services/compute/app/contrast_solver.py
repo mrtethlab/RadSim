@@ -371,6 +371,9 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         return tot
     frames, times = {k: [] for k in vmeta}, []
     organ_series = {o.name: [] for o in organs}
+    # The chambers are sampled too: the renderer needs them for the heart, and right-vs-left
+    # is what a PE study reads.
+    chamber_series = {'right_heart': [], 'left_heart': []}
 
     for step in range(n_steps + 1):
         t = step * dt
@@ -448,6 +451,8 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
                     frames[str(k)].append(np.round(v.c, 4).tolist())
             for o in organs:
                 organ_series[o.name].append(round(o.c_mean, 4))
+            chamber_series['right_heart'].append(round(right_heart.c, 4))
+            chamber_series['left_heart'].append(round(left_heart.c, 4))
 
     audit = dict(injected_mgi=injected_mgi, excreted_mgi=excreted_mgi,
                  stored_mgi=stored_mgi(), **breakdown())
@@ -459,6 +464,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         vessels={k: dict(name=vmeta[k]['name'], c_mgi_ml=frames[k])
                  for k in frames if frames[k]},
         organs={k: dict(c_mgi_ml=v) for k, v in organ_series.items()},
+        right_heart_c=chamber_series['right_heart'], left_heart_c=chamber_series['left_heart'],
         huPerMgIml=HU_PER_MGI_ML,
         injection=inj.__dict__, patient=patient.__dict__ if patient else Patient().__dict__,
     )

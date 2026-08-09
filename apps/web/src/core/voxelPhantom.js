@@ -37,6 +37,8 @@ export class VoxelPhantom {
     this.geometryOnly = !model.data;
     this.vs = model.vs.slice();                 // cm/voxel per axis
     this.nmat = BodyMaterials.count;
+    this.concLUT = null;                        // contrast off — see setContrast()
+    this.sVol = null;
     this.setCenter(center);
     this.flip = flip.slice();
     this.setRotation(rot);
@@ -54,12 +56,28 @@ export class VoxelPhantom {
     this.max = [center[0] + ext[0] / 2, center[1] + ext[1] / 2, center[2] + ext[2] / 2];
     this.extent = ext;
   }
-  // material id at grid index (with anatomical flips applied on the data lookup)
-  idAt(ix, iy, iz) {
+  // flat data index at a grid index (with anatomical flips applied)
+  dataIndex(ix, iy, iz) {
     const dx = this.flip[0] ? this.nx - 1 - ix : ix;
     const dy = this.flip[1] ? this.ny - 1 - iy : iy;
     const dz = this.flip[2] ? this.nz - 1 - iz : iz;
-    return this.data[dx + this.nx * (dy + this.ny * dz)];
+    return dx + this.nx * (dy + this.ny * dz);
+  }
+  // material id at grid index (with anatomical flips applied on the data lookup)
+  idAt(ix, iy, iz) { return this.data[this.dataIndex(ix, iy, iz)]; }
+
+  /* Attach a contrast field for one acquisition.
+       concLUT — Float32Array(nmat * NS): iodine concentration (mgI/mL) for
+                 [material id][arclength bin]. Organs are uniform, so every bin of an
+                 organ's row holds the same value; vessels vary along the row. Folding
+                 both into one table means the trace needs no branch to tell them apart.
+       sVol    — Uint8Array(nvox): arclength bin per voxel, 0 for everything that is not
+                 a vessel, which is exactly the bin an organ's uniform row wants anyway.
+     Pass null to turn contrast off. */
+  setContrast(concLUT, sVol, ns) {
+    this.concLUT = concLUT || null;
+    this.sVol = sVol || null;
+    this.ns = ns || 256;
   }
   // material id at a world point (or -1 outside the volume) — used for previews/debug
   idAtWorld(p) {
@@ -71,8 +89,10 @@ export class VoxelPhantom {
   }
   // path length (cm) spent in each material along ray o + t*d, t in [0, maxT].
   // d is a unit vector; returns a Float32Array indexed by BodyMaterials id.
+  // The extra slot past the materials is the iodine column: concentration-weighted path
+  // length, cm x mgI/mL. It stays zero unless setContrast() has been called.
   trace(o, d, maxT = Infinity) {
-    const L = new Float32Array(this.nmat);
+    const L = new Float32Array(this.nmat + 1);
     if (this.geometryOnly) return L;   // no volume in the browser — the GPU backend traces
     // rotate the object by inverse-rotating the ray into the volume's local frame
     // (about the centre); the DDA below stays axis-aligned. Lengths are preserved.
@@ -111,10 +131,16 @@ export class VoxelPhantom {
     const tDy = Math.abs(d[1]) < 1e-12 ? Infinity : vs[1] / Math.abs(d[1]);
     const tDz = Math.abs(d[2]) < 1e-12 ? Infinity : vs[2] / Math.abs(d[2]);
     let t = t0;
+    const conc = this.concLUT, sVol = this.sVol, NS = this.ns, IOD = this.nmat;
     while (t < t1) {
       const tNext = Math.min(tMaxX, tMaxY, tMaxZ, t1);
       const seg = tNext - t;
-      if (seg > 0) L[this.idAt(ix, iy, iz)] += seg;
+      if (seg > 0) {
+        const di = this.dataIndex(ix, iy, iz), id = this.data[di];
+        L[id] += seg;
+        // Iodine rides the same walk: concentration-weighted length into its own column.
+        if (conc) L[IOD] += seg * conc[id * NS + (sVol ? sVol[di] : 0)];
+      }
       t = tNext;
       if (tNext >= t1) break;
       if (tMaxX <= tMaxY && tMaxX <= tMaxZ) { ix += stepx; tMaxX += tDx; if (ix < 0 || ix >= nx) break; }
@@ -127,15 +153,24 @@ export class VoxelPhantom {
 
 // Precompute per-material linear attenuation (cm^-1) at a single energy — used by the
 // monochromatic CT reconstruction (line integral Σ μ_m · L_m).
+// Length is count+1: the trailing entry is iodine in cm^-1 per mgI/mL, matching the
+// concentration column the tracer fills. See muOverBins.
 export function muAtEnergy(keV) {
-  const n = BodyMaterials.count, arr = new Float64Array(n);
+  const n = BodyMaterials.count, arr = new Float64Array(n + 1);
   for (let i = 0; i < n; i++) arr[i] = BodyMaterials.muById(i, keV);
+  arr[n] = BodyMaterials.muIodinePerConc(keV);
   return arr;
 }
 // Precompute per-material μ over a polyenergetic spectrum's bins — used by the scout
-// (polyenergetic transmission Σ_bin w·exp(−Σ_m μ_m·L_m)). Returns [nmat][nbins].
+// (polyenergetic transmission Σ_bin w·exp(−Σ_m μ_m·L_m)). Returns [nmat+1][nbins].
+// The extra trailing row is iodine, in cm^-1 per mgI/mL: the tracer puts
+// concentration-weighted path length in the matching column, so the same L @ mu that
+// integrates the materials also integrates the contrast. See BodyMaterials.IODINE_COL.
 export function muOverBins(bins) {
-  const n = BodyMaterials.count, tbl = new Array(n);
+  const n = BodyMaterials.count, tbl = new Array(n + 1);
   for (let i = 0; i < n; i++) { const row = new Float64Array(bins.length); for (let b = 0; b < bins.length; b++) row[b] = BodyMaterials.muById(i, bins[b].E); tbl[i] = row; }
+  const io = new Float64Array(bins.length);
+  for (let b = 0; b < bins.length; b++) io[b] = BodyMaterials.muIodinePerConc(bins[b].E);
+  tbl[n] = io;
   return tbl;
 }

@@ -63,15 +63,34 @@ export const BodyMaterials = (()=>{
     steel:    { rho:7.90,  mr:[25.70,8.176,3.629,1.958,1.205,0.5952,0.3717,0.2790,0.1964] },   // ~stainless (Fe)
     lead:     { rho:11.35, mr:[86.36,30.32,14.36,8.041,5.021,2.419,5.549,3.301,1.910] },        // K-edge ~88 keV
   };
-  function interp(mr, keV){
+  function interp(mr, keV, grid){
+    const g = grid || lnE;
     const x = Math.log(keV);
-    if(x<=lnE[0]) return mr[0];
-    if(x>=lnE[lnE.length-1]) return mr[mr.length-1];
-    let i=0; while(x>lnE[i+1]) i++;
-    const f=(x-lnE[i])/(lnE[i+1]-lnE[i]);
+    if(x<=g[0]) return mr[0];
+    if(x>=g[g.length-1]) return mr[mr.length-1];
+    let i=0; while(x>g[i+1]) i++;
+    const f=(x-g[i])/(g[i+1]-g[i]);
     return Math.exp(Math.log(mr[i])*(1-f)+Math.log(mr[i+1])*f);
   }
   const muWaterAt = (keV)=> interp(waterMR,keV);       // rho water = 1
+
+  /* ---- iodine: its own energy grid, because of the K-edge -------------------
+     Iodine's K absorption edge sits at 33.17 keV, where mu/rho jumps ~4x (8.86 ->
+     35.7 cm^2/g). That discontinuity is the whole reason iodine works as a contrast
+     agent and the reason low kVp boosts it: drop the tube from 120 to 80 kVp and the
+     spectrum shifts toward the edge, roughly doubling HU per mgI/mL. The shared 9-point
+     grid straddles the edge between 30 and 40 keV, so log-log interpolation across it
+     would draw a smooth ramp and erase the effect. Iodine therefore carries its own
+     grid with the edge bracketed by two points 0.01 keV apart.
+     Values are NIST XCOM (total with coherent), cm^2/g. */
+  const IODINE_E  = [20, 25, 30, 33.16, 33.18, 40, 50, 60, 80, 100, 120, 150];
+  const IODINE_MR = [34.4, 18.8, 11.6, 8.86, 35.7, 22.4, 12.3, 7.60, 3.55, 2.05, 1.39, 0.848];
+  const lnIodineE = IODINE_E.map(Math.log);
+  // Linear attenuation (cm^-1) contributed by ONE mgI/mL of iodine in solution.
+  // 1 mgI/mL = 1 mg/cm^3 = 1e-3 g/cm^3, so mu = (mu/rho) * 1e-3.
+  // Sanity: at 70 keV (the effective energy of a 120 kVp beam) this gives 26.7 HU per
+  // mgI/mL against water, which is the textbook ~25-26.
+  function muIodinePerConc(keV){ return interp(IODINE_MR, keV, lnIodineE) * 1e-3; }
   // water+bone basis densities that reproduce a target HU at EREF
   function basis(hu){
     const muw = muWaterAt(EREF);
@@ -150,6 +169,17 @@ export const BodyMaterials = (()=>{
     muById, muByName, huOf,
     muWater: (keV)=> muWaterAt(keV),                    // cm^-1 (rho water = 1) — HU reference for recon
     count: LIST.length,
+    // ---- iodine as a virtual material column --------------------------------
+    // Contrast is not a material a voxel can BE — it is a concentration a voxel can
+    // CARRY, varying continuously in space and time. So it rides as one extra column
+    // past the end of the legend: the tracer accumulates concentration-weighted path
+    // length (cm x mgI/mL) into it, and this row of mu (cm^-1 per mgI/mL) turns that
+    // into optical depth. Both engines already compute L @ mu, so neither integration
+    // loop changes — and an unenhanced scan puts zero in the column and is untouched.
+    IODINE_COL: LIST.length,
+    muIodinePerConc,
+    // HU per mgI/mL at a given energy — the energy dependence a fixed constant cannot show
+    huPerMgIml: (keV)=> 1000 * muIodinePerConc(keV) / muWaterAt(keV),
   };
 })();
 
