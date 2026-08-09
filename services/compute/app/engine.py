@@ -17,7 +17,8 @@ from typing import Any
 import numpy as np
 import torch
 
-from .gpu import DEVICE, get_volume, sample_ids, rot_tensor, mat_columns
+from .gpu import (DEVICE, get_volume, sample_ids, sample_ids_s, rot_tensor,
+                  mat_columns, iodine_column)
 
 STEP = 0.05          # ray-march step, world units (= 0.5 mm; voxels are ~1 mm)
 CHUNK = 1 << 14      # rays per batch (memory: CHUNK x nsteps indices)
@@ -38,6 +39,13 @@ def project_voxel(p: dict[str, Any]) -> np.ndarray:
     mu = torch.tensor(p["muMat"], dtype=torch.float32, device=DEVICE)         # (nmat, nb)
     mu[0].zero_()                                                             # air contributes nothing
     nmat, mu = mat_columns(vv, mu)      # legend and mu table can differ in length
+    # Contrast, if this acquisition has any: a (nmat * 256) table of mgI/mL per material per
+    # arclength bin, built by the client for this acquisition time. 48 KB, so it rides in the
+    # request rather than the server re-solving.
+    iod = p.get("iodineCol")
+    conc = p.get("concLUT")
+    conc_t = (torch.tensor(conc, dtype=torch.float32, device=DEVICE)
+              if conc and iod is not None and iod < nmat else None)
     I0, refDist = float(p["I0"]), float(p["refDist"])
 
     # collimation (same tube-frame test as the browser's mask)
@@ -84,10 +92,15 @@ def project_voxel(p: dict[str, Any]) -> np.ndarray:
                                     .unsqueeze(0) + 0.5) * STEP               # (R, S)
             valid = ts < t1.unsqueeze(1)
             pts = src + dir_.unsqueeze(1) * ts.unsqueeze(2)                   # (R, S, 3)
-            ids = sample_ids(vv, pts, center, rot)                            # (R, S)
+            if conc_t is not None:
+                ids, svals = sample_ids_s(vv, pts, center, rot)               # (R, S) each
+            else:
+                ids, svals = sample_ids(vv, pts, center, rot), None
             ids = torch.where(valid, ids, torch.zeros_like(ids))
             L = torch.zeros(sel.numel(), nmat, dtype=torch.float32, device=DEVICE)
             L.scatter_add_(1, ids, torch.full_like(ts, STEP) * valid)         # path length per material
+            if conc_t is not None:
+                L[:, iod] = iodine_column(conc_t, ids, svals, STEP, valid)
             E = L @ mu                                                        # (R, nb)
             T = torch.exp(-E) @ w                                             # polyenergetic transmission
         dose[sel] = I0 * (refDist * refDist) / (dist.squeeze(1) ** 2) * T

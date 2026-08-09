@@ -10,6 +10,7 @@ import { Sound } from './audio/sound.js';
 import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
+import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
 import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
@@ -442,6 +443,13 @@ const S = {
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
   voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
+  // Contrast (docs/contrast-simulation.md). `timeline` is the solved haemodynamics for the
+  // current injector settings; `scanTime` is when the acquisition happens relative to the
+  // start of the injection, which is the single most consequential number in a CTA.
+  contrast:{ on:false, timeline:null, sVol:null, scanTime:25,
+             params:{ volume_ml:100, rate_ml_s:4.0, conc_mgi_ml:350, delay_s:0, saline_ml:40,
+                      cardiac_output_l_min:5.0, blood_volume_ml:5000 },
+             lut:null, lutT:null, busy:false, error:null },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -643,8 +651,67 @@ function buildPhantom(){
   const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
   const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
-  return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
+  const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R);
+  applyContrast(ph);
+  return ph;
 }
+
+/* ---- contrast ------------------------------------------------------------------------
+   The solver's output lives on the vascular graph, so turning it into something the
+   ray-caster can use is two lookups: which arclength bin each voxel sits at (per model,
+   built once) and the concentration at each bin for THIS acquisition time (per image). */
+function contrastLUT(){
+  const C=S.contrast;
+  if(!C.on || !C.timeline) return null;
+  if(C.lut && C.lutT===C.scanTime) return C.lut;      // one table per acquisition time
+  C.lut=buildConcLUT(C.timeline, C.scanTime); C.lutT=C.scanTime;
+  return C.lut;
+}
+function applyContrast(ph){
+  const C=S.contrast, lut=contrastLUT();
+  if(lut && C.sVol) ph.setContrast(lut, C.sVol, CONTRAST_NS);
+  else ph.setContrast(null, null, CONTRAST_NS);
+}
+/* Solve for the current injector settings. The solve is ~1.2 s on the backend and the
+   result is ~0.45 MB, so it is re-run on any injector change rather than cached as presets. */
+async function contrastSolve(){
+  const C=S.contrast, vm=S.voxelModel;
+  C.error=null;
+  if(!vm || !vm.hasVessels){
+    C.error=`${S.subject} has no vessel data — run build_vessels for this model`;
+    C.timeline=null; return false;
+  }
+  if(!S.computeInfo){
+    C.error='The contrast solver runs on the Python GPU backend, which is not reachable.';
+    C.timeline=null; return false;
+  }
+  C.busy=true;
+  try{
+    const [json, arclen]=await Promise.all([
+      compute.contrastTimeline({ model:S.subject, ...C.params }),
+      vm.loadArclen(),
+    ]);
+    C.timeline=decodeTimeline(json);
+    if(!C.sVol || C.sVolFor!==S.subject){ C.sVol=buildSVolume(vm.data, arclen); C.sVolFor=S.subject; }
+    C.lut=null; C.lutT=null;
+    return true;
+  }catch(err){
+    C.error=err.message; C.timeline=null; return false;
+  }finally{ C.busy=false; }
+}
+// Drive contrast before the panel exists (Phase 3). Also the hook the tests use.
+window.radsimContrast={
+  state:()=>S.contrast,
+  async enable(params){
+    Object.assign(S.contrast.params, params||{});
+    S.contrast.on=true;
+    const ok=await contrastSolve();
+    if(!ok) S.contrast.on=false;
+    return ok ? S.contrast.timeline : S.contrast.error;
+  },
+  disable(){ S.contrast.on=false; S.contrast.lut=null; },
+  setScanTime(t){ S.contrast.scanTime=t; },
+};
 
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
@@ -1317,6 +1384,10 @@ async function computeRadiograph(){
         source, detCenter, detU, detV, nx, ny, pxU, pxV,
         binsW:spectrum.bins.map(b=>b.w),
         muMat:muOverBins(spectrum.bins).map(r=>Array.from(r)),
+        // contrast: 48 KB of table, not a 40 MB field — the backend builds the per-voxel
+        // arclength itself from the same arclen.bin the browser reads
+        concLUT: phantom.concLUT ? Array.from(phantom.concLUT) : null,
+        iodineCol: phantom.concLUT ? BodyMaterials.IODINE_COL : null,
         I0, refDist:100,
         coneD:fd, coneW:wAxis, coneL:lAxis, coneTw:tw, coneTl:tl,
         rot: phantom.rot ? Array.from(phantom.rot) : null,

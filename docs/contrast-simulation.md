@@ -4,7 +4,8 @@ Real-time iodinated contrast for CT, and barium/CO₂ GI studies for x-ray. This
 records the architecture, the physics, and the decisions behind them. It is the reference
 for the work; the phases at the end are the plan of record.
 
-Status: **Phase 0 done. Phase 1 solver runs, mass-audited and calibrated — see §6.1.** Nothing below is implemented unless a phase says so.
+Status: **Phases 0-2 done: vessels, solver (mass-audited), and rendering. Contrast is
+visible in x-ray; CT per-slice timing and the UI panel are next. See §6.1-6.2.** Nothing below is implemented unless a phase says so.
 
 ---
 
@@ -362,6 +363,62 @@ yardstick, not a broken model.
 - **Intravascular fraction 49 % vs 35–45 %** — whole-body redistribution still slightly slow.
 - **Arch branches (ids 35–39) are visualisation-only taps**: fed from the proximal aorta but
   draining nowhere, so they hold iodine never debited from the aorta. Worth ~0.2 % of dose.
+
+### 6.2 Phase 2 status — contrast renders, end to end
+
+**Iodine is a virtual material column, not a material.** Contrast is not something a voxel
+can BE, it is a concentration a voxel can CARRY, varying continuously in space and time. So
+it rides as one extra column past the end of the legend: the tracer accumulates
+concentration-weighted path length (cm x mgI/mL) into it and a matching mu row (cm^-1 per
+mgI/mL) turns that into optical depth. Both engines already compute `L @ mu`, so neither
+integration loop changed, and the GPU backend picked it up through `mat_columns()` untouched.
+
+**Iodine carries its own energy grid** because of the K-edge at 33.17 keV, where mu/rho jumps
+~4x. The shared 9-point grid straddles it between 30 and 40 keV, so log-log interpolation
+would draw a smooth ramp through it and erase the effect that makes iodine work at all.
+
+| | model | reference |
+| --- | --- | --- |
+| HU per mgI/mL at 70 keV (120 kVp) | **26.1** | textbook 25-26 |
+| HU per mgI/mL at 50 keV (80 kVp) | **54.2** | — |
+| 120 -> 80 kVp boost | **2.08x** | ~2x, the standard CTA trick |
+| K-edge jump | **3.97x** | NIST XCOM ~4.0 |
+
+**The pieces**
+
+- `contrast_export.py` packs a solve into the renderer's timeline: 64 arclength samples,
+  uint16 quantised. A 90 s run is **0.45 MB**, and one quantisation step is 0.16 HU.
+- `contrast.js` builds the two lookups the trace wants — `sVol` (arclength bin per voxel,
+  expanded from the sparse `arclen.bin` in **20 ms** for 40 M voxels) and `concLUT` (48 KB,
+  mgI/mL per material per bin, rebuilt per acquisition). Organs fill every bin of their row
+  with one value, so vessels and organs index identically and the hot loop needs no branch.
+- `POST /contrast/timeline` solves on demand — **1.26 s** — which is what lets every injector
+  parameter stay freely continuous instead of one of N presets (§1).
+- The GPU backend builds its own per-voxel arclength from the same `arclen.bin`, so the wire
+  carries the 48 KB table rather than a 40 MB field.
+
+**Verified end to end**
+
+- browser tracer: a ray through 8.8 cm of aorta at t=33 s accumulates 160.3 cm·mgI/mL against
+  159.1 expected; the aorta shows a real root-to-distal gradient (18.2 -> 17.8 mgI/mL)
+- GPU backend: contrast darkens 11,172 of 16,384 pixels (up to 63.8 % less signal) and leaves
+  4,935 bit-identical where no vessel lies in the path
+- **with contrast off, every material path length is bit-identical to before** — unenhanced
+  scans are untouched
+- in the running app, a chest radiograph's mediastinum tracks the bolus:
+
+  | scan time | 5 s | 15 s | **25 s** | 40 s | 70 s |
+  | --- | --- | --- | --- | --- | --- |
+  | signal vs unenhanced | -6.2 % | -19.8 % | **-25.4 %** | -15.6 % | -12.1 % |
+
+**Not done in Phase 2**
+
+- No UI yet — `window.radsimContrast` drives it until the panel lands (Phase 3).
+- Per-slice acquisition time is written (`acquisitionTime` in contrast.js) but **not yet wired
+  into the CT scan loop**, so a helical scan still images every slice at one instant. That is
+  the piece that makes "you scanned too early" visible in CT rather than only in radiography.
+- The aortic peak is still ~15 % high. Real mu(E) did not explain it — 26.1 against the
+  assumed 25 is 4 % — so it stays a solver concentration matter, recorded in §6.1.
 
 ---
 

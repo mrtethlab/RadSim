@@ -54,6 +54,18 @@ export class ComputeClient {
   // GPU CT scout/topogram -> Float32Array (nz*nw) dose map.
   ctScout(payload) { return this._binary('/ct/scout', payload); }
 
+  // Solve the haemodynamics for one set of injector settings -> packed timeline (~0.45 MB).
+  // ~1.2 s server-side, which is why there is no preset library: every injector parameter
+  // is freely continuous (docs/contrast-simulation.md §1).
+  async contrastTimeline(payload) {
+    const r = await fetch(this.base + '/contrast/timeline', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (!r.ok) throw new Error('compute /contrast/timeline failed: ' + r.status + ' ' + (await r.text()).slice(0, 300));
+    return r.json();
+  }
+
   // Convert an uploaded .blend to .glb (requires Blender on the backend PATH).
   async convertBlendToGlb(file) {
     const fd = new FormData();
