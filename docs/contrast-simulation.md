@@ -157,14 +157,37 @@ Vessels additionally need a normalised position along the centerline per voxel, 
 `C(s,t)` lookup. Stored sparsely — vessel voxels are a small fraction of the volume
 (404 k in the chest).
 
-### 4.3 The pulmonary artery is missing — OPEN
+### 4.3 Pulmonary arteries — RESOLVED for the chest, blocked elsewhere
 
-This TotalSegmentator class map has `pulmonary_vein` but **no `pulmonary_artery`**, no heart
-chambers, no coronaries. The PE double-rule-out needs the main PA; it is the vessel the
-tracker goes on. Two options, undecided:
+The `total` task has no `pulmonary_artery`. TotalSegmentator's **`lung_vessels`** task supplies
+one, and this version separates arteries from veins (`lung_arteries` / `lung_veins`) — only its
+`_LEGACY` variant returns a combined tree. Run on the chest CT it gives a **247 mL arterial
+tree with 69 k voxels adjacent to the heart**, so the central PA is present, not just the
+peripheral branches. The chest model is rebuilt with it.
 
-- run TotalSegmentator's `lung_vessels` task — real anatomy, needs a GPU re-run
-- synthesise the main PA and bifurcation from the heart and hilar geometry — fast, approximate
+**It does not transfer to the whole-body model.** That source (`data/vsd/z045`, VSD postmortem
+full-body CT) is intact — nothing was lost — but re-running `lung_vessels` on it yields only
+**12.9 mL of artery, 5.8 mL of vein, and zero voxels adjacent to the heart**. The lungs are
+collapsed (523 mL of parenchyma against several litres in life) and the vessels are neither
+distended nor blood-filled, so there is no tree for the network to find. This is a property of
+postmortem imaging, not of the tool, and no re-run will fix it.
+
+Its segmentation is also thin on vasculature generally: **1 of 18 named vessels** (aorta only,
+107 mL), because it was segmented with a 45-label run rather than the 117-label one.
+
+Consequence: **cardiac/pulmonary contrast work is confined to the `chest` model.** Extending
+to the abdomen would need a living contrast-enhanced donor CT, not this one.
+
+### 4.3.1 Heart chambers — BLOCKED on a licence
+
+`heartchambers_highres` returns exactly what the cardiac compartment wants — myocardium, all
+four chambers, aorta and pulmonary artery. It is **not openly available**: it requires a free
+academic licence from https://backend.totalsegmentator.com/license-academic/, then
+`totalseg_set_license -l <key>`. Requesting it is an account action for the repo owner.
+
+Until then `heart` stays a single label. First-pass timing survives that (the heart is a mixing
+compartment), but right-heart versus left-heart opacification — the thing a PE study actually
+shows — does not.
 
 ### 4.4 Legend duplication is a standing hazard
 
