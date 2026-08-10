@@ -2274,11 +2274,9 @@ function ctrstDrawCurve(){
 function ctrstBlocker(){
   const vm=S.voxelModel;
   if(!vm || !vm.hasVessels)
-    return [S.subject+' has no vessel map. Contrast needs a model built with build_vessels.'];
+    return ['Contrast unavailable — '+S.subject+' has no vessel map (build_vessels not run)'];
   if(!S.computeInfo)
-    return ['Contrast needs the Python compute service running — the haemodynamic solver has '
-            + 'no browser equivalent. Start it and this re-enables. (Once solved, either '
-            + 'compute engine can render the result.)'];
+    return ['Contrast unavailable — needs the Python compute service for the haemodynamic solve'];
   return null;
 }
 
@@ -2288,13 +2286,19 @@ function ctrstBlocker(){
 function ctrstApply(keepStatus){
   const panel=$('ctrstPanel'); if(!panel) return;
   const blocked=ctrstBlocker();
+  // Grey the tab itself, not just the controls inside: the honest signal belongs on the
+  // closed panel, so the feature never looks available until you have opened it and tried.
+  // When blocked the tab is inert and the reason lives in its tooltip only — opening a
+  // drawer whose every control is dead just to read a sentence is worse than not opening it.
+  panel.classList.toggle('blocked', !!blocked);
+  $('ctrstTab').title = blocked ? blocked[0] : 'Contrast injector';
+  if(blocked) panel.classList.remove('open');
   panel.classList.toggle('armed', S.contrast.on);
   $('ctrstOn').classList.toggle('on', S.contrast.on);
   $('ctrstOn').textContent = S.contrast.on ? 'ON' : 'OFF';
   Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!S.contrast.on; });
   $('ctrstOn').disabled = !!blocked;
-  if(blocked) ctrstStatus(blocked[0],'err');
-  else if(!keepStatus && !S.contrast.on) ctrstStatus('Contrast off. Unenhanced scans are unaffected.');
+  if(!blocked && !keepStatus && !S.contrast.on) ctrstStatus('Contrast off. Unenhanced scans are unaffected.');
   ctrstDrawCurve();
 }
 
@@ -2309,6 +2313,7 @@ function ctrstBackendChanged(){
 function initContrastPanel(){
   const panel=$('ctrstPanel');
   $('ctrstTab').addEventListener('click',()=>{
+    if(panel.classList.contains('blocked')) return;      // inert while unavailable
     panel.classList.toggle('open');
     if(panel.classList.contains('open')) ctrstDrawCurve();
   });

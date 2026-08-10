@@ -930,6 +930,13 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
 .ctrst-tab:hover{color:var(--txt)}
 .ctrst.armed .ctrst-tab{color:#1a1204; background:var(--amber); border-color:var(--amber);
   box-shadow:0 0 14px rgba(255,178,62,.55)}
+/* unavailable: the haemodynamic solver needs the Python compute service. Dimmed rather than
+   removed, so the feature is still discoverable and the panel can say what to start. */
+.ctrst.blocked .ctrst-tab{opacity:.35; color:var(--muted2); background:#0b0e12;
+  border-color:var(--edge2); box-shadow:none; cursor:not-allowed}
+/* pointer-events stays on: the native tooltip is the only place the reason lives now, and
+   pointer-events:none would suppress it along with the click. */
+.ctrst.blocked .ctrst-tab:hover{opacity:.5; color:var(--muted2)}
 .ctrst-hdr{display:flex; align-items:center; justify-content:space-between; gap:8px;
   padding:11px 13px; border-bottom:1px solid var(--edge2); flex:0 0 auto}
 .ctrst-hdr .t{font-family:var(--disp); font-weight:700; letter-spacing:2px; font-size:14px;
