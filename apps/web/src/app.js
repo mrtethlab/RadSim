@@ -687,7 +687,8 @@ async function contrastSolve(){
     C.timeline=null; return false;
   }
   if(!S.computeInfo){
-    C.error='The contrast solver runs on the Python GPU backend, which is not reachable.';
+    C.error='Python compute service unreachable — the haemodynamic solver runs there. '
+          + 'Start it, then press ON again.';
     C.timeline=null; return false;
   }
   C.busy=true;
@@ -1996,7 +1997,9 @@ const compute=new ComputeClient();
 /* Ping the backend; update the status chips + enable/disable the Python buttons in
    both modes. Called at boot and whenever a toggle is pressed. */
 async function refreshComputeStatus(){
+  const was=!!S.computeInfo;
   S.computeInfo=await compute.health();
+  if(was!==!!S.computeInfo) ctrstBackendChanged();
   const on=!!S.computeInfo, dev=on?(S.computeInfo.compute||{}):null;
   const label=on ? ((dev.device==='cuda'?(dev.name||'GPU'):'CPU')) : 'offline';
   for(const id of ['backendStatusX','backendStatusCT']){
@@ -2197,8 +2200,8 @@ function ctrstQueueSolve(){
   ctrstTimer = setTimeout(async ()=>{
     const ok = await contrastSolve();
     if(!ok){
+      S.contrast.on=false; ctrstApply(true);
       ctrstStatus(S.contrast.error || 'Solve failed.','err');
-      S.contrast.on=false; ctrstApply();
     } else {
       const tl=S.contrast.timeline;
       ctrstStatus(tl.nT+' s timeline at 1 Hz. Heart chambers are averaged — right and left '
@@ -2261,18 +2264,46 @@ function ctrstDrawCurve(){
   g.moveTo(x,pad.t-3); g.lineTo(x-4,pad.t-8); g.lineTo(x+4,pad.t-8); g.closePath(); g.fill();
 }
 
-/* Enable/disable state -> tab colour, power button, control availability. */
-function ctrstApply(){
+/* Why contrast cannot run right now, or null if it can.
+
+   Note what is NOT a blocker: the compute-engine choice. The browser ray-caster renders the
+   iodine column perfectly well — what needs the Python service is the haemodynamic SOLVE,
+   which has no JS implementation. So a user on the browser engine with the service running
+   gets working contrast, and gating on the engine toggle would take that away for no reason.
+   The gate is service reachability. */
+function ctrstBlocker(){
+  const vm=S.voxelModel;
+  if(!vm || !vm.hasVessels)
+    return [S.subject+' has no vessel map. Contrast needs a model built with build_vessels.'];
+  if(!S.computeInfo)
+    return ['Contrast needs the Python compute service running — the haemodynamic solver has '
+            + 'no browser equivalent. Start it and this re-enables. (Once solved, either '
+            + 'compute engine can render the result.)'];
+  return null;
+}
+
+/* Enable/disable state -> tab colour, power button, control availability.
+   keepStatus: leave the status line alone, so a failure explanation is not overwritten by
+   the routine refresh that follows it — which is exactly what hid the real reason before. */
+function ctrstApply(keepStatus){
   const panel=$('ctrstPanel'); if(!panel) return;
-  const vm=S.voxelModel, has=!!(vm && vm.hasVessels);
+  const blocked=ctrstBlocker();
   panel.classList.toggle('armed', S.contrast.on);
   $('ctrstOn').classList.toggle('on', S.contrast.on);
   $('ctrstOn').textContent = S.contrast.on ? 'ON' : 'OFF';
   Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!S.contrast.on; });
-  $('ctrstOn').disabled = !has;
-  if(!has) ctrstStatus(S.subject+' has no vessel map. Contrast needs a model built with build_vessels.','err');
-  else if(!S.contrast.on) ctrstStatus('Contrast off. Unenhanced scans are unaffected.');
+  $('ctrstOn').disabled = !!blocked;
+  if(blocked) ctrstStatus(blocked[0],'err');
+  else if(!keepStatus && !S.contrast.on) ctrstStatus('Contrast off. Unenhanced scans are unaffected.');
   ctrstDrawCurve();
+}
+
+/* The service can come and go while the panel is open, so re-evaluate on every health poll.
+   Contrast that is already solved keeps working — the timeline is client-side by then. */
+function ctrstBackendChanged(){
+  if(!$('ctrstPanel')) return;
+  if(S.contrast.on && !S.computeInfo && !S.contrast.timeline){ S.contrast.on=false; }
+  ctrstApply(true);
 }
 
 function initContrastPanel(){

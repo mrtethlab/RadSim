@@ -488,6 +488,13 @@ Verified in the running app: power gates correctly on whether the model has a ve
 (`hand` reports why it cannot), solve completes and draws, scrubbing to 45 s keeps the same
 timeline object, and changing flow rate produces a new one.
 
+**What needs the Python service, and what does not.** The compute-engine toggle is *not* a
+blocker for contrast, and gating on it would remove a combination that works: the browser
+ray-caster renders the iodine column perfectly well (that is what produced the x-ray timing
+series in §6.2). What has no browser equivalent is the haemodynamic **solve**. So the panel
+gates on service reachability, not on the engine choice — and once a timeline is solved it is
+client-side, so scrubbing the scan marker keeps working even if the service then goes away.
+
 **Not exposed yet.** Vessel calibre and per-organ perfusion were in the original request but
 are not solver parameters — calibre comes from the segmentation's measured A(s), and the
 organ beds are a fixed table. Both would need a solver argument first, so they are deliberately
