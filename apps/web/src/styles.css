@@ -1045,3 +1045,22 @@ body.mode-editor .ctrst{display:none}
 .kpad-btns button:hover{background:#1d2f44}
 .kpad-btns button.ok{background:#1d4f7a}
 .kpad-btns button.ok:hover{background:#2668a0}
+
+/* ---- the injector is a different machine ---------------------------------------------
+   The vendor themes (body.theme-ge / body.theme-canon) repaint the CT console, and they do
+   it by overriding the shared colour tokens on <body>, so anything nested inside inherits
+   them. The contrast injector is not part of the CT console — it is a separate box beside
+   the scanner with its own housing and its own palette, and a GE-blue or Canon-grey
+   injector would be wrong in the same way a GE-blue cannula would be. Pin the tokens back
+   to the base scheme for the panel and its keypad, whatever the scanner is dressed as. */
+.ctrst, .kpad{
+  --bg:#0f1216; --bg2:#141a20; --panel:#191f26; --panel2:#1f272f;
+  --edge:#2b343d; --edge2:#39454f;
+  --cyan:#35c6d6; --cyan-dim:#1c6b74;
+  --amber:#ffb23e; --amber-dim:#7a5518;
+  --green:#46d17f; --red:#ff3b30;
+  --txt:#c9d4dd; --muted:#7f8c99; --muted2:#5a6570;
+}
+/* GE also restyles .valchip by element, which the token pin above cannot undo. */
+body.theme-ge .ctrst .valchip{background:#0a0d10; color:var(--amber)}
+body.theme-ge .ctrst .valchip.cyanlit{background:#0a0d10; color:var(--cyan)}
