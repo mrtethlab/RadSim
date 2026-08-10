@@ -453,7 +453,7 @@ const S = {
   // start of the injection, which is the single most consequential number in a CTA.
   contrast:{ on:false, timeline:null, sVol:null, scanTime:25,
              params:{ volume_ml:100, rate_ml_s:4.0, conc_mgi_ml:350, delay_s:0, saline_ml:40,
-                      cardiac_output_l_min:5.0, blood_volume_ml:5000 },
+                      saline_rate_ml_s:4.0, cardiac_output_l_min:5.0, blood_volume_ml:5000 },
              lut:null, lutT:null, busy:false, error:null,
              // injector transport: t0 = when START was pressed, latched = the elapsed time
              // frozen at the moment an image was actually acquired
@@ -2169,8 +2169,7 @@ function updateDetWarn(){
    enhancement you get is whatever the anatomy had reached at the moment you took the
    exposure — which is the actual skill the machine demands. Dialling "scan at 25 s" let you
    pick the answer; this makes you commit to it. */
-const CTRST_EL = { rate:'ctrstRate', conc:'ctrstConc', delay:'ctrstDelay',
-                   hr:'ctrstHr', sv:'ctrstSv' };
+const CTRST_EL = { conc:'ctrstConc', hr:'ctrstHr', sv:'ctrstSv' };
 let ctrstTimer = null;
 
 /* Injection line pressure, Poiseuille through the 2.5 m coiled line and a 20 G cannula.
@@ -2197,12 +2196,14 @@ function injPressureBar(rate_ml_s, conc){
 
 /* The programmed sequence: an optional start delay, the contrast bolus, the saline chaser. */
 function ctrstPhases(){
-  const P=S.contrast.params, r=Math.max(P.rate_ml_s,.1);
-  const out=[];
-  if(P.delay_s>0) out.push({kind:'delay', t:P.delay_s, ml:0});
-  out.push({kind:'cm',   t:P.volume_ml/r,          ml:P.volume_ml, rate:P.rate_ml_s});
-  if(P.saline_ml>0) out.push({kind:'nacl', t:P.saline_ml/r, ml:P.saline_ml, rate:P.rate_ml_s});
-  return out;
+  const P=S.contrast.params;
+  // Every phase is always present, even at zero, because the bar is the only place a phase
+  // can be programmed — a segment that vanishes when you set it to 0 cannot be set back.
+  return [
+    {kind:'delay', t:P.delay_s, ml:0, rate:0},
+    {kind:'cm',    t:P.volume_ml/Math.max(P.rate_ml_s,.1),        ml:P.volume_ml, rate:P.rate_ml_s},
+    {kind:'nacl',  t:P.saline_ml/Math.max(P.saline_rate_ml_s,.1), ml:P.saline_ml, rate:P.saline_rate_ml_s},
+  ];
 }
 const ctrstTotalTime = () => ctrstPhases().reduce((a,p)=>a+p.t, 0);
 const fmtClock = (sec)=>{
@@ -2255,15 +2256,11 @@ function ctrstLatch(){
 function ctrstReadUI(){
   const v=(k)=> +$(CTRST_EL[k]).value;
   const P=S.contrast.params;
-  P.rate_ml_s=v('rate'); P.conc_mgi_ml=v('conc'); P.delay_s=v('delay');
+  P.conc_mgi_ml=v('conc');
   // Cardiac output is what the haemodynamics depend on; heart rate is what a student
   // changes. CO = HR x stroke volume, so expose both and derive the one the solver wants.
   P.cardiac_output_l_min=v('hr')*v('sv')/1000;
-  $('ctrstVolV').textContent=P.volume_ml;
-  $('ctrstSalV').textContent=P.saline_ml;
-  $('ctrstRateV').textContent=P.rate_ml_s.toFixed(1)+' mL/s';
   $('ctrstConcV').textContent=P.conc_mgi_ml+' mgI/mL';
-  $('ctrstDelayV').textContent=P.delay_s+' s';
   $('ctrstHrV').textContent=v('hr')+' bpm';
   $('ctrstSvV').textContent=v('sv')+' mL';
   $('ctrstTotal').textContent=(P.volume_ml+P.saline_ml)+' ml total';
@@ -2279,11 +2276,17 @@ function ctrstRenderBar(){
   const el=$('ctrstBar'); if(!el) return;
   const ph=ctrstPhases(), tot=Math.max(ctrstTotalTime(),.1);
   el.innerHTML=ph.map(p=>{
-    const w=(p.t/tot*100).toFixed(2)+'%';
-    const lab=p.kind==='delay' ? 'Delay' : p.ml+'ml';
-    const sub=p.kind==='delay' ? fmtClock(p.t) : p.rate.toFixed(1)+'mL/s · '+p.t.toFixed(1)+'s';
-    return `<div class="inj-seg ${p.kind}" style="width:${w}"><div>${lab}</div><small>${sub}</small></div>`;
+    const lab=p.kind==='delay' ? 'Delay' : p.ml+' ml';
+    const sub=p.kind==='delay' ? fmtClock(p.t) : p.rate.toFixed(1)+' mL/s · '+p.t.toFixed(1)+'s';
+    // grow in proportion to duration, but never below a tappable width
+    return `<button class="inj-seg ${p.kind}" data-phase="${p.kind}" `
+         + `style="flex:${Math.max(p.t,0.01)} 1 0"><div>${lab}</div><small>${sub}</small></button>`;
   }).join('');
+  const live = S.contrast.on && !ctrstBlocker();
+  el.querySelectorAll('.inj-seg').forEach(b=>{
+    b.disabled=!live;
+    b.addEventListener('click',()=>kpadOpen(b.dataset.phase));
+  });
 }
 
 /* Live readouts while the injector runs. */
@@ -2292,7 +2295,6 @@ function ctrstRenderRun(){
   const P=S.contrast.params, t=ctrstClock(), R=S.contrast.run;
   const tot=ctrstTotalTime();
   $('ctrstElapsed').textContent = t==null ? '00:00' : fmtClock(t);
-  $('ctrstScanAt').textContent = R.latched==null ? '—' : R.latched.toFixed(1)+' s';
   $('ctrstProg').style.width = t==null ? '0%' : Math.min(100, t/Math.max(tot,.1)*100)+'%';
   // delivered volume: walk the programmed phases up to the elapsed time
   let cm=0, na=0, left=t==null?0:t;
@@ -2383,12 +2385,12 @@ function ctrstDrawCurve(){
     if(solid){ g.fillStyle=col; g.beginPath();
       g.moveTo(x,pad.t-3); g.lineTo(x-4,pad.t-8); g.lineTo(x+4,pad.t-8); g.closePath(); g.fill(); }
   };
+  // The running clock is the ONLY cue for when to fire — no target is drawn, because
+  // judging the moment against the curve is the exercise. The amber mark appears only
+  // after an exposure, as feedback on where you actually landed.
   const live=ctrstClock(), R=S.contrast.run;
-  if(live!=null && R.latched==null) mark(live,'#4fd06a',true);      // the clock, running
-  if(R.latched!=null){
-    if(live!=null) mark(live,'#3a4a55',false);                      // where the clock is now
-    mark(R.latched,'#ffb23e',true);                                 // where the image was taken
-  }
+  if(live!=null) mark(live, R.latched==null ? '#4fd06a' : '#3a4a55', R.latched==null);
+  if(R.latched!=null) mark(R.latched,'#ffb23e',true);
 }
 
 /* Why contrast cannot run right now, or null if it can.
@@ -2419,7 +2421,7 @@ function ctrstApply(keepStatus){
   $('ctrstOn').textContent = S.contrast.on ? 'ON' : 'OFF';
   const live = S.contrast.on && !blocked;
   Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!live; });
-  document.querySelectorAll('.inj-hbtns button').forEach(b=> b.disabled=!live);
+  ctrstRenderBar();          // the phase buttons take their enabled state from `live` too
   $('ctrstGo').disabled = !live || !S.contrast.timeline;
   $('ctrstOn').disabled = !!blocked;
   if(!live) ctrstReset();
@@ -2435,6 +2437,87 @@ function ctrstBackendChanged(){
   ctrstApply(true);
 }
 
+
+/* ---- injector phase keypad -----------------------------------------------------------
+   Tap a phase on the bar, type the value. A number is entered rather than nudged because
+   97 mL is twenty-four presses away from 100 on a +/- key — which is exactly why the real
+   console puts a keypad here and not a pair of arrows. */
+const KPAD = {
+  cm:    { title:'CM', fields:[
+            {k:'volume_ml',       lab:'Volume',    unit:'mL',   min:1,   max:200, dp:0},
+            {k:'rate_ml_s',       lab:'Flow rate', unit:'mL/s', min:0.1, max:10,  dp:1}] },
+  nacl:  { title:'NaCl', fields:[
+            {k:'saline_ml',       lab:'Volume',    unit:'mL',   min:0,   max:100, dp:0},
+            {k:'saline_rate_ml_s',lab:'Flow rate', unit:'mL/s', min:0.1, max:10,  dp:1}] },
+  delay: { title:'Delay', fields:[
+            {k:'delay_s',         lab:'Start delay', unit:'s',  min:0,   max:60,  dp:0}] },
+};
+let kpadState=null;      // { phase, fields:[{spec, text}], sel }
+
+function kpadRender(){
+  const box=$('kpadFields');
+  box.innerHTML=kpadState.fields.map((f,i)=>{
+    const sp=f.spec;
+    return `<div class="kpad-f${i===kpadState.sel?' sel':''}" data-i="${i}">`
+         + `<div class="fmeta"><b>${sp.lab}</b>Min ${sp.min} ${sp.unit}<br>Max ${sp.max} ${sp.unit}</div>`
+         + `<div class="fv">${f.text===''?'—':f.text} <small>${sp.unit}</small></div></div>`;
+  }).join('');
+  box.querySelectorAll('.kpad-f').forEach(el=>{
+    el.addEventListener('click',()=>{ kpadState.sel=+el.dataset.i; kpadRender(); });
+  });
+}
+function kpadOpen(phase){
+  const spec=KPAD[phase]; if(!spec) return;
+  const P=S.contrast.params;
+  kpadState={ phase, sel:0,
+    fields: spec.fields.map(sp=>({ spec:sp, text:String(+P[sp.k].toFixed(sp.dp)) })) };
+  $('kpadTitle').textContent=spec.title;
+  kpadRender();
+  $('kpad').className='kpad open '+phase;      // header rule takes the phase colour
+}
+function kpadClose(){ $('kpad').className='kpad'; kpadState=null; }
+function kpadKey(k){
+  if(!kpadState) return;
+  const f=kpadState.fields[kpadState.sel];
+  if(k==='bs') f.text=f.text.slice(0,-1);
+  else if(k==='.'){ if(f.spec.dp>0 && !f.text.includes('.')) f.text=(f.text||'0')+'.'; }
+  else f.text=(f.text==='0'?'':f.text)+k;
+  kpadRender();
+}
+function kpadCommit(){
+  if(!kpadState) return;
+  const P=S.contrast.params;
+  for(const f of kpadState.fields){
+    const sp=f.spec, v=parseFloat(f.text);
+    // An out-of-range or empty entry is clamped rather than rejected: the min/max are beside
+    // the field, so the corrected number is visible feedback, not a silent swap.
+    P[sp.k]=isFinite(v) ? Math.max(sp.min, Math.min(sp.max, v)) : sp.min;
+  }
+  kpadClose();
+  if(S.contrast.run.t0!=null) ctrstReset();     // cannot reprogram a running injection
+  ctrstReadUI(); ctrstQueueSolve();
+}
+function initKeypad(){
+  $('kpadKeys').querySelectorAll('button').forEach(b=>
+    b.addEventListener('click',()=>kpadKey(b.dataset.k)));
+  $('kpadDel').addEventListener('click',()=>{
+    if(kpadState){ kpadState.fields[kpadState.sel].text=''; kpadRender(); }
+  });
+  $('kpadOk').addEventListener('click', kpadCommit);
+  $('kpadCancel').addEventListener('click', kpadClose);
+  $('kpad').addEventListener('click',e=>{ if(e.target.id==='kpad') kpadClose(); });
+  document.addEventListener('keydown',e=>{
+    if(!$('kpad').classList.contains('open')) return;
+    if(e.key==='Escape') kpadClose();
+    else if(e.key==='Enter') kpadCommit();
+    else if(/^[0-9]$/.test(e.key)) kpadKey(e.key);
+    else if(e.key==='.') kpadKey('.');
+    else if(e.key==='Backspace') kpadKey('bs');
+    else if(e.key==='Tab' && kpadState){ e.preventDefault();
+      kpadState.sel=(kpadState.sel+1)%kpadState.fields.length; kpadRender(); }
+  });
+}
+
 function initContrastPanel(){
   const panel=$('ctrstPanel');
   $('ctrstTab').addEventListener('click',()=>{
@@ -2448,17 +2531,7 @@ function initContrastPanel(){
     if(S.contrast.on) ctrstQueueSolve();
     else { S.contrast.lut=null; S.contrast.lutT=null; refreshReadouts(); }
   });
-  // syringe +/- : volume steps, clamped to what a barrel holds
-  document.querySelectorAll('.inj-hbtns button').forEach(b=>{
-    b.addEventListener('click',()=>{
-      const [k,d]=b.dataset.adj.split(':'), P=S.contrast.params, step=+d;
-      if(k==='vol') P.volume_ml=Math.max(20, Math.min(200, P.volume_ml+step));
-      else P.saline_ml=Math.max(0, Math.min(100, P.saline_ml+step));
-      if(S.contrast.run.t0!=null) ctrstReset();   // cannot reprogram a running injection
-      ctrstReadUI(); ctrstQueueSolve();
-    });
-  });
-  ['rate','conc','delay','hr','sv'].forEach(k=>{
+  ['conc','hr','sv'].forEach(k=>{
     $(CTRST_EL[k]).addEventListener('input',()=>{
       if(S.contrast.run.t0!=null) ctrstReset();   // cannot reprogram a running injection
       ctrstReadUI(); ctrstQueueSolve();
@@ -2466,6 +2539,7 @@ function initContrastPanel(){
   });
   $('ctrstGo').addEventListener('click', ctrstStart);
   $('ctrstReset').addEventListener('click', ctrstReset);
+  initKeypad();
   ctrstReadUI(); ctrstApply();
 }
 

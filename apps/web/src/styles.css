@@ -967,33 +967,24 @@ body.mode-editor .ctrst{display:none}
    to scale in time, and a transport bar. The point of the redesign is that the scan delay
    is no longer a number you dial — you start the injector and then decide when to shoot,
    which is the actual skill. */
-.inj-heads{display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:7px}
-.inj-head{border:1px solid var(--edge2); border-radius:7px; padding:7px 8px 8px; background:#070a0d;
-  border-top-width:3px}
-.inj-head.cm{border-top-color:#3aa0e0}
-.inj-head.nacl{border-top-color:#4fd06a}
-.inj-hlab{font-family:var(--seg); font-size:9.5px; letter-spacing:2px; color:var(--muted)}
-.inj-hval{font-family:var(--seg); font-size:25px; line-height:1.1; color:var(--txt)}
-.inj-hval small{font-size:10px; color:var(--muted2); margin-left:3px}
-.inj-hbtns{display:flex; gap:5px; margin-top:5px}
-.inj-hbtns button{flex:1; font-family:var(--seg); font-size:14px; line-height:1; color:var(--txt);
-  background:#131922; border:1px solid var(--edge2); border-radius:5px; padding:3px 0; cursor:pointer}
-.inj-hbtns button:hover:not(:disabled){background:#1c2530}
-.inj-hbtns button:disabled{opacity:.35; cursor:default}
 .inj-total{display:flex; justify-content:space-between; font-family:var(--seg); font-size:10px;
   letter-spacing:1px; color:var(--muted); margin-bottom:7px}
-.inj-bar{display:flex; height:34px; border:1px solid var(--edge2); border-radius:6px;
+.inj-bar{display:flex; height:38px; border:1px solid var(--edge2); border-radius:6px;
   overflow:hidden; background:#070a0d}
 .inj-seg{display:flex; flex-direction:column; align-items:center; justify-content:center;
   font-family:var(--seg); font-size:9px; line-height:1.3; color:#06121a; overflow:hidden;
-  border-right:1px solid rgba(0,0,0,.35); min-width:0}
+  border-right:1px solid rgba(0,0,0,.35); min-width:56px; border-top:0; border-bottom:0;
+  border-left:0; cursor:pointer; padding:0; transition:filter .12s}
+.inj-seg:hover:not(:disabled){filter:brightness(1.15)}
+.inj-seg:disabled{cursor:default}
+.inj-bar[disabled] .inj-seg{cursor:default}
 .inj-seg small{font-size:8px; opacity:.75}
-.inj-seg.cm{background:linear-gradient(180deg,#57b6ee,#2f8fd0)}
-.inj-seg.nacl{background:linear-gradient(180deg,#6fe089,#3fb85c)}
+.inj-seg.cm{background:linear-gradient(180deg,#6fe089,#3fb85c)}
+.inj-seg.nacl{background:linear-gradient(180deg,#57b6ee,#2f8fd0)}
 .inj-seg.delay{background:#161d26; color:var(--muted)}
 .inj-prog{height:4px; margin:4px 0 8px; background:#131922; border-radius:2px; overflow:hidden}
 .inj-progfill{height:100%; width:0; background:var(--amber); transition:width .1s linear}
-.inj-ro{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:5px}
+.inj-ro{display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin-bottom:5px}
 .inj-ro>div{border:1px solid var(--edge2); border-radius:6px; padding:5px 6px; background:#070a0d}
 .inj-ro .k{font-family:var(--seg); font-size:8.5px; letter-spacing:1.5px; color:var(--muted2)}
 .inj-ro .v{font-family:var(--seg); font-size:16px; color:var(--txt); line-height:1.3}
@@ -1013,3 +1004,44 @@ body.mode-editor .ctrst{display:none}
 .inj-rst:hover:not(:disabled){color:var(--txt)}
 .inj-rst:disabled{opacity:.35; cursor:default}
 #ctrstCurve{width:100%; height:120px}
+
+/* ---- injector phase keypad ------------------------------------------------------------
+   Tap a phase on the bar, type the number. Modelled on the injector's own editor: a value
+   is entered, not nudged, because 97 mL is 24 presses away from 100 on a +/- key. */
+.kpad{position:fixed; inset:0; z-index:80; display:none; align-items:center; justify-content:center;
+  background:rgba(3,6,10,.72)}
+.kpad.open{display:flex}
+.kpad-win{width:min(660px,94vw); background:linear-gradient(180deg,#0d151f,#080c12);
+  border:1px solid var(--edge2); border-radius:12px; box-shadow:0 24px 70px rgba(0,0,0,.7);
+  overflow:hidden}
+.kpad-hdr{padding:12px 16px 0}
+.kpad-hdr span{font-family:var(--disp); font-weight:700; letter-spacing:3px; font-size:19px;
+  text-transform:uppercase; color:var(--txt)}
+.kpad-rule{height:16px; margin-top:9px; border-radius:4px;
+  background:linear-gradient(180deg,#4a5766,#2b333d)}
+.kpad.cm .kpad-rule{background:linear-gradient(180deg,#7de08f,#2fa84c)}
+.kpad.nacl .kpad-rule{background:linear-gradient(180deg,#6cc2f0,#2f8fd0)}
+.kpad-body{display:grid; grid-template-columns:1fr 264px; gap:20px; padding:18px 16px}
+.kpad-fields{display:flex; flex-direction:column; gap:14px; min-width:0}
+.kpad-f{display:flex; align-items:center; gap:12px}
+.kpad-f .fv{flex:1; min-width:0; font-family:var(--seg); font-size:24px; color:var(--txt);
+  background:#0a1119; border:1px solid var(--edge2); border-radius:6px; padding:9px 12px;
+  cursor:pointer; text-align:right; transition:.12s}
+.kpad-f.sel .fv{background:#eaf2fa; color:#0a1119; border-color:#eaf2fa;
+  box-shadow:0 0 0 2px rgba(53,198,214,.35)}
+.kpad-f .fmeta{width:120px; font-family:var(--seg); font-size:9.5px; line-height:1.6;
+  color:var(--muted2)}
+.kpad-f .fmeta b{display:block; color:var(--muted); font-weight:400; letter-spacing:1.5px;
+  text-transform:uppercase; font-size:9px}
+.kpad-keys{display:grid; grid-template-columns:repeat(3,1fr); gap:9px}
+.kpad-keys button{font-family:var(--seg); font-size:21px; color:#cfe3f5; padding:13px 0;
+  background:linear-gradient(180deg,#1b2836,#111a25); border:1px solid #26374a;
+  border-radius:8px; cursor:pointer; transition:.12s}
+.kpad-keys button:hover{background:linear-gradient(180deg,#24374a,#16222f); color:#fff}
+.kpad-btns{display:grid; grid-template-columns:1fr 1fr 1fr; gap:2px; background:var(--edge2)}
+.kpad-btns button{font-family:var(--disp); font-weight:600; letter-spacing:2px; font-size:14px;
+  text-transform:uppercase; color:var(--txt); background:#152232; border:0; padding:13px 0;
+  cursor:pointer; transition:.12s}
+.kpad-btns button:hover{background:#1d2f44}
+.kpad-btns button.ok{background:#1d4f7a}
+.kpad-btns button.ok:hover{background:#2668a0}

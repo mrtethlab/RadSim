@@ -98,6 +98,7 @@ class ContrastTimelineRequest(BaseModel):
     conc_mgi_ml: float = 350.0
     delay_s: float = 0.0
     saline_ml: float = 40.0
+    saline_rate_ml_s: float = 4.0
     cardiac_output_l_min: float = 5.0
     blood_volume_ml: float = 5000.0
     duration_s: float = 90.0

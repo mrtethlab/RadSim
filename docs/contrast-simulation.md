@@ -472,14 +472,27 @@ Before START there is no enhancement at all — the patient has no contrast in t
 images say so. The latched time survives until the next START, so the image you took keeps
 corresponding to the delay you achieved.
 
-**Controls**
+**Controls.** The phase bar IS the programming surface: tap a phase and a keypad opens for
+its volume and flow rate. A number is entered rather than nudged, because 97 mL is
+twenty-four presses away from 100 on a +/- key — which is why the real console puts a keypad
+there. Every phase stays on the bar even at zero, since a segment that vanishes when you set
+it to 0 could never be set back. Out-of-range entries clamp rather than being rejected, with
+the min/max beside the field so the correction is visible.
 
-| group | controls |
+| where | what |
 | --- | --- |
-| Syringes | CM volume, NaCl volume (+/- keys, as on the machine) |
-| Protocol | flow rate, concentration, programmed start delay |
+| Phase bar (tap) | delay; CM volume + flow rate; NaCl volume + flow rate |
+| Agent | concentration |
 | Patient | heart rate, stroke volume (cardiac output derived and shown) |
-| Transport | START / reset, elapsed, scan-at, pressure, delivered volumes |
+| Transport | START / reset, elapsed, pressure, delivered volumes |
+
+CM is green and saline blue, the convention on the machines. Saline carries its own flow
+rate, so `Injection.saline_rate_ml_s` is now plumbed through the timeline endpoint.
+
+**Nothing tells you when to fire.** There is no "scan at" readout and no target on the plot —
+only a green line that ticks along the curve in real time as the injection runs. Judging that
+moment against the rising aorta is the exercise. After an exposure an amber mark appears
+where you actually landed, as feedback rather than a prompt.
 
 **Line pressure is real physics, not decoration.** Poiseuille through the 2.5 m coiled line
 and a 20 G cannula, with contrast viscosity at 37 degC interpolated over concentration. The
@@ -492,8 +505,9 @@ where an image was actually taken.
 
 Verified in the app: START arms once a timeline exists; with no injection an exposure shows
 no enhancement; after START, firing at a clock of 17.0 s latches 17.2 s and the mediastinum
-reads -21.5 % against unenhanced, while the panel keeps counting (elapsed 00:20, delivered
-83 ml CM) with scan-at frozen at 17.2 s.
+reads -21.5 % against unenhanced, while the panel keeps counting (elapsed 00:20, 83 ml CM
+delivered). The keypad commits 65 mL @ 6.5 mL/s to the bar and the totals, clamps 999 mL to
+200, and the running marker advances monotonically along the plot.
 
 **Availability.** When contrast cannot run the tab greys out, becomes inert, and puts the
 reason in its tooltip; nothing is written into the panel, because a drawer whose every
