@@ -450,59 +450,65 @@ it is below the resolution of the data underneath it rather than a compromise.
 - The aortic peak is still ~15 % high. Real mu(E) did not explain it — 26.1 against the
   assumed 25 is 4 % — so it stays a solver concentration matter, recorded in §6.1.
 
-### 6.3 Phase 3 status — the injector panel
+### 6.3 Phase 3 status — the power injector
 
-A pull-out on the left edge of the bay, tab labelled CONTRAST. It slides over the 3D view
-rather than pushing the layout: positioning is what the bay is for, and the injector is
-something you dip into. The tab stays visible when closed, so the feature is discoverable
-without hunting through settings, and turns amber while contrast is armed.
+A pull-out on the left edge of the bay, tab labelled CONTRAST, laid out as a dual-syringe CT
+injector: a contrast barrel and a saline barrel, the programmed sequence drawn to scale in
+time, live readouts, and a transport bar.
+
+**The scan delay is not a number you dial.** You press START, the clock runs, and the
+enhancement you get is whatever the anatomy had reached at the moment you took the exposure.
+That is the change that makes this worth having: a "scan at 25 s" slider let you pick the
+answer, and committing to a moment is the actual skill the machine demands.
+
+```
+START pressed        -> clock runs from 0
+exposure / CT scan   -> ctrstLatch() freezes the elapsed time
+                        everything downstream reads S.contrast.scanTime
+CT                   -> per-slice timing counts on from the latched value (§6.2)
+```
+
+Before START there is no enhancement at all — the patient has no contrast in them and the
+images say so. The latched time survives until the next START, so the image you took keeps
+corresponding to the delay you achieved.
 
 **Controls**
 
 | group | controls |
 | --- | --- |
-| Injector | volume, flow rate, concentration, saline chaser |
-| Patient | heart rate, stroke volume (cardiac output is derived and shown) |
-| Acquisition | enhancement plot + scan delay |
+| Syringes | CM volume, NaCl volume (+/- keys, as on the machine) |
+| Protocol | flow rate, concentration, programmed start delay |
+| Patient | heart rate, stroke volume (cardiac output derived and shown) |
+| Transport | START / reset, elapsed, scan-at, pressure, delivered volumes |
 
-Two decisions worth recording:
+**Line pressure is real physics, not decoration.** Poiseuille through the 2.5 m coiled line
+and a 20 G cannula, with contrast viscosity at 37 degC interpolated over concentration. The
+fourth-power radius term is what makes cannula choice matter more than anything else on the
+panel, and it reproduces the right numbers: 7.5 bar at 4 mL/s of 350 mgI/mL, ~19 bar at
+10 mL/s. Reprogramming while the injector runs resets it, as it would on the machine.
 
-- **Heart rate, not cardiac output.** CO is what the haemodynamics depend on, but HR is what
-  a student reaches for. The panel takes HR x stroke volume and derives CO, showing the
-  result — so the physiological knob is the one on screen and the solver still gets what it
-  needs.
-- **No separate injection-start delay.** For a single acquisition only the *interval* between
-  injection and scan is observable, so one control ("scan at") says the same thing with half
-  the confusion.
+The enhancement plot stays, now with two markers: green for the running clock, amber for
+where an image was actually taken.
 
-**The enhancement plot is the part that teaches.** Aorta, pulmonary artery, liver and kidney
-against time, with an amber marker at the acquisition. Vessel traces plot the PEAK along the
-vessel, which is the number a bolus-tracking ROI would read. Drag anywhere on it to scrub.
+Verified in the app: START arms once a timeline exists; with no injection an exposure shows
+no enhancement; after START, firing at a clock of 17.0 s latches 17.2 s and the mediastinum
+reads -21.5 % against unenhanced, while the panel keeps counting (elapsed 00:20, delivered
+83 ml CM) with scan-at frozen at 17.2 s.
 
-Scrubbing does **not** re-solve: the timeline already covers every second, so moving the
-marker is a lookup. Only injector and patient changes re-solve, debounced 350 ms with a busy
-state. That split is what makes the panel feel instant while keeping every parameter freely
-continuous rather than one of N presets.
-
-Verified in the running app: power gates correctly on whether the model has a vessel map
-(`hand` reports why it cannot), solve completes and draws, scrubbing to 45 s keeps the same
-timeline object, and changing flow rate produces a new one.
-
-**Availability.** When contrast cannot run, the tab greys out and becomes inert, with the
-reason in its tooltip — nothing is written into the panel, because a drawer whose every
+**Availability.** When contrast cannot run the tab greys out, becomes inert, and puts the
+reason in its tooltip; nothing is written into the panel, because a drawer whose every
 control is dead is not worth opening to read a sentence. It re-enables on the next health
-poll when the service appears.
-
-The compute-engine toggle is *not* the gate, and gating on it would remove a combination that
-works: the browser ray-caster renders the iodine column perfectly well (it produced the x-ray
-timing series in §6.2). What has no browser equivalent is the haemodynamic **solve**. So the
-gate is service reachability — and once a timeline is solved it is client-side, so scrubbing
-the scan marker keeps working even if the service then goes away.
+poll. The compute-engine toggle is *not* the gate — the browser ray-caster renders the iodine
+column perfectly well (it produced the §6.2 timing series). What has no browser equivalent is
+the haemodynamic **solve**, so the gate is service reachability. A solved timeline is
+client-side, so scrubbing and scanning keep working even if the service then goes away.
 
 **Not exposed yet.** Vessel calibre and per-organ perfusion were in the original request but
-are not solver parameters — calibre comes from the segmentation's measured A(s), and the
-organ beds are a fixed table. Both would need a solver argument first, so they are deliberately
-absent rather than faked with a display-only slider.
+are not solver parameters — calibre comes from the segmentation's measured A(s), and the organ
+beds are a fixed table. Both need a solver argument first, so they are deliberately absent
+rather than faked with a display-only slider. Multi-phase protocols (a second CM phase at a
+different rate) would need `Injection` to take a list of phases; the phase bar is already
+drawn from a list, so the UI is ready for it.
 
 ---
 

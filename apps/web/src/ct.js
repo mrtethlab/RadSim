@@ -2669,6 +2669,8 @@ async function runScan() {
   const S = ctx.S, tok = ++scanToken, alive = () => tok === scanToken;
   const groups = S.ct.groups.map((g, i) => ({ g, i })).filter(x => x.g.on);
   if (!groups.length) { setHint('No scan groups enabled.'); return; }
+  // Freeze the contrast clock as the scan begins; per-slice timing counts on from there.
+  if (ctx.contrastLatch) ctx.contrastLatch();
   setBusy(true);
   setPhase('scanning');
   setConsoleEnabled(false);

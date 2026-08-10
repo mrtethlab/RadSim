@@ -454,7 +454,10 @@ const S = {
   contrast:{ on:false, timeline:null, sVol:null, scanTime:25,
              params:{ volume_ml:100, rate_ml_s:4.0, conc_mgi_ml:350, delay_s:0, saline_ml:40,
                       cardiac_output_l_min:5.0, blood_volume_ml:5000 },
-             lut:null, lutT:null, busy:false, error:null },
+             lut:null, lutT:null, busy:false, error:null,
+             // injector transport: t0 = when START was pressed, latched = the elapsed time
+             // frozen at the moment an image was actually acquired
+             run:{ t0:null, latched:null, timer:null } },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -668,6 +671,9 @@ function buildPhantom(){
 function contrastLUT(){
   const C=S.contrast;
   if(!C.on || !C.timeline) return null;
+  // Nothing is enhanced until the injector has actually run. Before START the patient has
+  // no contrast in them, and the images should say so.
+  if(C.run.t0==null && C.run.latched==null) return null;
   if(C.lut && C.lutT===C.scanTime) return C.lut;      // one table per acquisition time
   C.lut=buildConcLUT(C.timeline, C.scanTime); C.lutT=C.scanTime;
   return C.lut;
@@ -1306,6 +1312,10 @@ function startExposure(){
                       'SELECT L, C OR R - OR SWITCH AEC OFF', 'EXPOSURE', 'INHIBITED');
     return;
   }
+  // Freeze the contrast clock at the instant the tube fires: the image belongs to the delay
+  // the operator actually achieved, not to wherever the clock has drifted by the time the
+  // projection finishes computing.
+  ctrstLatch();
   S.exposing=true; EXP.done=false; EXP.holding=true;
   // AEC terminates the exposure itself — the operator just holds through it (ms-scale);
   // manual technique requires holding the switch for the full set exposure time.
@@ -2151,40 +2161,154 @@ function updateDetWarn(){
 }
 
 
-/* ---- contrast injector panel (docs/contrast-simulation.md Phase 3) --------------------
-   The panel slides over the bay rather than pushing the layout: positioning is what the bay
-   is for, and the injector is something you dip into. Every injector change re-solves — the
-   solve is ~1.2 s, which is what makes each parameter freely continuous instead of one of a
-   handful of presets, so a debounce and a busy state are all the UI needs.
+/* ---- power injector (docs/contrast-simulation.md Phase 3) ----------------------------
+   Modelled on a dual-syringe CT injector: one barrel of contrast medium, one of saline, a
+   programmed sequence drawn to scale in time, and a transport bar.
 
-   There is deliberately no separate "injection start delay": for a single acquisition only
-   the INTERVAL between injection and scan is observable, so one control (scan at) says the
-   same thing with half the confusion. */
-const CTRST_EL = { vol:'ctrstVol', rate:'ctrstRate', conc:'ctrstConc', sal:'ctrstSal',
-                   hr:'ctrstHr', sv:'ctrstSv', delay:'ctrstDelay' };
+   The scan delay is NOT a number you dial. You start the injector, the clock runs, and the
+   enhancement you get is whatever the anatomy had reached at the moment you took the
+   exposure — which is the actual skill the machine demands. Dialling "scan at 25 s" let you
+   pick the answer; this makes you commit to it. */
+const CTRST_EL = { rate:'ctrstRate', conc:'ctrstConc', delay:'ctrstDelay',
+                   hr:'ctrstHr', sv:'ctrstSv' };
 let ctrstTimer = null;
 
+/* Injection line pressure, Poiseuille through the 2.5 m coiled line and a 20 G cannula.
+   Real physics rather than decoration: it is why 8 mL/s of 400 mgI/mL through a small
+   cannula is a genuine constraint, and the fourth-power radius term is what makes cannula
+   choice matter more than anything else on the panel. Viscosity is for 37 degC. */
+const CONTRAST_ETA = [[240, 0.0030], [300, 0.0049], [350, 0.0080], [400, 0.0120]];  // Pa.s
+function injViscosity(conc){
+  const t = CONTRAST_ETA;
+  if(conc <= t[0][0]) return t[0][1];
+  for(let i=1;i<t.length;i++){
+    if(conc <= t[i][0]){
+      const f=(conc-t[i-1][0])/(t[i][0]-t[i-1][0]);
+      return t[i-1][1]+(t[i][1]-t[i-1][1])*f;
+    }
+  }
+  return t[t.length-1][1];
+}
+function injPressureBar(rate_ml_s, conc){
+  const eta=injViscosity(conc), Q=rate_ml_s*1e-6;             // m^3/s
+  const seg=(L,r)=> 8*eta*L*Q/(Math.PI*Math.pow(r,4));        // Pa
+  return (seg(2.5, 0.75e-3) + seg(0.032, 0.40e-3)) / 1e5;     // line + cannula, Pa -> bar
+}
+
+/* The programmed sequence: an optional start delay, the contrast bolus, the saline chaser. */
+function ctrstPhases(){
+  const P=S.contrast.params, r=Math.max(P.rate_ml_s,.1);
+  const out=[];
+  if(P.delay_s>0) out.push({kind:'delay', t:P.delay_s, ml:0});
+  out.push({kind:'cm',   t:P.volume_ml/r,          ml:P.volume_ml, rate:P.rate_ml_s});
+  if(P.saline_ml>0) out.push({kind:'nacl', t:P.saline_ml/r, ml:P.saline_ml, rate:P.rate_ml_s});
+  return out;
+}
+const ctrstTotalTime = () => ctrstPhases().reduce((a,p)=>a+p.t, 0);
+const fmtClock = (sec)=>{
+  const s=Math.max(0,Math.floor(sec));
+  return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+};
+
+/* ---- the running clock -------------------------------------------------------------- */
+function ctrstClock(){
+  const R=S.contrast.run;
+  return R.t0==null ? null : (performance.now()-R.t0)/1000;
+}
+function ctrstStart(){
+  const R=S.contrast.run;
+  R.t0=performance.now(); R.latched=null;
+  S.contrast.scanTime=0; S.contrast.lut=null; S.contrast.lutT=null;
+  if(!R.timer) R.timer=setInterval(ctrstTick, 100);
+  ctrstRenderRun(); ctrstDrawCurve();
+}
+function ctrstReset(){
+  const R=S.contrast.run;
+  if(R.timer){ clearInterval(R.timer); R.timer=null; }
+  R.t0=null; R.latched=null;
+  S.contrast.scanTime=0; S.contrast.lut=null; S.contrast.lutT=null;
+  ctrstRenderRun(); ctrstDrawCurve();
+}
+function ctrstTick(){
+  const t=ctrstClock();
+  if(t==null) return;
+  if(S.contrast.run.latched==null){
+    S.contrast.scanTime=Math.min(t, 90);
+    S.contrast.lut=null; S.contrast.lutT=null;
+  }
+  ctrstRenderRun(); ctrstDrawCurve();
+  if(t>150){ const R=S.contrast.run; clearInterval(R.timer); R.timer=null; }   // stop ticking, keep the time
+}
+/* Freeze the acquisition time at the instant the tube fires. Everything downstream — the
+   x-ray projection, every CT slice — reads S.contrast.scanTime, so latching here is what
+   ties the image to the delay the operator actually achieved. */
+function ctrstLatch(){
+  const t=ctrstClock();
+  if(t==null) return null;
+  S.contrast.run.latched=Math.min(t, 90);
+  S.contrast.scanTime=S.contrast.run.latched;
+  S.contrast.lut=null; S.contrast.lutT=null;
+  ctrstRenderRun();
+  return S.contrast.run.latched;
+}
+
 function ctrstReadUI(){
-  const v = (k)=> +$(CTRST_EL[k]).value;
-  const P = S.contrast.params;
-  P.volume_ml = v('vol'); P.rate_ml_s = v('rate'); P.conc_mgi_ml = v('conc');
-  P.saline_ml = v('sal');
-  // Cardiac output is what the haemodynamics actually depend on; heart rate is what a
-  // student changes. CO = HR x stroke volume, so expose both and derive the one the solver
-  // wants rather than asking for a number nobody has an intuition for.
-  P.cardiac_output_l_min = v('hr') * v('sv') / 1000;
-  S.contrast.scanTime = v('delay');
-  $('ctrstVolV').textContent = P.volume_ml+' mL';
-  $('ctrstRateV').textContent = P.rate_ml_s.toFixed(1)+' mL/s';
-  $('ctrstConcV').textContent = P.conc_mgi_ml+' mgI/mL';
-  $('ctrstSalV').textContent = P.saline_ml+' mL';
-  $('ctrstHrV').textContent = v('hr')+' bpm';
-  $('ctrstSvV').textContent = v('sv')+' mL';
-  $('ctrstDelayV').textContent = S.contrast.scanTime+' s';
-  const dur = P.volume_ml / Math.max(P.rate_ml_s, .1);
-  $('ctrstInjNote').textContent =
-    (P.volume_ml*P.conc_mgi_ml/1000).toFixed(1)+' g iodine over '+dur.toFixed(1)+' s';
-  $('ctrstCoNote').textContent = 'cardiac output '+P.cardiac_output_l_min.toFixed(1)+' L/min';
+  const v=(k)=> +$(CTRST_EL[k]).value;
+  const P=S.contrast.params;
+  P.rate_ml_s=v('rate'); P.conc_mgi_ml=v('conc'); P.delay_s=v('delay');
+  // Cardiac output is what the haemodynamics depend on; heart rate is what a student
+  // changes. CO = HR x stroke volume, so expose both and derive the one the solver wants.
+  P.cardiac_output_l_min=v('hr')*v('sv')/1000;
+  $('ctrstVolV').textContent=P.volume_ml;
+  $('ctrstSalV').textContent=P.saline_ml;
+  $('ctrstRateV').textContent=P.rate_ml_s.toFixed(1)+' mL/s';
+  $('ctrstConcV').textContent=P.conc_mgi_ml+' mgI/mL';
+  $('ctrstDelayV').textContent=P.delay_s+' s';
+  $('ctrstHrV').textContent=v('hr')+' bpm';
+  $('ctrstSvV').textContent=v('sv')+' mL';
+  $('ctrstTotal').textContent=(P.volume_ml+P.saline_ml)+' ml total';
+  $('ctrstDur').textContent=fmtClock(ctrstTotalTime());
+  $('ctrstInjNote').textContent=(P.volume_ml*P.conc_mgi_ml/1000).toFixed(1)+' g iodine · peak line pressure '
+    +injPressureBar(P.rate_ml_s,P.conc_mgi_ml).toFixed(1)+' bar';
+  $('ctrstCoNote').textContent='cardiac output '+P.cardiac_output_l_min.toFixed(1)+' L/min';
+  ctrstRenderBar();
+}
+
+/* Phase bar, drawn to scale in time. */
+function ctrstRenderBar(){
+  const el=$('ctrstBar'); if(!el) return;
+  const ph=ctrstPhases(), tot=Math.max(ctrstTotalTime(),.1);
+  el.innerHTML=ph.map(p=>{
+    const w=(p.t/tot*100).toFixed(2)+'%';
+    const lab=p.kind==='delay' ? 'Delay' : p.ml+'ml';
+    const sub=p.kind==='delay' ? fmtClock(p.t) : p.rate.toFixed(1)+'mL/s · '+p.t.toFixed(1)+'s';
+    return `<div class="inj-seg ${p.kind}" style="width:${w}"><div>${lab}</div><small>${sub}</small></div>`;
+  }).join('');
+}
+
+/* Live readouts while the injector runs. */
+function ctrstRenderRun(){
+  if(!$('ctrstElapsed')) return;
+  const P=S.contrast.params, t=ctrstClock(), R=S.contrast.run;
+  const tot=ctrstTotalTime();
+  $('ctrstElapsed').textContent = t==null ? '00:00' : fmtClock(t);
+  $('ctrstScanAt').textContent = R.latched==null ? '—' : R.latched.toFixed(1)+' s';
+  $('ctrstProg').style.width = t==null ? '0%' : Math.min(100, t/Math.max(tot,.1)*100)+'%';
+  // delivered volume: walk the programmed phases up to the elapsed time
+  let cm=0, na=0, left=t==null?0:t;
+  for(const p of ctrstPhases()){
+    const d=Math.min(Math.max(left,0), p.t);
+    if(p.kind==='cm') cm+=d*p.rate;
+    if(p.kind==='nacl') na+=d*p.rate;
+    left-=p.t;
+  }
+  const inj = t!=null && t<tot;
+  $('ctrstPress').textContent = (inj ? injPressureBar(P.rate_ml_s,P.conc_mgi_ml) : 0).toFixed(1)+' bar';
+  $('ctrstDeliv').innerHTML = Math.round(cm)+' ml CM &nbsp;·&nbsp; '+Math.round(na)+' ml NaCl delivered';
+  const go=$('ctrstGo');
+  go.classList.toggle('running', t!=null);
+  go.textContent = t==null ? '▶ START' : (inj ? '● INJECTING' : '● RUNNING');
+  $('ctrstReset').disabled = t==null;
 }
 
 function ctrstStatus(msg, cls){
@@ -2203,40 +2327,35 @@ function ctrstQueueSolve(){
       S.contrast.on=false; ctrstApply(true);
       ctrstStatus(S.contrast.error || 'Solve failed.','err');
     } else {
-      const tl=S.contrast.timeline;
-      ctrstStatus(tl.nT+' s timeline at 1 Hz. Heart chambers are averaged — right and left '
-                  + 'need chamber labels (docs 4.3.1).');
+      ctrstApply(true);          // the timeline now exists, so START can arm
+      ctrstStatus('Ready. Press START, then take the exposure when the timing is right.');
     }
     S.contrast.lut=null; S.contrast.lutT=null;
     ctrstDrawCurve(); refreshReadouts();
   }, 350);
 }
 
-/* Enhancement curves + the scan marker. This is the part that teaches: which vessel you care
-   about, when it peaks, and where your acquisition lands relative to it. */
+/* Predicted enhancement + where the clock currently is. */
 function ctrstDrawCurve(){
   const cv=$('ctrstCurve'); if(!cv) return;
   const g=cv.getContext('2d'), W=cv.width, H=cv.height;
   g.clearRect(0,0,W,H); g.fillStyle='#070a0d'; g.fillRect(0,0,W,H);
   const tl=S.contrast.timeline, TMAX=90;
-  const K = BodyMaterials.huPerMgIml(70);      // dHU per mgI/mL at a 120 kVp effective energy
-  const pad={l:26,r:6,t:8,b:14}, pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
-  const HMAX=520;
+  const K=BodyMaterials.huPerMgIml(70);        // dHU per mgI/mL at a 120 kVp effective energy
+  const pad={l:26,r:6,t:8,b:14}, pw=W-pad.l-pad.r, ph=H-pad.t-pad.b, HMAX=520;
   g.lineWidth=1; g.font='8px monospace';
   for(let hu=0; hu<=HMAX; hu+=130){
     const y=pad.t+ph-hu/HMAX*ph;
-    g.strokeStyle='#1b232b';
-    g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke();
+    g.strokeStyle='#1b232b'; g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke();
     g.fillStyle='#5a6570'; g.fillText(String(hu), 3, y+3);
   }
   for(let t=0;t<=TMAX;t+=15){
     const x=pad.l+t/TMAX*pw;
-    g.strokeStyle='#1b232b';
-    g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke();
+    g.strokeStyle='#1b232b'; g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke();
     if(t){ g.fillStyle='#5a6570'; g.fillText(t+'s', x-7, H-3); }
   }
   if(tl){
-    const line=(series, col)=>{
+    const line=(series,col)=>{
       g.strokeStyle=col; g.lineWidth=1.6; g.beginPath();
       for(let t=0;t<tl.nT && t<=TMAX;t++){
         const x=pad.l+t/TMAX*pw, y=pad.t+ph-Math.min(series(t)*K,HMAX)/HMAX*ph;
@@ -2244,33 +2363,40 @@ function ctrstDrawCurve(){
       }
       g.stroke();
     };
-    // a vessel enhances unevenly along its length, so plot its peak — that is the number a
+    // a vessel enhances unevenly along its length, so plot its peak — the number a
     // bolus-tracking ROI would read
     const vmax=(id)=>{ const f=tl.vessels.get(id); if(!f) return ()=>0;
       return (t)=>{ let m=0; const a=t*tl.nS; for(let k=0;k<tl.nS;k++) if(f[a+k]>m) m=f[a+k]; return m; }; };
     const org=(id)=>{ const f=tl.organs.get(id); return f?((t)=>f[t]):()=>0; };
-    line(vmax(29), '#ff7d7d');     // aorta
-    line(vmax(30), '#7dc4ff');     // pulmonary artery
-    line(org(11),  '#c79bff');     // liver
-    line(org(13),  '#8fe08f');     // kidney
+    line(vmax(29),'#ff7d7d'); line(vmax(30),'#7dc4ff');
+    line(org(11),'#c79bff');  line(org(13),'#8fe08f');
   } else {
     g.fillStyle='#4a5560'; g.font='9px monospace';
-    g.fillText('turn contrast on to solve', pad.l+26, pad.t+ph/2);
+    g.fillText('turn contrast on to solve', pad.l+38, pad.t+ph/2);
   }
-  const x=pad.l+Math.min(S.contrast.scanTime,TMAX)/TMAX*pw;
-  g.strokeStyle='#ffb23e'; g.lineWidth=1.5;
-  g.beginPath(); g.moveTo(x,pad.t-3); g.lineTo(x,pad.t+ph+3); g.stroke();
-  g.fillStyle='#ffb23e'; g.beginPath();
-  g.moveTo(x,pad.t-3); g.lineTo(x-4,pad.t-8); g.lineTo(x+4,pad.t-8); g.closePath(); g.fill();
+  const mark=(t,col,solid)=>{
+    const x=pad.l+Math.min(t,TMAX)/TMAX*pw;
+    g.strokeStyle=col; g.lineWidth=1.5;
+    if(!solid) g.setLineDash([3,3]);
+    g.beginPath(); g.moveTo(x,pad.t-3); g.lineTo(x,pad.t+ph+3); g.stroke();
+    g.setLineDash([]);
+    if(solid){ g.fillStyle=col; g.beginPath();
+      g.moveTo(x,pad.t-3); g.lineTo(x-4,pad.t-8); g.lineTo(x+4,pad.t-8); g.closePath(); g.fill(); }
+  };
+  const live=ctrstClock(), R=S.contrast.run;
+  if(live!=null && R.latched==null) mark(live,'#4fd06a',true);      // the clock, running
+  if(R.latched!=null){
+    if(live!=null) mark(live,'#3a4a55',false);                      // where the clock is now
+    mark(R.latched,'#ffb23e',true);                                 // where the image was taken
+  }
 }
 
 /* Why contrast cannot run right now, or null if it can.
 
    Note what is NOT a blocker: the compute-engine choice. The browser ray-caster renders the
    iodine column perfectly well — what needs the Python service is the haemodynamic SOLVE,
-   which has no JS implementation. So a user on the browser engine with the service running
-   gets working contrast, and gating on the engine toggle would take that away for no reason.
-   The gate is service reachability. */
+   which has no JS implementation. Gating on the engine toggle would take away a combination
+   that works. The gate is service reachability. */
 function ctrstBlocker(){
   const vm=S.voxelModel;
   if(!vm || !vm.hasVessels)
@@ -2280,26 +2406,25 @@ function ctrstBlocker(){
   return null;
 }
 
-/* Enable/disable state -> tab colour, power button, control availability.
-   keepStatus: leave the status line alone, so a failure explanation is not overwritten by
-   the routine refresh that follows it — which is exactly what hid the real reason before. */
 function ctrstApply(keepStatus){
   const panel=$('ctrstPanel'); if(!panel) return;
   const blocked=ctrstBlocker();
   // Grey the tab itself, not just the controls inside: the honest signal belongs on the
-  // closed panel, so the feature never looks available until you have opened it and tried.
-  // When blocked the tab is inert and the reason lives in its tooltip only — opening a
-  // drawer whose every control is dead just to read a sentence is worse than not opening it.
+  // closed panel. When blocked the tab is inert and the reason lives in its tooltip only.
   panel.classList.toggle('blocked', !!blocked);
   $('ctrstTab').title = blocked ? blocked[0] : 'Contrast injector';
   if(blocked) panel.classList.remove('open');
   panel.classList.toggle('armed', S.contrast.on);
   $('ctrstOn').classList.toggle('on', S.contrast.on);
   $('ctrstOn').textContent = S.contrast.on ? 'ON' : 'OFF';
-  Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!S.contrast.on; });
+  const live = S.contrast.on && !blocked;
+  Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!live; });
+  document.querySelectorAll('.inj-hbtns button').forEach(b=> b.disabled=!live);
+  $('ctrstGo').disabled = !live || !S.contrast.timeline;
   $('ctrstOn').disabled = !!blocked;
+  if(!live) ctrstReset();
   if(!blocked && !keepStatus && !S.contrast.on) ctrstStatus('Contrast off. Unenhanced scans are unaffected.');
-  ctrstDrawCurve();
+  ctrstRenderRun(); ctrstDrawCurve();
 }
 
 /* The service can come and go while the panel is open, so re-evaluate on every health poll.
@@ -2323,28 +2448,53 @@ function initContrastPanel(){
     if(S.contrast.on) ctrstQueueSolve();
     else { S.contrast.lut=null; S.contrast.lutT=null; refreshReadouts(); }
   });
-  ['vol','rate','conc','sal','hr','sv'].forEach(k=>{
-    $(CTRST_EL[k]).addEventListener('input',()=>{ ctrstReadUI(); ctrstQueueSolve(); });
+  // syringe +/- : volume steps, clamped to what a barrel holds
+  document.querySelectorAll('.inj-hbtns button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const [k,d]=b.dataset.adj.split(':'), P=S.contrast.params, step=+d;
+      if(k==='vol') P.volume_ml=Math.max(20, Math.min(200, P.volume_ml+step));
+      else P.saline_ml=Math.max(0, Math.min(100, P.saline_ml+step));
+      if(S.contrast.run.t0!=null) ctrstReset();   // cannot reprogram a running injection
+      ctrstReadUI(); ctrstQueueSolve();
+    });
   });
-  // Scan delay does NOT re-solve: the timeline already covers every second of it, so moving
-  // the marker is a lookup rather than a new solve. That is what keeps scrubbing instant.
-  $(CTRST_EL.delay).addEventListener('input',()=>{
-    ctrstReadUI(); S.contrast.lut=null; S.contrast.lutT=null;
-    ctrstDrawCurve(); refreshReadouts();
+  ['rate','conc','delay','hr','sv'].forEach(k=>{
+    $(CTRST_EL[k]).addEventListener('input',()=>{
+      if(S.contrast.run.t0!=null) ctrstReset();   // cannot reprogram a running injection
+      ctrstReadUI(); ctrstQueueSolve();
+    });
   });
-  // drag anywhere on the plot to scrub the acquisition time
-  const cv=$('ctrstCurve');
-  const scrub=(e)=>{
-    const r=cv.getBoundingClientRect(), sx=r.width/cv.width;
-    const f=(e.clientX-r.left-26*sx)/((cv.width-32)*sx);
-    const t=Math.round(Math.max(0,Math.min(1,f))*90);
-    $(CTRST_EL.delay).value=t; ctrstReadUI(); S.contrast.lut=null; S.contrast.lutT=null;
-    ctrstDrawCurve(); refreshReadouts();
-  };
-  cv.addEventListener('pointerdown',e=>{ cv.setPointerCapture(e.pointerId); scrub(e); });
-  cv.addEventListener('pointermove',e=>{ if(e.buttons&1) scrub(e); });
+  $('ctrstGo').addEventListener('click', ctrstStart);
+  $('ctrstReset').addEventListener('click', ctrstReset);
   ctrstReadUI(); ctrstApply();
 }
+
+// Drive the injector from a script or a test.
+window.radsimContrast={
+  state:()=>S.contrast,
+  async enable(params){
+    Object.assign(S.contrast.params, params||{});
+    S.contrast.on=true;
+    const ok=await contrastSolve();
+    ctrstApply(true);
+    if(!ok) S.contrast.on=false;
+    return ok ? S.contrast.timeline : S.contrast.error;
+  },
+  disable(){ S.contrast.on=false; ctrstApply(); },
+  start:()=>ctrstStart(),
+  reset:()=>ctrstReset(),
+  latch:()=>ctrstLatch(),
+  clock:()=>ctrstClock(),
+  // Acquisition timing for the selected CT scan group — a helical scan images each slice at
+  // its own moment, which is the whole point of per-slice timing.
+  ctTiming(){
+    const g=(S.ct.groups||[])[S.ct.sel||0]; if(!g) return null;
+    const lo=S.ct.scanStart, hi=lo+S.ct.scanLen, n=12;
+    const pos=Array.from({length:n},(_,i)=>lo+(hi-lo)*i/(n-1));
+    return { mmPerSec:+couchSpeedMMps(g).toFixed(1), lenMM:+(hi-lo).toFixed(0),
+             t:pos.map((_,i)=>+sliceTime(g,pos,i,S.contrast.scanTime).toFixed(2)) };
+  },
+};
 
 function initExtras(){
   wireBackendToggles();
@@ -2363,7 +2513,7 @@ window.addEventListener('load',()=>{
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
-           refreshFilmViewer, compute, drawHistogram,
+           refreshFilmViewer, compute, drawHistogram, contrastLatch: ctrstLatch,
            editorMode: (on) => editorApplyMode(on) });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

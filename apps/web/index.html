@@ -29,17 +29,49 @@
         </div>
         <div class="ctrst-pad">
 
+          <!-- syringe heads: contrast medium + saline, the two barrels of a dual injector -->
+          <div class="inj-heads">
+            <div class="inj-head cm">
+              <div class="inj-hlab">CM</div>
+              <div class="inj-hval"><span id="ctrstVolV">100</span><small>ml</small></div>
+              <div class="inj-hbtns"><button data-adj="vol:-10">−</button><button data-adj="vol:10">+</button></div>
+            </div>
+            <div class="inj-head nacl">
+              <div class="inj-hlab">NaCl</div>
+              <div class="inj-hval"><span id="ctrstSalV">40</span><small>ml</small></div>
+              <div class="inj-hbtns"><button data-adj="sal:-5">−</button><button data-adj="sal:5">+</button></div>
+            </div>
+          </div>
+          <div class="inj-total"><span id="ctrstTotal">140 ml total</span><span id="ctrstDur">00:00</span></div>
+
+          <!-- programmed phases, drawn to scale in time -->
+          <div class="inj-bar" id="ctrstBar"></div>
+          <div class="inj-prog"><div class="inj-progfill" id="ctrstProg"></div></div>
+
+          <!-- injector readouts -->
+          <div class="inj-ro">
+            <div><div class="k">Elapsed</div><div class="v" id="ctrstElapsed">00:00</div></div>
+            <div><div class="k">Scan at</div><div class="v amber" id="ctrstScanAt">—</div></div>
+            <div><div class="k">Pressure</div><div class="v" id="ctrstPress">0 bar</div></div>
+          </div>
+          <div class="inj-deliv" id="ctrstDeliv">0 ml CM &nbsp;·&nbsp; 0 ml NaCl delivered</div>
+
+          <!-- transport -->
+          <div class="inj-tx">
+            <button class="inj-go" id="ctrstGo" title="Start the injection">▶ START</button>
+            <button class="inj-rst" id="ctrstReset" title="Reset the injector">■</button>
+          </div>
+          <div class="ctrst-note" id="ctrstArmNote">Start the injector, then take the exposure when you judge the timing right.</div>
+
           <div class="grp">
-            <div class="lab">Injector</div>
+            <div class="lab">Protocol</div>
             <div class="bod">
-              <div class="row"><div class="rl">Volume</div><div class="valchip" id="ctrstVolV">100 mL</div></div>
-              <input type="range" id="ctrstVol" min="20" max="200" value="100" step="5">
-              <div class="row" style="margin-top:8px"><div class="rl">Flow rate</div><div class="valchip" id="ctrstRateV">4.0 mL/s</div></div>
+              <div class="row"><div class="rl">Flow rate</div><div class="valchip" id="ctrstRateV">4.0 mL/s</div></div>
               <input type="range" id="ctrstRate" min="1" max="8" value="4" step="0.5">
               <div class="row" style="margin-top:8px"><div class="rl">Concentration</div><div class="valchip" id="ctrstConcV">350 mgI/mL</div></div>
               <input type="range" id="ctrstConc" min="240" max="400" value="350" step="10">
-              <div class="row" style="margin-top:8px"><div class="rl">Saline <small>chaser</small></div><div class="valchip" id="ctrstSalV">40 mL</div></div>
-              <input type="range" id="ctrstSal" min="0" max="60" value="40" step="5">
+              <div class="row" style="margin-top:8px"><div class="rl">Start delay</div><div class="valchip" id="ctrstDelayV">0 s</div></div>
+              <input type="range" id="ctrstDelay" min="0" max="30" value="0" step="1">
               <div class="ctrst-note" id="ctrstInjNote">—</div>
             </div>
           </div>
@@ -56,16 +88,13 @@
           </div>
 
           <div class="grp">
-            <div class="lab">Acquisition · scan delay</div>
+            <div class="lab">Predicted enhancement</div>
             <div class="bod">
-              <canvas id="ctrstCurve" width="272" height="118"></canvas>
+              <canvas id="ctrstCurve" width="330" height="120"></canvas>
               <div class="ctrst-key">
                 <span style="color:#ff7d7d">aorta</span><span style="color:#7dc4ff">pulm art</span>
                 <span style="color:#c79bff">liver</span><span style="color:#8fe08f">kidney</span>
               </div>
-              <div class="row" style="margin-top:6px"><div class="rl">Scan at</div><div class="valchip" id="ctrstDelayV">25 s</div></div>
-              <input type="range" id="ctrstDelay" min="0" max="90" value="25" step="1">
-              <div class="ctrst-note" id="ctrstScanNote">—</div>
             </div>
           </div>
 

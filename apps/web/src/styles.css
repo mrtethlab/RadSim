@@ -914,7 +914,7 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
    only as wide as the closed tab — the drawer stayed 1px no matter what width it asked for.
    Translating a fixed-width panel avoids the circular sizing entirely, and animates on the
    compositor instead of relayout. */
-.ctrst-body{pointer-events:auto; position:absolute; left:0; top:0; bottom:0; width:300px;
+.ctrst-body{pointer-events:auto; position:absolute; left:0; top:0; bottom:0; width:356px;
   transform:translateX(-100%); transition:transform .18s ease; background:#0b0e12;
   border-right:1px solid var(--edge2); box-shadow:6px 0 26px rgba(0,0,0,.55);
   display:flex; flex-direction:column}
@@ -926,7 +926,7 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
   color:var(--muted); background:#0b0e12; border:1px solid var(--edge2); border-left:0;
   border-radius:0 8px 8px 0; padding:16px 7px; cursor:pointer;
   box-shadow:4px 0 16px rgba(0,0,0,.5)}
-.ctrst.open .ctrst-tab{left:300px}
+.ctrst.open .ctrst-tab{left:356px}
 .ctrst-tab:hover{color:var(--txt)}
 .ctrst.armed .ctrst-tab{color:#1a1204; background:var(--amber); border-color:var(--amber);
   box-shadow:0 0 14px rgba(255,178,62,.55)}
@@ -961,3 +961,55 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
 .ctrst-status.busy{color:var(--amber)}
 /* the injector is a scanning setting; the model editor is not a scanning mode */
 body.mode-editor .ctrst{display:none}
+
+/* ---- power-injector console ----------------------------------------------------------
+   Laid out like a dual-syringe CT injector head: two barrels, the programmed phases drawn
+   to scale in time, and a transport bar. The point of the redesign is that the scan delay
+   is no longer a number you dial — you start the injector and then decide when to shoot,
+   which is the actual skill. */
+.inj-heads{display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-bottom:7px}
+.inj-head{border:1px solid var(--edge2); border-radius:7px; padding:7px 8px 8px; background:#070a0d;
+  border-top-width:3px}
+.inj-head.cm{border-top-color:#3aa0e0}
+.inj-head.nacl{border-top-color:#4fd06a}
+.inj-hlab{font-family:var(--seg); font-size:9.5px; letter-spacing:2px; color:var(--muted)}
+.inj-hval{font-family:var(--seg); font-size:25px; line-height:1.1; color:var(--txt)}
+.inj-hval small{font-size:10px; color:var(--muted2); margin-left:3px}
+.inj-hbtns{display:flex; gap:5px; margin-top:5px}
+.inj-hbtns button{flex:1; font-family:var(--seg); font-size:14px; line-height:1; color:var(--txt);
+  background:#131922; border:1px solid var(--edge2); border-radius:5px; padding:3px 0; cursor:pointer}
+.inj-hbtns button:hover:not(:disabled){background:#1c2530}
+.inj-hbtns button:disabled{opacity:.35; cursor:default}
+.inj-total{display:flex; justify-content:space-between; font-family:var(--seg); font-size:10px;
+  letter-spacing:1px; color:var(--muted); margin-bottom:7px}
+.inj-bar{display:flex; height:34px; border:1px solid var(--edge2); border-radius:6px;
+  overflow:hidden; background:#070a0d}
+.inj-seg{display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font-family:var(--seg); font-size:9px; line-height:1.3; color:#06121a; overflow:hidden;
+  border-right:1px solid rgba(0,0,0,.35); min-width:0}
+.inj-seg small{font-size:8px; opacity:.75}
+.inj-seg.cm{background:linear-gradient(180deg,#57b6ee,#2f8fd0)}
+.inj-seg.nacl{background:linear-gradient(180deg,#6fe089,#3fb85c)}
+.inj-seg.delay{background:#161d26; color:var(--muted)}
+.inj-prog{height:4px; margin:4px 0 8px; background:#131922; border-radius:2px; overflow:hidden}
+.inj-progfill{height:100%; width:0; background:var(--amber); transition:width .1s linear}
+.inj-ro{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-bottom:5px}
+.inj-ro>div{border:1px solid var(--edge2); border-radius:6px; padding:5px 6px; background:#070a0d}
+.inj-ro .k{font-family:var(--seg); font-size:8.5px; letter-spacing:1.5px; color:var(--muted2)}
+.inj-ro .v{font-family:var(--seg); font-size:16px; color:var(--txt); line-height:1.3}
+.inj-ro .v.amber{color:var(--amber)}
+.inj-deliv{font-family:var(--seg); font-size:9.5px; letter-spacing:.5px; color:var(--muted2);
+  margin-bottom:8px}
+.inj-tx{display:flex; gap:7px}
+.inj-go{flex:1; font-family:var(--disp); font-weight:700; letter-spacing:3px; font-size:15px;
+  color:#06210d; background:linear-gradient(180deg,#5fe07a,#2fa84c); border:0; border-radius:7px;
+  padding:10px 0; cursor:pointer; box-shadow:0 0 14px rgba(79,208,106,.35); transition:.15s}
+.inj-go:hover:not(:disabled){filter:brightness(1.12)}
+.inj-go:disabled{background:#1b232b; color:var(--muted2); box-shadow:none; cursor:default}
+.inj-go.running{background:linear-gradient(180deg,#ffc357,#e08a1e); color:#221403;
+  box-shadow:0 0 14px rgba(255,178,62,.4)}
+.inj-rst{width:46px; font-size:13px; color:var(--muted); background:#131922;
+  border:1px solid var(--edge2); border-radius:7px; cursor:pointer}
+.inj-rst:hover:not(:disabled){color:var(--txt)}
+.inj-rst:disabled{opacity:.35; cursor:default}
+#ctrstCurve{width:100%; height:120px}
