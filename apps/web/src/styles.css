@@ -903,3 +903,54 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
   box-shadow:0 0 6px rgba(233,169,74,.55); }
 .curvebar .cb-h:hover{ background:#f7c477; }
 .curvebar .cb-h.drag{ background:#ffe0ad; box-shadow:0 0 10px rgba(255,200,120,.9); }
+
+/* ============ CONTRAST INJECTOR — left-edge pull-out over the bay ============
+   Slides in rather than pushing the layout: positioning is the task the bay is for, and
+   the injector is a setting you dip into, not something you work in. The tab stays visible
+   when closed so the feature is discoverable without hunting through settings. */
+.ctrst{position:absolute; top:0; bottom:0; left:0; z-index:12; pointer-events:none}
+/* Slide by transform, not width. The panel is a shrink-to-fit absolutely positioned box, so
+   a flex child sized in px gets clamped by percentage max-width against a container that is
+   only as wide as the closed tab — the drawer stayed 1px no matter what width it asked for.
+   Translating a fixed-width panel avoids the circular sizing entirely, and animates on the
+   compositor instead of relayout. */
+.ctrst-body{pointer-events:auto; position:absolute; left:0; top:0; bottom:0; width:300px;
+  transform:translateX(-100%); transition:transform .18s ease; background:#0b0e12;
+  border-right:1px solid var(--edge2); box-shadow:6px 0 26px rgba(0,0,0,.55);
+  display:flex; flex-direction:column}
+.ctrst.open .ctrst-body{transform:translateX(0)}
+.ctrst-tab{pointer-events:auto; position:absolute; left:0; top:64px;
+  transition:left .18s ease, color .15s, background .15s;
+  writing-mode:vertical-rl; text-orientation:mixed;
+  font-family:var(--disp); font-weight:700; letter-spacing:3px; font-size:13px; text-transform:uppercase;
+  color:var(--muted); background:#0b0e12; border:1px solid var(--edge2); border-left:0;
+  border-radius:0 8px 8px 0; padding:16px 7px; cursor:pointer;
+  box-shadow:4px 0 16px rgba(0,0,0,.5)}
+.ctrst.open .ctrst-tab{left:300px}
+.ctrst-tab:hover{color:var(--txt)}
+.ctrst.armed .ctrst-tab{color:#1a1204; background:var(--amber); border-color:var(--amber);
+  box-shadow:0 0 14px rgba(255,178,62,.55)}
+.ctrst-hdr{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  padding:11px 13px; border-bottom:1px solid var(--edge2); flex:0 0 auto}
+.ctrst-hdr .t{font-family:var(--disp); font-weight:700; letter-spacing:2px; font-size:14px;
+  text-transform:uppercase; color:var(--txt)}
+.ctrst-hdr .t b{color:var(--cyan)}
+.ctrst-pow{font-family:var(--seg); font-size:10px; letter-spacing:2px; color:var(--muted);
+  background:transparent; border:1px solid var(--edge2); border-radius:5px; padding:4px 10px;
+  cursor:pointer; transition:.15s}
+.ctrst-pow:hover{color:var(--txt)}
+.ctrst-pow.on{color:#1a1204; background:var(--amber); border-color:var(--amber)}
+.ctrst-pad{padding:11px 13px 16px; overflow-y:auto; flex:1 1 auto}
+.ctrst-pad .grp{margin-bottom:12px}
+#ctrstCurve{width:100%; height:118px; display:block; border:1px solid var(--edge2);
+  border-radius:6px; background:#070a0d; cursor:ew-resize}
+.ctrst-key{display:flex; gap:10px; font-family:var(--seg); font-size:9px; letter-spacing:1px;
+  margin-top:5px; text-transform:uppercase}
+.ctrst-note{font-family:var(--seg); font-size:9.5px; line-height:1.6; letter-spacing:.3px;
+  color:var(--muted2); margin-top:7px}
+.ctrst-status{font-family:var(--seg); font-size:9.5px; line-height:1.6; letter-spacing:.3px;
+  color:var(--muted); border-top:1px solid var(--edge2); padding-top:9px; margin-top:4px}
+.ctrst-status.err{color:#ff8a8a}
+.ctrst-status.busy{color:var(--amber)}
+/* the injector is a scanning setting; the model editor is not a scanning mode */
+body.mode-editor .ctrst{display:none}

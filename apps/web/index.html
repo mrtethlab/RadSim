@@ -19,6 +19,61 @@
       <button data-mode="ct">CT</button>
       <button data-mode="editor">MODEL EDITOR</button>
     </div>
+    <!-- ============ CONTRAST INJECTOR (pull-out, left edge of the bay) ============ -->
+    <div class="ctrst" id="ctrstPanel">
+      <button class="ctrst-tab" id="ctrstTab" title="Contrast injector"><span>CONTRAST</span></button>
+      <div class="ctrst-body">
+        <div class="ctrst-hdr">
+          <div class="t"><b>CONTRAST</b> / INJECTOR</div>
+          <button class="ctrst-pow" id="ctrstOn">OFF</button>
+        </div>
+        <div class="ctrst-pad">
+
+          <div class="grp">
+            <div class="lab">Injector</div>
+            <div class="bod">
+              <div class="row"><div class="rl">Volume</div><div class="valchip" id="ctrstVolV">100 mL</div></div>
+              <input type="range" id="ctrstVol" min="20" max="200" value="100" step="5">
+              <div class="row" style="margin-top:8px"><div class="rl">Flow rate</div><div class="valchip" id="ctrstRateV">4.0 mL/s</div></div>
+              <input type="range" id="ctrstRate" min="1" max="8" value="4" step="0.5">
+              <div class="row" style="margin-top:8px"><div class="rl">Concentration</div><div class="valchip" id="ctrstConcV">350 mgI/mL</div></div>
+              <input type="range" id="ctrstConc" min="240" max="400" value="350" step="10">
+              <div class="row" style="margin-top:8px"><div class="rl">Saline <small>chaser</small></div><div class="valchip" id="ctrstSalV">40 mL</div></div>
+              <input type="range" id="ctrstSal" min="0" max="60" value="40" step="5">
+              <div class="ctrst-note" id="ctrstInjNote">—</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Patient</div>
+            <div class="bod">
+              <div class="row"><div class="rl">Heart rate</div><div class="valchip" id="ctrstHrV">72 bpm</div></div>
+              <input type="range" id="ctrstHr" min="40" max="140" value="72" step="2">
+              <div class="row" style="margin-top:8px"><div class="rl">Stroke volume</div><div class="valchip" id="ctrstSvV">70 mL</div></div>
+              <input type="range" id="ctrstSv" min="40" max="110" value="70" step="5">
+              <div class="ctrst-note" id="ctrstCoNote">—</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Acquisition · scan delay</div>
+            <div class="bod">
+              <canvas id="ctrstCurve" width="272" height="118"></canvas>
+              <div class="ctrst-key">
+                <span style="color:#ff7d7d">aorta</span><span style="color:#7dc4ff">pulm art</span>
+                <span style="color:#c79bff">liver</span><span style="color:#8fe08f">kidney</span>
+              </div>
+              <div class="row" style="margin-top:6px"><div class="rl">Scan at</div><div class="valchip" id="ctrstDelayV">25 s</div></div>
+              <input type="range" id="ctrstDelay" min="0" max="90" value="25" step="1">
+              <div class="ctrst-note" id="ctrstScanNote">—</div>
+            </div>
+          </div>
+
+          <div class="ctrst-status" id="ctrstStatus">Contrast off.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- ============ MODEL EDITOR (paint voxel slices; 3D preview shows through on the right) ============ -->
     <div class="edpage" id="edPage">
       <div class="edleft">

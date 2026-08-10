@@ -4,8 +4,8 @@ Real-time iodinated contrast for CT, and barium/CO₂ GI studies for x-ray. This
 records the architecture, the physics, and the decisions behind them. It is the reference
 for the work; the phases at the end are the plan of record.
 
-Status: **Phases 0-2 done: vessels, solver (mass-audited), and rendering. Contrast is
-visible in x-ray; CT per-slice timing and the UI panel are next. See §6.1-6.2.** Nothing below is implemented unless a phase says so.
+Status: **Phases 0-3 done: vessels, solver (mass-audited), rendering, per-slice CT
+timing, and the injector panel. Bolus tracking (4) and GI studies (5) are next. See §6.1-6.3.** Nothing below is implemented unless a phase says so.
 
 ---
 
@@ -449,6 +449,49 @@ it is below the resolution of the data underneath it rather than a compromise.
 - No UI yet — `window.radsimContrast` drives it until the panel lands (Phase 3).
 - The aortic peak is still ~15 % high. Real mu(E) did not explain it — 26.1 against the
   assumed 25 is 4 % — so it stays a solver concentration matter, recorded in §6.1.
+
+### 6.3 Phase 3 status — the injector panel
+
+A pull-out on the left edge of the bay, tab labelled CONTRAST. It slides over the 3D view
+rather than pushing the layout: positioning is what the bay is for, and the injector is
+something you dip into. The tab stays visible when closed, so the feature is discoverable
+without hunting through settings, and turns amber while contrast is armed.
+
+**Controls**
+
+| group | controls |
+| --- | --- |
+| Injector | volume, flow rate, concentration, saline chaser |
+| Patient | heart rate, stroke volume (cardiac output is derived and shown) |
+| Acquisition | enhancement plot + scan delay |
+
+Two decisions worth recording:
+
+- **Heart rate, not cardiac output.** CO is what the haemodynamics depend on, but HR is what
+  a student reaches for. The panel takes HR x stroke volume and derives CO, showing the
+  result — so the physiological knob is the one on screen and the solver still gets what it
+  needs.
+- **No separate injection-start delay.** For a single acquisition only the *interval* between
+  injection and scan is observable, so one control ("scan at") says the same thing with half
+  the confusion.
+
+**The enhancement plot is the part that teaches.** Aorta, pulmonary artery, liver and kidney
+against time, with an amber marker at the acquisition. Vessel traces plot the PEAK along the
+vessel, which is the number a bolus-tracking ROI would read. Drag anywhere on it to scrub.
+
+Scrubbing does **not** re-solve: the timeline already covers every second, so moving the
+marker is a lookup. Only injector and patient changes re-solve, debounced 350 ms with a busy
+state. That split is what makes the panel feel instant while keeping every parameter freely
+continuous rather than one of N presets.
+
+Verified in the running app: power gates correctly on whether the model has a vessel map
+(`hand` reports why it cannot), solve completes and draws, scrubbing to 45 s keeps the same
+timeline object, and changing flow rate produces a new one.
+
+**Not exposed yet.** Vessel calibre and per-organ perfusion were in the original request but
+are not solver parameters — calibre comes from the segmentation's measured A(s), and the
+organ beds are a fixed table. Both would need a solver argument first, so they are deliberately
+absent rather than faked with a display-only slider.
 
 ---
 

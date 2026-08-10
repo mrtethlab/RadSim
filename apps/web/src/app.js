@@ -317,6 +317,11 @@ async function setSubject(sub){
   if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
   // backend-only models (large, no volume in the browser) MUST use the Python engine
   applyBackendOnly(!!vm.backendOnly);
+  // A new subject invalidates any solved timeline: the arclength volume and the vessel set
+  // both belong to the old model.
+  S.contrast.timeline=null; S.contrast.sVol=null; S.contrast.sVolFor=null;
+  S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false;
+  if($('ctrstPanel')) ctrstApply();
   showActive(sub);
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
   if(sel) sel.value=sub;
@@ -2142,6 +2147,169 @@ function updateDetWarn(){
     : '⚠ The enabled physics features increase processing time. Turn them off for the fastest previews.';
 }
 
+
+/* ---- contrast injector panel (docs/contrast-simulation.md Phase 3) --------------------
+   The panel slides over the bay rather than pushing the layout: positioning is what the bay
+   is for, and the injector is something you dip into. Every injector change re-solves — the
+   solve is ~1.2 s, which is what makes each parameter freely continuous instead of one of a
+   handful of presets, so a debounce and a busy state are all the UI needs.
+
+   There is deliberately no separate "injection start delay": for a single acquisition only
+   the INTERVAL between injection and scan is observable, so one control (scan at) says the
+   same thing with half the confusion. */
+const CTRST_EL = { vol:'ctrstVol', rate:'ctrstRate', conc:'ctrstConc', sal:'ctrstSal',
+                   hr:'ctrstHr', sv:'ctrstSv', delay:'ctrstDelay' };
+let ctrstTimer = null;
+
+function ctrstReadUI(){
+  const v = (k)=> +$(CTRST_EL[k]).value;
+  const P = S.contrast.params;
+  P.volume_ml = v('vol'); P.rate_ml_s = v('rate'); P.conc_mgi_ml = v('conc');
+  P.saline_ml = v('sal');
+  // Cardiac output is what the haemodynamics actually depend on; heart rate is what a
+  // student changes. CO = HR x stroke volume, so expose both and derive the one the solver
+  // wants rather than asking for a number nobody has an intuition for.
+  P.cardiac_output_l_min = v('hr') * v('sv') / 1000;
+  S.contrast.scanTime = v('delay');
+  $('ctrstVolV').textContent = P.volume_ml+' mL';
+  $('ctrstRateV').textContent = P.rate_ml_s.toFixed(1)+' mL/s';
+  $('ctrstConcV').textContent = P.conc_mgi_ml+' mgI/mL';
+  $('ctrstSalV').textContent = P.saline_ml+' mL';
+  $('ctrstHrV').textContent = v('hr')+' bpm';
+  $('ctrstSvV').textContent = v('sv')+' mL';
+  $('ctrstDelayV').textContent = S.contrast.scanTime+' s';
+  const dur = P.volume_ml / Math.max(P.rate_ml_s, .1);
+  $('ctrstInjNote').textContent =
+    (P.volume_ml*P.conc_mgi_ml/1000).toFixed(1)+' g iodine over '+dur.toFixed(1)+' s';
+  $('ctrstCoNote').textContent = 'cardiac output '+P.cardiac_output_l_min.toFixed(1)+' L/min';
+}
+
+function ctrstStatus(msg, cls){
+  const el=$('ctrstStatus'); if(!el) return;
+  el.textContent=msg; el.className='ctrst-status'+(cls?' '+cls:'');
+}
+
+/* Re-solve, debounced. */
+function ctrstQueueSolve(){
+  if(!S.contrast.on) return;
+  clearTimeout(ctrstTimer);
+  ctrstStatus('Solving haemodynamics…','busy');
+  ctrstTimer = setTimeout(async ()=>{
+    const ok = await contrastSolve();
+    if(!ok){
+      ctrstStatus(S.contrast.error || 'Solve failed.','err');
+      S.contrast.on=false; ctrstApply();
+    } else {
+      const tl=S.contrast.timeline;
+      ctrstStatus(tl.nT+' s timeline at 1 Hz. Heart chambers are averaged — right and left '
+                  + 'need chamber labels (docs 4.3.1).');
+    }
+    S.contrast.lut=null; S.contrast.lutT=null;
+    ctrstDrawCurve(); refreshReadouts();
+  }, 350);
+}
+
+/* Enhancement curves + the scan marker. This is the part that teaches: which vessel you care
+   about, when it peaks, and where your acquisition lands relative to it. */
+function ctrstDrawCurve(){
+  const cv=$('ctrstCurve'); if(!cv) return;
+  const g=cv.getContext('2d'), W=cv.width, H=cv.height;
+  g.clearRect(0,0,W,H); g.fillStyle='#070a0d'; g.fillRect(0,0,W,H);
+  const tl=S.contrast.timeline, TMAX=90;
+  const K = BodyMaterials.huPerMgIml(70);      // dHU per mgI/mL at a 120 kVp effective energy
+  const pad={l:26,r:6,t:8,b:14}, pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
+  const HMAX=520;
+  g.lineWidth=1; g.font='8px monospace';
+  for(let hu=0; hu<=HMAX; hu+=130){
+    const y=pad.t+ph-hu/HMAX*ph;
+    g.strokeStyle='#1b232b';
+    g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke();
+    g.fillStyle='#5a6570'; g.fillText(String(hu), 3, y+3);
+  }
+  for(let t=0;t<=TMAX;t+=15){
+    const x=pad.l+t/TMAX*pw;
+    g.strokeStyle='#1b232b';
+    g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke();
+    if(t){ g.fillStyle='#5a6570'; g.fillText(t+'s', x-7, H-3); }
+  }
+  if(tl){
+    const line=(series, col)=>{
+      g.strokeStyle=col; g.lineWidth=1.6; g.beginPath();
+      for(let t=0;t<tl.nT && t<=TMAX;t++){
+        const x=pad.l+t/TMAX*pw, y=pad.t+ph-Math.min(series(t)*K,HMAX)/HMAX*ph;
+        if(t) g.lineTo(x,y); else g.moveTo(x,y);
+      }
+      g.stroke();
+    };
+    // a vessel enhances unevenly along its length, so plot its peak — that is the number a
+    // bolus-tracking ROI would read
+    const vmax=(id)=>{ const f=tl.vessels.get(id); if(!f) return ()=>0;
+      return (t)=>{ let m=0; const a=t*tl.nS; for(let k=0;k<tl.nS;k++) if(f[a+k]>m) m=f[a+k]; return m; }; };
+    const org=(id)=>{ const f=tl.organs.get(id); return f?((t)=>f[t]):()=>0; };
+    line(vmax(29), '#ff7d7d');     // aorta
+    line(vmax(30), '#7dc4ff');     // pulmonary artery
+    line(org(11),  '#c79bff');     // liver
+    line(org(13),  '#8fe08f');     // kidney
+  } else {
+    g.fillStyle='#4a5560'; g.font='9px monospace';
+    g.fillText('turn contrast on to solve', pad.l+26, pad.t+ph/2);
+  }
+  const x=pad.l+Math.min(S.contrast.scanTime,TMAX)/TMAX*pw;
+  g.strokeStyle='#ffb23e'; g.lineWidth=1.5;
+  g.beginPath(); g.moveTo(x,pad.t-3); g.lineTo(x,pad.t+ph+3); g.stroke();
+  g.fillStyle='#ffb23e'; g.beginPath();
+  g.moveTo(x,pad.t-3); g.lineTo(x-4,pad.t-8); g.lineTo(x+4,pad.t-8); g.closePath(); g.fill();
+}
+
+/* Enable/disable state -> tab colour, power button, control availability. */
+function ctrstApply(){
+  const panel=$('ctrstPanel'); if(!panel) return;
+  const vm=S.voxelModel, has=!!(vm && vm.hasVessels);
+  panel.classList.toggle('armed', S.contrast.on);
+  $('ctrstOn').classList.toggle('on', S.contrast.on);
+  $('ctrstOn').textContent = S.contrast.on ? 'ON' : 'OFF';
+  Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!S.contrast.on; });
+  $('ctrstOn').disabled = !has;
+  if(!has) ctrstStatus(S.subject+' has no vessel map. Contrast needs a model built with build_vessels.','err');
+  else if(!S.contrast.on) ctrstStatus('Contrast off. Unenhanced scans are unaffected.');
+  ctrstDrawCurve();
+}
+
+function initContrastPanel(){
+  const panel=$('ctrstPanel');
+  $('ctrstTab').addEventListener('click',()=>{
+    panel.classList.toggle('open');
+    if(panel.classList.contains('open')) ctrstDrawCurve();
+  });
+  $('ctrstOn').addEventListener('click', async ()=>{
+    S.contrast.on = !S.contrast.on;
+    ctrstApply();
+    if(S.contrast.on) ctrstQueueSolve();
+    else { S.contrast.lut=null; S.contrast.lutT=null; refreshReadouts(); }
+  });
+  ['vol','rate','conc','sal','hr','sv'].forEach(k=>{
+    $(CTRST_EL[k]).addEventListener('input',()=>{ ctrstReadUI(); ctrstQueueSolve(); });
+  });
+  // Scan delay does NOT re-solve: the timeline already covers every second of it, so moving
+  // the marker is a lookup rather than a new solve. That is what keeps scrubbing instant.
+  $(CTRST_EL.delay).addEventListener('input',()=>{
+    ctrstReadUI(); S.contrast.lut=null; S.contrast.lutT=null;
+    ctrstDrawCurve(); refreshReadouts();
+  });
+  // drag anywhere on the plot to scrub the acquisition time
+  const cv=$('ctrstCurve');
+  const scrub=(e)=>{
+    const r=cv.getBoundingClientRect(), sx=r.width/cv.width;
+    const f=(e.clientX-r.left-26*sx)/((cv.width-32)*sx);
+    const t=Math.round(Math.max(0,Math.min(1,f))*90);
+    $(CTRST_EL.delay).value=t; ctrstReadUI(); S.contrast.lut=null; S.contrast.lutT=null;
+    ctrstDrawCurve(); refreshReadouts();
+  };
+  cv.addEventListener('pointerdown',e=>{ cv.setPointerCapture(e.pointerId); scrub(e); });
+  cv.addEventListener('pointermove',e=>{ if(e.buttons&1) scrub(e); });
+  ctrstReadUI(); ctrstApply();
+}
+
 function initExtras(){
   wireBackendToggles();
   syncFeatureToggles();
@@ -2154,7 +2322,7 @@ function initExtras(){
 /* ---- boot ---- */
 window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
-  Sound.init(); initExtras();
+  Sound.init(); initExtras(); initContrastPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts,
