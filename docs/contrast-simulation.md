@@ -320,10 +320,55 @@ Legend is now 53 entries. Older models still ship 28-, 29- and 47-entry headers;
 still load AND still expose (hand DI +4.2, chest +0.5, both unchanged), so `mat_columns()`
 genuinely absorbs the growth.
 
-**Still to do for Phase 5:** the GI centreline (an arclength field for the gut, separate from
-the vessel one), the transport solver (peristalsis, gravity, patient position), the mucosal
-coating layer for double contrast, wiring the barium column through both render engines, and
-the fluoroscopy UI. The groundwork is the smallest part of the phase.
+### 5.2 The GI centreline — `app/build_gi.py`
+
+The barium solver needs from the gut what the contrast solver needs from the vessels: how far
+along a voxel sits. Three things make it a different problem.
+
+**It is ONE tube in a fixed order**, oesophagus -> stomach -> duodenum -> small bowel -> colon,
+so each segment's arclength is seeded at its junction with the segment BEFORE it rather than at
+some global root. Measured on the CAP model, every junction lands where it should:
+
+| segment | s=0 distance to upstream | s=1 distance |
+| --- | --- | --- |
+| stomach | 6.4 mm | 106.1 |
+| duodenum | 9.7 mm | 45.6 |
+| small bowel | 11.3 mm | 55.6 |
+| colon | 17.7 mm | 112.0 |
+
+**The geometry is not trustworthy at this resolution, and saying so is the point.** Small bowel
+is ~6 m of tube packed into a 25 cm block; at 2 mm voxels the loops touch and a geodesic walk
+short-circuits across the contacts. Measured lengths against anatomy:
+
+| segment | geodesic | anatomical | ratio | volume |
+| --- | --- | --- | --- | --- |
+| oesophagus | 324 mm | ~250 | 130 % | 46 mL |
+| stomach | 174 mm | ~250 | 69 % | 347 mL |
+| duodenum | 159 mm | ~250 | 64 % | 68 mL |
+| **small bowel** | **300 mm** | **~6000** | **5 %** | 1381 mL |
+| colon | 812 mm | ~1500 | 54 % | 660 mL |
+
+The **volumes are right** and the **path order is right**; the small-bowel *length* is
+meaningless as anatomy. So `s` is written normalised 0..1 within each segment, not in mm, and
+the solver is meant to drive transit from physiological times per segment — oesophagus in
+seconds, gastric emptying in tens of minutes, small bowel in hours — rather than from a
+velocity times a length the geometry cannot supply. The builder prints the ratio for any
+segment under 50 % so the number is never mistaken for a measurement.
+
+**Gas is inside the mask.** Barium flows into a gas-filled bowel — that is what a
+double-contrast study *is* — so id 47 is part of the arclength domain and is assigned to
+whichever lumen it adjoins.
+
+Two bugs found by checking the junctions rather than trusting the build: the seed dilated the
+upstream segment by two voxels and took the overlap, which assumes the labels touch — at the
+pylorus they did not, and the duodenum came out **reversed**, s=0 at the duodenojejunal flexure
+71 mm away and s=1 at the pylorus. Seeding from *distance to upstream* instead works whether
+the labels touch or sit a few mm apart. And the fallback reference was "the first other present
+segment", which for the duodenum meant the oesophagus — two segments upstream and irrelevant.
+
+**Still to do for Phase 5:** the transport solver (peristalsis, gravity, patient position), the
+mucosal coating layer for double contrast, wiring the barium column through both render
+engines, and the fluoroscopy UI.
 
 ---
 

@@ -384,5 +384,7 @@
  "backendOnly": false,
  "vessels": "chestabdopelvis.vessels.json",
  "arclen": "chestabdopelvis.arclen.bin",
- "contrast": "chestabdopelvis.contrast.json"
+ "contrast": "chestabdopelvis.contrast.json",
+ "gi": "chestabdopelvis.gi.json",
+ "giarc": "chestabdopelvis.giarc.bin"
 }
