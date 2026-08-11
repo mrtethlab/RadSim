@@ -1215,3 +1215,57 @@ body.mode-home .home{display:block}
 #homeBtn:hover{color:var(--txt); background:#1b232b}
 /* nothing from a mode should show through the menu */
 body.mode-home .app{visibility:hidden}
+
+/* ---- home-card actions ---------------------------------------------------------------- */
+.hc-acts{display:flex; gap:9px; margin-top:15px}
+.hc-acts button{font-family:var(--disp); font-weight:600; font-size:14px; letter-spacing:.6px;
+  padding:8px 15px; border-radius:7px; cursor:pointer; border:1px solid var(--edge2);
+  background:#1a222b; color:#dbe6f0; transition:.14s}
+.hc-acts button:hover{background:#26313d; border-color:#6b8aa4}
+.hc-acts .hc-open{background:#2a3a4a; border-color:#4d6a86}
+.hc-acts .hc-tut{color:var(--sub)}
+
+/* ---- tutorial ------------------------------------------------------------------------
+   Four dim panels laid AROUND the highlighted control rather than one sheet with a hole in
+   it: the control is then covered by nothing at all and behaves exactly as it does outside
+   the tutorial, so the learner can actually use it. The panels swallow clicks, which is
+   what makes the isolation more than cosmetic. */
+.tut{position:fixed; inset:0; z-index:400; pointer-events:none; display:none}
+body.tut-on .tut{display:block}
+.tut-mask{position:fixed; display:none; background:rgba(4,7,11,.74); backdrop-filter:blur(1.5px)}
+.tut-ring{position:fixed; display:none; pointer-events:none; border-radius:8px;
+  box-shadow:0 0 0 2px var(--tut-hi), 0 0 22px 3px rgba(53,198,214,.5);
+  animation:tutpulse 2.1s ease-in-out infinite}
+@keyframes tutpulse{
+  0%,100%{box-shadow:0 0 0 2px var(--tut-hi), 0 0 18px 2px rgba(53,198,214,.42)}
+  50%    {box-shadow:0 0 0 2px var(--tut-hi), 0 0 30px 6px rgba(53,198,214,.66)}}
+.tut-card{position:fixed; display:none; pointer-events:auto; width:340px; max-width:calc(100vw - 24px);
+  background:#121a23; border:1px solid #33465a; border-radius:12px; padding:15px 16px 14px;
+  box-shadow:0 22px 60px rgba(0,0,0,.72)}
+.tut-hd{display:flex; align-items:center; justify-content:space-between; margin-bottom:9px}
+.tut-n{font-family:var(--seg); font-size:10px; letter-spacing:2px; color:var(--tut-hi)}
+.tut-x{font-family:var(--seg); font-size:10px; letter-spacing:1.5px; color:#93a3b2;
+  background:transparent; border:1px solid #39454f; border-radius:5px; padding:3px 9px; cursor:pointer}
+.tut-x:hover{color:#eaf3fa; border-color:#6b8aa4}
+.tut-t{font-family:var(--disp); font-weight:700; font-size:20px; color:#eef3f8; line-height:1.2}
+.tut-p{color:#b6c4d1; font-size:13.5px; line-height:1.66; margin-top:8px}
+.tut-p b{color:#e6eef6}
+.tut-goal{display:flex; gap:9px; align-items:flex-start; margin-top:13px; padding:9px 11px;
+  background:#16222c; border:1px solid #2f4a5c; border-radius:8px; font-size:13px; color:#cfe0ec}
+.tut-goal.read{background:#161b21; border-color:#2b343d; color:#8d9caa}
+.tut-goal.met{border-color:#46d17f; color:#c9f2da; background:#14261c}
+.tut-tick{font-family:var(--seg); color:#7f8c99}
+.tut-goal.met .tut-tick{color:#46d17f}
+.tut-nav{display:flex; gap:9px; margin-top:13px}
+.tut-nav button{flex:1; font-family:var(--disp); font-weight:600; font-size:14px; letter-spacing:.5px;
+  padding:8px 0; border-radius:7px; cursor:pointer; border:1px solid #39454f;
+  background:#1b232b; color:#cfdae5; transition:.14s}
+.tut-nav button:hover:not(:disabled){background:#26313d}
+.tut-nav button:disabled{opacity:.4; cursor:default}
+.tut-nav .pri{background:#24485c; border-color:#3d6a86; color:#eaf6fb}
+.tut-nav .pri.ready{background:#1f5c3a; border-color:#46d17f; color:#dff7e9}
+/* the tutorial is not a vendor surface either */
+.tut{--tut-hi:#35c6d6}
+
+.tut-goal.tut-pending{border-color:#7a5518; background:#241c0e; color:#e6cf9c}
+.tut-goal.tut-pending .tut-tick{color:var(--amber)}

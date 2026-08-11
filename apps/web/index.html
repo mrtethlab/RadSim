@@ -8,13 +8,24 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 </head>
 <body>
+<!-- ============ TUTORIAL — dim mask, ring and blurb ============ -->
+<div class="tut" id="tutLayer">
+  <div class="tut-mask" id="tutMaskT"></div>
+  <div class="tut-mask" id="tutMaskB"></div>
+  <div class="tut-mask" id="tutMaskL"></div>
+  <div class="tut-mask" id="tutMaskR"></div>
+  <div class="tut-ring" id="tutRing"></div>
+  <div class="tut-card" id="tutCard"></div>
+  <button id="tutNext" hidden></button><button id="tutPrev" hidden></button><button id="tutExit" hidden></button>
+</div>
+
 <!-- ============ WELCOME SCREEN — the arcade of modes ============ -->
 <div class="home" id="homeScreen">
   <div class="home-inner">
     <h1 class="home-title">RAD<span>SIM</span></h1>
     <p class="home-sub">Physics-based radiography and CT — position, expose, reconstruct</p>
     <div class="home-grid">
-      <button class="home-card hc-xray" data-mode="xray">
+      <div class="home-card hc-xray" data-mode="xray">
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">X-ray</div>
@@ -22,9 +33,13 @@
           <div class="hc-desc">Position the subject, set the technique or let the AEC chambers
             meter it, and expose. Polyenergetic ray-casting through real voxel anatomy, with
             scatter, grids, beam hardening and an exposure index you can miss.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="xray">Open</button>
+            <button class="hc-tut" data-tut="xray" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
         </div>
-      </button>
-      <button class="home-card hc-ct" data-mode="ct">
+      </div>
+      <div class="home-card hc-ct" data-mode="ct">
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">CT</div>
@@ -32,9 +47,13 @@
           <div class="hc-desc">Zero the table, take scouts, plan scan groups and recons, then
             watch the gantry acquire. Filtered back-projection with contrast timing and
             bolus tracking on the console.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="ct">Open</button>
+            <button class="hc-tut" data-tut="ct" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
         </div>
-      </button>
-      <button class="home-card hc-editor" data-mode="editor">
+      </div>
+      <div class="home-card hc-editor" data-mode="editor">
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Model Editor</div>
@@ -42,8 +61,12 @@
           <div class="hc-desc">Build or alter a phantom directly: paint materials onto
             transverse slices with a live 3D preview, then save it as a subject the scanners
             can image.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="editor">Open</button>
+            <button class="hc-tut" data-tut="editor" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
         </div>
-      </button>
+      </div>
     </div>
   </div>
 </div>
@@ -110,7 +133,7 @@
 
           <!-- transport -->
           <div class="inj-tx">
-            <button class="inj-go" id="ctrstGo" title="Start the injection">▶ START</button>
+            <button class="inj-go" id="ctrstGo" title="Start the injection">▶</button>
             <button class="inj-rst" id="ctrstReset" title="Reset the injector">■</button>
           </div>
           <div class="ctrst-note" id="ctrstArmNote">Tap a phase to program it. Start the injector, then expose when the timing is right.</div>

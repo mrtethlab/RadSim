@@ -897,9 +897,16 @@ function wireModeToggle() {
   const home = ctx.$('homeBtn');
   if (home) home.addEventListener('click', () => applyMode('home'));
   document.querySelectorAll('#homeScreen .home-card').forEach((card) => {
-    card.addEventListener('click', () => applyMode(card.dataset.mode));
+    // The card is clickable as a whole, but the Tutorial button inside it must not read as
+    // "open the mode" — it stops the event itself (see tutorial.js).
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.hc-tut')) return;
+      applyMode(card.dataset.mode);
+    });
   });
 }
+
+export function ctApplyMode(mode) { applyMode(mode); }
 
 // Tear down the CT scout session to a clean slate: no scouts, no live-view mirror,
 // idle console, patient/couch/isocentre zeroed. Called on every mode switch so the
@@ -2828,6 +2835,7 @@ function runBolusTracking(g, alive, enhanced){
     ctx.$('ctBtrkLoc').textContent='slice '+fmtTablePos(setup.positions[0]);
     ctx.$('ctBtrkThr').textContent=bt.thrHU+' HU'+(bt.auto?' · auto':' · manual');
     ctx.$('ctBtrkState').textContent='POSITION ROI';
+    ctx.$('ctBtrkT').textContent='0.0 s';      // a new series starts its own clock, not the last one's
     const go=ctx.$('ctBtrkGo'); go.textContent='START TRACKING'; go.classList.remove('armed');
     btrkWireROI();
 

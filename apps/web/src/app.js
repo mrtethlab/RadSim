@@ -15,7 +15,8 @@ import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
-import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme } from './ct.js';
+import { initTutorial } from './tutorial.js';
+import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 
 /* ============================================================================
@@ -2706,6 +2707,9 @@ window.addEventListener('load',()=>{
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on) });
+  // The tutorials drive the real UI, so they need the mode switch and the live state.
+  window.__radsimState = S;
+  initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)

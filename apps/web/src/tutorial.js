@@ -1,0 +1,243 @@
+// ============================================================================
+//  Guided tutorials — a walk through one mode, control by control.
+//
+//  A tutorial is a list of steps. Each step points at a real control, dims
+//  everything else, explains what that control does, and (usually) asks the
+//  learner to actually use it before moving on. The engine here knows nothing
+//  about radiography; the step lists in tutorial-content.js carry all of that.
+//
+//  Two decisions worth stating, because they shape the whole thing:
+//
+//  * The highlighted control stays LIVE. The dimming is four panels laid around
+//    the target rather than one sheet with a hole punched in it, so the target
+//    is not covered by anything and behaves exactly as it does outside the
+//    tutorial. A tour that makes you watch instead of do teaches very little.
+//  * Every step can be skipped. A goal is how the step would like to end, not a
+//    gate — NEXT always advances. Some controls (the compute engine, the vendor
+//    theme) have no sensible goal at all and are explanation-only.
+// ============================================================================
+
+import { XRAY_STEPS, CT_STEPS, EDITOR_STEPS } from './tutorial-content.js';
+
+let ctx = null;
+let T = null;            // the running tutorial, or null
+let tickTimer = null;
+
+const $ = (id) => document.getElementById(id);
+const PAD = 6;           // breathing room between the ring and the control
+const TICK = 220;        // goal poll + rect re-measure, ms
+
+export function initTutorial(context) {
+  ctx = context;
+  document.querySelectorAll('#homeScreen .hc-tut').forEach((b) => {
+    b.addEventListener('click', (e) => { e.stopPropagation(); startTutorial(b.dataset.tut); });
+  });
+  $('tutNext').addEventListener('click', () => go(T ? T.i + 1 : 0));
+  $('tutPrev').addEventListener('click', () => go(T ? T.i - 1 : 0));
+  $('tutExit').addEventListener('click', endTutorial);
+  document.addEventListener('keydown', (e) => {
+    if (!T) return;
+    if (e.key === 'Escape') endTutorial();
+    else if (e.key === 'ArrowRight') go(T.i + 1);
+    else if (e.key === 'ArrowLeft') go(T.i - 1);
+  });
+  addEventListener('resize', () => { if (T) paint(); });
+}
+
+const STEPS = { xray: XRAY_STEPS, ct: CT_STEPS, editor: EDITOR_STEPS };
+
+export function startTutorial(mode) {
+  const steps = STEPS[mode];
+  if (!steps) return;
+  ctx.applyMode(mode);                       // the tutorial runs inside the real mode
+  T = { mode, steps, i: -1, met: false };
+  document.body.classList.add('tut-on');
+  tickTimer = setInterval(tick, TICK);
+  setTimeout(() => go(0), 420);              // let the mode finish laying itself out
+}
+
+export function endTutorial() {
+  if (!T) return;
+  clearInterval(tickTimer); tickTimer = null;
+  T = null;
+  document.body.classList.remove('tut-on');
+  ctx.applyMode('home');
+}
+
+/* Move to a step. Out of range at either end closes the tutorial (at the top it
+   just clamps — walking backwards off step 1 should not quit). */
+async function go(i) {
+  if (!T) return;
+  if (i < 0) return;
+  if (i >= T.steps.length) { finish(); return; }
+  T.i = i; T.met = false; T.done = false;
+  const s = T.steps[i];
+  // Let the click that brought us here finish propagating first. The bay drop-downs close
+  // themselves on any document click, so a `before` that opens one during the same dispatch
+  // gets shut again the moment the event reaches the document.
+  if (s.before) {
+    await new Promise((r) => setTimeout(r, 0));
+    try { await s.before(); } catch (err) { /* a setup step that cannot run is not fatal */ }
+  }
+  // A goal already satisfied when the step opens is not a goal — it would tick
+  // green before the learner did anything. Steps that can start satisfied say so
+  // with `armed`, which snapshots the starting value and asks for a change.
+  if (s.goal && s.goal.arm) { try { T.armVal = s.goal.arm(); } catch (err) { T.armVal = null; } }
+  render();
+  paint();
+  scrollTargetIntoView(s);
+  // Some targets need a beat before they have a rect — a drawer sliding open, a table being
+  // re-rendered. Re-measure a couple of times rather than declaring the step target-less.
+  const mine = T.i;
+  [260, 700].forEach((d) => setTimeout(() => { if (T && T.i === mine) paint(); }, d));
+}
+
+function finish() {
+  T.done = true;                     // stop the poll repainting the last step's ring over this
+  const card = $('tutCard');
+  card.innerHTML = '<div class="tut-hd"><span class="tut-n">DONE</span>'
+    + '<button class="tut-x" id="tutExitEnd">Close</button></div>'
+    + '<div class="tut-t">That is the whole workflow</div>'
+    + '<div class="tut-p">You have been through every control this mode offers. Nothing is '
+    + 'locked off now — go back through it at your own pace, and change one thing at a time so '
+    + 'you can see what each control actually does to the image.</div>';
+  $('tutExitEnd').addEventListener('click', endTutorial);
+  hideMask();
+  card.style.left = '50%'; card.style.top = '50%';
+  card.style.transform = 'translate(-50%,-50%)';
+}
+
+/* ---- the dim mask + ring -------------------------------------------------
+   Four panels around the target, so the target itself is covered by nothing and
+   stays fully interactive. The panels absorb clicks (that is the "isolate" part)
+   unless the step opts out with block:false — some steps, like dragging a scan
+   box across a scout, need the whole region live. */
+function paint() {
+  if (!T || T.done) return;
+  const s = T.steps[T.i]; if (!s) return;
+  const el = target(s);
+  const r = el && el.getBoundingClientRect();
+  if (!r || (!r.width && !r.height)) {
+    // The control does not exist yet — almost always because an earlier goal was skipped
+    // (no scouts, so no scan-group table). Say which, rather than leaving a blank ring.
+    hideMask(); placeCard(null); showPending(s); return;
+  }
+  clearPending();
+  const box = { l: r.left - PAD, t: r.top - PAD, w: r.width + PAD * 2, h: r.height + PAD * 2 };
+  const W = innerWidth, H = innerHeight;
+  const px = (n) => Math.max(0, n) + 'px';
+  const set = (id, l, t, w, h) => {
+    const d = $(id);
+    d.style.display = 'block';
+    d.style.left = px(l); d.style.top = px(t); d.style.width = px(w); d.style.height = px(h);
+    d.style.pointerEvents = (s.block === false) ? 'none' : 'auto';
+  };
+  set('tutMaskT', 0, 0, W, box.t);
+  set('tutMaskB', 0, box.t + box.h, W, H - box.t - box.h);
+  set('tutMaskL', 0, box.t, box.l, box.h);
+  set('tutMaskR', box.l + box.w, box.t, W - box.l - box.w, box.h);
+  const ring = $('tutRing');
+  ring.style.display = 'block';
+  ring.style.left = px(box.l); ring.style.top = px(box.t);
+  ring.style.width = px(box.w); ring.style.height = px(box.h);
+  placeCard(box);
+}
+
+function showPending(s) {
+  const card = $('tutCard');
+  if (card.querySelector('.tut-pending')) return;
+  const note = document.createElement('div');
+  note.className = 'tut-goal read tut-pending';
+  note.innerHTML = '<span class="tut-tick">!</span><span>'
+    + (s.needs || 'This control is not on screen yet — go back and complete the earlier step that brings it up.')
+    + '</span>';
+  card.insertBefore(note, card.querySelector('.tut-nav'));
+}
+
+function clearPending() {
+  const n = $('tutCard').querySelector('.tut-pending');
+  if (n) n.remove();
+}
+
+function hideMask() {
+  ['tutMaskT', 'tutMaskB', 'tutMaskL', 'tutMaskR', 'tutRing'].forEach((id) => {
+    const d = $(id); if (d) d.style.display = 'none';
+  });
+}
+
+function target(s) {
+  if (!s.sel) return null;
+  try { return document.querySelector(s.sel); } catch (err) { return null; }
+}
+
+/* The blurb sits beside the control it describes, not in a fixed corner: read
+   the text, look 2 cm left, there is the thing it is talking about. Preference
+   is left/right first because the settings columns are tall and narrow. */
+function placeCard(box) {
+  const card = $('tutCard');
+  card.style.transform = '';
+  const cw = card.offsetWidth || 340, ch = card.offsetHeight || 200;
+  const W = innerWidth, H = innerHeight, M = 12;
+  if (!box) { card.style.left = px(W - cw - 24); card.style.top = px(H - ch - 24); return; }
+  let l, t;
+  if (box.l - M - cw >= M) l = box.l - M - cw;                 // left of the control
+  else if (box.l + box.w + M + cw <= W - M) l = box.l + box.w + M;   // right of it
+  else l = Math.min(Math.max(M, box.l + box.w / 2 - cw / 2), W - cw - M);
+  const sameCol = (l >= box.l - M - cw && l < box.l) || (l > box.l);
+  t = box.t + box.h / 2 - ch / 2;                              // vertically centred on it
+  if (Math.abs(l - (box.l + box.w / 2 - cw / 2)) < 2 && !sameCol) {
+    t = (box.t - M - ch >= M) ? box.t - M - ch : box.t + box.h + M;  // above / below instead
+  }
+  card.style.left = px(Math.min(Math.max(M, l), W - cw - M));
+  card.style.top = px(Math.min(Math.max(M, t), H - ch - M));
+  function px(n) { return Math.round(n) + 'px'; }
+}
+
+function scrollTargetIntoView(s) {
+  const el = target(s);
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  if (r.top >= 0 && r.bottom <= innerHeight) return;
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  setTimeout(paint, 380);
+}
+
+/* ---- the card ---------------------------------------------------------- */
+function render() {
+  const s = T.steps[T.i];
+  const card = $('tutCard');
+  const goal = s.goal
+    ? '<div class="tut-goal" id="tutGoal"><span class="tut-tick">○</span><span>' + s.goal.label + '</span></div>'
+    : '<div class="tut-goal read"><span class="tut-tick">·</span><span>Nothing to change here — read on when ready.</span></div>';
+  card.innerHTML =
+    '<div class="tut-hd"><span class="tut-n">' + (T.i + 1) + ' / ' + T.steps.length + '</span>'
+    + '<button class="tut-x" id="tutExit2">Exit</button></div>'
+    + '<div class="tut-t">' + s.title + '</div>'
+    + '<div class="tut-p">' + s.text + '</div>'
+    + goal
+    + '<div class="tut-nav">'
+    + '<button id="tutPrev2"' + (T.i === 0 ? ' disabled' : '') + '>Back</button>'
+    + '<button id="tutNext2" class="pri">' + (T.i === T.steps.length - 1 ? 'Finish' : 'Next') + '</button>'
+    + '</div>';
+  $('tutExit2').addEventListener('click', endTutorial);
+  $('tutPrev2').addEventListener('click', () => go(T.i - 1));
+  $('tutNext2').addEventListener('click', () => go(T.i + 1));
+  card.style.display = 'block';
+}
+
+/* Poll rather than listen: the goals watch application state (a value changed, a
+   scan stored, a mode reached), and state here is mutated from a dozen places
+   that do not all emit events. A 220 ms poll is cheap and never misses. */
+function tick() {
+  if (!T) return;
+  paint();
+  const s = T.steps[T.i]; if (!s || !s.goal || T.met) return;
+  let ok = false;
+  try { ok = !!s.goal.done(T.armVal); } catch (err) { ok = false; }
+  if (!ok) return;
+  T.met = true;
+  const g = $('tutGoal');
+  if (g) { g.classList.add('met'); g.querySelector('.tut-tick').textContent = '✓'; }
+  const n = $('tutNext2');
+  if (n) n.classList.add('ready');
+}
