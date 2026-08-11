@@ -463,8 +463,7 @@ const S = {
              // true when the timeline came from the model's shipped preset rather than a
              // live solve — the protocol is then fixed and the controls are locked
              static:false,
-             // Bolus tracking: watch a vessel, start the scan when it crosses a threshold.
-             track:{ on:false, vessel:29, thrHU:100, delay:5, triggeredAt:null, firedAt:null } },
+             },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -2277,7 +2276,6 @@ function ctrstClock(){
 function ctrstStart(){
   const R=S.contrast.run;
   R.t0=performance.now(); R.latched=null;
-  ctrstTrackReset();                       // a new injection re-arms the tracker
   S.contrast.scanTime=0; S.contrast.lut=null; S.contrast.lutT=null;
   if(!R.timer) R.timer=setInterval(ctrstTick, 100);
   ctrstRenderRun(); ctrstDrawCurve();
@@ -2286,7 +2284,6 @@ function ctrstReset(){
   const R=S.contrast.run;
   if(R.timer){ clearInterval(R.timer); R.timer=null; }
   R.t0=null; R.latched=null;
-  ctrstTrackReset();
   S.contrast.scanTime=0; S.contrast.lut=null; S.contrast.lutT=null;
   ctrstRenderRun(); ctrstDrawCurve();
 }
@@ -2297,7 +2294,6 @@ function ctrstTick(){
     S.contrast.scanTime=Math.min(t, 90);
     S.contrast.lut=null; S.contrast.lutT=null;
   }
-  ctrstTrackTick(t);
   ctrstRenderRun(); ctrstDrawCurve();
   if(t>150){ const R=S.contrast.run; clearInterval(R.timer); R.timer=null; }   // stop ticking, keep the time
 }
@@ -2407,54 +2403,16 @@ function ctrstQueueSolve(){
 }
 
 
-/* ---- bolus tracking (docs Phase 4) ----------------------------------------------------
-   A monitoring series watches one vessel and the scan starts when its enhancement crosses a
-   threshold, plus a diagnostic delay for table/tube spin-up. It is what makes a CTPA
-   reproducible across patients whose circulation times differ by tens of seconds — the fixed
-   delay that suits one patient misses the next entirely, which is exactly what the cardiac
-   output knob demonstrates.
-
-   The tracker reads the same timeline the renderer does, so it needs no extra solve and works
-   on the shipped preset as well as a live one. */
-function ctrstTrackedHU(t){
+/* Enhancement of one vessel at a given time on the injector clock, as an ROI would read it.
+   The CT console's bolus-tracking series calls this; it is a pure read of the timeline, so it
+   needs no solve and works on the shipped preset too. */
+export function contrastVesselHU(vesselId, t){
   const tl=S.contrast.timeline; if(!tl) return 0;
-  const f=tl.vessels.get(S.contrast.track.vessel); if(!f) return 0;
+  const f=tl.vessels.get(vesselId); if(!f) return 0;
   const i=Math.max(0, Math.min(tl.nT-1, Math.round(t)));
   let m=0; const a=i*tl.nS;
-  for(let k=0;k<tl.nS;k++) if(f[a+k]>m) m=f[a+k];   // peak along the vessel, as an ROI reads
+  for(let k=0;k<tl.nS;k++) if(f[a+k]>m) m=f[a+k];
   return m * BodyMaterials.huPerMgIml(70);
-}
-/* Start the diagnostic scan. Bolus tracking is a CT technique, so this presses the same
-   START the operator would; if the console is not ready it says so rather than failing mute. */
-function ctrstFireScan(){
-  const T=S.contrast.track;
-  if(S.mode!=='ct'){ ctrstTrkStatus('Triggered — switch to CT mode to scan on the tracker.'); return; }
-  const b=$('ctStart');
-  if(b && b.classList.contains('flash')){ b.click(); ctrstTrkStatus(
-    `Triggered ${T.triggeredAt.toFixed(1)} s · scanning ${T.firedAt.toFixed(1)} s`); }
-  else ctrstTrkStatus(`Triggered ${T.triggeredAt.toFixed(1)} s — console not ready to scan.`);
-}
-function ctrstTrkStatus(msg){ const el=$('ctrstTrkNote'); if(el) el.textContent=msg; }
-
-function ctrstTrackTick(t){
-  const T=S.contrast.track;
-  if(!T.on || t==null) return;
-  if(T.triggeredAt==null){
-    const hu=ctrstTrackedHU(t);
-    ctrstTrkStatus(`Monitoring ${T.vessel===29?'aorta':'pulmonary artery'} · ${Math.round(hu)} HU`
-                   + ` of ${T.thrHU} HU`);
-    if(hu>=T.thrHU){ T.triggeredAt=t; $('ctrstArm').classList.add('fired'); $('ctrstArm').textContent='TRIGGERED'; }
-  } else if(T.firedAt==null && t>=T.triggeredAt+T.delay){
-    T.firedAt=t; ctrstFireScan();
-  }
-}
-function ctrstTrackReset(){
-  const T=S.contrast.track;
-  T.triggeredAt=null; T.firedAt=null;
-  const b=$('ctrstArm'); if(!b) return;
-  b.classList.toggle('armed', T.on); b.classList.remove('fired');
-  b.textContent = T.on ? 'TRACKING ARMED' : 'ARM TRACKING';
-  if(!T.on) ctrstTrkStatus('Monitors the vessel and starts the CT scan itself.');
 }
 
 /* Predicted enhancement + where the clock currently is. */
@@ -2508,17 +2466,6 @@ function ctrstDrawCurve(){
   // The running clock is the ONLY cue for when to fire — no target is drawn, because
   // judging the moment against the curve is the exercise. The amber mark appears only
   // after an exposure, as feedback on where you actually landed.
-  // tracking threshold + where it fired, so the trigger is legible against the curve
-  const T=S.contrast.track;
-  if(T.on && tl){
-    const y=pad.t+ph-Math.min(T.thrHU,HMAX)/HMAX*ph;
-    g.strokeStyle='#35c6d6'; g.lineWidth=1; g.setLineDash([4,3]);
-    g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke(); g.setLineDash([]);
-    if(T.triggeredAt!=null){
-      const x=pad.l+Math.min(T.triggeredAt,TMAX)/TMAX*pw;
-      g.fillStyle='#35c6d6'; g.beginPath(); g.arc(x,y,3.5,0,Math.PI*2); g.fill();
-    }
-  }
   const live=ctrstClock(), R=S.contrast.run;
   if(live!=null) mark(live, R.latched==null ? '#4fd06a' : '#3a4a55', R.latched==null);
   if(R.latched!=null) mark(R.latched,'#ffb23e',true);
@@ -2564,9 +2511,6 @@ function ctrstApply(keepStatus){
       + 'cannot be changed. Timing, scanning and bolus tracking all still work.';
   }
   ctrstRenderBar();          // the phase buttons take their enabled state from `editable` too
-  // Tracking is NOT locked by the preset: it reads the timeline, it does not change it.
-  ['ctrstThr','ctrstPtd','ctrstArm'].forEach(id=>{ const el=$(id); if(el) el.disabled=!live; });
-  document.querySelectorAll('#ctrstTrkVessel button').forEach(b=> b.disabled=!live);
   $('ctrstGo').disabled = !live || !S.contrast.timeline;
   $('ctrstOn').disabled = !!blocked;
   if(!live) ctrstReset();
@@ -2688,20 +2632,6 @@ function initContrastPanel(){
       ctrstReadUI(); ctrstQueueSolve();
     });
   });
-  // bolus tracking
-  document.querySelectorAll('#ctrstTrkVessel button').forEach(b=>{
-    b.addEventListener('click',()=>{
-      S.contrast.track.vessel=+b.dataset.trk;
-      document.querySelectorAll('#ctrstTrkVessel button').forEach(x=>x.classList.toggle('on',x===b));
-      ctrstDrawCurve();
-    });
-  });
-  $('ctrstThr').addEventListener('input',e=>{
-    S.contrast.track.thrHU=+e.target.value; $('ctrstThrV').textContent=e.target.value+' HU'; ctrstDrawCurve(); });
-  $('ctrstPtd').addEventListener('input',e=>{
-    S.contrast.track.delay=+e.target.value; $('ctrstPtdV').textContent=e.target.value+' s'; });
-  $('ctrstArm').addEventListener('click',()=>{
-    S.contrast.track.on=!S.contrast.track.on; ctrstTrackReset(); ctrstDrawCurve(); });
   $('ctrstGo').addEventListener('click', ctrstStart);
   $('ctrstReset').addEventListener('click', ctrstReset);
   initKeypad();
@@ -2723,8 +2653,7 @@ window.radsimContrast={
   start:()=>ctrstStart(),
   reset:()=>ctrstReset(),
   latch:()=>ctrstLatch(),
-  track:()=>S.contrast.track,
-  trackedHU:(t)=>ctrstTrackedHU(t),
+  vesselHU:(id,t)=>contrastVesselHU(id,t),
   clock:()=>ctrstClock(),
   // Acquisition timing for the selected CT scan group — a helical scan images each slice at
   // its own moment, which is the whole point of per-slice timing.
@@ -2755,6 +2684,7 @@ window.addEventListener('load',()=>{
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram, contrastLatch: ctrstLatch,
+           contrastVesselHU, contrastClock: ctrstClock,
            editorMode: (on) => editorApplyMode(on) });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

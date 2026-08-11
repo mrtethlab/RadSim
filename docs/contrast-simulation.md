@@ -639,6 +639,42 @@ subclavians.
 
 ### 6.5 Phase 4 — bolus tracking, and a shipped timeline for browser-only use
 
+**Bolus tracking lives on the CT console, not the contrast panel.** It was first built into the
+injector panel, which was wrong: on a real machine tracking is planned with the scan, in the
+scan-group table, because it IS an acquisition. It moved.
+
+**A group whose delay mode is `bolus` IS the monitoring series** — one slice, at one location,
+reconstructed over and over. That is how a console plans it: a monitoring series ahead of the
+diagnostic one, not a flag bolted onto the diagnostic scan. Choosing the mode collapses the
+group's scan box to its own centre, so the scout shows a line rather than a block, and that
+line is the level being monitored. When it triggers, `runScan` carries on to the next enabled
+group, which is the diagnostic acquisition.
+
+The Scan Delay column is therefore one of three things: a fixed time delay, bolus tracking with
+an automatic trigger, or bolus tracking with a manual one. Picking the mode then asks for its
+value — seconds, or a threshold in HU.
+
+The tracking phase overlays the bay with the monitored slice on the left and the ROI
+enhancement curve on the right, which is the layout every console uses because the operator
+reads the anatomy and the curve together. The ROI is dragged onto the vessel first (state
+`POSITION ROI`); pressing START TRACKING begins the repeated acquisition at ~1.5 s intervals
+and the button becomes SCANNING PHASE, so the scan can always be fired by hand regardless of
+the threshold.
+
+Monitoring images are deliberately cheap — quick detector, no noise, no beam hardening —
+because a real monitoring series is low-dose and nobody diagnoses from it. What matters is the
+ROI number and how fast it is climbing.
+
+Measured run, threshold 150 HU with a 2 s post-trigger delay:
+
+```
+ 0.1s  -128 HU      6.1s   35        11.1s  205   <- crosses
+ 3.1s   -70         8.1s   99        12.1s  241
+ 5.1s     1         9.1s  133        fired at 11.06 s
+```
+
+Baseline, then a steep rise through the trigger level — the shape a console draws.
+
 **Shipped timeline.** `chest.contrast.json` is one protocol solved offline by the same solver
 the service runs — 0.37 MB, **70 KB gzipped**. When the compute service is unreachable the
 panel loads it instead of refusing, because a SOLVED timeline is just data: the whole timing

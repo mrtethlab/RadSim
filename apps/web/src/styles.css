@@ -1072,16 +1072,54 @@ body.theme-ge .ctrst .valchip.cyanlit{background:#0a0d10; color:var(--cyan)}
   color:#e0c07a; background:rgba(255,178,62,.09); border:1px solid rgba(255,178,62,.35);
   border-radius:6px; padding:7px 9px; margin-bottom:8px}
 
-/* bolus tracking */
-.trk-vessel{display:grid; grid-template-columns:1fr 1fr; gap:5px}
-.trk-vessel button{font-family:var(--seg); font-size:10px; letter-spacing:1px; color:var(--muted);
-  background:#131922; border:1px solid var(--edge2); border-radius:5px; padding:6px 0; cursor:pointer}
-.trk-vessel button.on{color:#06121a; background:var(--cyan); border-color:var(--cyan)}
-.trk-vessel button:disabled{opacity:.4; cursor:default}
-.trk-arm{width:100%; margin-top:8px; font-family:var(--disp); font-weight:700; letter-spacing:2px;
-  font-size:13px; text-transform:uppercase; color:var(--muted); background:#131922;
-  border:1px solid var(--edge2); border-radius:6px; padding:8px 0; cursor:pointer; transition:.15s}
-.trk-arm:hover:not(:disabled){color:var(--txt)}
-.trk-arm.armed{color:#1a1204; background:var(--amber); border-color:var(--amber)}
-.trk-arm.fired{color:#06210d; background:linear-gradient(180deg,#5fe07a,#2fa84c); border-color:#2fa84c}
-.trk-arm:disabled{opacity:.4; cursor:default}
+
+
+
+
+
+
+
+
+
+
+/* ---- bolus tracking (monitoring series) ----------------------------------------------
+   Overlays the bay during the tracking phase: the monitored slice on the left, the ROI
+   enhancement curve on the right — the layout every console uses, because the operator is
+   reading the curve and the anatomy together. */
+.btrk{position:absolute; inset:0; z-index:22; display:none; flex-direction:column;
+  background:rgba(5,8,12,.95)}
+.btrk.show{display:flex}
+.btrk-hdr{display:flex; align-items:baseline; gap:14px; padding:11px 16px;
+  border-bottom:1px solid var(--edge2)}
+.btrk-hdr .t{font-family:var(--disp); font-weight:700; letter-spacing:3px; font-size:16px;
+  text-transform:uppercase; color:var(--cyan)}
+.btrk-hdr .loc{font-family:var(--seg); font-size:11px; color:var(--muted)}
+.btrk-hdr .st{margin-left:auto; font-family:var(--seg); font-size:11px; letter-spacing:2px;
+  color:var(--amber)}
+.btrk-body{flex:1 1 auto; display:flex; gap:16px; padding:16px; min-height:0; justify-content:center}
+.btrk-img{position:relative; width:min(46%,340px); aspect-ratio:1; background:#000;
+  border:1px solid var(--edge2); border-radius:6px; overflow:hidden; align-self:center}
+#ctBtrkSlice{width:100%; height:100%; display:block; image-rendering:pixelated}
+.btrk-roi{position:absolute; border:1.5px solid #35c6d6; border-radius:50%; cursor:move;
+  box-shadow:0 0 0 1px rgba(0,0,0,.6), inset 0 0 0 1px rgba(0,0,0,.4)}
+.btrk-roi::after{content:''; position:absolute; left:50%; top:50%; width:1px; height:7px;
+  transform:translate(-50%,-50%); background:#35c6d6}
+.btrk-plot{width:min(50%,380px); align-self:center; background:#000;
+  border:1px solid var(--edge2); border-radius:6px}
+#ctBtrkPlot{width:100%; height:auto; display:block}
+.btrk-foot{display:flex; align-items:center; gap:12px; padding:12px 16px;
+  border-top:1px solid var(--edge2)}
+.btrk-ro{display:flex; flex-direction:column}
+.btrk-ro .k{font-family:var(--seg); font-size:8.5px; letter-spacing:1.5px; color:var(--muted2)}
+.btrk-ro .v{font-family:var(--seg); font-size:17px; color:var(--txt)}
+.btrk-go{margin-left:auto; font-family:var(--disp); font-weight:700; letter-spacing:3px;
+  font-size:15px; color:#06210d; background:linear-gradient(180deg,#5fe07a,#2fa84c); border:0;
+  border-radius:7px; padding:11px 26px; cursor:pointer; box-shadow:0 0 14px rgba(79,208,106,.35)}
+.btrk-go:hover{filter:brightness(1.12)}
+.btrk-go.armed{background:linear-gradient(180deg,#ffc357,#e08a1e); color:#221403}
+.btrk-abort{font-family:var(--disp); font-weight:600; letter-spacing:2px; font-size:13px;
+  color:var(--muted); background:#131922; border:1px solid var(--edge2); border-radius:7px;
+  padding:11px 18px; cursor:pointer}
+.btrk-abort:hover{color:var(--txt)}
+/* the bolus row in the scan table reads as a mode, not a number */
+.sg-bolus{color:var(--cyan) !important}

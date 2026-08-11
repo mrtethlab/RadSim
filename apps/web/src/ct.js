@@ -1142,7 +1142,8 @@ function setPhase(p) {
   const iso = $('ctIsocentre');
   if (iso) { iso.disabled = (p !== 'idle'); if (iso.disabled) iso.classList.remove('needzero', 'flashiso'); }
   const labels = { idle: 'CT · STANDBY', scout: 'CT · SCOUT', planning: 'CT · PLAN SCAN',
-                   moving: 'CT · TABLE MOVE', scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
+                   moving: 'CT · TABLE MOVE', tracking: 'CT · BOLUS TRACKING',
+                   scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
   const wt = $('ctWarnT'); if (wt) wt.textContent = labels[p] || 'CT';
   // 3D <-> Image can be swapped freely through the whole scout/plan workflow
   ctx.setBay3DEnabled(true);
@@ -1655,7 +1656,13 @@ function defaultGroups() {
   // Default acquisition is SSCT (single detector row) → beam collimation = 1 × 0.625 mm DEL.
   // Switching to MSCT restores a multi-row default (see ctApplyAcqMode).
   const sf = defaultSfov();
-  const base = { detRows: 1, beamColl: DEL_MM, pitch: 0.938, rotSpeed: 0.5, sfovMM: sf.mm, sfovName: sf.name };
+  const base = { detRows: 1, beamColl: DEL_MM, pitch: 0.938, rotSpeed: 0.5, sfovMM: sf.mm, sfovName: sf.name,
+    // Scan delay is either a fixed wait or a bolus-tracked trigger. A group set to 'bolus'
+    // IS the monitoring series: a single slice at one location, scanned repeatedly while an
+    // ROI is watched, exactly as a console plans a monitoring series ahead of the diagnostic
+    // one. When it triggers, the scan moves on to the next enabled group.
+    delayMode: 'time',
+    bolus: { thrHU: 150, auto: true, roi: { x: 0.5, y: 0.44, r: 0.055 }, postDelay: 4 } };
   return [
     { on: true,  vis: true, box: { top: 0.10, bot: 0.90, apL: 0.28, apR: 0.72, latL: 0.28, latR: 0.72 }, kv: 120, ma: 295, sliceThk: 5,    ...base, interval: 5,    tilt: 0, delay: 0 },
     { on: false, vis: true, box: { top: 0.14, bot: 0.50, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 2.5,  ...base, interval: 2.5,  tilt: 0, delay: 0 },
@@ -1961,7 +1968,27 @@ function openFieldEditor(gi, act) {
   else if (act === 'tilt') type('Gantry tilt (degrees)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
   else if (act === 'ma') type('Tube current (mA)', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
-  else if (act === 'delay') type('Scan delay (seconds)', g.delay, (v) => { g.delay = clampV(Math.round(v), 0, 600); });
+  else if (act === 'delay') {
+    // Mode first, then its value — the same two steps the console asks for.
+    station('Scan delay', [0, 1, 2], g.delayMode === 'bolus' ? (g.bolus.auto ? 1 : 2) : 0,
+      (i) => ['Fixed time delay', 'Bolus tracking · auto trigger', 'Bolus tracking · manual trigger'][i],
+      (i) => {
+        g.delayMode = i === 0 ? 'time' : 'bolus';
+        if (i > 0) {
+          g.bolus.auto = (i === 1);
+          // A monitoring series is ONE slice. Collapse the box to its own centre so the
+          // scout shows a line, not a block — that line is the location being monitored.
+          const mid = (g.box.top + g.box.bot) / 2;
+          g.box.top = g.box.bot = mid;
+        }
+        setTimeout(() => {
+          if (g.delayMode === 'time') type('Scan delay (seconds)', g.delay,
+            (v) => { g.delay = clampV(Math.round(v), 0, 600); });
+          else type('Trigger threshold (HU)', g.bolus.thrHU,
+            (v) => { g.bolus.thrHU = clampV(Math.round(v), 40, 600); });
+        }, 60);
+      });
+  }
   else if (act === 'sfov') {
     const cur = Math.max(0, SFOV_OPTIONS.findIndex((o) => o.name === (g.sfovName || 'Large Body')));
     station('Scan field of view (SFOV)', SFOV_OPTIONS.map((o, i) => i), cur,
@@ -2096,7 +2123,10 @@ function renderScanGroups() {
       + cell('sg-edit', 'kv', g.kv + ' kV')
       + cell('sg-edit', 'ma', g.ma + ' mA')
       + cell('sg-calc', '', groupExpTime(g).toFixed(1) + ' s')
-      + cell('sg-edit', 'delay', g.delay + ' s')
+      + cell('sg-edit' + (g.delayMode === 'bolus' ? ' sg-bolus' : ''), 'delay',
+             g.delayMode === 'bolus'
+               ? 'Bolus &gt; ' + g.bolus.thrHU + ' HU' + (g.bolus.auto ? '' : ' (manual)')
+               : g.delay + ' s')
       + '</tr>';
   }
   const anyOff = c.groups.some((g) => !g.on);
@@ -2664,6 +2694,186 @@ let scanToken = 0;                // invalidates an in-flight scan on abort / mo
 function cancelScan() { scanToken++; }
 let spinRAF = null;               // gantry-spin animation handle
 
+
+/* ---- bolus tracking: the monitoring series --------------------------------------------
+   A group whose delay mode is 'bolus' IS the monitoring series — one slice at one location,
+   reconstructed over and over while an ROI is watched. That is how a console plans it: a
+   monitoring series ahead of the diagnostic one, not a property bolted onto the diagnostic
+   scan. When it triggers, runScan carries on to the next enabled group.
+
+   The images are deliberately cheap (QUICK_RT, no noise, no beam hardening): a real
+   monitoring series is low-dose and nobody diagnoses from it. What matters is the ROI number
+   and how fast it is climbing. */
+const BTRK_PERIOD_MS = 1500;      // console monitoring interval, ~1-2 s on real scanners
+const BTRK_WW = 400, BTRK_WL = 50;
+
+let btrkState = null;
+
+function btrkROIMeanHU(img, N, muW, roi){
+  // ROI is stored normalised to the image, so it survives a change of recon grid
+  const cx=roi.x*N, cy=(1-roi.y)*N, r=roi.r*N, r2=r*r;
+  let sum=0, n=0;
+  const y0=Math.max(0,Math.floor(cy-r)), y1=Math.min(N-1,Math.ceil(cy+r));
+  const x0=Math.max(0,Math.floor(cx-r)), x1=Math.min(N-1,Math.ceil(cx+r));
+  for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+    const dx=x-cx, dy=y-cy; if(dx*dx+dy*dy>r2) continue;
+    sum += 1000*(img[y*N+x]-muW)/muW; n++;
+  }
+  return n? sum/n : 0;
+}
+
+function btrkDrawSlice(img, N, muW){
+  const cv=ctx.$('ctBtrkSlice'); if(!cv) return;
+  if(cv.width!==N){ cv.width=N; cv.height=N; }
+  const g=cv.getContext('2d'), im=g.createImageData(N,N), d=im.data;
+  const lo=BTRK_WL-BTRK_WW/2, hi=BTRK_WL+BTRK_WW/2;
+  for(let iy=0; iy<N; iy++){ const sy=N-1-iy;
+    for(let ix=0; ix<N; ix++){
+      const hu=1000*(img[sy*N+ix]-muW)/muW;
+      const v=Math.max(0,Math.min(255, Math.round((hu-lo)/(hi-lo)*255)));
+      const k=(iy*N+ix)*4; d[k]=d[k+1]=d[k+2]=v; d[k+3]=255;
+    }
+  }
+  g.putImageData(im,0,0);
+}
+
+/* The enhancement curve, drawn the way a console draws it: HU against time with the trigger
+   level marked, so the operator can see the slope and judge whether to fire early. */
+function btrkDrawPlot(){
+  const st=btrkState, cv=ctx.$('ctBtrkPlot'); if(!st||!cv) return;
+  const g=cv.getContext('2d'), W=cv.width, H=cv.height;
+  g.fillStyle='#000'; g.fillRect(0,0,W,H);
+  const pad={l:38,r:8,t:10,b:22}, pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
+  const TMAX=Math.max(40, Math.ceil((st.t||0)/10)*10+10);
+  const LO=-100, HI=Math.max(350, st.thrHU+120);
+  const X=(t)=>pad.l+t/TMAX*pw, Y=(hu)=>pad.t+ph-(hu-LO)/(HI-LO)*ph;
+  g.strokeStyle='#2a3038'; g.lineWidth=1; g.font='9px monospace'; g.fillStyle='#7f8c99';
+  for(let hu=LO; hu<=HI; hu+=100){
+    const y=Y(hu); g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke();
+    g.fillText(String(hu), 4, y+3);
+  }
+  for(let t=0;t<=TMAX;t+=10){ const x=X(t);
+    g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke();
+    if(t) g.fillText(String(t), x-6, H-6);
+  }
+  // trigger level
+  g.strokeStyle='#e8e8e8'; g.lineWidth=1.2;
+  g.beginPath(); g.moveTo(pad.l,Y(st.thrHU)); g.lineTo(W-pad.r,Y(st.thrHU)); g.stroke();
+  // the curve so far
+  if(st.pts.length){
+    g.strokeStyle='#fff'; g.lineWidth=1.6; g.beginPath();
+    st.pts.forEach((p,i)=>{ const x=X(p.t), y=Y(p.hu); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke();
+    const last=st.pts[st.pts.length-1];
+    g.fillStyle='#35c6d6'; g.beginPath(); g.arc(X(last.t),Y(last.hu),3,0,Math.PI*2); g.fill();
+  }
+  if(st.firedAt!=null){
+    const x=X(st.firedAt);
+    g.strokeStyle='#4fd06a'; g.setLineDash([4,3]);
+    g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke(); g.setLineDash([]);
+  }
+}
+
+function btrkPlaceROI(){
+  const st=btrkState, el=ctx.$('ctBtrkRoi'), wrap=ctx.$('ctBtrkImgWrap');
+  if(!st||!el||!wrap) return;
+  const w=wrap.clientWidth||1, h=wrap.clientHeight||1, d=st.roi.r*2*w;
+  el.style.width=d+'px'; el.style.height=d+'px';
+  el.style.left=(st.roi.x*w-d/2)+'px'; el.style.top=((1-st.roi.y)*h-d/2)+'px';
+}
+function btrkWireROI(){
+  const el=ctx.$('ctBtrkRoi'), wrap=ctx.$('ctBtrkImgWrap');
+  if(!el||el._wired) return; el._wired=true;
+  const move=(e)=>{
+    if(!btrkState) return;
+    const r=wrap.getBoundingClientRect();
+    btrkState.roi.x=Math.max(0.05,Math.min(0.95,(e.clientX-r.left)/r.width));
+    btrkState.roi.y=Math.max(0.05,Math.min(0.95,1-(e.clientY-r.top)/r.height));
+    btrkPlaceROI();
+  };
+  el.addEventListener('pointerdown',e=>{ el.setPointerCapture(e.pointerId); e.preventDefault(); });
+  el.addEventListener('pointermove',e=>{ if(e.buttons&1) move(e); });
+  wrap.addEventListener('pointerdown',e=>{ if(e.target===wrap||e.target.tagName==='CANVAS') move(e); });
+}
+
+/* Run the monitoring series. Resolves 'scan' when the diagnostic scan should start, or
+   'abort' if the operator stops. */
+function runBolusTracking(g, alive){
+  return new Promise((resolve)=>{
+    const S=ctx.S;
+    const setup=scanSetup(g);
+    const geo=reconGeoM(groupDFOV(g), setup.cx||0, (setup.cy!=null?setup.cy:ISO_Y), QUICK_RT, g.sfovMM||500);
+    const h=buildKernel(geo.ds, geo.m.nDet, geo.m.fixedPitch);
+    const mu={ ...setup.mu, muMat:null, bhc:null };
+    const N=geo.m.gridN;
+    btrkState={ roi:g.bolus.roi, thrHU:g.bolus.thrHU, auto:g.bolus.auto,
+                pts:[], t:0, t0:null, firedAt:null, tracking:false, done:false };
+    const panel=ctx.$('ctBtrk'); panel.classList.add('show');
+    ctx.$('ctBtrkLoc').textContent='slice '+fmtTablePos(setup.positions[0]);
+    ctx.$('ctBtrkThr').textContent=g.bolus.thrHU+' HU'+(g.bolus.auto?' · auto':' · manual');
+    ctx.$('ctBtrkState').textContent='POSITION ROI';
+    const go=ctx.$('ctBtrkGo'); go.textContent='START TRACKING'; go.classList.remove('armed');
+    btrkWireROI();
+
+    let timer=null;
+    const finish=(how)=>{
+      if(btrkState) btrkState.done=true;
+      if(timer) clearInterval(timer);
+      panel.classList.remove('show');
+      btrkState=null;
+      resolve(how);
+    };
+    const frame=()=>{
+      if(!alive()) return finish('abort');
+      const st=btrkState; if(!st) return;
+      // the monitored slice is reconstructed at the CURRENT injector time
+      if(ctx.contrastLatch) ctx.contrastLatch();
+      setup.phantom=ctx.buildPhantom();
+      const img=previewReconSlice(setup, 0, geo, h, mu);
+      btrkDrawSlice(img, N, setup.muW);
+      btrkPlaceROI();
+      const hu=btrkROIMeanHU(img, N, setup.muW, st.roi);
+      ctx.$('ctBtrkHU').textContent=Math.round(hu)+' HU';
+      if(st.tracking){
+        const clk=(ctx.contrastClock&&ctx.contrastClock());
+        st.t=(performance.now()-st.t0)/1000;
+        ctx.$('ctBtrkT').textContent=st.t.toFixed(1)+' s';
+        st.pts.push({t:st.t, hu});
+        btrkDrawPlot();
+        if(st.auto && st.firedAt==null && hu>=st.thrHU){
+          st.firedAt=st.t;
+          ctx.$('ctBtrkState').textContent='TRIGGERED';
+          btrkDrawPlot();
+          setTimeout(()=>{ if(btrkState && !btrkState.done) finish('scan'); }, g.bolus.postDelay*1000);
+        }
+      }
+    };
+    frame();                                   // first image immediately, for ROI placement
+    go.onclick=()=>{
+      const st=btrkState; if(!st) return;
+      if(!st.tracking){
+        st.tracking=true; st.t0=performance.now(); st.pts=[];
+        ctx.$('ctBtrkState').textContent='TRACKING';
+        go.textContent='SCANNING PHASE'; go.classList.add('armed');
+        timer=setInterval(frame, BTRK_PERIOD_MS);
+        frame();
+      } else {
+        finish('scan');                        // manual trigger
+      }
+    };
+    ctx.$('ctBtrkAbort').onclick=()=>finish('abort');
+  });
+}
+
+/* Test/QC hook, mirroring window.radsimQC in the x-ray module. Bolus tracking sits behind a
+   full console workflow (zero, move, scout, plan), so this exposes the monitoring series on
+   its own — otherwise the only way to exercise it is to drive that whole sequence. */
+if (typeof window !== 'undefined') window.radsimCT = {
+  groups: () => ctx.S.ct.groups,
+  bolusTracking: (gi) => runBolusTracking(grp(gi || 0), () => true),
+  trackState: () => btrkState,
+};
+
 // ---- scan sequence ----
 async function runScan() {
   const S = ctx.S, tok = ++scanToken, alive = () => tok === scanToken;
@@ -2681,6 +2891,15 @@ async function runScan() {
   try {
     for (const { g, i } of groups) {
       if (!alive()) return;
+      // A bolus group is the monitoring series, not an acquisition: run it, then carry on to
+      // the next group, which is the diagnostic scan it was triggering.
+      if (g.delayMode === 'bolus') {
+        setPhase('tracking');
+        const how = await runBolusTracking(g, alive);
+        if (how !== 'scan' || !alive()) { setHint('Bolus tracking stopped.'); return; }
+        setPhase('scanning');
+        continue;
+      }
       await repositionForGroup(i, alive);                  // 1) move the couch for this group
       if (!alive()) return;
       if (g.delay > 0) { await scanDelay(g.delay, alive); if (!alive()) return; }   // 2) scan delay
