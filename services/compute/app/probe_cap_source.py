@@ -39,45 +39,57 @@ BLOCK_MM = 300.0          # 30 cm — the same abdominal block used on z045
 STEP = 8                  # slice stride while profiling; 0.5 mm data is far finer than needed
 
 
-def body_and_air(sl):
-    """Body mask (holes filled) and the air trapped inside it, for one slice.
+DS = 6            # downsample factor for the anatomy search; 0.5 mm data -> 3 mm, plenty
 
-    Flood-filling matters: without it the 'air' count is dominated by the room around the
-    patient, which is constant down the whole scan and tells you nothing about where the
-    lungs are."""
-    body = sl > -400
-    if not body.any():
-        return body, np.zeros_like(body)
-    lab, n = ndimage.label(body)
-    if n > 1:                                     # keep the patient, drop the table and leads
-        sizes = ndimage.sum(body, lab, range(1, n + 1))
-        body = lab == (int(np.argmax(sizes)) + 1)
-    filled = ndimage.binary_fill_holes(body)
-    return filled, filled & (sl < -400)
+
+def largest(mask):
+    lab, n = ndimage.label(mask)
+    if n <= 1:
+        return mask
+    sizes = ndimage.sum(mask, lab, range(1, n + 1))
+    return lab == (int(np.argmax(sizes)) + 1)
+
+
+def find_lungs(vol):
+    """Return the z index range of the lungs, working in 3D on a downsampled volume.
+
+    Per-slice hole filling does not work here: on many slices the body mask touches the image
+    border (arms, the table, a body bag), so there is no hole to fill and the 'interior air'
+    ends up including the whole room. An earlier version of this function reported 149 cm of
+    interior air on a 155 cm scan and cropped the feet. In 3D the body is one connected blob
+    that can be filled once, and the lungs are then simply the largest air pocket inside it."""
+    small = vol[::DS, ::DS, ::DS]
+    body = largest(small > -400)
+    body = ndimage.binary_fill_holes(body)
+    air = body & (small < -400)
+    lung = largest(air)
+    zs = np.where(lung.any(axis=(0, 1)))[0]
+    if not len(zs):
+        raise SystemExit('no air pocket inside the body — cannot locate the lungs')
+    return int(zs.min()) * DS, int(zs.max()) * DS, int(lung.sum()) * DS ** 3
 
 
 def find_abdomen(path):
-    """Return the z index range of a BLOCK_MM abdominal block, just below the lung bases."""
+    """Return the z index range of a BLOCK_MM abdominal block, just below the lung bases.
+
+    The volume is read ONCE. Slicing `dataobj` per slice on a .nii.gz re-inflates the stream
+    from the beginning every time, so profiling 3000 slices that way is quadratic — it ran for
+    many minutes without producing a line. 512x512x3100 int16 is ~1.6 GB, which is nothing."""
     im = nib.load(path)
     dz = float(im.header.get_zooms()[2])
     nz = im.shape[2]
-    prof = np.zeros(nz)
-    for k in range(0, nz, STEP):
-        sl = np.asanyarray(im.dataobj[:, :, k]).astype(np.int16)
-        _, air = body_and_air(sl)
-        prof[k:k + STEP] = air.sum()
-    thr = prof.max() * 0.25
-    lung = np.where(prof > thr)[0]
-    if not len(lung):
-        raise SystemExit('no interior air anywhere — cannot locate the lungs')
-    # z increases towards the head in these volumes, so the lung BASE is the low end
-    base = int(lung.min())
+    print('  loading the volume…', flush=True)
+    vol = np.asanyarray(im.dataobj)
+    z0, z1, nvox = find_lungs(vol)
+    span = (z1 - z0) * dz / 10
+    print(f'  lungs z {z0}..{z1} = {span:.1f} cm, {nvox * np.prod(im.header.get_zooms()) / 1000:,.0f} cm3')
+    if span < 12 or span > 40:
+        print('  ** that is not a plausible lung span — the crop below may be wrong **')
+    base = z0                                     # z increases headwards; the base is the low end
     n_block = int(round(BLOCK_MM / dz))
     lo = max(0, base - n_block)
-    print(f'  lungs span z {lung.min()}..{lung.max()} '
-          f'({(lung.max() - lung.min()) * dz / 10:.1f} cm of interior air)')
     print(f'  abdominal block: z {lo}..{base}  ({(base - lo) * dz / 10:.1f} cm)')
-    return im, lo, base
+    return im, vol, lo, base
 
 
 DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data')
@@ -86,12 +98,12 @@ DATA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 def main(sub):
     src = os.path.join(DATA, 'vsd', sub, 'ct.nii.gz')
     print(f'== {sub} ==')
-    im, lo, hi = find_abdomen(src)
+    im, vol, lo, hi = find_abdomen(src)
     out = os.path.join(tempfile.gettempdir(), f'capprobe_{sub}')
     os.makedirs(out, exist_ok=True)
     crop_path = os.path.join(out, 'crop.nii.gz')
     if not os.path.exists(crop_path):
-        d = np.asanyarray(im.dataobj[:, :, lo:hi])
+        d = vol[:, :, lo:hi]
         aff = im.affine.copy()
         aff[:3, 3] = aff[:3, 3] + aff[:3, 2] * lo
         nib.save(nib.Nifti1Image(d, aff, im.header), crop_path)

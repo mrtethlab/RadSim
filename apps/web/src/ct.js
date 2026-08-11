@@ -2789,10 +2789,16 @@ function btrkDrawPlot(){
   // `now` runs off the wall clock so the cursor moves between samples; the axis grows with it
   const now = st.tracking && st.t0!=null ? (performance.now()-st.t0)/1000 : 0;
   const TMAX=Math.max(40, Math.ceil(Math.max(st.t||0, now)/10)*10+10);
-  const LO=-100, HI=Math.max(350, st.thrHU+120);
+  // The y-range follows the data. A fixed -100..350 window hid the trace completely whenever
+  // the ROI sat somewhere unenhanced — lung is around -700 — and a blank graph reads as broken
+  // rather than as "your ROI is in the wrong place", which is what it is actually telling you.
+  let lo=-100, hi=Math.max(350, st.mode==='test'?200:st.thrHU+120);
+  for(const p of st.pts){ if(p.hu<lo) lo=p.hu; if(p.hu>hi) hi=p.hu; }
+  const LO=Math.floor(lo/100)*100, HI=Math.ceil(hi/100)*100;
+  const GRID=(HI-LO)>1200?400:(HI-LO)>600?200:100;
   const X=(t)=>pad.l+t/TMAX*pw, Y=(hu)=>pad.t+ph-(hu-LO)/(HI-LO)*ph;
   g.strokeStyle='#2a3038'; g.lineWidth=1; g.font='9px monospace'; g.fillStyle='#7f8c99';
-  for(let hu=LO; hu<=HI; hu+=100){
+  for(let hu=LO; hu<=HI; hu+=GRID){
     const y=Y(hu); g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke();
     g.fillText(String(hu), 4, y+3);
   }
@@ -2890,7 +2896,7 @@ function runBolusTracking(g, alive, enhanced){
     ctx.$('ctBtrkLoc').textContent='slice '+fmtTablePos(setup.positions[0]);
     ctx.$('ctBtrkThrK').textContent = mode==='test' ? 'Duration' : 'Trigger';
     ctx.$('ctBtrkThr').textContent = mode==='test'
-      ? (bt.testDur||40)+' s · measures peak'
+      ? (bt.testDur||40)+' s'
       : bt.thrHU+' HU'+(bt.auto?' · auto':' · manual');
     ctx.$('ctBtrkState').textContent='POSITION ROI';
     ctx.$('ctBtrkT').textContent='0.0 s';      // a new series starts its own clock, not the last one's
