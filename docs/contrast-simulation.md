@@ -227,6 +227,36 @@ Until then `heart` stays a single label. First-pass timing survives that (the he
 compartment), but right-heart versus left-heart opacification — the thing a PE study actually
 shows — does not.
 
+**Two routes round the licence were tried and both fail. Do not retry them.**
+
+*`total_v1`* appears in `class_map` with all four chambers and looks like an open alternative.
+It is a historical index table, not a runnable task — the CLI rejects it
+(`invalid choice: 'total_v1'`). Running `heartchambers_highres` without a key fails explicitly
+with the licence notice, so there is no accidental way in either.
+
+*Deriving the split geometrically* is the tempting one, because a chamber really is defined by
+what connects to it: SVC + IVC + pulmonary artery on the right, pulmonary veins + aorta + left
+atrial appendage on the left. All six are already segmented. It does not work, for a structural
+reason rather than a tuning one:
+
+- **Euclidean nearest-anchor** put the two centroids 3 voxels apart in x but 18 apart in z, and
+  left *every* anchor — aorta and pulmonary vein included — closer to the "right" mask. It had
+  partitioned the heart superior/inferior.
+- **A separating plane** between the anchor centroids got the orientation right (left further
+  left AND further posterior) but split 87 % / 13 %, with a plane normal dominated by z (0.74).
+  Still a base-to-apex cut.
+
+The cause is that **every available anchor clusters at the cardiac base** — the great vessels
+all attach at the top of the heart — so any distance or plane derived from them measures depth
+from the base, not laterality. The right and left hearts are separated by a septum that is not
+segmented, and nothing else in the model constrains where it lies. Enhancement can't help
+either: this is an unenhanced volume where blood and myocardium are both ~45 HU.
+
+So the licence (or a different chamber segmentation tool) is genuinely required. A related
+limitation to keep in view when it arrives: the `heart` mask is chambers **plus** myocardium,
+and splitting it left/right would still treat the muscle as blood pool unless the chamber task's
+separate `heart_myocardium` label is used to exclude it.
+
 ### 4.4 Legend duplication is a standing hazard
 
 `materials.js` `LIST` and `build_model.py` `LEGEND` are hand-duplicated and must agree in
