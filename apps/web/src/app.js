@@ -710,7 +710,20 @@ async function contrastSolve(){
     C.lut=null; C.lutT=null;
     return true;
   }catch(err){
-    C.error=err.message; C.timeline=null; return false;
+    // A dropped connection surfaces as the browser's bare "Failed to fetch", which tells the
+    // user nothing and does not name the thing to restart. It also means the health poll's
+    // view is stale — up to 5 s out of date — so mark the service down immediately rather
+    // than leaving the panel enabled and inviting a second identical failure.
+    const gone = (err instanceof TypeError) || /failed to fetch|networkerror|load failed/i.test(err.message||'');
+    if(gone){
+      S.computeInfo=null;
+      C.error='Lost the Python compute service mid-solve. Restart it, then press ON again.';
+    } else {
+      C.error=err.message;
+    }
+    C.timeline=null;
+    if($('ctrstPanel')) ctrstApply(true);      // re-grey the tab now, not at the next poll
+    return false;
   }finally{ C.busy=false; }
 }
 // Drive contrast before the panel exists (Phase 3). Also the hook the tests use.
