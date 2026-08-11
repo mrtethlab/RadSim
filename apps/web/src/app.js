@@ -5,7 +5,7 @@ import * as THREE from 'three';
 import { Spectrum } from './core/spectrum.js';
 import { Phantom } from './core/phantom.js';
 import { AttenuationEngine } from './core/engine.js';
-import { Detector } from './core/detector.js';
+import { Detector, EI_K, AEC_CHAMBER_CAL } from './core/detector.js';
 import { Sound } from './audio/sound.js';
 import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
@@ -1489,7 +1489,9 @@ async function computeRadiograph(){
 
   // ---- AEC: the chambers integrate receptor-plane kerma DURING the exposure and cut it
   // when the average over the selected cells reaches the calibrated target (the same
-  // receptor-dose calibration the EI uses: EI = 900 × dose, so target dose = EI_target/900).
+  // receptor-dose calibration the EI uses: EI = EI_K × dose, so target = EI_target/EI_K. The
+  // constant is imported rather than repeated — a local 900 here would silently stop matching
+  // the detector's if that were ever tuned, and the AEC would aim at the wrong dose.)
   // Everything upstream is linear in mAs, so the projection computed at the BACKUP mAs is
   // simply rescaled to the terminated mAs — noise is applied after, at the true exposure.
   // If the target is never reached (cells behind dense anatomy / collimated off), the
@@ -1497,7 +1499,9 @@ async function computeRadiograph(){
   S.aecResult=null;
   if(aecActive()){
     const cd=aecCellDose(dose,nx,ny,pxU,pxV);       // mean chamber dose at backup mAs
-    const target=S.eiTarget/900;                     // calibrated receptor dose (EI 100 = 1 µGy)
+    // Chamber target, not VOI target — see AEC_CHAMBER_CAL. Metering the mediastinum at a
+    // lung-level dose is what made every AEC exposure read ~3x hot.
+    const target=S.eiTarget/EI_K/AEC_CHAMBER_CAL;
     const backup=S.mas;
     const ideal = cd>1e-12 ? backup*target/cd : Infinity;
     const masA=Math.max(AEC_MIN_MAS, Math.min(backup, ideal));
