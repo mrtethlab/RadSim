@@ -36,3 +36,6 @@ services/compute/data/
 apps/web/public/models/hires_shoulder/*.mat.bin
 apps/web/public/models/hires_shoulder/*.glb
 apps/web/public/models/hand_hires/*.mat.bin
+
+# scratch space for probing remote endpoints
+.tmp/
