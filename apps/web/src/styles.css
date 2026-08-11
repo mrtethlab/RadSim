@@ -32,7 +32,7 @@
   body.theme-ge .bay{background:linear-gradient(180deg,#a6b6c7,#8a9db0)}
   body.theme-ge .hdr{background:linear-gradient(180deg,#3f9080,#357d6d); border-bottom-color:#2a5f52}
   body.theme-ge .hdr .t{color:#effbf7}
-  body.theme-ge .hdr .t b, body.theme-ge .baytag .k{color:#0c3350}
+  body.theme-ge .hdr .t b{color:#0c3350}
   body.theme-ge .hdr .u{color:#d6efe8}
   /* GE console buttons: raised bevel with a solid colour ring so they read on the light panel */
   body.theme-ge .ctbtn{background:linear-gradient(180deg,#f6faff,#d4dfea);
@@ -72,16 +72,31 @@
   body.theme-ge .scangroups .sg-add:hover{border-color:#7fc8d8; color:#eafcff}
   /* The SCOUT planning table sits on the light settings panel — only its header was hardcoded dark. */
   body.theme-ge .scouttable .sg-table th{background:#96a8bc; color:#123a5e; border-color:#7d92a8}
-  /* Elements floating OVER the always-dark 3D canvas keep needing LIGHT text in the light GE
-     theme: the RadSim tag, the X-RAY/CT mode pill, and the view/sound dropdown menus (their
-     dark popover panels re-scope the text vars to light values). */
-  body.theme-ge .baytag .k{color:#d9e7f3}
-  body.theme-ge .credit{color:#5c6a77}
-  body.theme-ge .modebar button{color:#8fa5b8}
-  body.theme-ge .modebar button:hover{color:#e8f2fa}
-  body.theme-ge .modebar button[data-mode="xray"].on{color:#06121a; background:#35c6d6; box-shadow:0 0 14px rgba(53,198,214,.55)}
-  body.theme-ge .modebar button[data-mode="ct"].on{color:#1a1204; background:#ffb23e; box-shadow:0 0 14px rgba(255,178,62,.55)}
-  body.theme-ge .baymenu{--txt:#e0eaf3; --muted:#a2b6c8; --muted2:#7f94a8; --cyan:#7fc8d8}
+  /* Everything floating OVER the always-dark 3D canvas — and every panel that stays dark on
+     purpose — needs LIGHT text under GE. Re-scope the text vars on the CONTAINERS rather than
+     patching each label: anything added inside them later inherits readable values instead of
+     GE's near-invisible navy, so this class of bug cannot come back with new markup.
+     The one deliberate exception is .ctpop, which GE turns into a light dialog. */
+  body.theme-ge .modebar,
+  body.theme-ge .baytag,
+  body.theme-ge .credit,
+  body.theme-ge .bayctl,
+  body.theme-ge .baymenu,
+  body.theme-ge .baymenu-btn,
+  body.theme-ge .segmini,
+  body.theme-ge .btrk,
+  body.theme-ge .bignote,
+  body.theme-ge .imgview-ui,
+  body.theme-ge .edpage,
+  body.theme-ge .ctscouts,
+  body.theme-ge .ctslices,
+  body.theme-ge .ctrecons{
+    --txt:#e3ecf4; --muted:#a7bacb; --muted2:#8598aa; --cyan:#7fc8d8; --amber:#ffb23e;
+    color:var(--txt);
+  }
+  body.theme-ge .credit{color:var(--muted2)}
+  body.theme-ge .modebar button{color:var(--muted)}
+  body.theme-ge .modebar button:hover{color:#e8f2fa; background:#1b232b}
   body.theme-ge .warn{background:#c3d1df; border-color:#7d92a8}                          /* console status strip → light */
   body.theme-ge .warn .wt{color:#2a3f54}
   body.theme-ge .lamp{background:#8a97a4; box-shadow:inset 0 0 4px rgba(0,0,0,.4)}        /* LED off state (visible on light) */
@@ -1123,3 +1138,80 @@ body.theme-ge .ctrst .valchip.cyanlit{background:#0a0d10; color:var(--cyan)}
 .btrk-abort:hover{color:var(--txt)}
 /* the bolus row in the scan table reads as a mode, not a number */
 .sg-bolus{color:var(--cyan) !important}
+
+.btrk-inj{display:flex; align-items:center; gap:8px; margin-left:auto}
+.btrk-inj .k{font-family:var(--seg); font-size:8.5px; letter-spacing:1.5px; color:var(--muted2)}
+.btrk-inj .v{font-family:var(--seg); font-size:13px; color:var(--txt); min-width:44px}
+.btrk-inj button{font-size:14px; line-height:1; color:#06210d; padding:7px 13px; cursor:pointer;
+  background:linear-gradient(180deg,#5fe07a,#2fa84c); border:0; border-radius:6px}
+.btrk-inj button:hover:not(:disabled){filter:brightness(1.12)}
+.btrk-inj button.running{background:linear-gradient(180deg,#ffc357,#e08a1e); color:#221403}
+.btrk-inj button:disabled{background:#1b232b; color:var(--muted2); cursor:default}
+
+/* the monitoring row of a bolus pair reads as a sub-series of the enhanced scan below it */
+.sg-row.sg-monitor td:first-child{position:relative}
+.sg-row.sg-monitor td:first-child::after{content:'TRACK'; position:absolute; left:100%; top:50%;
+  transform:translateY(-50%); margin-left:4px; font-family:var(--seg); font-size:7.5px;
+  letter-spacing:1px; color:var(--cyan); opacity:.85}
+.sg-mon{color:var(--muted) !important; font-style:italic}
+
+/* ---- welcome screen ------------------------------------------------------------------
+   The modes are separate machines, not tabs of one, so the app opens on a menu rather than
+   dropping the user into whichever mode happened to be last. Each card says what the mode
+   actually does — a name alone ("CT") does not tell a student what they are about to be
+   asked to do.
+   The menu belongs to no vendor, so it pins its own accents rather than inheriting whichever
+   scanner theme was last selected — otherwise picking GE would restyle the front door. */
+.home{position:fixed; inset:0; z-index:200; display:none; overflow:auto;
+  --hi:#35c6d6; --sub:#e0a83c; --dim:#93a3b2;
+  background:radial-gradient(120% 90% at 50% 0%, #10161f 0%, #080b10 55%, #05070a 100%)}
+body.mode-home .home{display:block}
+.home-inner{max-width:1180px; margin:0 auto; padding:56px 28px 64px}
+.home-title{font-family:var(--disp); font-weight:700; font-size:clamp(46px,8vw,88px);
+  letter-spacing:14px; text-align:center; margin:0; color:#eef3f8;
+  text-shadow:0 0 34px rgba(120,190,255,.30)}
+.home-title span{color:var(--hi)}
+.home-sub{text-align:center; color:var(--dim); font-size:16px; margin:12px 0 44px}
+.home-grid{display:grid; gap:22px; grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.home-card{display:flex; flex-direction:column; text-align:left; padding:0; overflow:hidden;
+  background:#121820; border:1px solid var(--edge2); border-radius:14px; cursor:pointer;
+  transition:transform .16s, box-shadow .16s, border-color .16s; color:inherit; font:inherit}
+.home-card:hover{border-color:#5c7a94; box-shadow:0 16px 40px rgba(0,0,0,.55)}
+/* Each header carries the shape of its machine — a diverging beam onto a plate, a gantry
+   bore, a voxel lattice — so the cards are told apart before the titles are read. */
+.hc-art{height:150px; position:relative; overflow:hidden}
+.hc-xray .hc-art{background:linear-gradient(160deg,#2e567f,#5b91c4 60%,#9fc6e8)}
+.hc-xray .hc-art::before{content:''; position:absolute; inset:0;
+  background:repeating-conic-gradient(from 250deg at 50% -12%,
+    rgba(255,255,255,.26) 0deg 1.4deg, transparent 1.4deg 5.2deg)}
+.hc-xray .hc-art::after{content:''; position:absolute; left:16%; right:16%; bottom:16px;
+  height:12px; border-radius:2px; background:rgba(238,246,252,.82);
+  box-shadow:0 0 22px rgba(200,230,255,.45)}
+.hc-ct .hc-art{background:linear-gradient(160deg,#215a55,#2f8a76 55%,#6cc3a4)}
+.hc-ct .hc-art::before{content:''; position:absolute; inset:0;
+  background:repeating-radial-gradient(circle at 50% 52%,
+    rgba(255,255,255,.20) 0 1.5px, transparent 1.5px 13px)}
+.hc-ct .hc-art::after{content:''; position:absolute; left:50%; top:52%; width:74px; height:74px;
+  margin:-37px 0 0 -37px; border-radius:50%; background:rgba(5,20,18,.55);
+  box-shadow:inset 0 0 0 3px rgba(238,252,247,.75), 0 0 26px rgba(120,230,195,.35)}
+.hc-editor .hc-art{background:linear-gradient(160deg,#4d3570,#8a56a8 50%,#d8a24a)}
+.hc-editor .hc-art::before{content:''; position:absolute; inset:-1px;
+  background:repeating-linear-gradient(90deg, rgba(255,255,255,.22) 0 1px, transparent 1px 25px),
+             repeating-linear-gradient(0deg,  rgba(255,255,255,.22) 0 1px, transparent 1px 25px)}
+.hc-editor .hc-art::after{content:''; position:absolute; left:75px; top:50px; width:50px;
+  height:50px; background:rgba(240,200,110,.88); box-shadow:25px 25px 0 rgba(240,200,110,.55),
+  -25px 25px 0 rgba(240,200,110,.35)}
+.hc-body{padding:16px 18px 20px}
+.hc-name{font-family:var(--disp); font-weight:700; font-size:25px; letter-spacing:.5px;
+  color:#eef3f8}
+.hc-tag{color:var(--sub); font-size:13.5px; margin:5px 0 11px}
+.hc-desc{color:var(--dim); font-size:13.5px; line-height:1.62}
+/* the mode bar is now just the way out */
+.modebar-cur{font-family:var(--seg); font-size:11px; letter-spacing:3px; color:var(--muted);
+  padding:0 14px 0 12px; align-self:center; border-left:1px solid var(--edge2); line-height:1}
+#homeBtn{font-family:var(--disp); font-weight:700; letter-spacing:3px; font-size:14px;
+  color:var(--muted); background:transparent; border:0; padding:8px 18px; border-radius:6px;
+  cursor:pointer; text-transform:uppercase; transition:.15s}
+#homeBtn:hover{color:var(--txt); background:#1b232b}
+/* nothing from a mode should show through the menu */
+body.mode-home .app{visibility:hidden}

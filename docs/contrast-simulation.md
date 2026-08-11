@@ -709,6 +709,27 @@ Verified: armed at 150 HU with a 3 s delay, triggered 13.5 s and fired 16.5 s; w
 13.5 s -> 15.5 s. Threshold line and trigger dot draw on the plot. Re-arming on START, and
 reset, both clear cleanly.
 
+### 6.6 The bolus-tracked pair, and driving the injector from the console
+
+Selecting bolus tracking as a group's scan delay now builds **two** groups, because that is what
+the acquisition is: a monitoring series and the diagnostic series it triggers. The chosen group
+becomes the monitor — one slice at its own centre, delay fixed at 0 s, since the delay is the
+quantity being measured — and an enhanced group is inserted below it holding the planned range
+and the trigger threshold. Both carry the same `cg`, so the plan renders them in one colour with
+a `TRACK` badge on the monitor. Switching either half back to a fixed time delay dissolves the
+pair and leaves one ordinary group holding the diagnostic range.
+
+The injector transport is repeated on the tracking overlay. START TRACKING starts the injection
+too, which is the realistic default — one operator does both — but the two clocks stay separate:
+pressing the injector first and arming the series later leaves the gap visible and growing,
+because the injector clock runs on its own 200 ms tick rather than on the 1.5 s monitoring
+period. Verified: injector at 5.1 s with the tracking clock at 2.1 s after arming 3 s late.
+
+The console's own entry keypad now overwrites rather than appends — the first digit replaces the
+stored value, and the third key is a clear (`C`), not a backspace. Entering 65 into a field
+showing 0 gives 65, not 065. Out-of-range entries are clamped on OK against the min/max printed
+beside the field.
+
 ---
 
 ## 7. Teaching notes

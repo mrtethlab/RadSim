@@ -8,6 +8,46 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 </head>
 <body>
+<!-- ============ WELCOME SCREEN — the arcade of modes ============ -->
+<div class="home" id="homeScreen">
+  <div class="home-inner">
+    <h1 class="home-title">RAD<span>SIM</span></h1>
+    <p class="home-sub">Physics-based radiography and CT — position, expose, reconstruct</p>
+    <div class="home-grid">
+      <button class="home-card hc-xray" data-mode="xray">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">X-ray</div>
+          <div class="hc-tag">Projection radiography — AEC, grids, technique</div>
+          <div class="hc-desc">Position the subject, set the technique or let the AEC chambers
+            meter it, and expose. Polyenergetic ray-casting through real voxel anatomy, with
+            scatter, grids, beam hardening and an exposure index you can miss.</div>
+        </div>
+      </button>
+      <button class="home-card hc-ct" data-mode="ct">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">CT</div>
+          <div class="hc-tag">Scout, plan, acquire, reconstruct</div>
+          <div class="hc-desc">Zero the table, take scouts, plan scan groups and recons, then
+            watch the gantry acquire. Filtered back-projection with contrast timing and
+            bolus tracking on the console.</div>
+        </div>
+      </button>
+      <button class="home-card hc-editor" data-mode="editor">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">Model Editor</div>
+          <div class="hc-tag">Paint voxel phantoms slice by slice</div>
+          <div class="hc-desc">Build or alter a phantom directly: paint materials onto
+            transverse slices with a live 3D preview, then save it as a subject the scanners
+            can image.</div>
+        </div>
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="app">
 
   <!-- ============ POSITIONING BAY (Three.js) ============ -->
@@ -15,9 +55,8 @@
     <canvas id="view"></canvas>
     <canvas id="bigFilm"></canvas>
     <div class="modebar" id="modeBar">
-      <button data-mode="xray" class="on">X-RAY</button>
-      <button data-mode="ct">CT</button>
-      <button data-mode="editor">MODEL EDITOR</button>
+      <button id="homeBtn" title="Leave this mode and return to the menu">&#8962; HOME</button>
+      <span class="modebar-cur" id="modeCur">X-RAY</span>
     </div>
     <!-- ============ BOLUS TRACKING (monitoring series; overlays the bay) ============ -->
     <div class="btrk" id="ctBtrk">
@@ -37,6 +76,9 @@
         <div class="btrk-ro"><span class="k">ROI</span><span class="v" id="ctBtrkHU">—</span></div>
         <div class="btrk-ro"><span class="k">Trigger</span><span class="v" id="ctBtrkThr">—</span></div>
         <div class="btrk-ro"><span class="k">Elapsed</span><span class="v" id="ctBtrkT">0.0 s</span></div>
+        <div class="btrk-inj"><span class="k">Injector</span>
+          <button id="ctBtrkInj" title="Start the injection">▶</button>
+          <span class="v" id="ctBtrkInjT">—</span></div>
         <button class="btrk-go" id="ctBtrkGo">START TRACKING</button>
         <button class="btrk-abort" id="ctBtrkAbort">ABORT</button>
       </div>
@@ -765,7 +807,7 @@
         <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
         <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
         <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
-        <button data-k=".">.</button><button data-k="0">0</button><button data-k="bs">←</button>
+        <button data-k=".">.</button><button data-k="0">0</button><button data-k="bs" title="Clear">C</button>
       </div>
     </div>
     <div class="kpad-btns">

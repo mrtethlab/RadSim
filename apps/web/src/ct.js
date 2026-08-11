@@ -894,11 +894,10 @@ function updateScanMarkers() {
 }
 
 function wireModeToggle() {
-  const bar = ctx.$('modeBar');
-  if (!bar) return;
-  bar.addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) applyMode(b.dataset.mode);
+  const home = ctx.$('homeBtn');
+  if (home) home.addEventListener('click', () => applyMode('home'));
+  document.querySelectorAll('#homeScreen .home-card').forEach((card) => {
+    card.addEventListener('click', () => applyMode(card.dataset.mode));
   });
 }
 
@@ -927,13 +926,23 @@ function resetCTSession() {
 }
 
 function applyMode(mode) {
+  // 'home' is a real mode, not the absence of one: it parks the app on the menu with every
+  // mode torn down, so nothing from the last machine leaks into the next.
+  document.body.classList.toggle('mode-home', mode === 'home');
+  if (mode === 'home') {
+    ctx.S.mode = 'home';
+    ['mode-ct', 'mode-xray', 'mode-editor'].forEach(c => document.body.classList.remove(c));
+    resetCTSession();
+    ctx.editorMode?.(false);
+    return;
+  }
   ctx.S.mode = mode;
   document.body.classList.toggle('mode-ct', mode === 'ct');
   document.body.classList.toggle('mode-xray', mode === 'xray');
   document.body.classList.toggle('mode-editor', mode === 'editor');
+  const cur = ctx.$('modeCur');
+  if (cur) cur.textContent = mode === 'ct' ? 'CT' : mode === 'editor' ? 'MODEL EDITOR' : 'X-RAY';
   ctApplyColorTheme();                            // x-ray drops any vendor theme; CT re-applies it
-  const bar = ctx.$('modeBar');
-  if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition'
     : mode === 'editor' ? 'Model editor · voxel builder' : 'Digit · Hand phantom';
@@ -1969,24 +1978,26 @@ function openFieldEditor(gi, act) {
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
   else if (act === 'ma') type('Tube current (mA)', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
   else if (act === 'delay') {
-    // Mode first, then its value — the same two steps the console asks for.
-    station('Scan delay', [0, 1, 2], g.delayMode === 'bolus' ? (g.bolus.auto ? 1 : 2) : 0,
+    // The monitoring row's own delay is not editable — it is 0 by definition, because the
+    // delay is what the series exists to measure. Editing is done on its enhanced partner.
+    if (g.monitor) { setHint('The monitoring series has no delay — set the trigger on its enhanced group below.'); done(); return; }
+    const cur = g.delayMode === 'bolus' ? (g.bolus.auto ? 1 : 2) : 0;
+    station('Scan delay', [0, 1, 2], cur,
       (i) => ['Fixed time delay', 'Bolus tracking · auto trigger', 'Bolus tracking · manual trigger'][i],
       (i) => {
-        g.delayMode = i === 0 ? 'time' : 'bolus';
-        if (i > 0) {
+        if (i === 0) {
+          clearBolusPair(gi);
+          setTimeout(() => type('Scan delay (seconds)', g.delay,
+            (v) => { g.delay = clampV(Math.round(v), 0, 600); }), 60);
+        } else if (g.delayMode === 'bolus') {
           g.bolus.auto = (i === 1);
-          // A monitoring series is ONE slice. Collapse the box to its own centre so the
-          // scout shows a line, not a block — that line is the location being monitored.
-          const mid = (g.box.top + g.box.bot) / 2;
-          g.box.top = g.box.bot = mid;
+          setTimeout(() => type('Trigger threshold (HU)', g.bolus.thrHU,
+            (v) => { g.bolus.thrHU = clampV(Math.round(v), 40, 600); }), 60);
+        } else if (makeBolusPair(gi, i === 1)) {
+          const e = grp(gi + 1);
+          setTimeout(() => type('Trigger threshold (HU)', e.bolus.thrHU,
+            (v) => { e.bolus.thrHU = clampV(Math.round(v), 40, 600); }), 60);
         }
-        setTimeout(() => {
-          if (g.delayMode === 'time') type('Scan delay (seconds)', g.delay,
-            (v) => { g.delay = clampV(Math.round(v), 0, 600); });
-          else type('Trigger threshold (HU)', g.bolus.thrHU,
-            (v) => { g.bolus.thrHU = clampV(Math.round(v), 40, 600); });
-        }, 60);
       });
   }
   else if (act === 'sfov') {
@@ -2104,7 +2115,8 @@ function renderScanGroups() {
     const num = gi > 0
       ? '<span class="sg-num del" title="Delete scan group"><span class="lbl">' + (gi + 1) + '</span><span class="trash">' + TRASH + '</span></span>'
       : '<span class="sg-num">' + (gi + 1) + '</span>';
-    rows += '<tr class="sg-row gc' + gi + (gi === c.activeGroup ? ' active' : '') + '" data-group="' + gi + '">'
+    rows += '<tr class="sg-row ' + colourOf(gi) + (gi === c.activeGroup ? ' active' : '')
+      + (g.monitor ? ' sg-monitor' : '') + '" data-group="' + gi + '">'
       + '<td>' + num + '</td>'
       + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle scan lines on the scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
       + cell('sg-edit', 'start', fmtTablePos(scanStartMM() + g.box.top * c.scanLen))
@@ -2123,10 +2135,11 @@ function renderScanGroups() {
       + cell('sg-edit', 'kv', g.kv + ' kV')
       + cell('sg-edit', 'ma', g.ma + ' mA')
       + cell('sg-calc', '', groupExpTime(g).toFixed(1) + ' s')
-      + cell('sg-edit' + (g.delayMode === 'bolus' ? ' sg-bolus' : ''), 'delay',
-             g.delayMode === 'bolus'
-               ? 'Bolus &gt; ' + g.bolus.thrHU + ' HU' + (g.bolus.auto ? '' : ' (manual)')
-               : g.delay + ' s')
+      + cell('sg-edit' + (g.delayMode === 'bolus' ? ' sg-bolus' : '') + (g.monitor ? ' sg-mon' : ''), 'delay',
+             g.monitor ? 'Tracking · 0 s'
+               : g.delayMode === 'bolus'
+                 ? 'Bolus &gt; ' + g.bolus.thrHU + ' HU' + (g.bolus.auto ? '' : ' · manual')
+                 : g.delay + ' s')
       + '</tr>';
   }
   const anyOff = c.groups.some((g) => !g.on);
@@ -2798,27 +2811,31 @@ function btrkWireROI(){
 
 /* Run the monitoring series. Resolves 'scan' when the diagnostic scan should start, or
    'abort' if the operator stops. */
-function runBolusTracking(g, alive){
+function runBolusTracking(g, alive, enhanced){
   return new Promise((resolve)=>{
     const S=ctx.S;
+    // The trigger lives on the enhanced group — the monitoring series only supplies the ROI
+    // and the images. Fall back to the monitor's own settings when run standalone (QC hook).
+    const bt=(enhanced && enhanced.bolus) || g.bolus;
     const setup=scanSetup(g);
     const geo=reconGeoM(groupDFOV(g), setup.cx||0, (setup.cy!=null?setup.cy:ISO_Y), QUICK_RT, g.sfovMM||500);
     const h=buildKernel(geo.ds, geo.m.nDet, geo.m.fixedPitch);
     const mu={ ...setup.mu, muMat:null, bhc:null };
     const N=geo.m.gridN;
-    btrkState={ roi:g.bolus.roi, thrHU:g.bolus.thrHU, auto:g.bolus.auto,
+    btrkState={ roi:g.bolus.roi, thrHU:bt.thrHU, auto:bt.auto,
                 pts:[], t:0, t0:null, firedAt:null, tracking:false, done:false };
     const panel=ctx.$('ctBtrk'); panel.classList.add('show');
     ctx.$('ctBtrkLoc').textContent='slice '+fmtTablePos(setup.positions[0]);
-    ctx.$('ctBtrkThr').textContent=g.bolus.thrHU+' HU'+(g.bolus.auto?' · auto':' · manual');
+    ctx.$('ctBtrkThr').textContent=bt.thrHU+' HU'+(bt.auto?' · auto':' · manual');
     ctx.$('ctBtrkState').textContent='POSITION ROI';
     const go=ctx.$('ctBtrkGo'); go.textContent='START TRACKING'; go.classList.remove('armed');
     btrkWireROI();
 
-    let timer=null;
+    let timer=null, injTimer=null;
     const finish=(how)=>{
       if(btrkState) btrkState.done=true;
       if(timer) clearInterval(timer);
+      clearInterval(injTimer);
       panel.classList.remove('show');
       btrkState=null;
       resolve(how);
@@ -2834,6 +2851,7 @@ function runBolusTracking(g, alive){
       btrkPlaceROI();
       const hu=btrkROIMeanHU(img, N, setup.muW, st.roi);
       ctx.$('ctBtrkHU').textContent=Math.round(hu)+' HU';
+      syncInj();
       if(st.tracking){
         const clk=(ctx.contrastClock&&ctx.contrastClock());
         st.t=(performance.now()-st.t0)/1000;
@@ -2844,14 +2862,39 @@ function runBolusTracking(g, alive){
           st.firedAt=st.t;
           ctx.$('ctBtrkState').textContent='TRIGGERED';
           btrkDrawPlot();
-          setTimeout(()=>{ if(btrkState && !btrkState.done) finish('scan'); }, g.bolus.postDelay*1000);
+          setTimeout(()=>{ if(btrkState && !btrkState.done) finish('scan'); }, (bt.postDelay||4)*1000);
         }
       }
     };
+    const inj=ctx.$('ctBtrkInj');
+    const syncInj=()=>{
+      const running=ctx.contrastRunning && ctx.contrastRunning();
+      const ready=ctx.contrastReady && ctx.contrastReady();
+      inj.disabled=!ready;
+      inj.classList.toggle('running', !!running);
+      inj.textContent = running ? '■' : '▶';
+      const clk=ctx.contrastClock && ctx.contrastClock();
+      ctx.$('ctBtrkInjT').textContent = ready ? (clk==null ? '0.0 s' : clk.toFixed(1)+' s')
+                                              : 'contrast off';
+    };
+    inj.onclick=()=>{
+      if(ctx.contrastRunning && ctx.contrastRunning()) ctx.contrastReset();
+      else if(ctx.contrastStart) ctx.contrastStart();
+      syncInj();
+    };
+    syncInj();
+    // The injector clock has to run on its own beat, not on the monitoring series': the whole
+    // point of starting the injection first is to watch that gap grow before arming tracking.
+    injTimer=setInterval(syncInj, 200);
     frame();                                   // first image immediately, for ROI placement
     go.onclick=()=>{
       const st=btrkState; if(!st) return;
       if(!st.tracking){
+        // One press arms the series AND starts the injection, because that is how it is done:
+        // the operator starts the injector and the monitoring series together, and the gap
+        // between them would otherwise be an invisible error in every run.
+        if(ctx.contrastReady && ctx.contrastReady() && !(ctx.contrastRunning && ctx.contrastRunning()))
+          ctx.contrastStart();
         st.tracking=true; st.t0=performance.now(); st.pts=[];
         ctx.$('ctBtrkState').textContent='TRACKING';
         go.textContent='SCANNING PHASE'; go.classList.add('armed');
@@ -2874,6 +2917,65 @@ if (typeof window !== 'undefined') window.radsimCT = {
   trackState: () => btrkState,
 };
 
+
+/* ---- bolus-tracked pairs ---------------------------------------------------------------
+   A bolus-tracked acquisition is always TWO scan groups, because that is what it is on the
+   machine: a monitoring series and the diagnostic series it triggers. Selecting bolus
+   tracking therefore turns the chosen group into the monitoring series — one slice, no delay,
+   since the delay is the thing being measured — and creates the enhanced group beneath it,
+   which is where the trigger threshold lives. They share a colour so the pair reads as one
+   plan. */
+function colourOf(gi) { const g = grp(gi); return 'gc' + (g && g.cg != null ? g.cg : gi); }
+
+function makeBolusPair(gi, auto) {
+  const c = ctx.S.ct, g = grp(gi);
+  if (g.monitor) {                              // already a pair: just switch the trigger mode
+    const e = grp(gi + 1);
+    if (e && e.delayMode === 'bolus') e.bolus.auto = auto;
+    return true;
+  }
+  if (!c.groups.some((x) => !x.on)) {           // every slot in use
+    setHint('Bolus tracking needs a spare scan group for the enhanced series — disable one first.');
+    return false;
+  }
+  const enhanced = JSON.parse(JSON.stringify(g));   // the diagnostic scan keeps the planned range
+  enhanced.on = true; enhanced.vis = true; enhanced.monitor = false;
+  enhanced.delayMode = 'bolus'; enhanced.delay = 0;
+  enhanced.bolus = { ...(g.bolus || {}), auto };
+  enhanced.cg = gi;
+  // the chosen group becomes the monitoring series: a single slice at its own centre
+  g.monitor = true; g.delayMode = 'time'; g.delay = 0; g.cg = gi;
+  const mid = (g.box.top + g.box.bot) / 2;
+  g.box.top = g.box.bot = mid;
+  c.groups.splice(gi + 1, 0, enhanced);
+  // keep the array at N_GROUPS by dropping a disabled group from the end
+  for (let k = c.groups.length - 1; k >= 0 && c.groups.length > N_GROUPS; k--)
+    if (!c.groups[k].on) c.groups.splice(k, 1);
+  return true;
+}
+
+function clearBolusPair(gi) {
+  // Dissolving a pair has to leave ONE ordinary group holding the planned range, whichever
+  // half the user edited — otherwise switching the enhanced row back to a time delay would
+  // strand its monitoring row as a lone single-slice series with nothing to trigger.
+  const g = grp(gi);
+  if (g.monitor) {                                  // edited the monitoring row
+    const e = grp(gi + 1);
+    if (e && e.delayMode === 'bolus' && e.cg === g.cg) {
+      g.box = JSON.parse(JSON.stringify(e.box));    // it takes the diagnostic range back
+      e.on = false; e.delayMode = 'time'; e.cg = null; e.monitor = false;
+    }
+    g.monitor = false; g.cg = null;
+  } else {                                          // edited the enhanced row
+    const m = grp(gi - 1);
+    if (m && m.monitor && m.cg === g.cg) {          // retire the monitoring series
+      m.on = false; m.monitor = false; m.cg = null;
+    }
+    g.cg = null;
+  }
+  g.delayMode = 'time';
+}
+
 // ---- scan sequence ----
 async function runScan() {
   const S = ctx.S, tok = ++scanToken, alive = () => tok === scanToken;
@@ -2891,11 +2993,11 @@ async function runScan() {
   try {
     for (const { g, i } of groups) {
       if (!alive()) return;
-      // A bolus group is the monitoring series, not an acquisition: run it, then carry on to
-      // the next group, which is the diagnostic scan it was triggering.
-      if (g.delayMode === 'bolus') {
+      // The MONITORING group is not an acquisition: run the tracking series, then carry on
+      // to the next group, which is the enhanced scan it was triggering.
+      if (g.monitor) {
         setPhase('tracking');
-        const how = await runBolusTracking(g, alive);
+        const how = await runBolusTracking(g, alive, groups.find(x => x.i > i && x.g.delayMode === 'bolus')?.g);
         if (how !== 'scan' || !alive()) { setHint('Bolus tracking stopped.'); return; }
         setPhase('scanning');
         continue;

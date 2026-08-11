@@ -2372,7 +2372,7 @@ function ctrstRenderRun(){
   $('ctrstDeliv').innerHTML = Math.round(cm)+' ml CM &nbsp;·&nbsp; '+Math.round(na)+' ml NaCl delivered';
   const go=$('ctrstGo');
   go.classList.toggle('running', t!=null);
-  go.textContent = t==null ? '▶ START' : (inj ? '● INJECTING' : '● RUNNING');
+  go.textContent = t==null ? '▶' : (inj ? '● INJECTING' : '● RUNNING');
   $('ctrstReset').disabled = t==null;
 }
 
@@ -2558,14 +2558,21 @@ function kpadRender(){
          + `<div class="fv">${f.text===''?'—':f.text} <small>${sp.unit}</small></div></div>`;
   }).join('');
   box.querySelectorAll('.kpad-f').forEach(el=>{
-    el.addEventListener('click',()=>{ kpadState.sel=+el.dataset.i; kpadRender(); });
+    el.addEventListener('click',()=>{
+      kpadState.sel=+el.dataset.i;
+      kpadState.fields[kpadState.sel].fresh=true;   // its first key replaces too
+      kpadRender();
+    });
   });
 }
 function kpadOpen(phase){
   const spec=KPAD[phase]; if(!spec) return;
   const P=S.contrast.params;
   kpadState={ phase, sel:0,
-    fields: spec.fields.map(sp=>({ spec:sp, text:String(+P[sp.k].toFixed(sp.dp)) })) };
+    // `fresh` marks a field still showing its stored value: the first digit typed replaces
+    // it outright. Appending to the existing number is almost never what is wanted — you are
+    // entering 65, not 10065 — so the console overwrites and offers a clear key instead.
+    fields: spec.fields.map(sp=>({ spec:sp, text:String(+P[sp.k].toFixed(sp.dp)), fresh:true })) };
   $('kpadTitle').textContent=spec.title;
   kpadRender();
   $('kpad').className='kpad open '+phase;      // header rule takes the phase colour
@@ -2574,9 +2581,14 @@ function kpadClose(){ $('kpad').className='kpad'; kpadState=null; }
 function kpadKey(k){
   if(!kpadState) return;
   const f=kpadState.fields[kpadState.sel];
-  if(k==='bs') f.text=f.text.slice(0,-1);
-  else if(k==='.'){ if(f.spec.dp>0 && !f.text.includes('.')) f.text=(f.text||'0')+'.'; }
-  else f.text=(f.text==='0'?'':f.text)+k;
+  if(k==='bs'){ f.text=''; f.fresh=false; }                    // clear, not backspace
+  else if(k==='.'){
+    if(f.fresh){ f.text='0'; f.fresh=false; }
+    if(f.spec.dp>0 && !f.text.includes('.')) f.text=(f.text||'0')+'.';
+  } else {
+    if(f.fresh){ f.text=''; f.fresh=false; }                   // first key replaces
+    f.text=(f.text==='0'?'':f.text)+k;
+  }
   kpadRender();
 }
 function kpadCommit(){
@@ -2609,7 +2621,8 @@ function initKeypad(){
     else if(e.key==='.') kpadKey('.');
     else if(e.key==='Backspace') kpadKey('bs');
     else if(e.key==='Tab' && kpadState){ e.preventDefault();
-      kpadState.sel=(kpadState.sel+1)%kpadState.fields.length; kpadRender(); }
+      kpadState.sel=(kpadState.sel+1)%kpadState.fields.length;
+      kpadState.fields[kpadState.sel].fresh=true; kpadRender(); }
   });
 }
 
@@ -2685,9 +2698,18 @@ window.addEventListener('load',()=>{
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram, contrastLatch: ctrstLatch,
            contrastVesselHU, contrastClock: ctrstClock,
+           // The monitoring series needs to start the injection with the same press that
+           // starts tracking — on the machine one person does both, and the delay between
+           // them is exactly what the exercise is about.
+           contrastStart: ()=>{ if(S.contrast.on && S.contrast.timeline) ctrstStart(); },
+           contrastReset: ()=>ctrstReset(),
+           contrastRunning: ()=>ctrstClock()!=null,
+           contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on) });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
   setSubject('hand');                           // default subject: the voxel hand phantom
+  document.body.classList.add('mode-home');     // open on the menu, not inside a mode
+  S.mode='home';
 });
