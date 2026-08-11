@@ -320,7 +320,7 @@ async function setSubject(sub){
   // A new subject invalidates any solved timeline: the arclength volume and the vessel set
   // both belong to the old model.
   S.contrast.timeline=null; S.contrast.sVol=null; S.contrast.sVolFor=null;
-  S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false;
+  S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false; S.contrast.static=false;
   if($('ctrstPanel')) ctrstApply();
   showActive(sub);
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
@@ -459,7 +459,12 @@ const S = {
              lut:null, lutT:null, busy:false, error:null,
              // injector transport: t0 = when START was pressed, latched = the elapsed time
              // frozen at the moment an image was actually acquired
-             run:{ t0:null, latched:null, timer:null } },
+             run:{ t0:null, latched:null, timer:null },
+             // true when the timeline came from the model's shipped preset rather than a
+             // live solve — the protocol is then fixed and the controls are locked
+             static:false,
+             // Bolus tracking: watch a vessel, start the scan when it crosses a threshold.
+             track:{ on:false, vessel:29, thrHU:100, delay:5, triggeredAt:null, firedAt:null } },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -694,11 +699,30 @@ async function contrastSolve(){
     C.error=`${S.subject} has no vessel data — run build_vessels for this model`;
     C.timeline=null; return false;
   }
+  // No service: fall back to the timeline shipped with the model. The solver is Python-only,
+  // but a SOLVED timeline is just data — the whole timing exercise (start the injector, judge
+  // the moment, scan) is client-side and works exactly the same. Only reprogramming the
+  // injector needs the service, so those controls get locked rather than the feature removed.
   if(!S.computeInfo){
-    C.error='Python compute service unreachable — the haemodynamic solver runs there. '
-          + 'Start it, then press ON again.';
-    C.timeline=null; return false;
+    if(!vm.hasPresetContrast){
+      C.error='Python compute service unreachable, and this model ships no preset timeline.';
+      C.timeline=null; return false;
+    }
+    C.busy=true;
+    try{
+      const [json, arclen]=await Promise.all([vm.loadPresetContrast(), vm.loadArclen()]);
+      C.timeline=decodeTimeline(json);
+      C.static=true;
+      if(json.preset) Object.assign(C.params, json.preset);   // show what it was solved for
+      if(!C.sVol || C.sVolFor!==S.subject){ C.sVol=buildSVolume(vm.data, arclen); C.sVolFor=S.subject; }
+      C.lut=null; C.lutT=null;
+      return true;
+    }catch(err){
+      C.error='Could not load the preset timeline: '+err.message;
+      C.timeline=null; return false;
+    }finally{ C.busy=false; }
   }
+  C.static=false;
   C.busy=true;
   try{
     const [json, arclen]=await Promise.all([
@@ -2253,6 +2277,7 @@ function ctrstClock(){
 function ctrstStart(){
   const R=S.contrast.run;
   R.t0=performance.now(); R.latched=null;
+  ctrstTrackReset();                       // a new injection re-arms the tracker
   S.contrast.scanTime=0; S.contrast.lut=null; S.contrast.lutT=null;
   if(!R.timer) R.timer=setInterval(ctrstTick, 100);
   ctrstRenderRun(); ctrstDrawCurve();
@@ -2261,6 +2286,7 @@ function ctrstReset(){
   const R=S.contrast.run;
   if(R.timer){ clearInterval(R.timer); R.timer=null; }
   R.t0=null; R.latched=null;
+  ctrstTrackReset();
   S.contrast.scanTime=0; S.contrast.lut=null; S.contrast.lutT=null;
   ctrstRenderRun(); ctrstDrawCurve();
 }
@@ -2271,6 +2297,7 @@ function ctrstTick(){
     S.contrast.scanTime=Math.min(t, 90);
     S.contrast.lut=null; S.contrast.lutT=null;
   }
+  ctrstTrackTick(t);
   ctrstRenderRun(); ctrstDrawCurve();
   if(t>150){ const R=S.contrast.run; clearInterval(R.timer); R.timer=null; }   // stop ticking, keep the time
 }
@@ -2322,9 +2349,9 @@ function ctrstRenderBar(){
     return `<button class="inj-seg ${p.kind}" data-phase="${p.kind}" `
          + `style="flex:${Math.max(p.t,0.01)} 1 0"><div>${lab}</div><small>${sub}</small></button>`;
   }).join('');
-  const live = S.contrast.on && !ctrstBlocker();
+  const editable = S.contrast.on && !ctrstBlocker() && !S.contrast.static;
   el.querySelectorAll('.inj-seg').forEach(b=>{
-    b.disabled=!live;
+    b.disabled=!editable;
     b.addEventListener('click',()=>kpadOpen(b.dataset.phase));
   });
 }
@@ -2370,11 +2397,64 @@ function ctrstQueueSolve(){
       ctrstStatus(S.contrast.error || 'Solve failed.','err');
     } else {
       ctrstApply(true);          // the timeline now exists, so START can arm
-      ctrstStatus('Ready. Press START, then take the exposure when the timing is right.');
+      ctrstStatus(S.contrast.static
+        ? 'Preset timeline loaded. Press START, then take the exposure when the timing is right.'
+        : 'Ready. Press START, then take the exposure when the timing is right.');
     }
     S.contrast.lut=null; S.contrast.lutT=null;
     ctrstDrawCurve(); refreshReadouts();
   }, 350);
+}
+
+
+/* ---- bolus tracking (docs Phase 4) ----------------------------------------------------
+   A monitoring series watches one vessel and the scan starts when its enhancement crosses a
+   threshold, plus a diagnostic delay for table/tube spin-up. It is what makes a CTPA
+   reproducible across patients whose circulation times differ by tens of seconds — the fixed
+   delay that suits one patient misses the next entirely, which is exactly what the cardiac
+   output knob demonstrates.
+
+   The tracker reads the same timeline the renderer does, so it needs no extra solve and works
+   on the shipped preset as well as a live one. */
+function ctrstTrackedHU(t){
+  const tl=S.contrast.timeline; if(!tl) return 0;
+  const f=tl.vessels.get(S.contrast.track.vessel); if(!f) return 0;
+  const i=Math.max(0, Math.min(tl.nT-1, Math.round(t)));
+  let m=0; const a=i*tl.nS;
+  for(let k=0;k<tl.nS;k++) if(f[a+k]>m) m=f[a+k];   // peak along the vessel, as an ROI reads
+  return m * BodyMaterials.huPerMgIml(70);
+}
+/* Start the diagnostic scan. Bolus tracking is a CT technique, so this presses the same
+   START the operator would; if the console is not ready it says so rather than failing mute. */
+function ctrstFireScan(){
+  const T=S.contrast.track;
+  if(S.mode!=='ct'){ ctrstTrkStatus('Triggered — switch to CT mode to scan on the tracker.'); return; }
+  const b=$('ctStart');
+  if(b && b.classList.contains('flash')){ b.click(); ctrstTrkStatus(
+    `Triggered ${T.triggeredAt.toFixed(1)} s · scanning ${T.firedAt.toFixed(1)} s`); }
+  else ctrstTrkStatus(`Triggered ${T.triggeredAt.toFixed(1)} s — console not ready to scan.`);
+}
+function ctrstTrkStatus(msg){ const el=$('ctrstTrkNote'); if(el) el.textContent=msg; }
+
+function ctrstTrackTick(t){
+  const T=S.contrast.track;
+  if(!T.on || t==null) return;
+  if(T.triggeredAt==null){
+    const hu=ctrstTrackedHU(t);
+    ctrstTrkStatus(`Monitoring ${T.vessel===29?'aorta':'pulmonary artery'} · ${Math.round(hu)} HU`
+                   + ` of ${T.thrHU} HU`);
+    if(hu>=T.thrHU){ T.triggeredAt=t; $('ctrstArm').classList.add('fired'); $('ctrstArm').textContent='TRIGGERED'; }
+  } else if(T.firedAt==null && t>=T.triggeredAt+T.delay){
+    T.firedAt=t; ctrstFireScan();
+  }
+}
+function ctrstTrackReset(){
+  const T=S.contrast.track;
+  T.triggeredAt=null; T.firedAt=null;
+  const b=$('ctrstArm'); if(!b) return;
+  b.classList.toggle('armed', T.on); b.classList.remove('fired');
+  b.textContent = T.on ? 'TRACKING ARMED' : 'ARM TRACKING';
+  if(!T.on) ctrstTrkStatus('Monitors the vessel and starts the CT scan itself.');
 }
 
 /* Predicted enhancement + where the clock currently is. */
@@ -2428,6 +2508,17 @@ function ctrstDrawCurve(){
   // The running clock is the ONLY cue for when to fire — no target is drawn, because
   // judging the moment against the curve is the exercise. The amber mark appears only
   // after an exposure, as feedback on where you actually landed.
+  // tracking threshold + where it fired, so the trigger is legible against the curve
+  const T=S.contrast.track;
+  if(T.on && tl){
+    const y=pad.t+ph-Math.min(T.thrHU,HMAX)/HMAX*ph;
+    g.strokeStyle='#35c6d6'; g.lineWidth=1; g.setLineDash([4,3]);
+    g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke(); g.setLineDash([]);
+    if(T.triggeredAt!=null){
+      const x=pad.l+Math.min(T.triggeredAt,TMAX)/TMAX*pw;
+      g.fillStyle='#35c6d6'; g.beginPath(); g.arc(x,y,3.5,0,Math.PI*2); g.fill();
+    }
+  }
   const live=ctrstClock(), R=S.contrast.run;
   if(live!=null) mark(live, R.latched==null ? '#4fd06a' : '#3a4a55', R.latched==null);
   if(R.latched!=null) mark(R.latched,'#ffb23e',true);
@@ -2443,8 +2534,8 @@ function ctrstBlocker(){
   const vm=S.voxelModel;
   if(!vm || !vm.hasVessels)
     return ['Contrast unavailable — '+S.subject+' has no vessel map (build_vessels not run)'];
-  if(!S.computeInfo)
-    return ['Contrast unavailable — needs the Python compute service for the haemodynamic solve'];
+  if(!S.computeInfo && !(vm.hasPresetContrast))
+    return ['Contrast unavailable — needs the Python compute service, and this model ships no preset'];
   return null;
 }
 
@@ -2459,9 +2550,23 @@ function ctrstApply(keepStatus){
   panel.classList.toggle('armed', S.contrast.on);
   $('ctrstOn').classList.toggle('on', S.contrast.on);
   $('ctrstOn').textContent = S.contrast.on ? 'ON' : 'OFF';
+  // Editable only when a live solver is behind it. On the shipped preset the protocol is
+  // fixed, so every control that would change it is locked — a slider that silently does
+  // nothing is worse than one that is visibly unavailable.
   const live = S.contrast.on && !blocked;
-  Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!live; });
-  ctrstRenderBar();          // the phase buttons take their enabled state from `live` too
+  const editable = live && !S.contrast.static;
+  Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!editable; });
+  const lock=$('ctrstLock');
+  if(lock){
+    lock.style.display = (live && S.contrast.static) ? '' : 'none';
+    lock.textContent = 'Preset timeline — protocol locked. The haemodynamic solver runs on the '
+      + 'Python compute service; without it the shipped solve is used, so the injector settings '
+      + 'cannot be changed. Timing, scanning and bolus tracking all still work.';
+  }
+  ctrstRenderBar();          // the phase buttons take their enabled state from `editable` too
+  // Tracking is NOT locked by the preset: it reads the timeline, it does not change it.
+  ['ctrstThr','ctrstPtd','ctrstArm'].forEach(id=>{ const el=$(id); if(el) el.disabled=!live; });
+  document.querySelectorAll('#ctrstTrkVessel button').forEach(b=> b.disabled=!live);
   $('ctrstGo').disabled = !live || !S.contrast.timeline;
   $('ctrstOn').disabled = !!blocked;
   if(!live) ctrstReset();
@@ -2474,6 +2579,9 @@ function ctrstApply(keepStatus){
 function ctrstBackendChanged(){
   if(!$('ctrstPanel')) return;
   if(S.contrast.on && !S.computeInfo && !S.contrast.timeline){ S.contrast.on=false; }
+  // Service back: unlock. The preset timeline stays in place until something is actually
+  // changed, so the image on screen does not silently move under the user.
+  if(S.computeInfo && S.contrast.static) S.contrast.static=false;
   ctrstApply(true);
 }
 
@@ -2580,6 +2688,20 @@ function initContrastPanel(){
       ctrstReadUI(); ctrstQueueSolve();
     });
   });
+  // bolus tracking
+  document.querySelectorAll('#ctrstTrkVessel button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      S.contrast.track.vessel=+b.dataset.trk;
+      document.querySelectorAll('#ctrstTrkVessel button').forEach(x=>x.classList.toggle('on',x===b));
+      ctrstDrawCurve();
+    });
+  });
+  $('ctrstThr').addEventListener('input',e=>{
+    S.contrast.track.thrHU=+e.target.value; $('ctrstThrV').textContent=e.target.value+' HU'; ctrstDrawCurve(); });
+  $('ctrstPtd').addEventListener('input',e=>{
+    S.contrast.track.delay=+e.target.value; $('ctrstPtdV').textContent=e.target.value+' s'; });
+  $('ctrstArm').addEventListener('click',()=>{
+    S.contrast.track.on=!S.contrast.track.on; ctrstTrackReset(); ctrstDrawCurve(); });
   $('ctrstGo').addEventListener('click', ctrstStart);
   $('ctrstReset').addEventListener('click', ctrstReset);
   initKeypad();
@@ -2601,6 +2723,8 @@ window.radsimContrast={
   start:()=>ctrstStart(),
   reset:()=>ctrstReset(),
   latch:()=>ctrstLatch(),
+  track:()=>S.contrast.track,
+  trackedHU:(t)=>ctrstTrackedHU(t),
   clock:()=>ctrstClock(),
   // Acquisition timing for the selected CT scan group — a helical scan images each slice at
   // its own moment, which is the whole point of per-slice timing.

@@ -1066,3 +1066,22 @@ body.mode-editor .ctrst{display:none}
 /* GE also restyles .valchip by element, which the token pin above cannot undo. */
 body.theme-ge .ctrst .valchip{background:#0a0d10; color:var(--amber)}
 body.theme-ge .ctrst .valchip.cyanlit{background:#0a0d10; color:var(--cyan)}
+
+/* preset-timeline notice: the protocol is fixed, so say so where the controls are */
+.ctrst-lock{font-family:var(--seg); font-size:9.5px; line-height:1.6; letter-spacing:.3px;
+  color:#e0c07a; background:rgba(255,178,62,.09); border:1px solid rgba(255,178,62,.35);
+  border-radius:6px; padding:7px 9px; margin-bottom:8px}
+
+/* bolus tracking */
+.trk-vessel{display:grid; grid-template-columns:1fr 1fr; gap:5px}
+.trk-vessel button{font-family:var(--seg); font-size:10px; letter-spacing:1px; color:var(--muted);
+  background:#131922; border:1px solid var(--edge2); border-radius:5px; padding:6px 0; cursor:pointer}
+.trk-vessel button.on{color:#06121a; background:var(--cyan); border-color:var(--cyan)}
+.trk-vessel button:disabled{opacity:.4; cursor:default}
+.trk-arm{width:100%; margin-top:8px; font-family:var(--disp); font-weight:700; letter-spacing:2px;
+  font-size:13px; text-transform:uppercase; color:var(--muted); background:#131922;
+  border:1px solid var(--edge2); border-radius:6px; padding:8px 0; cursor:pointer; transition:.15s}
+.trk-arm:hover:not(:disabled){color:var(--txt)}
+.trk-arm.armed{color:#1a1204; background:var(--amber); border-color:var(--amber)}
+.trk-arm.fired{color:#06210d; background:linear-gradient(180deg,#5fe07a,#2fa84c); border-color:#2fa84c}
+.trk-arm:disabled{opacity:.4; cursor:default}

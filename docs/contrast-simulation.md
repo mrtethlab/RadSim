@@ -637,6 +637,42 @@ LE / UE / head-neck are not worth pursuing regardless of source: the segmented v
 stops at the iliacs, so nothing reaches the limbs, and the neck has only carotids and
 subclavians.
 
+### 6.5 Phase 4 — bolus tracking, and a shipped timeline for browser-only use
+
+**Shipped timeline.** `chest.contrast.json` is one protocol solved offline by the same solver
+the service runs — 0.37 MB, **70 KB gzipped**. When the compute service is unreachable the
+panel loads it instead of refusing, because a SOLVED timeline is just data: the whole timing
+exercise (start the injector, judge the moment, scan) is client-side and identical. Only
+*reprogramming* the injector needs the service.
+
+So the controls that would change the protocol are locked rather than the feature removed, and
+a banner says why — a slider that silently does nothing is worse than one visibly unavailable.
+Bolus tracking is deliberately NOT locked: it reads the timeline, it does not change it. If the
+service appears later the controls unlock, and the preset stays in place until something is
+actually changed so the image does not move under the user.
+
+This is what makes contrast work on GitHub Pages, where there is no service at all.
+
+**Bolus tracking.** A monitoring series watches one vessel; the scan starts when its
+enhancement crosses a threshold, plus a diagnostic delay. It presses the same `ctStart` the
+operator would, and says so plainly when the console is not ready rather than failing mute.
+
+It reads the same timeline the renderer does, so it needs no extra solve and works on the
+preset as well as a live one. Measured on the reference protocol:
+
+| | 5 s | 10 s | 15 s | 25 s |
+| --- | --- | --- | --- | --- |
+| pulmonary artery | 145 HU | 323 | 400 | 490 |
+| aorta | 0 HU | 51 | 215 | 413 |
+
+The PA crosses 150 HU at ~5 s and the aorta at ~14 s. That ~9 s gap **is** the PE double
+rule-out, and it is why a fixed delay that suits one patient misses the next — which is exactly
+what the cardiac-output knob demonstrates.
+
+Verified: armed at 150 HU with a 3 s delay, triggered 13.5 s and fired 16.5 s; with a 2 s delay,
+13.5 s -> 15.5 s. Threshold line and trigger dot draw on the plot. Re-arming on START, and
+reset, both clear cleanly.
+
 ---
 
 ## 7. Teaching notes

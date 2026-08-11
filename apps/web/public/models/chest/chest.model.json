@@ -336,5 +336,6 @@
   ],
   "backendOnly": false,
   "vessels": "chest.vessels.json",
-  "arclen": "chest.arclen.bin"
+  "arclen": "chest.arclen.bin",
+  "contrast": "chest.contrast.json"
 }

@@ -38,6 +38,14 @@ export async function loadVoxelModel(baseUrl, name) {
     // Loaded lazily — the expanded per-voxel form is as big as the material volume, so a
     // model that is never scanned with contrast should never pay for it.
     hasVessels: !!hdr.arclen,
+    // A timeline solved offline and shipped with the model, so contrast works without the
+    // Python service. One fixed protocol — see contrastSolve().
+    hasPresetContrast: !!hdr.contrast,
+    async loadPresetContrast() {
+      if (!hdr.contrast) return null;
+      if (!this._preset) this._preset = await (await fetch(`${baseUrl}/${hdr.contrast}`)).json();
+      return this._preset;
+    },
     arclenUrl: hdr.arclen ? `${baseUrl}/${hdr.arclen}` : null,
     async loadArclen() {
       if (!hdr.arclen) return null;

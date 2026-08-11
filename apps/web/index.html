@@ -29,6 +29,7 @@
         </div>
         <div class="ctrst-pad">
 
+          <div class="ctrst-lock" id="ctrstLock" style="display:none"></div>
           <div class="inj-total"><span id="ctrstTotal">140 ml total</span><span id="ctrstDur">00:00</span></div>
 
           <!-- programmed phases, drawn to scale in time. Tap a phase to program it. -->
@@ -70,6 +71,22 @@
               <div class="row" style="margin-top:8px"><div class="rl">Organ perfusion</div><div class="valchip" id="ctrstPerfV">1.00×</div></div>
               <input type="range" id="ctrstPerf" min="0.4" max="2" value="1" step="0.05">
               <div class="ctrst-note" id="ctrstCoNote">—</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Bolus tracking</div>
+            <div class="bod">
+              <div class="trk-vessel" id="ctrstTrkVessel">
+                <button data-trk="29" class="on">Aorta</button>
+                <button data-trk="30">Pulm artery</button>
+              </div>
+              <div class="row" style="margin-top:8px"><div class="rl">Trigger at</div><div class="valchip" id="ctrstThrV">100 HU</div></div>
+              <input type="range" id="ctrstThr" min="40" max="300" value="100" step="10">
+              <div class="row" style="margin-top:8px"><div class="rl">Diagnostic delay</div><div class="valchip" id="ctrstPtdV">5 s</div></div>
+              <input type="range" id="ctrstPtd" min="0" max="15" value="5" step="1">
+              <button class="trk-arm" id="ctrstArm">ARM TRACKING</button>
+              <div class="ctrst-note" id="ctrstTrkNote">Monitors the vessel and starts the CT scan itself.</div>
             </div>
           </div>
 
