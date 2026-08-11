@@ -595,6 +595,48 @@ The bar shows the second phase as its own segment, in a darker green (same agent
 phase), tappable like the rest. It stays on the bar at zero volume, following the same rule as
 delay and NaCl: a segment that vanished when set to 0 could never be set back.
 
+### 6.4 CAP vessel map — BLOCKED on the source scan, not on effort
+
+Contrast works on `chest` only. Extending it to `chestabdopelvis` was repeatedly described as
+mechanical. It is not, and the reason is the source data.
+
+`chest` comes from the TotalSegmentator dataset — a normal diagnostic CT. Every other subject
+comes from **VSD z045, a postmortem whole-body CT**, and that is the problem.
+
+What was established, in order:
+
+1. Only `chest` carries vessel material ids at all; the others predate ids 29-46, so they need
+   a rebuild through `build_model.py`, not just `build_vessels`.
+2. The existing `data/vsd/z045/seg.nii` has 45 labels and, of the 18 vessel classes, exactly
+   one (`aorta`). It predates the TotalSegmentator version that added the great veins.
+3. It is also simply wrong: `lung_upper_lobe_right` is 540 voxels against a lower lobe of
+   541,872, and `femur_left` spans z 28..3070 — the entire volume.
+4. Re-segmenting the whole body OOMs on the export worker (512x512x3117 x 117 classes).
+5. `--roi_subset` avoids the OOM but its coarse pre-crop shrank the volume to (128,134,1078)
+   and returned 16 empty masks of 17 — the same noisy-anchor failure already documented for
+   this dataset.
+6. Cropping first and segmenting the crop *does* run cleanly. It does not help. A 30 cm
+   abdominal block — which must contain liver, spleen, kidneys, aorta, IVC — produced
+   **no aorta, no IVC, no portal vein, no iliac arteries**, one 1,278-voxel `iliac_vena_left`,
+   and of the organs **only colon**.
+
+Step 6 is the decisive one. It is not a crop, memory or class-availability problem:
+TotalSegmentator is trained on living, largely contrast-enhanced CT, and a PMCT — airless
+lungs, decomposition gas throughout, collapsed unopacified vessels, postmortem tissue
+change — is out of distribution. The lungs confirm it independently: the largest connected
+low-HU regions are ~8.8 cm blocks where a lung should be ~25 cm, because postmortem lungs are
+fluid-filled.
+
+**So CAP contrast needs a different source CT, not more segmentation effort.** A diagnostic
+chest-abdomen-pelvis scan (the TotalSegmentator dataset is public and is where `chest` came
+from) would segment normally and rebuild through the existing pipeline unchanged. Spacing is
+already decided: 2.0 mm, which resolves aorta, IVC, iliacs and portal at 5-10 voxels across
+while CTPA stays the chest model's job at 1 mm.
+
+LE / UE / head-neck are not worth pursuing regardless of source: the segmented vessel set
+stops at the iliacs, so nothing reaches the limbs, and the neck has only carotids and
+subclavians.
+
 ---
 
 ## 7. Teaching notes
