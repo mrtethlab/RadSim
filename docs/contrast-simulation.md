@@ -844,6 +844,29 @@ Two things the dataset does not give you:
 - **Heart chambers** are still one label; that remains blocked on the academic licence (§4.3.1)
   and is unaffected by the new source.
 
+
+Solved against the chest as a cross-check — two different patients, scanners and segmentations:
+
+| | chest | CAP (s1379) |
+| --- | --- | --- |
+| pulmonary artery | 492 HU @ 26.0 s | 468 HU @ 26.0 s |
+| aorta | 469 HU @ 33.0 s | 447 HU @ 31.0 s |
+| IVC | 198 HU @ 47.0 s | 187 HU @ 50.0 s |
+
+Identical PA timing and aortic timing within 2 s from unrelated geometry is a good sign that the
+timing comes from the physiology rather than from either model's particular vessel lengths. A
+preset timeline ships with the model (0.36 MB) so browser-only users get CAP contrast too.
+
+**Known limitation, now visible: the portal vein and the IVC carry the same concentration.**
+Both are fed from the lower-body pool — `ivc.step(body.c_iv)` and `portal.step(body.c_iv)` — so
+they differ only by transport along their own lengths, which is why they report the same peak to
+three figures above. Physiologically the portal vein drains the gut and spleen and its contrast
+has crossed the splanchnic bed, which is the whole reason a portal-venous phase exists as a
+distinct phase at ~60-70 s. The chest model barely shows the portal vein so this never mattered;
+the CAP model is exactly where a portal-venous phase would be taught, so it does now. Fixing it
+means giving the gut its own compartment with its own transit rather than sharing the lower-body
+pool — a solver change, not a model one.
+
 `build_vessels` warns that the right common carotid's seed band is collapsing a slab. That
 vessel is clipped by the top of the FOV, so its inlet is a cut face rather than a true origin.
 It does not matter for a CAP study but would for a carotid one.
