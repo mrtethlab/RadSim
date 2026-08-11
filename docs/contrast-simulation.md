@@ -732,6 +732,55 @@ beside the field.
 
 ---
 
+### 6.7 Test bolus, and making the monitoring plot actually live
+
+**Test bolus is the other way to time a scan**, and it is now the fourth option in the Scan
+Delay column. It plans as a pair exactly like tracking — a monitoring series plus the diagnostic
+scan — but the two techniques answer different questions, so they behave differently:
+
+| | bolus tracking | test bolus |
+| --- | --- | --- |
+| watches for | a threshold crossing | the peak |
+| ends when | the ROI crosses the threshold (or you press SCANNING PHASE) | the set duration elapses |
+| produces | an immediate trigger | a measured delay, written into the diagnostic group |
+| then | the diagnostic scan runs straight on | the console stops and hands back to the operator |
+
+That last row is the important one. A test bolus **cannot** roll into the diagnostic scan: that
+scan needs the full injection, given fresh and timed from its own start, while the injector clock
+is already tens of seconds into the small test dose. So the series measures the peak, writes it
+into the diagnostic group's delay (`Test → 15 s` in the plan table), and stops with a hint
+telling the operator to reset the injector and give the full dose.
+
+What the test measures is the **transit time** from the arm to the vessel, which is what a fixed
+delay is really trying to guess and is nearly independent of the injected volume for a given
+flow rate. That is the clinical rationale for the technique, and it is why measuring on the
+current timeline is a fair model of it even though the simulator gives one injection rather than
+two.
+
+**The monitoring plot now updates continuously.** It previously drew only when a sample landed,
+so it sat frozen for the whole 1.5 s between measurements — and before the series was armed it
+was not drawn at all, just an empty black box. Three fixes:
+
+- the axes, grid and trigger level are drawn from the moment the window opens;
+- a time cursor sweeps continuously, which is what tells the operator the series is still
+  running when the curve is flat (which it is for the first ten seconds of every study);
+- every sample is marked, so the sampling interval is legible rather than implied.
+
+The redraw is on a **60 ms timer, not `requestAnimationFrame`**. rAF is tied to compositing, so
+it is throttled to a crawl whenever the page is not being painted — an embedded pane, a
+background tab — which is exactly the case where the graph looked frozen. Measured before the
+fix: the canvas repainted only on the 1.5 s sample. After: a test bar drawn onto the canvas is
+wiped within 150 ms and the cursor takes six distinct positions in two seconds.
+
+**Dragging the ROI now re-measures immediately.** The HU readout only refreshed on the next
+reconstruction, and during ROI placement there is no timer running at all — so moving the circle
+onto a vessel showed the previous position's number until the series started. The reconstructed
+slice is kept on the state and re-sampled on each drag: measured −551 HU on lung, 232 HU after
+dragging onto the mediastinum, with no reconstruction in between.
+
+
+---
+
 ## 7. Teaching notes
 
 Things the architecture gives for free and should be surfaced deliberately:

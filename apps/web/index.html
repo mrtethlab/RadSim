@@ -24,6 +24,58 @@
   <div class="home-inner">
     <h1 class="home-title">RAD<span>SIM</span></h1>
     <p class="home-sub">Physics-based radiography and CT — position, expose, reconstruct</p>
+    <div class="home-welcome-row">
+      <button class="home-welcome-btn" id="welcomeBtn" aria-expanded="false" aria-controls="welcomeMsg">
+        <span class="wb-i">&#9432;</span><span class="wb-t">Welcome &mdash; read this first</span><span class="wb-c">&#9662;</span>
+      </button>
+    </div>
+    <div class="home-welcome" id="welcomeMsg" hidden>
+      <h2>Hi! Welcome to RadSim.</h2>
+      <p>This program simulates real x-ray interactions behind realistic user interfaces. I wanted
+        access to a software suite like this while going through a Radiation Technology program,
+        but the product either did not exist or was prohibitively expensive. Here you can test
+        adaptations, get familiar with the concepts, and play with the effects of ionising
+        radiation without any of it landing on a patient.</p>
+
+      <p>Everything you image is a real voxel volume segmented from CT data, and the picture is
+        made by casting rays through it. Nothing is drawn or faked: change the kV and the contrast
+        changes because the photoelectric effect falls away, not because a slider told it to.</p>
+
+      <h3>Some housekeeping</h3>
+      <ul>
+        <li><b>This project was built substantially with AI-assisted coding (Claude Code).</b>
+          Getting it to where it is now would have taken me years; instead it took days. Some
+          features may not be fully functional because the AI believed they were working
+          correctly. Take the simulations with a grain of salt.</li>
+
+        <li><b>There are two compute engines.</b> Browser mode runs on your computer's CPU and is
+          what you get if you are using this online. It computes quickly but the images are
+          coarser. If you have a dedicated GPU you can download and run the software locally,
+          which unlocks the Python GPU engine and with it much larger, much more detailed
+          simulations. A few features stay locked in browser mode simply because they would take
+          tens of minutes to compute otherwise &mdash; the contrast injector is the main one, so
+          it falls back to a fixed preset timeline you can watch but not reprogram.</li>
+
+        <li><b>The EI and DI values can be finicky.</b> With no real machine to benchmark against
+          they do not carry much weight. Manual chest technique reads about right; lateral chest,
+          hand and knee still read a few DI high, and I am fairly sure that is the technique chart
+          against the phantom rather than the exposure index itself. Still working on it.</li>
+
+        <li><b>Some of these interfaces are reconstructed from my own memory of using them.</b>
+          I have no recorded video or photographs to work from, so there will be inaccuracies. If
+          you see me in person, tell me what I got wrong.</li>
+
+        <li><b>This is a teaching tool, not a clinical one.</b> Nothing here should be used to set
+          real technique, estimate real dose, or make any decision about a real patient.</li>
+      </ul>
+
+      <p class="hw-tip">If you are new, start with a mode's <b>Tutorial</b> button rather than
+        <b>Open</b> &mdash; it walks the whole workflow control by control and explains what each
+        one does to the beam and to the image.</p>
+
+      <p class="hw-sign">Enjoy. Working on this has ironed out a few of my own misunderstandings,
+        so hopefully it does the same for you.<br><span>&mdash;Matt&mdash;</span></p>
+    </div>
     <div class="home-grid">
       <div class="home-card hc-xray" data-mode="xray">
         <div class="hc-art"></div>
@@ -84,7 +136,7 @@
     <!-- ============ BOLUS TRACKING (monitoring series; overlays the bay) ============ -->
     <div class="btrk" id="ctBtrk">
       <div class="btrk-hdr">
-        <span class="t">BOLUS TRACKING</span>
+        <span class="t" id="ctBtrkTitle">BOLUS TRACKING</span>
         <span class="loc" id="ctBtrkLoc">—</span>
         <span class="st" id="ctBtrkState">POSITION ROI</span>
       </div>
@@ -97,7 +149,7 @@
       </div>
       <div class="btrk-foot">
         <div class="btrk-ro"><span class="k">ROI</span><span class="v" id="ctBtrkHU">—</span></div>
-        <div class="btrk-ro"><span class="k">Trigger</span><span class="v" id="ctBtrkThr">—</span></div>
+        <div class="btrk-ro"><span class="k" id="ctBtrkThrK">Trigger</span><span class="v" id="ctBtrkThr">—</span></div>
         <div class="btrk-ro"><span class="k">Elapsed</span><span class="v" id="ctBtrkT">0.0 s</span></div>
         <div class="btrk-inj"><span class="k">Injector</span>
           <button id="ctBtrkInj" title="Start the injection">▶</button>

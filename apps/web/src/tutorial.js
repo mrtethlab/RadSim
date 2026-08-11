@@ -29,6 +29,20 @@ const TICK = 220;        // goal poll + rect re-measure, ms
 
 export function initTutorial(context) {
   ctx = context;
+  // The welcome message opens and closes in place. It stays collapsed by default so the mode
+  // cards are the first thing on screen, but the button sits directly under the title where a
+  // first-time visitor will actually see it.
+  const wb = $('welcomeBtn'), wm = $('welcomeMsg');
+  if (wb && wm) {
+    wb.addEventListener('click', () => {
+      const open = wm.hidden;
+      wm.hidden = !open;
+      wb.setAttribute('aria-expanded', String(open));
+      wb.querySelector('.wb-t').textContent = open ? 'Hide the welcome message'
+                                                   : 'Welcome \u2014 read this first';
+      if (open) wm.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }
   document.querySelectorAll('#homeScreen .hc-tut').forEach((b) => {
     b.addEventListener('click', (e) => { e.stopPropagation(); startTutorial(b.dataset.tut); });
   });
