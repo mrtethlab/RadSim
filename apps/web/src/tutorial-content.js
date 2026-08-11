@@ -20,6 +20,8 @@ const $ = (id) => document.getElementById(id);
 const openBayMenu = async () => { const d = $('viewDrop'); if (d && !d.classList.contains('open')) $('bayMenuBtn').click(); };
 const closeBayMenu = async () => { const d = $('viewDrop'); if (d && d.classList.contains('open')) $('bayMenuBtn').click(); };
 const showImageView = async () => { await openBayMenu(); $('contentImageBtn')?.click(); await closeBayMenu(); };
+const customCount = () => [...($('subjectSel')?.options || [])]
+  .filter((o) => /^Custom:/.test(o.textContent)).length;
 
 // ---------------------------------------------------------------- X-RAY
 export const XRAY_STEPS = [
@@ -67,7 +69,7 @@ export const XRAY_STEPS = [
     },
   },
   {
-    sel: '#protocolBtn',
+    sel: ['#protocolBtn', '.protocur:has(#protocolV)'],
     title: 'Protocol (APR)',
     text: 'Anatomically Programmed Radiography. Choosing a protocol loads the department\'s '
       + 'starting technique for that projection — kV, mAs, grid, receptor, AEC configuration — '
@@ -79,7 +81,7 @@ export const XRAY_STEPS = [
     },
   },
   {
-    sel: '#kv',
+    sel: ['#kv', '.row:has(#kvSv)'],
     title: 'kV — beam quality',
     text: 'kV sets the energy of the photons, and so how penetrating the beam is. Raise it and '
       + 'more of the beam reaches the detector, but subject contrast falls, because at higher '
@@ -94,7 +96,7 @@ export const XRAY_STEPS = [
     },
   },
   {
-    sel: '#mas',
+    sel: ['#mas', '.row:has(#masSv)'],
     title: 'mAs — beam quantity',
     text: 'mAs is tube current × exposure time: how many photons you send. It controls the amount '
       + 'of radiation, not its penetrating power. Doubling mAs doubles the dose and halves the '
@@ -107,7 +109,7 @@ export const XRAY_STEPS = [
     },
   },
   {
-    sel: '#aecBtn',
+    sel: ['#aecBtn', '.row:has(#aecBtn)'],
     title: 'AEC — automatic exposure control',
     text: 'With AEC on, the generator stops the exposure when the ionisation chambers have '
       + 'collected enough radiation, so the exposure time is decided for you. It is the right tool '
@@ -208,7 +210,7 @@ export const XRAY_STEPS = [
     },
   },
   {
-    sel: '#fire',
+    sel: ['#fire', '#rotor'],
     title: 'Expose',
     text: 'Press and hold for the exposure time. Release early and you get a partial exposure, '
       + 'exactly as you would on the machine. Watch the timer: with AEC on, this is where you find '
@@ -268,7 +270,7 @@ export const CT_STEPS = [
     },
   },
   {
-    sel: '#ctProtocolBtn',
+    sel: ['#ctProtocolBtn', '.protocur:has(#ctProtocolName)'],
     title: 'Protocol',
     text: 'The protocol sets the scan range and, importantly, the <b>isocentre landmark</b> — the '
       + 'anatomical point you are told to line up with the laser before you zero the table. Choose '
@@ -315,7 +317,7 @@ export const CT_STEPS = [
     },
   },
   {
-    sel: '#ctMoveScan',
+    sel: ['#ctMoveScan', '#ctHint'],
     title: 'Move to scan',
     text: 'Drives the couch to the scan start position. On the machine this is the moment the '
       + 'patient travels into the bore, and it is the last point at which you can look at them '
@@ -430,6 +432,8 @@ export const CT_STEPS = [
       + 'that is why it does not follow the scanner\'s vendor colours.',
     goal: {
       label: 'Open the contrast panel',
+      when: () => !$('ctrstTab')?.disabled,
+      unless: 'Contrast needs a subject with a vessel map — go back and load the chest.',
       done: () => $('ctrstPanel')?.classList.contains('open'),
     },
   },
@@ -443,6 +447,9 @@ export const CT_STEPS = [
       + 'into the circulation, so all of what you paid for is doing work.',
     goal: {
       label: 'Open a phase and change a value',
+      when: () => !S().contrast.static,
+      unless: 'The protocol is locked on the shipped preset timeline — start the Python '
+        + 'compute service to program the injector yourself.',
       arm: () => JSON.stringify(S().contrast.params),
       done: (a) => JSON.stringify(S().contrast.params) !== a,
     },
@@ -457,6 +464,9 @@ export const CT_STEPS = [
       + 'fixed 25-second delay would have done to that patient.',
     goal: {
       label: 'Change the heart rate or stroke volume',
+      when: () => !S().contrast.static,
+      unless: 'The patient is fixed on the shipped preset timeline — start the Python '
+        + 'compute service to solve the haemodynamics for a patient of your own.',
       arm: () => S().contrast.params.cardiac_output_l_min,
       done: (a) => S().contrast.params.cardiac_output_l_min !== a,
     },
@@ -471,7 +481,7 @@ export const CT_STEPS = [
       + 'across the curve while the injection runs.',
   },
   {
-    sel: '#ctrstGo',
+    sel: ['#ctrstGo', '#ctrstReset'],
     title: 'Start the injection',
     text: 'Starts the injector clock. From this moment the images the scanner reconstructs are '
       + 'taken at whatever time the clock reads — that is the entire game. Start it, watch the '
@@ -492,7 +502,7 @@ export const CT_STEPS = [
     },
   },
   {
-    sel: '#ctSliceSlider',
+    sel: ['#ctSliceSlider', '#ctSliceCanvas'],
     title: 'Reading the series',
     needs: 'The slice viewer appears once a scan has been run.',
     text: 'Scroll the slices. The histogram shows the HU distribution of the current image with '
@@ -500,7 +510,7 @@ export const CT_STEPS = [
     block: false,
   },
   {
-    sel: '#ctWLPresets',
+    sel: ['#ctWLPresets', '#ctWL', '#ctWW'],
     title: 'Window presets',
     needs: 'The window controls appear once a scan has been run.',
     text: 'CT measures in Hounsfield units on an absolute scale — water is 0, air is −1000, dense '
@@ -545,9 +555,12 @@ export const EDITOR_STEPS = [
       + 'ray-cast through — the same trade you make choosing a reconstruction matrix. Start small '
       + 'while you are learning the tools.',
     goal: {
-      label: 'Create a new blank model',
-      arm: () => $('edSliceLab')?.textContent,
-      done: (a) => $('edSliceLab')?.textContent !== a,
+      // Creating a model at the SAME grid size leaves the DOM identical, so there would be
+      // nothing to detect. Asking for a different size is both checkable and the better
+      // lesson: it makes the resolution-versus-cost trade concrete.
+      label: 'Create a blank model at a different grid size',
+      arm: () => $('edSlice')?.max,
+      done: (a) => $('edSlice')?.max !== a,
     },
   },
   {
@@ -603,9 +616,11 @@ export const EDITOR_STEPS = [
       + 'CT and it is in the subject list, ready to image. <b>Download</b> writes it to a file you '
       + 'can keep and load again later.',
     goal: {
+      // A saved model shows up as a "Custom: …" entry in the subject selector — that is the
+      // observable effect, and the only one, so it is what the goal watches.
       label: 'Save the model to the session',
-      arm: () => (S().customSubjects ? Object.keys(S().customSubjects).length : 0),
-      done: (a) => (S().customSubjects ? Object.keys(S().customSubjects).length : 0) > a,
+      arm: () => customCount(),
+      done: (a) => customCount() > a,
     },
   },
 ];

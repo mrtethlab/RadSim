@@ -17,10 +17,23 @@ The panels swallow clicks, which is what makes the isolation more than cosmetic 
 wander off mid-step. A step can opt out with `block: false` where the interaction needs a wider
 region (dragging a scan box across a scout, painting a slice).
 
-**Every step is skippable.** A goal is how the step would *like* to end, not a gate: NEXT always
-advances. Some controls have no sensible goal at all — the compute engine, the vendor theme, the
-EI/DI readout — and are explanation-only. They still get the full blurb, which was the point of
-including them.
+**A popup takes over as the lit region.** Several goals can only be met inside one — the
+protocol chooser, the value/station entry, the injector keypad, the bolus-tracking window. While
+one is open the mask reshapes around *it* rather than around the control that opened it, so the
+dimming carries on doing its job and the popup is fully usable. Without this the protocol step
+was unfinishable: the chooser opened behind the mask.
+
+**Every step is skippable, and every goal is achievable.** A goal is how the step would *like*
+to end, not a gate: NEXT always advances. Some controls have no sensible goal at all — the
+compute engine, the vendor theme, the EI/DI readout — and are explanation-only. They still get
+the full blurb, which was the point of including them.
+
+Some goals are *conditionally* achievable, and those declare `when` / `unless`. The injector
+protocol and patient sliders are locked whenever the timeline is the model's shipped preset
+rather than a live solve — which is everyone without the Python compute service — so those two
+steps drop their goal and say why instead of asking for a change the UI will refuse. The
+condition is re-checked on every poll, so starting the compute service mid-step turns the goal
+back on.
 
 **The blurb sits beside the control**, preferring left/right (the settings columns are tall and
 narrow) and falling back to above/below, clamped to the viewport. Read the text, look 2 cm
@@ -30,15 +43,19 @@ across, there is the thing it is describing.
 
 ```js
 {
-  sel:    '#kv',                       // control to isolate
+  sel:    ['#kv', '.row:has(#kvSv)'],  // control(s) to isolate — several are lit as one region
   title:  'kV — beam quality',
   text:   '…',                         // HTML allowed
-  goal:   { label, done(arm), arm },   // omit for explanation-only
+  goal:   { label, done(arm), arm, when?, unless? },  // omit for explanation-only
   needs:  '…',                         // shown if the control is not on screen yet
   before: async () => {…},             // open a drawer, switch a view
   block:  false,                       // leave the page clickable
 }
 ```
+
+`sel` takes an array when the control is really several elements — a slider plus its −/+
+steppers, the rotor beside EXPOSE. Lighting only the slider left the steppers dark *and* behind
+the mask, so the obvious way to change the number was unclickable.
 
 `arm()` snapshots the starting value and `done(arm)` compares against it. Without that, a goal
 like "change the kV" would tick green before the learner touched anything, because the state
@@ -65,3 +82,24 @@ Two timing details that are load-bearing:
 CT steps 8–15 and 22–23 point at controls that do not exist until an earlier goal has been met
 (no scouts, no scan-group table; no scan, no slice viewer). Skipping ahead shows the step's
 `needs` line rather than a blank ring.
+
+## Keys
+
+Escape exits — **unless a popup is open**, where it belongs to the popup as its cancel key.
+Stealing it would quit the whole tutorial from a routine cancel. Left/Right step back and
+forward, but not while an input or slider has focus (arrows nudge a range input) and not while a
+popup is open.
+
+## Verified
+
+Every goal was driven to completion in the browser, not just inspected:
+
+| | goals | result |
+| --- | --- | --- |
+| X-ray | 14 | all met |
+| CT | 10 | all met; 2 more correctly gated with no compute service |
+| Model editor | 4 | all met |
+
+The audit also hit-tests each lit region: for every step with a goal, at least one interactive
+control inside the ring must return itself from `elementFromPoint`, i.e. a real click reaches it
+rather than landing on a mask panel.

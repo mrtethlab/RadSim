@@ -37,8 +37,15 @@ export function initTutorial(context) {
   $('tutExit').addEventListener('click', endTutorial);
   document.addEventListener('keydown', (e) => {
     if (!T) return;
-    if (e.key === 'Escape') endTutorial();
-    else if (e.key === 'ArrowRight') go(T.i + 1);
+    // Escape belongs to whatever popup is open — it is the cancel key on the value entry and
+    // the protocol chooser. Stealing it would quit the entire tutorial from a routine cancel.
+    if (e.key === 'Escape') { if (!openModal()) endTutorial(); return; }
+    // Arrows belong to whatever the learner is typing in or dragging. A slider takes arrow
+    // keys to nudge its value; jumping to the next step instead would be maddening.
+    const f = document.activeElement;
+    if (f && (f.matches('input, select, textarea') || f.isContentEditable)) return;
+    if (openModal()) return;
+    if (e.key === 'ArrowRight') go(T.i + 1);
     else if (e.key === 'ArrowLeft') go(T.i - 1);
   });
   addEventListener('resize', () => { if (T) paint(); });
@@ -115,8 +122,10 @@ function finish() {
 function paint() {
   if (!T || T.done) return;
   const s = T.steps[T.i]; if (!s) return;
-  const el = target(s);
-  const r = el && el.getBoundingClientRect();
+  // A popup opened by this step takes over as the lit region: that is where the goal is met.
+  const modal = openModal();
+  const el = modal ? [modal] : target(s);
+  const r = el && unionRect(el);
   if (!r || (!r.width && !r.height)) {
     // The control does not exist yet — almost always because an earlier goal was skipped
     // (no scouts, so no scan-group table). Say which, rather than leaving a blank ring.
@@ -165,9 +174,51 @@ function hideMask() {
   });
 }
 
+/* A step can name one selector or several; several are lit as one region, which is how the
+   stepper buttons stay reachable alongside the slider they belong to. */
 function target(s) {
   if (!s.sel) return null;
-  try { return document.querySelector(s.sel); } catch (err) { return null; }
+  const sels = Array.isArray(s.sel) ? s.sel : [s.sel];
+  const els = [];
+  for (const q of sels) {
+    try { const e = document.querySelector(q); if (e) els.push(e); } catch (err) { /* bad selector */ }
+  }
+  return els.length ? els : null;
+}
+
+function unionRect(els) {
+  let l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+  for (const e of els) {
+    const q = e.getBoundingClientRect();
+    if (!q.width && !q.height) continue;
+    l = Math.min(l, q.left); t = Math.min(t, q.top);
+    r = Math.max(r, q.right); b = Math.max(b, q.bottom);
+  }
+  if (l === Infinity) return null;
+  return { left: l, top: t, width: r - l, height: b - t };
+}
+
+/* Popups the app opens on top of everything — the protocol chooser, the value/station entry,
+   the injector keypad, the bolus-tracking window. Several goals can only be met INSIDE one of
+   these, so while one is open it becomes the lit region: the mask reshapes around it instead
+   of around the control that opened it, and the dimming carries on doing its job. */
+const MODALS = [
+  ['#protoPop.show', '.protopop-card'],
+  ['#ctPop.show', '.ctpop-inner'],
+  ['#kpad.open', '.kpad-win'],
+  ['#ctBtrk.show', null],
+];
+
+function openModal() {
+  for (const [host, inner] of MODALS) {
+    const h = document.querySelector(host);
+    if (!h) continue;
+    const el = inner ? h.querySelector(inner) : h;
+    if (!el) continue;
+    const q = el.getBoundingClientRect();
+    if (q.width && q.height) return el;
+  }
+  return null;
 }
 
 /* The blurb sits beside the control it describes, not in a fixed corner: read
@@ -176,26 +227,40 @@ function target(s) {
 function placeCard(box) {
   const card = $('tutCard');
   card.style.transform = '';
-  const cw = card.offsetWidth || 340, ch = card.offsetHeight || 200;
-  const W = innerWidth, H = innerHeight, M = 12;
-  if (!box) { card.style.left = px(W - cw - 24); card.style.top = px(H - ch - 24); return; }
-  let l, t;
-  if (box.l - M - cw >= M) l = box.l - M - cw;                 // left of the control
-  else if (box.l + box.w + M + cw <= W - M) l = box.l + box.w + M;   // right of it
-  else l = Math.min(Math.max(M, box.l + box.w / 2 - cw / 2), W - cw - M);
-  const sameCol = (l >= box.l - M - cw && l < box.l) || (l > box.l);
-  t = box.t + box.h / 2 - ch / 2;                              // vertically centred on it
-  if (Math.abs(l - (box.l + box.w / 2 - cw / 2)) < 2 && !sameCol) {
-    t = (box.t - M - ch >= M) ? box.t - M - ch : box.t + box.h + M;  // above / below instead
+  const W = innerWidth, H = innerHeight, M = 12, WIDE = 340, MIN = 250;
+  card.style.width = WIDE + 'px';
+  if (!box) {
+    card.style.left = px(W - WIDE - 24); card.style.top = px(H - card.offsetHeight - 24); return;
   }
+  // Never sit on top of the lit region — that region is what the learner has to use, and a
+  // wide popup (the protocol chooser is 680px) would otherwise be half-covered by the blurb.
+  // Shrink the card to whatever margin is left before giving up and overlaying.
+  const gapL = box.l - M * 2, gapR = W - (box.l + box.w) - M * 2;
+  const gap = Math.max(gapL, gapR);
+  let cw = WIDE;
+  if (gap < WIDE && gap >= MIN) { cw = Math.floor(gap); card.style.width = cw + 'px'; }
+  const ch = card.offsetHeight || 200;
+  let l, t;
+  if (gapL >= cw) l = box.l - M - cw;                               // left of it
+  else if (gapR >= cw) l = box.l + box.w + M;                       // right of it
+  else {                                                            // no room either side
+    l = Math.min(Math.max(M, box.l + box.w / 2 - cw / 2), W - cw - M);
+    t = (box.t - M - ch >= M) ? box.t - M - ch                      // above
+      : (box.t + box.h + M + ch <= H - M) ? box.t + box.h + M       // below
+      : H - ch - M;                                                 // last resort: bottom edge
+    card.style.left = px(l); card.style.top = px(Math.max(M, t));
+    return;
+  }
+  t = box.t + box.h / 2 - ch / 2;                                   // vertically centred on it
   card.style.left = px(Math.min(Math.max(M, l), W - cw - M));
   card.style.top = px(Math.min(Math.max(M, t), H - ch - M));
   function px(n) { return Math.round(n) + 'px'; }
 }
 
 function scrollTargetIntoView(s) {
-  const el = target(s);
-  if (!el) return;
+  const els = target(s);
+  if (!els) return;
+  const el = els[0];
   const r = el.getBoundingClientRect();
   if (r.top >= 0 && r.bottom <= innerHeight) return;
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -203,12 +268,24 @@ function scrollTargetIntoView(s) {
 }
 
 /* ---- the card ---------------------------------------------------------- */
+/* A goal is only offered when it can actually be met. Some controls are locked by the state
+   the app happens to be in — the injector protocol is fixed when the timeline is the shipped
+   preset rather than a live solve — and asking for a change that the UI will not accept is
+   worse than asking for nothing. `when` decides; `unless` says why not. */
+function goalLive(s) {
+  if (!s.goal) return false;
+  if (!s.goal.when) return true;
+  try { return !!s.goal.when(); } catch (err) { return false; }
+}
+
 function render() {
   const s = T.steps[T.i];
   const card = $('tutCard');
-  const goal = s.goal
+  T.live = goalLive(s);
+  const goal = T.live
     ? '<div class="tut-goal" id="tutGoal"><span class="tut-tick">○</span><span>' + s.goal.label + '</span></div>'
-    : '<div class="tut-goal read"><span class="tut-tick">·</span><span>Nothing to change here — read on when ready.</span></div>';
+    : '<div class="tut-goal read"><span class="tut-tick">·</span><span>'
+      + (s.goal ? s.goal.unless : 'Nothing to change here — read on when ready.') + '</span></div>';
   card.innerHTML =
     '<div class="tut-hd"><span class="tut-n">' + (T.i + 1) + ' / ' + T.steps.length + '</span>'
     + '<button class="tut-x" id="tutExit2">Exit</button></div>'
@@ -232,6 +309,10 @@ function tick() {
   if (!T) return;
   paint();
   const s = T.steps[T.i]; if (!s || !s.goal || T.met) return;
+  // The lock can lift while the step is open — start the compute service and the injector
+  // protocol becomes editable — so re-check and redraw the card if the answer changed.
+  if (goalLive(s) !== T.live) { render(); return; }
+  if (!T.live) return;
   let ok = false;
   try { ok = !!s.goal.done(T.armVal); } catch (err) { ok = false; }
   if (!ok) return;
