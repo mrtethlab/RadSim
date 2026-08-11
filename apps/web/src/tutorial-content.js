@@ -328,11 +328,12 @@ export const CT_STEPS = [
     },
   },
   {
-    sel: '#ctStart',
+    sel: ['#ctStart', '#ctMoveScan'],
     title: 'Acquire the scouts',
     text: 'START runs whatever the console is currently set up to do. Right now that is the scout '
-      + 'pair. Once they are on screen the console moves into planning and the scan-group table '
-      + 'appears beneath them.',
+      + 'pair — though the couch has to be at the scan start first, so MOVE TO SCAN stays lit '
+      + 'beside it. Once the scouts are on screen the console moves into planning and the '
+      + 'scan-group table appears beneath them.',
     goal: {
       label: 'Acquire the scouts',
       done: () => S().ct.scoutsReady === true,
@@ -441,15 +442,17 @@ export const CT_STEPS = [
     sel: '#ctrstBar',
     title: 'Programming the injection',
     text: 'The bar is the injection as a timeline: contrast in green, saline in blue, drawn to '
-      + 'scale in time. Tap any phase to enter its volume and flow rate on the keypad. Flow rate '
+      + 'scale in time. Each phase carries a volume and a flow rate. Flow rate '
       + 'sets how tight the bolus is — 4–5 mL/s for a CTA, slower for a portal-venous study. The '
       + 'saline chaser is not padding: it pushes the tail of the contrast out of the arm veins and '
-      + 'into the circulation, so all of what you paid for is doing work.',
+      + 'into the circulation, so all of what you paid for is doing work. With the Python compute '
+      + 'service running, tap a phase to reprogram it on the keypad.',
     goal: {
       label: 'Open a phase and change a value',
-      when: () => !S().contrast.static,
-      unless: 'The protocol is locked on the shipped preset timeline — start the Python '
-        + 'compute service to program the injector yourself.',
+      when: () => !!S().computeInfo,
+      unless: 'Nothing to change on the browser engine: the protocol is fixed on the shipped '
+        + 'preset timeline. Programming the injector needs the Python compute service to solve '
+        + 'the haemodynamics for whatever you enter.',
       arm: () => JSON.stringify(S().contrast.params),
       done: (a) => JSON.stringify(S().contrast.params) !== a,
     },
@@ -460,13 +463,14 @@ export const CT_STEPS = [
     text: 'Cardiac output is the dominant variable in contrast timing, and this is where the '
       + 'teaching is. Heart rate × stroke volume gives the output; a patient in failure with a low '
       + 'output takes markedly longer to bring the bolus round and peaks higher when it arrives. '
-      + 'Change these and watch the predicted enhancement curve move — then think about what a '
-      + 'fixed 25-second delay would have done to that patient.',
+      + 'With the solver running you can change these and watch the predicted enhancement curve '
+      + 'move — then think about what a fixed 25-second delay would have done to that patient.',
     goal: {
       label: 'Change the heart rate or stroke volume',
-      when: () => !S().contrast.static,
-      unless: 'The patient is fixed on the shipped preset timeline — start the Python '
-        + 'compute service to solve the haemodynamics for a patient of your own.',
+      when: () => !!S().computeInfo,
+      unless: 'Nothing to change on the browser engine: the preset timeline is one fixed '
+        + 'patient. Moving these needs the Python compute service, which is what re-solves the '
+        + 'circulation each time you do.',
       arm: () => S().contrast.params.cardiac_output_l_min,
       done: (a) => S().contrast.params.cardiac_output_l_min !== a,
     },
@@ -490,10 +494,15 @@ export const CT_STEPS = [
       + 'injection with it.',
   },
   {
-    sel: '#ctStart',
+    // The console will not start until the couch is at the scan start, so MOVE TO SCAN has to be
+    // lit alongside START — lighting START alone left the learner pressing a button whose only
+    // reply was "press the flashing MOVE TO SCAN button", which the mask had gone dark over.
+    sel: ['#ctStart', '#ctMoveScan'],
     title: 'Run the scan',
-    text: 'START again, now with a plan in place. The gantry acquires each group in turn, applying '
-      + 'each group\'s delay. If a group is a monitoring series, the tracking window opens instead: '
+    text: 'The couch travels to the scan start before the gantry will run, so press '
+      + '<b>MOVE TO SCAN</b> and then <b>START</b> — the same two presses as on the machine. '
+      + 'Each group is acquired in turn, applying '
+      + 'its delay. If a group is a monitoring series, the tracking window opens instead: '
       + 'position the ROI on the vessel, start tracking, and the scan fires when the contrast '
       + 'crosses your threshold — or when you press SCANNING PHASE yourself.',
     goal: {

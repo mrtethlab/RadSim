@@ -29,11 +29,12 @@ compute engine, the vendor theme, the EI/DI readout — and are explanation-only
 the full blurb, which was the point of including them.
 
 Some goals are *conditionally* achievable, and those declare `when` / `unless`. The injector
-protocol and patient sliders are locked whenever the timeline is the model's shipped preset
-rather than a live solve — which is everyone without the Python compute service — so those two
-steps drop their goal and say why instead of asking for a change the UI will refuse. The
-condition is re-checked on every poll, so starting the compute service mid-step turns the goal
-back on.
+protocol and the patient sliders only move when the haemodynamic solver is running, so on the
+browser engine those two steps drop their goal and explain the fixed preset instead of asking
+for a change the UI will refuse. They gate on `S.computeInfo` — the `/health` result — not on
+`contrast.static`, which only flips once the preset timeline has actually loaded and so still
+read "live" at the moment the step opened. The condition is re-checked on every poll, so
+starting the compute service mid-step turns the goal back on.
 
 **The blurb sits beside the control**, preferring left/right (the settings columns are tall and
 narrow) and falling back to above/below, clamped to the viewport. Read the text, look 2 cm
