@@ -80,10 +80,12 @@ def pack(result: dict) -> dict:
 
 
 def timeline(vessels_path: str, volume_ml=100.0, rate_ml_s=4.0, conc_mgi_ml=350.0,
+             volume2_ml=0.0, rate2_ml_s=2.0,
              delay_s=0.0, saline_ml=40.0, saline_rate_ml_s=4.0, cardiac_output_l_min=5.0,
              blood_volume_ml=5000.0, vessel_scale=1.0, perfusion_scale=1.0,
              duration_s=90.0) -> dict:
     inj = Injection(volume_ml=volume_ml, rate_ml_s=rate_ml_s, conc_mgi_ml=conc_mgi_ml,
+                    volume2_ml=volume2_ml, rate2_ml_s=rate2_ml_s,
                     saline_ml=saline_ml, saline_rate_ml_s=saline_rate_ml_s, start_s=delay_s)
     pat = Patient(cardiac_output_l_min=cardiac_output_l_min, blood_volume_ml=blood_volume_ml,
                   vessel_scale=vessel_scale, perfusion_scale=perfusion_scale)

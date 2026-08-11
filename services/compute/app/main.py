@@ -96,6 +96,8 @@ class ContrastTimelineRequest(BaseModel):
     volume_ml: float = 100.0
     rate_ml_s: float = 4.0
     conc_mgi_ml: float = 350.0
+    volume2_ml: float = 0.0
+    rate2_ml_s: float = 2.0
     delay_s: float = 0.0
     saline_ml: float = 40.0
     saline_rate_ml_s: float = 4.0

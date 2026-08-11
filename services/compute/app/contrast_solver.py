@@ -54,31 +54,59 @@ GFR_ML_S = 2.0
 
 @dataclass
 class Injection:
-    volume_ml: float = 100.0      # contrast volume
-    rate_ml_s: float = 4.0        # injection rate
+    """A programmed injection: a start delay, one or two contrast phases, a saline chaser.
+
+    A SECOND contrast phase is what a real biphasic protocol uses — a fast bolus to fill the
+    arteries followed by a slower one to hold them filled while the scan runs. A single phase
+    of the same total volume peaks higher and falls away sooner, which is the wrong shape for
+    a long acquisition. Set volume2_ml = 0 for the plain single-phase protocol.
+    """
+    volume_ml: float = 100.0      # contrast volume, phase 1
+    rate_ml_s: float = 4.0        # injection rate, phase 1
     conc_mgi_ml: float = 350.0    # iodine concentration of the agent
+    volume2_ml: float = 0.0       # contrast volume, phase 2 (0 = single-phase)
+    rate2_ml_s: float = 2.0       # injection rate, phase 2
     saline_ml: float = 40.0       # saline chaser — pushes the tail out of the arm veins
     saline_rate_ml_s: float = 4.0
     start_s: float = 0.0
 
+    def phases(self):
+        """(duration_s, rate_ml_s, conc_mgi_ml) in delivery order. Saline is a phase too — it
+        carries volume but no iodine, which is exactly how the chaser clears the arm veins."""
+        out = []
+        for vol, rate, conc in ((self.volume_ml, self.rate_ml_s, self.conc_mgi_ml),
+                                (self.volume2_ml, self.rate2_ml_s, self.conc_mgi_ml),
+                                (self.saline_ml, self.saline_rate_ml_s, 0.0)):
+            if vol > 0 and rate > 0:
+                out.append((vol / rate, rate, conc))
+        return out
+
     @property
     def duration_s(self) -> float:
-        return self.volume_ml / max(self.rate_ml_s, 1e-6)
+        """Contrast-delivering duration — the saline chaser is not part of it."""
+        return (self.volume_ml / max(self.rate_ml_s, 1e-6)
+                + self.volume2_ml / max(self.rate2_ml_s, 1e-6))
+
+    def _at(self, t: float):
+        """The phase active at t, or None."""
+        u = t - self.start_s
+        if u < 0:
+            return None
+        for dur, rate, conc in self.phases():
+            if u < dur:
+                return rate, conc
+            u -= dur
+        return None
 
     def flux_mgi_s(self, t: float) -> float:
         """Iodine delivered per second at time t. Saline contributes volume, not iodine —
         its job is to clear the tail, which shows up as a cleaner venous washout."""
-        t0 = self.start_s
-        return self.conc_mgi_ml * self.rate_ml_s if t0 <= t < t0 + self.duration_s else 0.0
+        p = self._at(t)
+        return p[0] * p[1] if p else 0.0
 
     def volume_flux_ml_s(self, t: float) -> float:
-        t0, d = self.start_s, self.duration_s
-        if t0 <= t < t0 + d:
-            return self.rate_ml_s
-        ts = t0 + d
-        if ts <= t < ts + self.saline_ml / max(self.saline_rate_ml_s, 1e-6):
-            return self.saline_rate_ml_s
-        return 0.0
+        p = self._at(t)
+        return p[0] if p else 0.0
 
 
 @dataclass

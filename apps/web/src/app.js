@@ -453,6 +453,7 @@ const S = {
   // start of the injection, which is the single most consequential number in a CTA.
   contrast:{ on:false, timeline:null, sVol:null, scanTime:25,
              params:{ volume_ml:100, rate_ml_s:4.0, conc_mgi_ml:350, delay_s:0, saline_ml:40,
+                      volume2_ml:0, rate2_ml_s:2.0,
                       saline_rate_ml_s:4.0, cardiac_output_l_min:5.0, blood_volume_ml:5000,
                       vessel_scale:1.0, perfusion_scale:1.0 },
              lut:null, lutT:null, busy:false, error:null,
@@ -2204,6 +2205,7 @@ function ctrstPhases(){
   return [
     {kind:'delay', t:P.delay_s, ml:0, rate:0},
     {kind:'cm',    t:P.volume_ml/Math.max(P.rate_ml_s,.1),        ml:P.volume_ml, rate:P.rate_ml_s},
+    {kind:'cm2',   t:P.volume2_ml/Math.max(P.rate2_ml_s,.1),      ml:P.volume2_ml, rate:P.rate2_ml_s},
     {kind:'nacl',  t:P.saline_ml/Math.max(P.saline_rate_ml_s,.1), ml:P.saline_ml, rate:P.saline_rate_ml_s},
   ];
 }
@@ -2268,10 +2270,12 @@ function ctrstReadUI(){
   $('ctrstSvV').textContent=v('sv')+' mL';
   $('ctrstCalV').textContent=P.vessel_scale.toFixed(2)+'×';
   $('ctrstPerfV').textContent=P.perfusion_scale.toFixed(2)+'×';
-  $('ctrstTotal').textContent=(P.volume_ml+P.saline_ml)+' ml total';
+  $('ctrstTotal').textContent=(P.volume_ml+P.volume2_ml+P.saline_ml)+' ml total';
   $('ctrstDur').textContent=fmtClock(ctrstTotalTime());
-  $('ctrstInjNote').textContent=(P.volume_ml*P.conc_mgi_ml/1000).toFixed(1)+' g iodine · peak line pressure '
-    +injPressureBar(P.rate_ml_s,P.conc_mgi_ml).toFixed(1)+' bar';
+  // both contrast phases carry iodine; peak pressure is whichever phase runs fastest
+  $('ctrstInjNote').textContent=((P.volume_ml+P.volume2_ml)*P.conc_mgi_ml/1000).toFixed(1)
+    +' g iodine · peak line pressure '
+    +injPressureBar(Math.max(P.rate_ml_s, P.volume2_ml>0?P.rate2_ml_s:0),P.conc_mgi_ml).toFixed(1)+' bar';
   $('ctrstCoNote').textContent='cardiac output '+P.cardiac_output_l_min.toFixed(1)+' L/min'
     +' · calibre scales transit time, perfusion scales organ uptake';
   ctrstRenderBar();
@@ -2452,6 +2456,9 @@ const KPAD = {
   cm:    { title:'CM', fields:[
             {k:'volume_ml',       lab:'Volume',    unit:'mL',   min:1,   max:200, dp:0},
             {k:'rate_ml_s',       lab:'Flow rate', unit:'mL/s', min:0.1, max:10,  dp:1}] },
+  cm2:   { title:'CM · phase 2', fields:[
+            {k:'volume2_ml',      lab:'Volume',    unit:'mL',   min:0,   max:200, dp:0},
+            {k:'rate2_ml_s',      lab:'Flow rate', unit:'mL/s', min:0.1, max:10,  dp:1}] },
   nacl:  { title:'NaCl', fields:[
             {k:'saline_ml',       lab:'Volume',    unit:'mL',   min:0,   max:100, dp:0},
             {k:'saline_rate_ml_s',lab:'Flow rate', unit:'mL/s', min:0.1, max:10,  dp:1}] },

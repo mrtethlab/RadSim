@@ -543,9 +543,27 @@ slowly and holds more blood — both push the bolus later:
   -20.6 % / +24.9 %; it is back to 0.36-0.44 %, indistinguishable from baseline. Capped at 2.0
   so the lower-body share cannot go negative.
 
-**Still not exposed.** Multi-phase protocols (a second CM phase at a different rate) need
-`Injection` to take a list of phases; the phase bar is already drawn from a list, so the UI is
-ready for it.
+**Biphasic protocols.** `Injection` carries an optional second contrast phase, and
+`Injection.phases()` returns the whole programmed sequence in delivery order — saline included,
+since it carries volume but no iodine, which is exactly how the chaser clears the arm veins.
+Both flux functions walk that list, so a single phase is just the degenerate case.
+
+A fast bolus followed by a slower one is what a real biphasic protocol is for: it fills the
+arteries then holds them filled while a long acquisition runs. The same 100 mL of iodine,
+delivered two ways:
+
+| protocol | aorta peak | at | time above 250 HU |
+| --- | --- | --- | --- |
+| single 100 mL @ 4 | 456 HU | 33 s | 30 s |
+| 60 @ 5 then 40 @ 2 | 399 HU | 20 s | **37 s** |
+| 50 @ 6 then 50 @ 1.5 | 368 HU | 17 s | **43 s** |
+
+Lower peak, earlier, but a **43 % longer usable window** — the trade a biphasic protocol is
+bought for. Mass balance is unchanged at 0.36-0.37 %.
+
+The bar shows the second phase as its own segment, in a darker green (same agent, slower
+phase), tappable like the rest. It stays on the bar at zero volume, following the same rule as
+delay and NaCl: a segment that vanished when set to 0 could never be set back.
 
 ---
 

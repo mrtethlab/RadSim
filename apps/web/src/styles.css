@@ -980,7 +980,9 @@ body.mode-editor .ctrst{display:none}
 .inj-bar[disabled] .inj-seg{cursor:default}
 .inj-seg small{font-size:8px; opacity:.75}
 .inj-seg.cm{background:linear-gradient(180deg,#6fe089,#3fb85c)}
+.inj-seg.cm2{background:linear-gradient(180deg,#4fc472,#2b9445)}   /* same agent, slower phase */
 .inj-seg.nacl{background:linear-gradient(180deg,#57b6ee,#2f8fd0)}
+.kpad.cm2 .kpad-rule{background:linear-gradient(180deg,#7de08f,#2fa84c)}
 .inj-seg.delay{background:#161d26; color:var(--muted)}
 .inj-prog{height:4px; margin:4px 0 8px; background:#131922; border-radius:2px; overflow:hidden}
 .inj-progfill{height:100%; width:0; background:var(--amber); transition:width .1s linear}
