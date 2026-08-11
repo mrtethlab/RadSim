@@ -297,6 +297,42 @@
    "name": "Iliac vein L",
    "hu": 45,
    "color": "#b23a3a"
+  },
+  {
+   "id": 47,
+   "name": "Bowel gas",
+   "hu": -1000,
+   "color": "#1b2129"
+  },
+  {
+   "id": 48,
+   "name": "Oesophagus lumen",
+   "hu": 15,
+   "color": "#c98f6a"
+  },
+  {
+   "id": 49,
+   "name": "Stomach lumen",
+   "hu": 15,
+   "color": "#b97f4e"
+  },
+  {
+   "id": 50,
+   "name": "Duodenum lumen",
+   "hu": 15,
+   "color": "#c59a5e"
+  },
+  {
+   "id": 51,
+   "name": "Small bowel lumen",
+   "hu": 15,
+   "color": "#d0a86a"
+  },
+  {
+   "id": 52,
+   "name": "Colon lumen",
+   "hu": 15,
+   "color": "#a8804e"
   }
  ],
  "materialsPresent": [
@@ -333,7 +369,13 @@
   43,
   44,
   45,
-  46
+  46,
+  47,
+  48,
+  49,
+  50,
+  51,
+  52
  ],
  "huReference": [
   -1050,

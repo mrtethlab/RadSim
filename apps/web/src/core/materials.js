@@ -91,6 +91,32 @@ export const BodyMaterials = (()=>{
   // Sanity: at 70 keV (the effective energy of a 120 kVp beam) this gives 26.7 HU per
   // mgI/mL against water, which is the textbook ~25-26.
   function muIodinePerConc(keV){ return interp(IODINE_MR, keV, lnIodineE) * 1e-3; }
+
+  /* ---- barium: the same story one shell up ---------------------------------
+     Barium (Z=56) K-edge is at 37.44 keV, and the jump is if anything sharper than
+     iodine's — which is why a barium study works at all at diagnostic kVp, and why
+     barium is opaque where iodine is merely bright.
+
+     The agent is barium SULPHATE, BaSO4, given as a suspension quoted in % w/v: a
+     "100 % w/v" barium is 1 g of BaSO4 per mL. BaSO4 is 58.84 % barium by mass
+     (137.33 / 233.39), so the concentration carried here is mg of ELEMENTAL Ba per mL,
+     with the sulphate's own contribution folded in via the compound curve below.
+
+     Grid straddles the edge with two points 0.02 keV apart, exactly as iodine's does —
+     interpolating across a K-edge on the shared 9-point grid would draw a smooth ramp
+     through the discontinuity and erase the effect that makes the agent work.
+
+     CAVEAT, and it matters before anyone quotes an absolute barium HU: unlike the iodine
+     row above, this grid has NOT been checked point by point against NIST XCOM. It is a
+     literature reconstruction, and the 40 keV point is an E^-3 extrapolation from the
+     measured post-edge value rather than a tabulated one. What IS sound is the part the
+     teaching rests on — the edge sits at 37.44 keV and the jump ratio comes out at 5.42
+     against a literature Ba value of ~5.3-5.5. Verify the row before trusting the numbers. */
+  const BARIUM_E  = [20, 25, 30, 35, 37.43, 37.45, 40, 50, 60, 80, 100, 120, 150];
+  const BARIUM_MR = [24.9, 13.9, 8.60, 5.71, 4.87, 26.4, 21.7, 12.6, 7.90, 3.83, 2.20, 1.48, 0.900];
+  const lnBariumE = BARIUM_E.map(Math.log);
+  // Linear attenuation (cm^-1) per ONE mg of elemental Ba per mL.
+  function muBariumPerConc(keV){ return interp(BARIUM_MR, keV, lnBariumE) * 1e-3; }
   // water+bone basis densities that reproduce a target HU at EREF
   function basis(hu){
     const muw = muWaterAt(EREF);
@@ -156,6 +182,26 @@ export const BodyMaterials = (()=>{
     { id:44, name:'Iliac artery L',        hu:45, kind:'tissue', color:0xb23a3a },
     { id:45, name:'Iliac vein R',          hu:45, kind:'tissue', color:0xb23a3a },
     { id:46, name:'Iliac vein L',          hu:45, kind:'tissue', color:0xb23a3a },
+    // ---- GI tract (47+) -----------------------------------------------------
+    // Same argument as the vessels: a barium study has to know WHICH part of the gut a
+    // voxel is in, because the whole examination is watching the agent move from one part
+    // to the next. A single 'Soft tissue' id cannot express a swallow.
+    //
+    // The lumen ids are stamped ONLY where the segmentation says gut AND the HU says
+    // fluid/soft. Where the lumen holds gas it gets id 47 instead, which matters more than
+    // it sounds: the gastric bubble, the colonic gas and the fluid levels are real
+    // findings, and stamping one fixed HU across a whole labelled stomach would erase
+    // them. It is also more honest than what happened before, where bowel gas fell through
+    // the HU thresholds and was classified as LUNG.
+    //
+    // Id 47 is what CO2 insufflation fills in a double-contrast study.
+    // MUST stay in lockstep with build_model.py LEGEND — see scripts/check-legends.mjs.
+    { id:47, name:'Bowel gas',        hu:-1000, kind:'elem', key:'air', color:0x1b2129 },
+    { id:48, name:'Oesophagus lumen', hu:15,    kind:'tissue',          color:0xc98f6a },
+    { id:49, name:'Stomach lumen',    hu:15,    kind:'tissue',          color:0xb97f4e },
+    { id:50, name:'Duodenum lumen',   hu:15,    kind:'tissue',          color:0xc59a5e },
+    { id:51, name:'Small bowel lumen',hu:15,    kind:'tissue',          color:0xd0a86a },
+    { id:52, name:'Colon lumen',      hu:15,    kind:'tissue',          color:0xa8804e },
   ];
   const idByName = {}; LIST.forEach(m=> idByName[m.name]=m.id);
 
@@ -180,6 +226,13 @@ export const BodyMaterials = (()=>{
     muIodinePerConc,
     // HU per mgI/mL at a given energy — the energy dependence a fixed constant cannot show
     huPerMgIml: (keV)=> 1000 * muIodinePerConc(keV) / muWaterAt(keV),
+    // Barium rides in a second virtual column, for the same reason and by the same
+    // mechanism. Two columns rather than one shared "contrast" column because the agents
+    // have different K-edges (33.17 vs 37.44 keV) and a GI study can have both present at
+    // once — an enteric barium with IV iodine is an ordinary abdominal CT.
+    BARIUM_COL: LIST.length + 1,
+    muBariumPerConc,
+    huPerMgBaMl: (keV)=> 1000 * muBariumPerConc(keV) / muWaterAt(keV),
   };
 })();
 

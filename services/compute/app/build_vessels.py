@@ -191,8 +191,11 @@ def build(model_dir, name):
 
     print('[3/3] writing …')
     # sparse: one uint16 per vessel voxel, raster order. mat.bin already says which voxels
-    # those are (id >= 29), so no index is needed and the file stays ~1.5 MB not ~80 MB.
-    vessel_vox = mat >= min(vid for vid, _ in VESSELS)
+    # those are, so no index is needed and the file stays ~1.5 MB not ~80 MB.
+    # The membership test is the explicit VESSELS id set, NOT `>= 29`: the GI tract now sits
+    # at 47+, and a `>=` test would have swept the gut into this file, shifting every entry
+    # after the first GI voxel and silently corrupting the mapping the reader depends on.
+    vessel_vox = np.isin(mat, [vid for vid, _ in VESSELS])
     packed = arclen[vessel_vox]
     packed.tofile(os.path.join(model_dir, f'{name}.arclen.bin'))
     meta = dict(nSamples=N_SAMPLES, spacingMM=list(spacing),

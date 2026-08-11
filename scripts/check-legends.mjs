@@ -44,16 +44,23 @@ function pyLegend() {
     const from = m[3] === undefined ? 0 : +m[2];
     names.forEach((n, i) => { consts[n] = from + i; });
   }
+  // Anchored to line start: a bare indexOf('LEGEND = [') also matches inside
+  // 'GI_LEGEND = [', and as that one is declared first it silently grabbed the wrong list
+  // and reported every entry as mismatched.
   const grab = (marker) => {
-    const i = src.indexOf(marker);
-    if (i < 0) throw new Error(`no "${marker}" in ${PY_PATH}`);
-    return src.slice(i, src.indexOf('\n]', i));
+    const i = src.indexOf('\n' + marker);
+    if (i < 0) throw new Error(`no "${marker}" at line start in ${PY_PATH}`);
+    return src.slice(i + 1, src.indexOf('\n]', i));
   };
   const out = [];
   for (const m of grab('LEGEND = [').matchAll(/\(\s*([A-Z][A-Za-z_]*)\s*,\s*"([^"]*)"/g)) {
     out.push({ id: consts[m[1]], name: m[2], sym: m[1] });
   }
   for (const m of grab('VESSELS = [').matchAll(/\(\s*([A-Z][A-Za-z_]*)\s*,\s*"([^"]*)"/g)) {
+    out.push({ id: consts[m[1]], name: m[2], sym: m[1] });
+  }
+  // The GI tail is a third named list, appended after the vessels (ids 47+).
+  for (const m of grab('GI_LEGEND = [').matchAll(/\(\s*([A-Z][A-Za-z_]*)\s*,\s*"([^"]*)"/g)) {
     out.push({ id: consts[m[1]], name: m[2], sym: m[1] });
   }
   return out;

@@ -278,7 +278,52 @@ The right model at this scale is kinematic:
 - a mucosal **coating layer** for double contrast: barium coats the lumen wall, CO₂ distends
   it, and the diagnostic image is the coated mucosa seen through gas
 
-Stomach, small bowel and colon are already segmented. Oesophagus coverage needs checking.
+Stomach, small bowel and colon are already segmented. **Oesophagus coverage: confirmed** — the
+CAP source (s1379) carries oesophagus 46 cm3, stomach 348, duodenum 68, small bowel 1386 and
+colon 660, so the whole tract is available.
+
+### 5.1 Phase 5.0 status — groundwork done, the study itself is not
+
+What is in place, as the exact analogue of contrast Phase 0:
+
+**Barium is a real material.** Its K-edge sits at 37.44 keV, one shell up from iodine's 33.17,
+and it rides in a SECOND virtual column rather than sharing iodine's — the agents have
+different edges and a GI study can have both present at once, since enteric barium with IV
+iodine is an ordinary abdominal CT. Concentration is carried as mg of elemental Ba per mL;
+BaSO4 is 58.84 % Ba, so a "100 % w/v" barium is 588 mgBa/mL, which comes out at ~16,000 HU at
+70 keV — barium is opaque, which is the point of it.
+
+> The barium row is NOT XCOM-verified the way the iodine row is. It is a literature
+> reconstruction and its 40 keV point is an E^-3 extrapolation from the post-edge value. The
+> K-edge position and the 5.42 jump ratio (literature ~5.3-5.5) are sound, and those are what
+> the teaching rests on, but check the row before quoting absolute barium HU.
+
+**GI identity is material identity**, ids 47-52: bowel gas plus oesophagus, stomach, duodenum,
+small bowel and colon lumens. Same argument as the vessels — a barium study is watching the
+agent move from one part of the gut to the next, and a single 'Soft tissue' id cannot express a
+swallow.
+
+**The lumen ids do NOT flatten the contents.** A stomach label covers wall, fluid *and* the
+gastric air bubble, so stamping one id at one HU across it would erase the bubble, the colonic
+gas and every fluid level — which are findings, not noise. Gas inside a GI label becomes id 47
+and the lumen id is stamped only where the HU says fluid or soft. Measured on the CAP build:
+stomach 41,870 lumen + 1,497 gas, colon 73,978 + 8,476. This also fixes an older inaccuracy,
+where bowel gas fell through the HU thresholds and was classified as LUNG.
+
+**A bug this introduced, and closed.** `build_vessels` selected vessel voxels with `mat >= 29`.
+With the gut at 47+ that swept 312,673 GI voxels into the vessel arclength file, shifting every
+entry after the first one and corrupting the mapping the renderer walks. Both the writer and the
+browser reader now test the explicit 29..46 range. Verified: arclen entries, the manifest count
+and the reader's walk all agree at 206,138.
+
+Legend is now 53 entries. Older models still ship 28-, 29- and 47-entry headers; verified they
+still load AND still expose (hand DI +4.2, chest +0.5, both unchanged), so `mat_columns()`
+genuinely absorbs the growth.
+
+**Still to do for Phase 5:** the GI centreline (an arclength field for the gut, separate from
+the vessel one), the transport solver (peristalsis, gravity, patient position), the mucosal
+coating layer for double contrast, wiring the barium column through both render engines, and
+the fluoroscopy UI. The groundwork is the smallest part of the phase.
 
 ---
 

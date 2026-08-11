@@ -17,7 +17,11 @@
 import { BodyMaterials } from './materials.js';
 
 export const NS = 256;                 // arclength bins — matches the uint8 sVol range
-const FIRST_VESSEL = 29;               // ids 29+ are named vessels; see materials.js LIST
+// Vessels are ids 29..46. A bare `>= 29` test would be wrong now that the GI tract sits at
+// 47+: this walk has to select exactly the voxels build_vessels.py wrote entries for, and
+// including the gut here would shift every entry after the first GI voxel.
+const FIRST_VESSEL = 29, LAST_VESSEL = 46;
+const isVessel = (id) => id >= FIRST_VESSEL && id <= LAST_VESSEL;
 
 /* Decode the packed uint16 timeline from services/compute/app/contrast_export.py. */
 export function decodeTimeline(json) {
@@ -40,13 +44,13 @@ export function decodeTimeline(json) {
 
 /* Expand the sparse arclength file into a per-voxel bin index.
    arclen.bin holds one uint16 per VESSEL voxel in raster order, with no index — which
-   voxels those are is already in mat.bin (id >= 29). So the two are walked together, and
+   voxels those are is already in mat.bin (ids 29..46). So the two are walked together, and
    the uint16 normalised s is dropped to the 8 bits sVol keeps. */
 export function buildSVolume(mat, arclen) {
   const s = new Uint8Array(mat.length);
   let k = 0;
   for (let i = 0; i < mat.length; i++) {
-    if (mat[i] >= FIRST_VESSEL) s[i] = arclen[k++] >> 8;     // 65535 -> 255
+    if (isVessel(mat[i])) s[i] = arclen[k++] >> 8;           // 65535 -> 255
   }
   if (k !== arclen.length) {
     console.warn(`contrast: arclen has ${arclen.length} entries but the volume has ${k} ` +

@@ -47,6 +47,29 @@ AORTA, PULM_ARTERY, PULM_VEIN, SVC, IVC, PORTAL_VEIN, \
     BRACHIOceph_V_R, BRACHIOceph_V_L, ATRIAL_APP_L, \
     ILIAC_A_R, ILIAC_A_L, ILIAC_V_R, ILIAC_V_L = range(29, 47)
 
+# ---- GI tract (47+) ---------------------------------------------------------
+# Same argument as the vessels: a barium study is watching the agent move from one part of
+# the gut to the next, so the model has to know which part a voxel is in. GAS is its own id
+# because the gastric bubble, the colonic gas and the fluid levels are real findings — see
+# the note in materialize() on why the lumen ids are not stamped over them.
+GAS, OESOPHAGUS, STOMACH, DUODENUM, SMALL_BOWEL, COLON = range(47, 53)
+GI_HU = 15             # unopacified lumen content, until the barium layer says otherwise
+# Kept as one named list in id order so scripts/check-legends.mjs can read it the same way
+# it reads VESSELS — a concatenation expression is invisible to that parser, and a legend
+# the checker cannot see is exactly the drift it exists to catch.
+GI_LEGEND = [
+    (GAS, "Bowel gas", -1000, 0x1b2129),
+    (OESOPHAGUS, "Oesophagus lumen", GI_HU, 0xc98f6a),
+    (STOMACH, "Stomach lumen", GI_HU, 0xb97f4e),
+    (DUODENUM, "Duodenum lumen", GI_HU, 0xc59a5e),
+    (SMALL_BOWEL, "Small bowel lumen", GI_HU, 0xd0a86a),
+    (COLON, "Colon lumen", GI_HU, 0xa8804e),
+]
+GI_BY_TS_NAME = {
+    "esophagus": OESOPHAGUS, "stomach": STOMACH, "duodenum": DUODENUM,
+    "small_bowel": SMALL_BOWEL, "colon": COLON,
+}
+
 BLOOD_HU = 45          # every vessel is unenhanced blood until the contrast layer says otherwise
 VESSELS = [
     (AORTA, "Aorta"), (PULM_ARTERY, "Pulmonary artery"), (PULM_VEIN, "Pulmonary vein"),
@@ -92,7 +115,7 @@ LEGEND = [
     (ALUMINUM, "Aluminum", None, 0x9fb4c0), (TITANIUM, "Titanium", None, 0xb8c2cc),
     (STEEL, "Stainless steel", None, 0xd0d4d8), (LEAD, "Lead", None, 0x6a6f77),
     (PLASTIC, "Acrylic", 120, 0x9fb6a8),
-] + [(vid, nm, BLOOD_HU, 0xb23a3a) for vid, nm in VESSELS]
+] + [(vid, nm, BLOOD_HU, 0xb23a3a) for vid, nm in VESSELS] + GI_LEGEND
 
 BONE_PREFIX = ("vertebrae", "rib", "sternum", "scapula", "clavicula", "humerus",
                "femur", "hip", "sacrum", "skull", "costal", "radius", "ulna",
@@ -260,6 +283,25 @@ def materialize(hu, lab, spacing, body_restrict=None, overlay=None):
             mat_of[lid] = mm
     for lid, mm in mat_of.items():
         mat[lab == lid] = mm
+    # ---- GI lumen: stamp identity WITHOUT flattening the contents ----------------------
+    # The gut differs from every other labelled structure in that what is inside it is the
+    # point. A stomach label covers wall, fluid AND the gastric air bubble, so stamping one
+    # id at one HU across it would erase the bubble, the colonic gas and every fluid level —
+    # findings a barium study is largely about. So gas inside a GI label becomes GAS, and the
+    # lumen id is stamped only where the HU says fluid or soft tissue.
+    # This also fixes an older inaccuracy: bowel gas used to fall through the HU thresholds
+    # and be classified as LUNG, which is neither its density nor its identity.
+    gi_lids = {lid: GI_BY_TS_NAME[nm] for lid, nm in cmap.items() if nm in GI_BY_TS_NAME}
+    if gi_lids:
+        for lid, mm in gi_lids.items():
+            here = lab == lid
+            if not here.any():
+                continue
+            gas = here & (hu < -200)
+            mat[gas] = GAS
+            mat[here & ~gas] = mm
+            print(f"        GI -> id {mm}: {int((here & ~gas).sum())} lumen, "
+                  f"{int(gas.sum())} gas voxels")
     # Extra single-structure masks from other TotalSegmentator tasks (the `total` task has
     # no pulmonary artery, so the PE study's tracker vessel has to come from lung_vessels).
     # Stamped AFTER the label pass so they win over the lung parenchyma they run through,
