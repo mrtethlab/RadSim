@@ -453,7 +453,8 @@ const S = {
   // start of the injection, which is the single most consequential number in a CTA.
   contrast:{ on:false, timeline:null, sVol:null, scanTime:25,
              params:{ volume_ml:100, rate_ml_s:4.0, conc_mgi_ml:350, delay_s:0, saline_ml:40,
-                      saline_rate_ml_s:4.0, cardiac_output_l_min:5.0, blood_volume_ml:5000 },
+                      saline_rate_ml_s:4.0, cardiac_output_l_min:5.0, blood_volume_ml:5000,
+                      vessel_scale:1.0, perfusion_scale:1.0 },
              lut:null, lutT:null, busy:false, error:null,
              // injector transport: t0 = when START was pressed, latched = the elapsed time
              // frozen at the moment an image was actually acquired
@@ -2169,7 +2170,8 @@ function updateDetWarn(){
    enhancement you get is whatever the anatomy had reached at the moment you took the
    exposure — which is the actual skill the machine demands. Dialling "scan at 25 s" let you
    pick the answer; this makes you commit to it. */
-const CTRST_EL = { conc:'ctrstConc', hr:'ctrstHr', sv:'ctrstSv' };
+const CTRST_EL = { conc:'ctrstConc', hr:'ctrstHr', sv:'ctrstSv',
+                   cal:'ctrstCal', perf:'ctrstPerf' };
 let ctrstTimer = null;
 
 /* Injection line pressure, Poiseuille through the 2.5 m coiled line and a 20 G cannula.
@@ -2260,14 +2262,18 @@ function ctrstReadUI(){
   // Cardiac output is what the haemodynamics depend on; heart rate is what a student
   // changes. CO = HR x stroke volume, so expose both and derive the one the solver wants.
   P.cardiac_output_l_min=v('hr')*v('sv')/1000;
+  P.vessel_scale=v('cal'); P.perfusion_scale=v('perf');
   $('ctrstConcV').textContent=P.conc_mgi_ml+' mgI/mL';
   $('ctrstHrV').textContent=v('hr')+' bpm';
   $('ctrstSvV').textContent=v('sv')+' mL';
+  $('ctrstCalV').textContent=P.vessel_scale.toFixed(2)+'×';
+  $('ctrstPerfV').textContent=P.perfusion_scale.toFixed(2)+'×';
   $('ctrstTotal').textContent=(P.volume_ml+P.saline_ml)+' ml total';
   $('ctrstDur').textContent=fmtClock(ctrstTotalTime());
   $('ctrstInjNote').textContent=(P.volume_ml*P.conc_mgi_ml/1000).toFixed(1)+' g iodine · peak line pressure '
     +injPressureBar(P.rate_ml_s,P.conc_mgi_ml).toFixed(1)+' bar';
-  $('ctrstCoNote').textContent='cardiac output '+P.cardiac_output_l_min.toFixed(1)+' L/min';
+  $('ctrstCoNote').textContent='cardiac output '+P.cardiac_output_l_min.toFixed(1)+' L/min'
+    +' · calibre scales transit time, perfusion scales organ uptake';
   ctrstRenderBar();
 }
 
@@ -2531,7 +2537,7 @@ function initContrastPanel(){
     if(S.contrast.on) ctrstQueueSolve();
     else { S.contrast.lut=null; S.contrast.lutT=null; refreshReadouts(); }
   });
-  ['conc','hr','sv'].forEach(k=>{
+  ['conc','hr','sv','cal','perf'].forEach(k=>{
     $(CTRST_EL[k]).addEventListener('input',()=>{
       if(S.contrast.run.t0!=null) ctrstReset();   // cannot reprogram a running injection
       ctrstReadUI(); ctrstQueueSolve();

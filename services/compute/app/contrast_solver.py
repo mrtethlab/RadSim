@@ -85,6 +85,15 @@ class Injection:
 class Patient:
     cardiac_output_l_min: float = 5.0
     blood_volume_ml: float = 5000.0
+    # Vessel calibre, as a multiplier on the cross-sections measured from the segmentation.
+    # Velocity is Q/A, so a wider vessel carries the SAME flow more slowly and holds more
+    # blood — both push the bolus later. Ectatic aorta vs a slim young patient.
+    vessel_scale: float = 1.0
+    # Organ perfusion, as a multiplier on the itemised organ beds' share of cardiac output.
+    # The remainder is taken from (or given back to) the lower-body pool so the arterial
+    # outlets still sum to 1.0 — otherwise this knob would quietly reintroduce the very mass
+    # leak the audit in docs 6.1 removed.
+    perfusion_scale: float = 1.0
     # Cardiac output is the dominant source of real timing variability: a low output delays
     # arrival AND raises the peak, because the same iodine is diluted by less blood per
     # second. It is the most useful teaching lever in the whole model (docs §2.4).
@@ -111,11 +120,12 @@ class Vessel1D:
     tridiagonal factorisation are computed once in set_flow() and reused every step.
     """
 
-    def __init__(self, key, meta, k_disp=1.0):
+    def __init__(self, key, meta, k_disp=1.0, scale=1.0):
         self.key = key
         self.name = meta['name']
         self.length_cm = meta['lengthMM'] / 10.0
         area = np.asarray(meta['areaMM2'], dtype=np.float64) / 100.0     # mm^2 -> cm^2
+        area = area * float(scale) ** 2       # calibre: a diameter scale is an AREA scale squared
         # A(s) is unreliable at the ends (docs §4.2.1: the PA's first bin is 21x its median
         # because the inlet rule cannot find the RV outflow without heart chambers). An
         # unclamped thin bin gives a huge u = Q/A and a correspondingly vicious timestep, so
@@ -293,7 +303,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     vmeta = meta['vessels']
 
     def mk(key):
-        return Vessel1D(key, vmeta[key]) if key in vmeta else None
+        return Vessel1D(key, vmeta[key], scale=pat.vessel_scale) if key in vmeta else None
 
     # ids from build_model.VESSELS
     V = {k: mk(str(k)) for k in (29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42)}
@@ -323,12 +333,25 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     # peak ~15 s late — the single largest timing error in the first working version.
     q_arm_return = 0.03 * CO
     organs = [OrganBed(*o) for o in ORGANS]
+    # Perfusion knob: scale the itemised beds and hand the difference to the lower-body pool
+    # so the arterial outlets still sum to 1.0.
+    # Only the ARTERIAL share scales. portal_frac is set by gut flow, not by how well the
+    # liver is perfused, and scaling it would leave the portal vein transporting GUT_FRAC
+    # while the liver was charged something else — the same transport-vs-charged mismatch
+    # the audit found in the SVC.
+    ps = min(max(pat.perfusion_scale, 0.05), 2.0)
+    organ_frac0 = sum(o.flow_frac for o in organs)
+    for o in organs:
+        o.flow_frac *= ps
+    # The lower body gives up (or takes back) exactly what the organs gained, so the arterial
+    # outlets still sum to 1.0 AND the IVC drains what the pool actually carries.
+    perfusion_shift = organ_frac0 * (ps - 1.0)
 
     # Flow through each vessel. Getting these right matters for more than realism: velocity
     # is Q/A, so routing cardiac output through the SVC instead of upper-body return alone
     # would quadruple its velocity and distort its transit time.
     q_upper = HEAD_ARM_FRAC * CO
-    q_lower = LOWER_FRAC * CO
+    q_lower = (LOWER_FRAC - perfusion_shift) * CO
     # A vessel's transport flow MUST equal the flow charged to whatever it drains into. The
     # SVC transported q_upper but the right heart was charged c_out * (q_arm + q_upper) —
     # 21.3 vs 15.8 mL/s, which minted iodine at exactly the 1.35x the right heart showed, and
@@ -439,7 +462,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         # upper body: fed by the arch branches, drained by the SVC (and the arm return)
         upper.step(dt, q_upper, c_prox)
         # lower body + gut: fed by the distal aorta, drained by the IVC and the portal vein
-        body.step(dt, (LOWER_FRAC + GUT_FRAC) * CO, c_ao)
+        body.step(dt, (LOWER_FRAC + GUT_FRAC - perfusion_shift) * CO, c_ao)
 
         injected_mgi += inj.flux_mgi_s(t) * dt
         excreted_mgi += GFR_ML_S * next(o for o in organs if o.name == 'kidney').c_iv * dt

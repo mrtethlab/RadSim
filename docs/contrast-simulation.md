@@ -517,12 +517,35 @@ column perfectly well (it produced the §6.2 timing series). What has no browser
 the haemodynamic **solve**, so the gate is service reachability. A solved timeline is
 client-side, so scrubbing and scanning keep working even if the service then goes away.
 
-**Not exposed yet.** Vessel calibre and per-organ perfusion were in the original request but
-are not solver parameters — calibre comes from the segmentation's measured A(s), and the organ
-beds are a fixed table. Both need a solver argument first, so they are deliberately absent
-rather than faked with a display-only slider. Multi-phase protocols (a second CM phase at a
-different rate) would need `Injection` to take a list of phases; the phase bar is already
-drawn from a list, so the UI is ready for it.
+**Vessel calibre and organ perfusion** are now real solver parameters on `Patient`.
+
+`vessel_scale` multiplies the cross-sections measured from the segmentation. A diameter scale
+is an area scale *squared*, and velocity is Q/A, so a wider vessel carries the same flow more
+slowly and holds more blood — both push the bolus later:
+
+| | aorta peak | at |
+| --- | --- | --- |
+| calibre 0.8 (slim) | 487 HU | 31 s |
+| baseline | 456 HU | 33 s |
+| calibre 1.3 (ectatic) | 413 HU | 35 s |
+
+`perfusion_scale` multiplies the itemised organ beds' share of cardiac output — kidney 169 →
+218 → 261 → 298 HU across 0.6 / 1.0 / 1.5 / 2.0. Two things it deliberately does NOT do:
+
+- it does not scale `portal_frac`. Portal supply is set by gut flow, not by how well the liver
+  is perfused, and scaling it would leave the portal vein transporting GUT_FRAC while the
+  liver was charged something else — the same transport-vs-charged mismatch the audit found in
+  the SVC. The liver therefore stays ~60 HU across the range, being portal-dominated, which is
+  the physiologically right answer.
+- it does not quietly leak. The lower-body pool gives up exactly what the organs gain, in
+  **both** its supply and its IVC drainage, so the arterial outlets still sum to 1.0. The first
+  attempt scaled the draw without matching the drainage and the mass balance blew out to
+  -20.6 % / +24.9 %; it is back to 0.36-0.44 %, indistinguishable from baseline. Capped at 2.0
+  so the lower-body share cannot go negative.
+
+**Still not exposed.** Multi-phase protocols (a second CM phase at a different rate) need
+`Injection` to take a list of phases; the phase bar is already drawn from a list, so the UI is
+ready for it.
 
 ---
 

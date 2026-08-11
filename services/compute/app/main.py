@@ -101,6 +101,8 @@ class ContrastTimelineRequest(BaseModel):
     saline_rate_ml_s: float = 4.0
     cardiac_output_l_min: float = 5.0
     blood_volume_ml: float = 5000.0
+    vessel_scale: float = 1.0
+    perfusion_scale: float = 1.0
     duration_s: float = 90.0
 
 
