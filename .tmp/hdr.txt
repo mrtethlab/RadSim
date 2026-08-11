@@ -1,0 +1,24 @@
+HTTP/1.1 206 PARTIAL_CONTENT
+server: nginx
+date: Tue, 11 Aug 2026 22:35:23 GMT
+content-type: application/octet-stream
+content-length: 2048
+content-disposition: attachment; filename=Totalsegmentator_dataset_v201.zip
+set-cookie: session=ca31ceb0e9922f62_6a7ba3ab.2AWg2gMRZ4Ixkfm5isAVpWWAGkE; Expires=Sun, 16 Aug 2026 22:35:23 GMT; Secure; HttpOnly; Path=/; SameSite=Lax
+content-range: bytes 0-2047/23581218285
+accept-ranges: bytes
+content-type: application/octet-stream
+content-security-policy: default-src 'self' fonts.googleapis.com *.gstatic.com data: 'unsafe-inline' 'unsafe-eval' blob: zenodo-broker.web.cern.ch zenodo-broker-qa.web.cern.ch maxcdn.bootstrapcdn.com cdnjs.cloudflare.com ajax.googleapis.com webanalytics.web.cern.ch
+x-content-type-options: nosniff
+x-download-options: noopen
+x-permitted-cross-domain-policies: none
+x-frame-options: sameorigin
+x-xss-protection: 1; mode=block
+x-ratelimit-limit: 133
+x-ratelimit-remaining: 129
+x-ratelimit-reset: 1786487745
+retry-after: 21
+strict-transport-security: max-age=31556926; includeSubDomains
+referrer-policy: strict-origin-when-cross-origin
+x-source: files-primary
+

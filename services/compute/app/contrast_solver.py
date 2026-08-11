@@ -337,6 +337,21 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     V = {k: mk(str(k)) for k in (29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42)}
     aorta, pa, pv, svc, ivc, portal = V[29], V[30], V[31], V[32], V[33], V[34]
 
+    # The loop is right heart -> PA -> lungs -> PV -> left heart -> aorta, so a model without
+    # one of those four cannot be solved at all — it has no circulation, just disconnected
+    # pipes. Say which is missing: a bare AttributeError several hundred lines later tells the
+    # person building a new model nothing about what their segmentation lacked. The pulmonary
+    # artery is the usual culprit, because TotalSegmentator's `total` task does not have one —
+    # it comes from the separate `lung_vessels` task (see build_model --lung-vessels).
+    missing = [n for n, v in (('aorta', aorta), ('pulmonary artery', pa),
+                              ('pulmonary vein', pv), ('superior vena cava', svc)) if v is None]
+    if missing:
+        raise ValueError(
+            'this model cannot carry contrast: no ' + ', no '.join(missing)
+            + '. The circulation is a loop and these four are on it.'
+            + (' The pulmonary artery comes from TotalSegmentator\'s lung_vessels task, not'
+               ' `total` — rebuild with --lung-vessels.' if 'pulmonary artery' in missing else ''))
+
     CO = pat.co_ml_s
     # Transit volumes, not anatomical volumes: what matters is V/Q, the smearing each stage
     # applies. RV + pulmonary bed + LA + LV on the transit path is ~450 mL in total, and

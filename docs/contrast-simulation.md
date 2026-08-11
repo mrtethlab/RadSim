@@ -600,8 +600,11 @@ delay and NaCl: a segment that vanished when set to 0 could never be set back.
 Contrast works on `chest` only. Extending it to `chestabdopelvis` was repeatedly described as
 mechanical. It is not, and the reason is the source data.
 
-`chest` comes from the TotalSegmentator dataset — a normal diagnostic CT. Every other subject
-comes from **VSD z045, a postmortem whole-body CT**, and that is the problem.
+`chest` comes from the **3D Slicer CTChest sample** — a normal diagnostic CT, segmented locally
+with TotalSegmentator. Every other subject comes from **VSD z045, a postmortem whole-body CT**,
+and that is the problem. (An earlier revision of this section said `chest` came from the
+TotalSegmentator *dataset*; it did not, and the distinction matters because that dataset is a
+separate, and as it turns out very good, source of its own — see §6.8.)
 
 What was established, in order:
 
@@ -800,6 +803,50 @@ reconstruction, and during ROI placement there is no timer running at all — so
 onto a vessel showed the previous position's number until the series started. The reconstructed
 slice is kept on the state and re-sampled on each drag: measured −551 HU on lung, 232 HU after
 dragging onto the mediastinum, with no reconstruction in between.
+
+
+### 6.8 CAP unblocked — the TotalSegmentator dataset as a source
+
+§6.4 concluded that CAP needed a diagnostic chest-abdomen-pelvis CT, and §6.4's addendum showed
+both whole-body subjects fail. The dataset behind TotalSegmentator (Zenodo 10047292, v2.0.1,
+**CC BY 4.0**) is that source: 1228 studies, each shipping the reference segmentations of all
+117 structures alongside the CT.
+
+**Fetched without downloading 23.6 GB.** A zip keeps its index at the end and Zenodo honours
+HTTP range requests, so `app/fetch_totalseg.py` reads the central directory over the wire
+(147,361 members), pulls `meta.csv` to choose a subject, and then fetches only that subject's
+byte ranges. **64 MB instead of 23.58 GB.**
+
+**Subject s1379** — `ct angiography thorax-abdomen-pelvis`, 65 M, 100 kVp, 279x279x490 @ 1.5 mm
+= 418x418x735 mm. Chosen because it is a **CTA**: the vessels are opacified, so the shipped
+vessel labels are at their best. Every structure the model needs is present and plausible:
+
+| | s1379 | z025 (rejected) |
+| --- | --- | --- |
+| aorta | 759 cm³ | 5.7 |
+| inferior vena cava | 92 cm³ | absent |
+| portal + splenic vein | 21 cm³ | absent |
+| iliac arteries L/R | 34 / 44 cm³ | absent |
+| iliac veins L/R | 37 / 30 cm³ | absent |
+| liver / spleen / pancreas | 2180 / 289 / 103 cm³ | 68 / absent / absent |
+
+Built at **2.0 mm** (the spacing decided in §6.4) to 209x165x356, with materials 29-46 all
+present — every named vessel keeps its own id. The arclength pass maps 17 vessels: aorta
+568 mm / 751 mL (thoracoabdominal, against the chest model's 339 mm / 379 mL thoracic-only),
+IVC 227 mm, both iliac arteries 220 mm. **The pelvis is reachable for the first time.**
+
+Two things the dataset does not give you:
+
+- **No pulmonary artery.** The `total` task has none — it comes from the separate `lung_vessels`
+  task, exactly as it did for the chest (§4.3). Without it the solver has no circulation at all,
+  only disconnected pipes, and it used to fail several hundred lines later with a bare
+  `AttributeError`. It now names the missing vessel and says where to get it.
+- **Heart chambers** are still one label; that remains blocked on the academic licence (§4.3.1)
+  and is unaffected by the new source.
+
+`build_vessels` warns that the right common carotid's seed band is collapsing a slab. That
+vessel is clipped by the top of the FOV, so its inlet is a cut face rather than a true origin.
+It does not matter for a CAP study but would for a carotid one.
 
 
 ---

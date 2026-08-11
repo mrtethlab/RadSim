@@ -1,10 +1,10 @@
 {
-  "name": "Chest / abdo / pelvis",
-  "source": "VSD Full Body postmortem CT (z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
+  "name": "Chest / abdomen / pelvis",
+  "source": "TotalSegmentator dataset \u00b7 segmented with TotalSegmentator",
   "dims": [
-    175,
-    147,
-    327
+    209,
+    165,
+    356
   ],
   "spacing": [
     2.0,
@@ -183,26 +183,162 @@
       "name": "Lead",
       "hu": null,
       "color": "#6a6f77"
+    },
+    {
+      "id": 28,
+      "name": "Acrylic",
+      "hu": 120,
+      "color": "#9fb6a8"
+    },
+    {
+      "id": 29,
+      "name": "Aorta",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 30,
+      "name": "Pulmonary artery",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 31,
+      "name": "Pulmonary vein",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 32,
+      "name": "Superior vena cava",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 33,
+      "name": "Inferior vena cava",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 34,
+      "name": "Portal / splenic vein",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 35,
+      "name": "Brachiocephalic trunk",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 36,
+      "name": "Subclavian artery R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 37,
+      "name": "Subclavian artery L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 38,
+      "name": "Common carotid R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 39,
+      "name": "Common carotid L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 40,
+      "name": "Brachiocephalic vein R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 41,
+      "name": "Brachiocephalic vein L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 42,
+      "name": "Left atrial appendage",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 43,
+      "name": "Iliac artery R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 44,
+      "name": "Iliac artery L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 45,
+      "name": "Iliac vein R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 46,
+      "name": "Iliac vein L",
+      "hu": 45,
+      "color": "#b23a3a"
     }
   ],
   "materialsPresent": [
     0,
     1,
     2,
+    5,
     6,
     7,
-    8,
     10,
     11,
+    12,
+    13,
+    14,
     15,
     16,
     17,
     18,
-    23
+    23,
+    29,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46
   ],
   "huReference": [
-    -1024,
-    3070
+    -1050,
+    3140
   ],
-  "backendOnly": false
+  "backendOnly": false,
+  "vessels": "chestabdopelvis.vessels.json",
+  "arclen": "chestabdopelvis.arclen.bin"
 }
