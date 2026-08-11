@@ -627,6 +627,29 @@ change — is out of distribution. The lungs confirm it independently: the large
 low-HU regions are ~8.8 cm blocks where a lung should be ~25 cm, because postmortem lungs are
 fluid-filled.
 
+**z025, the other whole-body subject, fails identically.** It had never been assessed, so it was
+the obvious thing to check before accepting the blocker. Segmenting the WHOLE volume at 3 mm —
+which avoids every objection about a mis-placed crop, and runs in about 70 s — returns 46 of 117
+classes, and the ones that matter come back as fragments or not at all:
+
+| structure | z025 | a real one |
+| --- | --- | --- |
+| aorta | 5.7 cm³ | ~380 cm³ |
+| liver | 67.7 cm³ | ~1500 cm³ |
+| heart | 41.0 cm³ | ~630 cm³ |
+| IVC, portal vein, iliac arteries and veins | **absent** | — |
+| spleen, both kidneys, pancreas, stomach | **absent** | — |
+
+The same signature as z045: colon survives, the vasculature and most solid organs do not. Two
+subjects from the same postmortem series, the same failure, so this is a property of the data.
+
+Three cheap image-statistic proxies for "is this a living scan" were tried first and all three
+were wrong — the last one was checked against the known-good chest source and reported 69 cm³ of
+lung air on an obviously aerated diagnostic CT, because hole-filling never closes a lung that
+connects to outside air through the trachea. **Segment it and look at what comes back** is the
+only measurement here that has been trustworthy; `app/probe_cap_source.py` exists so the test is
+one command on any future candidate.
+
 **So CAP contrast needs a different source CT, not more segmentation effort.** A diagnostic
 chest-abdomen-pelvis scan (the TotalSegmentator dataset is public and is where `chest` came
 from) would segment normally and rebuild through the existing pipeline unchanged. Spacing is
