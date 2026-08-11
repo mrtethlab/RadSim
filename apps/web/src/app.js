@@ -1450,11 +1450,24 @@ async function computeRadiograph(){
   // fraction of scatter a grid still passes (~15%). Kept modest so it adds realistic
   // veiling glare (lowering contrast for large no-grid fields — the reason grids exist)
   // WITHOUT washing the image out.
-  const SCAT_SPR_MAX=_t.spr??4.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
+  // SCAT_SPR_MAX is calibrated against the quantity that can actually be checked: the
+  // RESIDUAL scatter-to-primary ratio at the detector after the grid, which for a gridded PA
+  // chest is ~0.2-0.5. Measured in the lung field: 4.0 -> 0.54 (top of band, lung/mediastinum
+  // 2.45), 2.0 -> 0.27 (mid band, 3.53), 1.5 -> 0.20 (3.53 -> 4.11). 2.0 it is. Setting it by
+  // the contrast ratio instead would mean pushing residual SPR below anything defensible.
+  const SCAT_SPR_MAX=_t.spr??2.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
   let scatterFog=0;
   {
     const distC=Math.hypot(source[0],source[1],source[2])||100, invSqC=(100*100)/(distC*distC);
-    let sumP=0, nF=0; for(let k=0;k<dose.length;k++){ if(mask[k]){ sumP+=dose[k]; nF++; } }
+    // Reference the fog to the primary that actually passed THROUGH the patient, not to the
+    // whole field. Scatter is produced in tissue, so raw beam around the anatomy contributes
+    // none of it — yet averaging it in inflates meanP and therefore the fog. With an open
+    // collimator that put the mediastinum at 92 % scatter and collapsed lung/mediastinum
+    // contrast to 1.9x against a real 5-15x. Same error as the EI VOI: a field-wide mean that
+    // silently includes direct exposure.
+    let maxP=0; for(let k=0;k<dose.length;k++) if(mask[k] && dose[k]>maxP) maxP=dose[k];
+    const attenCut=maxP*0.90;                       // above this the ray missed the patient
+    let sumP=0, nF=0; for(let k=0;k<dose.length;k++){ if(mask[k] && dose[k]<attenCut){ sumP+=dose[k]; nF++; } }
     if(nF){
       const meanP=sumP/nF, meanIncident=I0*invSqC;
       const atten=Math.max(0,Math.min(1,1-meanP/(meanIncident||1)));     // 0 = air, ~1 = heavily attenuated

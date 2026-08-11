@@ -22,8 +22,13 @@ export const EI_K = 900;
 
    A real system is calibrated so the correct chamber yields DI 0, so this is a fixed constant
    rather than a per-exposure fit: choosing the WRONG chamber must still mis-expose, which is
-   the entire point of the exercise. Measured 830/300 at 7.78 mAs on the reference chest. */
-export const AEC_CHAMBER_CAL = 2.8;
+   the entire point of the exercise.
+
+   It is simply the VOI-to-chamber ratio: solving the AEC termination shows EI_K cancels out
+   of the resulting DI, so this constant alone sets where a correct AEC lands. Re-measured at
+   6.1 after the scatter fix — scatter had been the great equaliser, lifting the mediastinum
+   toward the lung, so removing it widened the true ratio from 2.8. */
+export const AEC_CHAMBER_CAL = 6.1;
 export const DIRECT_CUT = 0.60;
 
 export const Detector = (()=>{
