@@ -897,6 +897,7 @@ function wireModeToggle() {
   const home = ctx.$('homeBtn');
   if (home) home.addEventListener('click', () => applyMode('home'));
   document.querySelectorAll('#homeScreen .home-card').forEach((card) => {
+    if (!card.dataset.mode) return;            // in-development cards open nothing
     // The card is clickable as a whole, but the Tutorial button inside it must not read as
     // "open the mode" — it stops the event itself (see tutorial.js).
     card.addEventListener('click', (e) => {

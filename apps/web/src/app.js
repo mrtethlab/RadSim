@@ -758,7 +758,11 @@ function giTick(){
   const now = performance.now();
   const wall = Math.min((now - (B.lastTick || now)) / 1000, 0.5);   // cap after a tab stall
   B.lastTick = now;
-  B.study.advance(wall * B.speed);
+  // The solver steps in 0.5 s quanta and advance() rounds — so at 1x a 100 ms tick asked
+  // for 0.1 s, rounded to zero steps, and the clock never moved: 1x behaved as a pause.
+  // Bank the un-stepped remainder instead; advance() returns what it actually consumed.
+  B.acc = (B.acc || 0) + wall * B.speed;
+  B.acc -= B.study.advance(B.acc);
   B.timeline = B.study.sample();
   B.lut = null; B.lutT = null;
   giRender();
@@ -886,11 +890,12 @@ function initGIPanel(){
     if(!B.on) return;
     if(!B.study && !giBegin()){ giRender(); return; }
     B.running = !B.running;
-    B.lastTick = performance.now();
+    B.lastTick = performance.now(); B.acc = 0;
     giRender();
   });
   $('giReset').addEventListener('click', ()=>{
     B.running = false; B.study = null; B.timeline = null; B.lut = null; B.lutT = null;
+    B.acc = 0;
     giRender(); syncScene();
   });
   document.querySelectorAll('#giSpeedSeg button').forEach(b=>{
