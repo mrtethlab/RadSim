@@ -386,5 +386,6 @@
  "arclen": "chestabdopelvis.arclen.bin",
  "contrast": "chestabdopelvis.contrast.json",
  "gi": "chestabdopelvis.gi.json",
- "giarc": "chestabdopelvis.giarc.bin"
+ "giarc": "chestabdopelvis.giarc.bin",
+ "barium": "chestabdopelvis.barium.json"
 }

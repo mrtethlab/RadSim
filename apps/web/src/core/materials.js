@@ -233,6 +233,10 @@ export const BodyMaterials = (()=>{
     BARIUM_COL: LIST.length + 1,
     muBariumPerConc,
     huPerMgBaMl: (keV)=> 1000 * muBariumPerConc(keV) / muWaterAt(keV),
+    // Length of a path-length vector: the legend plus one column per agent. Everything that
+    // allocates or indexes one uses this rather than counting, so adding a third agent later
+    // is one line here instead of a hunt through the tracer and both mu tables.
+    TRACE_LEN: LIST.length + 2,
   };
 })();
 

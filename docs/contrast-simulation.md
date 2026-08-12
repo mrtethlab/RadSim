@@ -424,8 +424,49 @@ what 150 mL of barium does to a 46 mL oesophagus. Peak anywhere is now 587 again
 the coating kinetics, and the per-segment mobilities. What IS verified is mass closure, the
 ordering and timing of the transit, and the decubitus asymmetry.
 
-**Still to do for Phase 5:** wiring the barium column through both render engines, the
-double-contrast gas phase, and the fluoroscopy UI.
+### 5.4 Barium reaches the renderer
+
+Barium rides a SECOND virtual column beside iodine's, not a shared "contrast" channel: the two
+have different K-edges and can be present at once. `BodyMaterials.TRACE_LEN` now names the
+width of a path-length vector (legend + one column per agent) so the tracer and both mu tables
+size themselves from one place instead of counting.
+
+The trace loop gains one line. Neither agent costs anything when its table is absent:
+
+```js
+if (conc) L[IOD] += seg * conc[id * NS + (sVol ? sVol[di] : 0)];
+if (ba)   L[BAR] += seg * ba  [id * NS + (giVol ? giVol[di] : 0)];
+```
+
+`core/gi.js` mirrors `core/contrast.js` — decode, per-voxel bin map, per-time LUT — with one
+real difference. A vessel carries contrast only in its lumen; the gut carries barium in two
+places, suspended in the lumen AND coating the mucosa, and in a double-contrast study the
+coating is the whole image. Both fold into one table by turning the wall's mg/cm2 into the
+equivalent suspension path length, so the tracer still needs no branch.
+
+The Python backend is untouched and stays safe: `mat_columns` already takes the wider of the
+volume's legend and the browser's mu table and pads, so the barium column simply stays zero
+there until it is filled.
+
+**Verified, and the regression risk was real** — widening the path-length vector touches every
+image the program makes:
+
+| | |
+| --- | --- |
+| 5 cm of 588 mgBa/mL at 70 keV | optical depth 15.8 (transmission 1.4e-7 — opaque, as barium is) |
+| 5 cm of 350 mgI/mL | 8.8 |
+| 5 cm of water | 0.97 |
+| x-ray after the change | chest DI +0.5, unchanged |
+| CT contrast after the change | aorta 447 HU at 31 s — the solver's own number |
+| barium decode, browser side | oesophagus peaks 2 s, stomach 10 s, duodenum 5 min, small bowel 15 min, colon 30 min |
+
+The shipped timeline is 0.38 MB, in line with the contrast preset. It got there by sampling at
+the rate the physiology changes — every second through the swallow, every five through gastric
+emptying, every thirty after. Keeping the solver's flat 1 Hz wrote 1801 frames and 5.5 MB, more
+than fourteen times the contrast preset for a study that changes far more slowly.
+
+**Still to do for Phase 5:** loading the barium field in the app (the renderer accepts it; the
+app does not yet fetch it), the double-contrast gas phase, and the fluoroscopy UI.
 
 ---
 
