@@ -5,6 +5,14 @@
     --amber:#ffb23e; --amber-dim:#7a5518;
     --green:#46d17f; --red:#ff3b30;
     --txt:#c9d4dd; --muted:#7f8c99; --muted2:#5a6570;
+    /* DARK-SURFACE INK — the structural answer to a recurring bug. Vendor themes (GE)
+       repaint --txt/--muted dark navy for their LIGHT panels, so any element that
+       hard-codes a dark background while reading ink from the theme goes dark-on-dark
+       the moment a theme flips — the model selector was the latest casualty. House rule:
+       a component either takes BOTH surface and ink from the theme, or hard-codes a dark
+       surface and takes ink from these tokens, which no theme is allowed to override.
+       Never mix the two. */
+    --dtxt:#dfe8f0; --dmuted:#9fb4c4; --dmuted2:#708496; --dcyan:#7fc8d8;
     --seg:'Share Tech Mono', ui-monospace, monospace;
     --disp:'Barlow Condensed', 'Arial Narrow', sans-serif;
   }
@@ -33,7 +41,7 @@
   body.theme-ge .hdr{background:linear-gradient(180deg,#3f9080,#357d6d); border-bottom-color:#2a5f52}
   body.theme-ge .hdr .t{color:#effbf7}
   body.theme-ge .hdr .t b{color:#0c3350}
-  body.theme-ge .hdr .u{color:#d6efe8}
+  body.theme-ge .hdr .u{color:#f2fffb}
   /* GE console buttons: raised bevel with a solid colour ring so they read on the light panel */
   body.theme-ge .ctbtn{background:linear-gradient(180deg,#f6faff,#d4dfea);
     box-shadow:0 2px 5px rgba(18,40,64,.4), inset 0 1px 0 rgba(255,255,255,.85), 0 0 0 1px rgba(18,40,64,.15)}
@@ -249,7 +257,7 @@
   .filmnote.r{left:auto; right:8px; text-align:right}
   .filmnote.t{bottom:auto; top:6px}
   .noexp{position:absolute; inset:0; display:flex; align-items:center; justify-content:center; z-index:2;
-     color:var(--muted2); font-family:var(--seg); letter-spacing:3px; font-size:12px; text-align:center}
+     color:var(--dmuted2); font-family:var(--seg); letter-spacing:3px; font-size:12px; text-align:center}
   .prog{position:absolute; inset:auto 0 0 0; height:3px; background:var(--red); width:0%; transition:width .05s; z-index:4}
   /* yellow "PREVIEW" badge — shown while the viewer image is a low-quality preview
      (the full reconstruction is still processing) */
@@ -427,7 +435,7 @@ body.mode-editor .edpage.show{display:flex}
 .edmat .sw{width:14px; height:14px; border-radius:3px; border:1px solid rgba(255,255,255,.25); flex:none}
 .edmat .mn{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .edmat .mh{font-family:var(--seg); font-size:9px; color:var(--muted2)}
-.edname{width:130px; background:#0b1116; color:var(--txt); border:1px solid var(--edge2); border-radius:4px;
+.edname{width:130px; background:#0b1116; color:var(--dtxt); border:1px solid var(--edge2); border-radius:4px;
   font-family:var(--disp); font-size:13px; padding:4px 8px}
 .edsaved{margin-top:8px; display:flex; flex-direction:column; gap:3px; max-height:180px; overflow:auto}
 .edsave-row{display:flex; align-items:center; gap:6px; padding:4px 7px; background:#0d1319;
@@ -787,14 +795,14 @@ body.subj-hand .hand-only{display:flex}
 .histcanvas{display:block; width:100%; max-width:260px; height:auto; margin:2px 0 10px;
   background:#0a0f14; border:1px solid var(--edge2); border-radius:4px}
 body.hist-off .histcanvas{display:none}
-.subjectsel{width:100%; background:#0b1116; color:var(--txt);
+.subjectsel{width:100%; background:#0b1116; color:var(--dtxt);
   border:1px solid var(--edge2); border-radius:4px; font-family:var(--disp);
   font-size:12px; padding:4px 8px; margin-top:2px; cursor:pointer}
 /* the editor picks its models with its own Load-preset control — one selector per mode */
 body.mode-editor #subjectGrp{display:none}
-.slsel{background:#0b1116; color:var(--txt); border:1px solid var(--edge2); border-radius:4px;
+.slsel{background:#0b1116; color:var(--dtxt); border:1px solid var(--edge2); border-radius:4px;
   font-family:var(--disp); font-size:13px; padding:5px 10px; min-width:150px}
-.slsel:disabled{color:var(--muted2)}
+.slsel:disabled{color:var(--dmuted2)}
 .slmain{flex:1 1 auto; min-height:0; display:flex; align-items:center; justify-content:center}
 /* the canvas bitmap is always square; object-fit keeps it square inside a bay of
    any proportion (height:100% + max-width used to defeat aspect-ratio and stretch
@@ -1394,10 +1402,10 @@ body.mobile .app > .col{width:auto; border:0}
 body.mobile .mtabs.show{display:flex; position:fixed; left:0; right:0; bottom:0; z-index:220;
   height:calc(56px + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom);
   background:#0d1218; border-top:1px solid var(--edge2)}
-.mtabs button{flex:1; border:0; background:transparent; color:var(--muted); cursor:pointer;
+.mtabs button{flex:1; border:0; background:transparent; color:var(--dmuted); cursor:pointer;
   font-family:var(--disp); font-weight:700; font-size:13px; letter-spacing:1.5px;
   text-transform:uppercase}
-.mtabs button.on{color:var(--cyan); box-shadow:inset 0 3px 0 var(--cyan)}
+.mtabs button.on{color:var(--dcyan); box-shadow:inset 0 3px 0 var(--dcyan)}
 
 /* ---- exposure dock: the real ROTOR/EXPOSE (or CT transport) block, reparented ---- */
 .mdock{display:none}
