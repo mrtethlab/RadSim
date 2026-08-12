@@ -526,9 +526,38 @@ machine precision.
 per-time segment means to a JSON the dev server can serve, and compare against `solveGI` in the
 browser. The artefact is scratch and is not committed.
 
-**Still to do for Phase 5:** the double-contrast gas phase, and the fluoroscopy UI — a study
-clock, administration controls, and wiring the pose to the existing rotate/tilt sliders, which
-the solver now supports live.
+### 5.7 A live study, not a timeline
+
+A barium examination is not a precomputed timeline. The operator screens, turns the patient,
+and watches the agent respond FROM THAT MOMENT. Re-solving the whole study with a new pose
+would rewrite history — putting barium where it would have gone had the patient been lying
+that way the entire time.
+
+So `GIStudy` holds the state and is advanced. `setPose` rebuilds only the velocity field
+(0.1 ms); the lumen and mucosal contents carry straight across, so the turn changes what
+happens next and nothing else. `solveGI` is now a thin wrapper over it, which is what keeps the
+live and batch paths from drifting apart.
+
+Demonstrated: erect for 10 minutes, then turned right-lateral for 10 more, against never
+turning at all — mean lumen mg Ba/mL at 20 minutes:
+
+| | stomach | duodenum | small bowel |
+| --- | --- | --- | --- |
+| erect throughout | 112.6 | 61.5 | 11.8 |
+| erect 10 min, then RLD | 123.3 | 38.2 | 10.5 |
+
+Different outcome from the same dose and the same elapsed time, because of when the patient was
+turned. Mass still closes at −0.0000 %.
+
+The refactor did break the batch path once, and the cross-check caught it: keeping a frame
+BEFORE the step rather than after labelled every frame with the previous step's state. A
+one-step lag, invisible in the audit and in the shape of the curves, but an 11 % disagreement
+with the reference at 10 s where the duodenum fills fastest. Back to **0.005 %** once frame k
+was labelled with the time its step was taken for, as `gi_solver.py` does.
+
+**Still to do for Phase 5:** the double-contrast gas phase, and the fluoroscopy panel — a study
+clock and administration controls, and binding `setPose` to the existing rotate/tilt sliders,
+which the solver now supports live.
 
 ---
 

@@ -172,122 +172,185 @@ class Tube {
 /* Run the tract. `gi` is the parsed <name>.gi.json.
    Returns { times, lumen: Map(vid -> Float32Array(nT*N)), wall: same, audit } — the same
    shape decodeGITimeline produces, so buildBariumLUT consumes either without caring. */
-export function solveGI(gi, {
-  route = 'oral', volumeMl = 150, concMgBaMl = 588, overS = 5,
-  pose = {}, duration = 1800, dt = 0.5,
-  kOn = 0.010, kOff = 0.0009, wMax = 12.0, coatPerCm = 10.0,
-} = {}) {
-  const segs = gi.segments || {};
-  let order = ORDER.filter((v) => segs[String(v)]);
-  if (!order.length) throw new Error('this model has no GI segments');
-  if (route === 'rectal') order = order.slice().reverse();
+/* ============================================================================
+   A LIVE STUDY
+   A barium examination is not a precomputed timeline. The operator screens, turns the
+   patient, and watches the agent respond FROM THAT MOMENT — so re-solving the whole study
+   with a new pose would rewrite history, putting barium where it would have gone had the
+   patient been lying that way the entire time.
 
-  const gdir = gravityDir(pose);
-  const ds = 1 / (N - 1);
-  const volNode = {}, area = {}, tubes = {}, wall = {};
-  const hprof = {};
-  let lo = Infinity, hi = -Infinity;
-  for (const v of order) {
-    hprof[v] = heightProfile(segs[String(v)], gdir);
-    for (let i = 0; i < N; i++) { if (hprof[v][i] < lo) lo = hprof[v][i]; if (hprof[v][i] > hi) hi = hprof[v][i]; }
-  }
-  const span = Math.max(hi - lo, 1);
-  for (const v of order) {
-    const p = SEGMENTS[v];
-    volNode[v] = Math.max(segs[String(v)].volumeML, 1e-3) / N;
-    area[v] = 2 * volNode[v] / p.radius;               // mucosal area, not the cross-section
-    const u = new Float64Array(N);
-    const sgn = route === 'rectal' ? -1 : 1;
-    const u0 = 1 / Math.max(p.transit, 1e-3);
-    for (let i = 0; i < N; i++) {
-      const im = Math.max(i - 1, 0), ip = Math.min(i + 1, N - 1);
-      const dh = (hprof[v][ip] - hprof[v][im]) / ((ip - im) * ds) / span;
-      const ug = Math.max(-2, Math.min(4, -dh * G_GAIN * p.mobility));
-      u[i] = sgn * u0 * (1 + ug);
+   GIStudy therefore holds the state and is advanced. `setPose` changes gravity from now on,
+   which is what turning a patient does, and costs only a velocity-field rebuild — the
+   departure map and the diffusion band depend on u, so they are rebuilt with it while the
+   lumen and mucosal contents carry straight across.
+   ============================================================================ */
+export class GIStudy {
+  constructor(gi, {
+    route = 'oral', volumeMl = 150, concMgBaMl = 588, overS = 5,
+    pose = {}, dt = 0.5,
+    kOn = 0.010, kOff = 0.0009, wMax = 12.0, coatPerCm = 10.0,
+  } = {}) {
+    const segs = gi.segments || {};
+    this.segs = segs;
+    this.order = ORDER.filter((v) => segs[String(v)]);
+    if (!this.order.length) throw new Error('this model has no GI segments');
+    if (route === 'rectal') this.order = this.order.slice().reverse();
+    Object.assign(this, { route, volumeMl, concMgBaMl, overS, dt, kOn, kOff, wMax, coatPerCm });
+    this.ds = 1 / (N - 1);
+    this.t = 0; this.given = 0; this.spill = 0;
+    this.volNode = {}; this.area = {}; this.wall = {}; this.handover = {}; this.tubes = {};
+    for (const v of this.order) {
+      const p = SEGMENTS[v];
+      this.volNode[v] = Math.max(segs[String(v)].volumeML, 1e-3) / N;
+      this.area[v] = 2 * this.volNode[v] / p.radius;   // mucosal area, not the cross-section
+      this.wall[v] = new Float64Array(N);
+      this.handover[v] = 0;
     }
-    tubes[v] = new Tube(u, p.disp, ds, dt);
-    wall[v] = new Float64Array(N);
+    this.setPose(pose);
   }
 
-  const steps = Math.round(duration / dt);
-  const keepEvery = (t) => (t <= 30 ? 1 : t <= 300 ? 5 : 30);
-  const times = [], lumOut = {}, walOut = {};
-  for (const v of order) { lumOut[v] = []; walOut[v] = []; }
-  const handover = {}; for (const v of order) handover[v] = 0;
-  let spill = 0, given = 0, lastKept = -1e9;
+  /* Rebuild the velocity field for a new patient position. The lumen and mucosal state are
+     untouched — only what happens NEXT changes, which is the whole point. */
+  setPose(pose) {
+    this.pose = pose || {};
+    const gdir = gravityDir(this.pose), ds = this.ds;
+    const hprof = {};
+    let lo = Infinity, hi = -Infinity;
+    for (const v of this.order) {
+      hprof[v] = heightProfile(this.segs[String(v)], gdir);
+      for (let i = 0; i < N; i++) {
+        if (hprof[v][i] < lo) lo = hprof[v][i];
+        if (hprof[v][i] > hi) hi = hprof[v][i];
+      }
+    }
+    const span = Math.max(hi - lo, 1);
+    const sgn = this.route === 'rectal' ? -1 : 1;
+    for (const v of this.order) {
+      const p = SEGMENTS[v], u = new Float64Array(N), u0 = 1 / Math.max(p.transit, 1e-3);
+      for (let i = 0; i < N; i++) {
+        const im = Math.max(i - 1, 0), ip = Math.min(i + 1, N - 1);
+        const dh = (hprof[v][ip] - hprof[v][im]) / ((ip - im) * ds) / span;
+        const ug = Math.max(-2, Math.min(4, -dh * G_GAIN * p.mobility));
+        u[i] = sgn * u0 * (1 + ug);
+      }
+      const old = this.tubes[v];
+      const tube = new Tube(u, p.disp, ds, this.dt);
+      if (old) tube.c.set(old.c);                     // contents carry across the change
+      this.tubes[v] = tube;
+    }
+  }
 
-  for (let k = 0; k <= steps; k++) {
-    const t = k * dt;
-    // half-open [start, start+over): inclusive at both ends delivers one step too many
-    const rate = (t >= 0 && t < overS) ? volumeMl * concMgBaMl / Math.max(overS, 1e-3) : 0;
-    const mg = rate * dt; given += mg;
-    let cInFirst = mg > 0 ? mg / volNode[order[0]] : 0;
+  stepOnce() {
+    const { order, dt, volNode, area, wall, handover, tubes } = this;
+    const t = this.t;
+    const rate = (t >= 0 && t < this.overS)
+      ? this.volumeMl * this.concMgBaMl / Math.max(this.overS, 1e-3) : 0;
+    const mg = rate * dt; this.given += mg;
+    const cInFirst = mg > 0 ? mg / volNode[order[0]] : 0;
 
     for (let i = 0; i < order.length; i++) {
       const v = order[i], tube = tubes[v];
-      // The administration AND anything refluxed back in. Passing only cInFirst for i === 0
-      // and then zeroing handover[0] discarded every gram the stomach pushed back into the
-      // oesophagus — which prone actively promotes, so prone lost 26 % of the dose.
-      const over = tube.addMass((i === 0 ? cInFirst : 0) + handover[v], concMgBaMl);
+      const over = tube.addMass((i === 0 ? cInFirst : 0) + handover[v], this.concMgBaMl);
       handover[v] = 0;
       if (over > 0) {
         if (i + 1 < order.length) handover[order[i + 1]] += over * volNode[v] / volNode[order[i + 1]];
-        else spill += over * volNode[v];
+        else this.spill += over * volNode[v];
       }
       const [left, refluxed] = tube.step();
       const c = tube.c, w = wall[v];
-      // One mass transfer both sides derive from, so the exchange is conservative by
-      // construction. Updating each side and clipping afterwards is not: the clip on the
-      // lumen at zero invents mass the wall has already been credited with.
       for (let j = 0; j < N; j++) {
-        const on = kOn * c[j] * Math.max(0, Math.min(1, 1 - w[j] / wMax));
-        const off = kOff * w[j];
+        const on = this.kOn * c[j] * Math.max(0, Math.min(1, 1 - w[j] / this.wMax));
+        const off = this.kOff * w[j];
         let dm = (on - off) * area[v] * dt;
         dm = Math.min(dm, c[j] * volNode[v]);
         dm = Math.max(dm, -w[j] * area[v]);
-        dm = Math.min(dm, (wMax - w[j]) * area[v]);
+        dm = Math.min(dm, (this.wMax - w[j]) * area[v]);
         c[j] -= dm / Math.max(volNode[v], 1e-6);
         w[j] += dm / Math.max(area[v], 1e-9);
       }
       if (left > 0) {
         const mass = left * volNode[v];
         if (i + 1 < order.length) handover[order[i + 1]] += mass / volNode[order[i + 1]];
-        else spill += mass;
+        else this.spill += mass;
       }
-      if (refluxed > 0) {              // back up the tract: reflux is a finding, not an error
+      if (refluxed > 0) {            // back up the tract: reflux is a finding, not an error
         const mass = refluxed * volNode[v];
         if (i > 0) handover[order[i - 1]] += mass / volNode[order[i - 1]];
-        else spill += mass;            // out of the mouth
+        else this.spill += mass;     // out of the mouth
       }
     }
-    if (t - lastKept >= keepEvery(t) - 1e-6 || k === steps) {
-      lastKept = t; times.push(t);
-      for (const v of order) { lumOut[v].push(tubes[v].c.slice()); walOut[v].push(wall[v].slice()); }
-    }
+    this.t += dt;
   }
 
-  // Flatten into the (nT * N) layout buildBariumLUT expects, folding the mucosal coat into
-  // the same table as the lumen (see the note in gi.js on why one table suffices).
-  const nT = times.length;
-  const lumen = new Map(), wallM = new Map();
-  for (const v of order) {
-    const L = new Float32Array(nT * N), W = new Float32Array(nT * N);
-    for (let i = 0; i < nT; i++) {
-      L.set(lumOut[v][i], i * N);
-      W.set(walOut[v][i], i * N);
+  /* Advance by `seconds` of study time. Capped so a long fast-forward cannot lock the tab —
+     4000 steps is ~30 min of tract for ~100 ms of wall clock. */
+  advance(seconds, maxSteps = 4000) {
+    const n = Math.min(Math.max(0, Math.round(seconds / this.dt)), maxSteps);
+    for (let k = 0; k < n; k++) this.stepOnce();
+    return n * this.dt;
+  }
+
+  /* The current state in the shape buildBariumLUT consumes — a one-frame timeline. */
+  sample() {
+    const lumen = new Map(), wall = new Map();
+    for (const v of this.order) {
+      lumen.set(v, Float32Array.from(this.tubes[v].c));
+      wall.set(v, Float32Array.from(this.wall[v]));
     }
+    return { nS: N, nT: 1, times: [this.t], lumen, wall,
+             coatConc: this.concMgBaMl, coatPerCm: this.coatPerCm };
+  }
+
+  audit() {
+    let lum = 0, muc = 0, pend = 0;
+    for (const v of this.order) {
+      for (let j = 0; j < N; j++) {
+        lum += this.tubes[v].c[j] * this.volNode[v];
+        muc += this.wall[v][j] * this.area[v];
+      }
+      pend += this.handover[v] * this.volNode[v];
+    }
+    const total = lum + muc + this.spill + pend;
+    return { t: this.t, given: this.given, lumen: lum, mucosa: muc, spill: this.spill,
+             errPct: this.given ? (total - this.given) / this.given * 100 : 0 };
+  }
+}
+
+/* Batch solve, for the export path and for cross-checking against gi_solver.py. A thin
+   wrapper over GIStudy so the live and batch paths cannot drift apart. */
+export function solveGI(gi, { duration = 1800, ...opts } = {}) {
+  const st = new GIStudy(gi, opts);
+  const steps = Math.round(duration / st.dt);
+  const keepEvery = (t) => (t <= 30 ? 1 : t <= 300 ? 5 : 30);
+  const times = [], lumOut = {}, walOut = {};
+  for (const v of st.order) { lumOut[v] = []; walOut[v] = []; }
+  // Frame k is labelled with the time the step was taken FOR, and holds the state AFTER it,
+  // which is what gi_solver.py records. Keeping before the step instead labelled every frame
+  // with the previous step's state — a one-step lag that showed up as an 11 % disagreement
+  // with the reference at 10 s, where the duodenum is filling fastest.
+  const keep = (label) => {
+    times.push(label);
+    for (const v of st.order) { lumOut[v].push(st.tubes[v].c.slice()); walOut[v].push(st.wall[v].slice()); }
+    return label;
+  };
+  let lastKept = -1e9;
+  for (let k = 0; k <= steps; k++) {
+    const label = st.t;
+    st.stepOnce();
+    if (label - lastKept >= keepEvery(label) - 1e-6 || k === steps) lastKept = keep(label);
+  }
+  const nT = times.length, lumen = new Map(), wallM = new Map();
+  for (const v of st.order) {
+    const L = new Float32Array(nT * N), W = new Float32Array(nT * N);
+    for (let i = 0; i < nT; i++) { L.set(lumOut[v][i], i * N); W.set(walOut[v][i], i * N); }
     lumen.set(v, L); wallM.set(v, W);
   }
-  let lumMass = 0, mucMass = 0;
-  for (const v of order) {
-    for (let j = 0; j < N; j++) { lumMass += tubes[v].c[j] * volNode[v]; mucMass += wall[v][j] * area[v]; }
-  }
-  const total = lumMass + mucMass + spill;
+  const a = st.audit();
   return {
-    nS: N, nT, times, lumen, wall: wallM, coatConc: concMgBaMl, coatPerCm,
-    audit: { given, lumen: lumMass, mucosa: mucMass, spill, errPct: given ? (total - given) / given * 100 : 0 },
-    notes: [`given ${(given / 1000).toFixed(1)} g Ba; lumen ${(lumMass / 1000).toFixed(1)} g, ` +
-            `mucosa ${(mucMass / 1000).toFixed(1)} g, past-end ${(spill / 1000).toFixed(1)} g ` +
-            `(${(given ? (total - given) / given * 100 : 0).toFixed(2)} %)`],
+    nS: N, nT, times, lumen, wall: wallM, coatConc: st.concMgBaMl, coatPerCm: st.coatPerCm,
+    audit: a,
+    notes: ['given ' + (a.given / 1000).toFixed(1) + ' g Ba; lumen ' + (a.lumen / 1000).toFixed(1)
+            + ' g, mucosa ' + (a.mucosa / 1000).toFixed(1) + ' g, past-end '
+            + (a.spill / 1000).toFixed(1) + ' g (' + a.errPct.toFixed(2) + ' %)'],
   };
 }
