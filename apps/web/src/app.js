@@ -20,6 +20,7 @@ import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
 import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
+import { initMobile } from './mobile.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -28,7 +29,10 @@ let three = {};
 function initScene(){
   const canvas=document.getElementById('view');
   const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
-  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  // phones: a DPR-3 canvas quadruples the fill cost for detail nobody can see at arm's
+  // length in a dark room render — cap harder there than on desktop
+  const coarse=matchMedia('(pointer: coarse)').matches;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, coarse?1.5:2));
   renderer.shadowMap.enabled=true; renderer.shadowMap.type=THREE.PCFSoftShadowMap;
   const scene=new THREE.Scene();
   scene.background=new THREE.Color(0x0a0c0f);
@@ -203,6 +207,13 @@ function initScene(){
   };
   const povCam=new THREE.PerspectiveCamera(132,1,1,1000);   // dedicated CT PoV camera for the monitor
   (function loop(){
+    // Mobile pager: when the bay page is hidden there is nothing to draw INTO — except
+    // during a CT scout/table-move, whose monitor mirror reads this very framebuffer.
+    if(document.body.classList.contains('mobile')
+       && !document.querySelector('.bay.mpage-on')
+       && !(S.mode==='ct' && (S.ct.liveView || S.ct.moveBlit))){
+      requestAnimationFrame(loop); return;
+    }
     resize(); updateCamera(); renderer.render(scene,cam);
     if(S.mode==='ct' && S.ct.liveView){
       blitToFilm();                    // scout build: mirror whatever CT PoV is active
@@ -276,6 +287,19 @@ async function setSubject(sub){
   if(!cfg){ console.warn('unknown subject',sub); return; }
   let vm=S.voxelCache[sub];
   if(!vm){
+    // Metered phones: say what a subject costs before pulling it. Approximate volume sizes
+    // (MB) for everything over the ~20 MB default hand; only asked once per subject per
+    // session, and only when the browser reports a constrained connection.
+    if(document.body.classList.contains('mobile')){
+      const MB={chest:40, wholebody:30, headneck:17, totalhipreplacement:17, lowerextremity:17};
+      const conn=navigator.connection;
+      const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
+      if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
+        S.warnedSize.add(sub);
+        if(!confirm(`${cfg.title} is a ~${MB[sub]} MB download and your connection looks `
+          +`metered or slow. Load it anyway?`)){ if(sel) sel.value=S.subject; return; }
+      }
+    }
     if(hint) hint.textContent='Loading '+cfg.title+'…';
     S.subjectLoading=true;   // guards CT START/exposure until the swap completes
     try{
@@ -303,6 +327,15 @@ async function setSubject(sub){
     finally{ S.subjectLoading=false; }
   }
   S.voxelModel=vm; S.subject=sub;
+  // Phones: one material volume resident at a time. A desktop keeps every subject it has
+  // touched (instant switching); a phone that did that would hold hundreds of MB of
+  // Uint8Arrays and get killed by the OS. Re-downloading on switch-back is the cheaper
+  // failure. Session-saved editor models are never evicted — they cannot be re-fetched.
+  if(document.body.classList.contains('mobile')){
+    for(const k of Object.keys(S.voxelCache||{})){
+      if(k!==sub && !(S.customKeys&&S.customKeys.has(k))) delete S.voxelCache[k];
+    }
+  }
   const ext=vm.extentMM;
   // scan field of view scales to the model (mediolateral × AP extent) so it fits
   S.ct.scoutFovMM=Math.round(Math.max(ext[0], ext[1])+70);
@@ -372,6 +405,7 @@ function applyPhotoSkin(){
    setSubject's cache-hit path and applyVoxelMeshTransform work unchanged. ---- */
 function registerCustomSubject(key, title, vm, meshGroup){
   VOXEL_MODELS[key]={ title, scoutKv:100, scoutMa:100, xrayKv:80 };
+  (S.customKeys=S.customKeys||new Set()).add(key);   // exempt from the mobile cache eviction
   S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
   S.voxelCache[key]=vm;
   if(meshGroup){ meshGroup.visible=false; three.handGroup.add(meshGroup); three.voxelMeshes[key]=meshGroup;
@@ -3132,6 +3166,7 @@ window.addEventListener('load',()=>{
            editorMode: (on) => editorApplyMode(on) });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
+  initMobile({ S });                            // pager + dock; inert above the breakpoint
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

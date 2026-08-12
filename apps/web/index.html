@@ -118,6 +118,8 @@
             <button class="hc-open" data-mode="editor">Open</button>
             <button class="hc-tut" data-tut="editor" title="Walk through this mode control by control">&#9654; Tutorial</button>
           </div>
+          <div class="hc-mobnote">Desktop only &mdash; slice painting wants a wide screen
+            and a fine pointer.</div>
         </div>
       </div>
 
@@ -881,6 +883,9 @@
 
   <!-- ============ GENERATOR CONSOLE + MONITOR ============ -->
   <div class="col" id="consoleCol">
+    <!-- The two halves of this column are wrapped so the mobile pager can treat them as
+         separate pages. On desktop the wrappers are display:contents — invisible to layout. -->
+    <div class="consec" id="conGen">
     <div class="hdr"><div class="t"><b id="consoleLbl">GENERATOR</b> / A1</div><div class="u" id="clock">STANDBY</div></div>
     <div class="pad">
 
@@ -951,6 +956,8 @@
       </div>
     </div>
 
+    </div>
+    <div class="consec" id="conView">
     <div class="hdr"><div class="t"><b>IMAGE</b> / VIEWER</div></div>
     <div class="monitor">
       <canvas id="film" width="330" height="440"></canvas>
@@ -1006,6 +1013,7 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
 </div>
 
@@ -1037,6 +1045,16 @@
     <div class="protopop-body" id="protoPopBody"></div>
   </div>
 </div>
+
+<!-- Mobile pager: a dock for the exposure controls and the bottom tab bar. Desktop never
+     shows either — they exist only under body.mobile (see src/mobile.js). -->
+<div class="mdock" id="mdock"></div>
+<nav class="mtabs" id="mtabs" aria-label="Panels">
+  <button data-mpage="bay" class="on">Bay</button>
+  <button data-mpage="setup">Setup</button>
+  <button data-mpage="console">Console</button>
+  <button data-mpage="image">Image</button>
+</nav>
 
 <!-- three.js r185 embedded as plain classic scripts (ES modules pre-transformed to a
      global THREE at build time) — no fetch, no blob, no import: works fully offline. -->

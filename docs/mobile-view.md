@@ -5,7 +5,14 @@ a thumb and a 6-inch screen, not a shrunken copy of the three-column console. No
 the physics, the state model, or the mode logic changes — this is a presentation-layer
 project with a handful of behavioural switches.
 
-Status: **planning**. Nothing in this document is implemented yet.
+Status: **implemented through Phase E**, verified in an emulated 375x812 viewport (see the
+phase table for what each exit test showed). Phase F is partial: the DPR cap, render pause,
+cache eviction, metered-download warning and the mobile resolution ceiling are in; the
+real-device matrix (iOS Safari, Android Chrome) and orientation-change soak are what remain,
+and they need a physical phone.
+
+Decisions taken (2026-08-12): all six phases on this branch; the pager in both orientations;
+the editor is desktop-only on the mobile layout; tilt-to-pose is dropped.
 
 ---
 
