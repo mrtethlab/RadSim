@@ -235,10 +235,19 @@ class Vessel1D:
         self._ext = np.empty(n + self.pad)
 
         # --- implicit diffusion, variable coefficient, zero-flux ends ------------------
+        # AREA-WEIGHTED, because the vessel's mass is the integral of A*c, not of c. The
+        # plain operator d/ds(D dc/ds) conserves the wrong integral: in a tapering vessel it
+        # moves concentration between cells of different calibre and mints or destroys
+        # A-weighted mass in proportion to the taper. That was a +209 mgI mid-transit defect
+        # on the chest aorta alone — the dominant term of the whole-loop audit error once
+        # the junction minting was fixed. The conservative form is A dc/dt = d/ds(A D dc/ds):
+        # flux through a face is (A D)_half * dc/ds, and each cell divides by its own A, so
+        # the face fluxes telescope and the zero-flux ends leave total A*c exactly constant.
+        AD = D * self.area
+        ADh = 0.5 * (AD[:-1] + AD[1:])               # A*D at the half points
         Dp = np.empty(n); Dm = np.empty(n)
-        Dh = 0.5 * (D[:-1] + D[1:])                  # D at the half points
-        Dp[:-1] = Dh; Dp[-1] = 0.0                   # no flux out of the far end
-        Dm[1:] = Dh;  Dm[0] = 0.0                    # no flux back out of the inlet
+        Dp[:-1] = ADh / self.area[:-1]; Dp[-1] = 0.0   # no flux out of the far end
+        Dm[1:] = ADh / self.area[1:];  Dm[0] = 0.0     # no flux back out of the inlet
         r = dt / dx ** 2
         # banded form for solve_banded: row 0 upper, row 1 diagonal, row 2 lower. Handing
         # the sweep to LAPACK matters — a Thomas loop in Python would be 200 interpreter
@@ -384,9 +393,31 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     def mk(key):
         return Vessel1D(key, vmeta[key], scale=pat.vessel_scale) if key in vmeta else None
 
-    # ids from build_model.VESSELS
-    V = {k: mk(str(k)) for k in (29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42)}
-    aorta, pa, pv, svc, ivc, portal = V[29], V[30], V[31], V[32], V[33], V[34]
+    # ids from build_model.VESSELS — 43..46 are the iliacs, which the CAP model carries
+    V = {k: mk(str(k)) for k in (30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42,
+                                 43, 44, 45, 46)}
+    pa, pv, svc, ivc, portal = V[30], V[31], V[32], V[33], V[34]
+
+    # The aorta is solved as TWO lines sharing one display id, split at the arch (the same
+    # n//8 station the old c_prox read). This is what makes the arch junction conservative:
+    # the branches and the upper body draw the PROXIMAL outlet at the arch, the distal aorta
+    # carries what is left — CO minus the head/arm flow — and every taker reads the exact
+    # station its vessel is debited at. The old wiring sent full CO down the whole line and
+    # let the upper body read c_prox anyway, minting 0.19 * CO * (c_prox - c_out) all the
+    # while the bolus front sat between the arch and the bifurcation. On the CAP model's
+    # 568 mm aorta that window is seconds wide, and it was the bulk of a +3.9 % mass audit.
+    aorta_prox = aorta_dist = None
+    if '29' in vmeta:
+        am = vmeta['29']
+        area = list(am['areaMM2'])
+        cut = max(4, len(area) // 8)
+        frac = cut / len(area)
+        aorta_prox = Vessel1D('29p', dict(name=am['name'] + ' (arch)',
+                                          lengthMM=am['lengthMM'] * frac,
+                                          areaMM2=area[:cut]), scale=pat.vessel_scale)
+        aorta_dist = Vessel1D('29d', dict(name=am['name'] + ' (desc)',
+                                          lengthMM=am['lengthMM'] * (1 - frac),
+                                          areaMM2=area[cut:]), scale=pat.vessel_scale)
 
     # The loop is right heart -> PA -> lungs -> PV -> left heart -> aorta, so a model without
     # one of those four cannot be solved at all — it has no circulation, just disconnected
@@ -394,7 +425,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     # person building a new model nothing about what their segmentation lacked. The pulmonary
     # artery is the usual culprit, because TotalSegmentator's `total` task does not have one —
     # it comes from the separate `lung_vessels` task (see build_model --lung-vessels).
-    missing = [n for n, v in (('aorta', aorta), ('pulmonary artery', pa),
+    missing = [n for n, v in (('aorta', aorta_dist), ('pulmonary artery', pa),
                               ('pulmonary vein', pv), ('superior vena cava', svc)) if v is None]
     if missing:
         raise ValueError(
@@ -457,9 +488,21 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     site = INJECTION_SITES[site_key]
     q_svc = q_upper + (inj.rate_ml_s if site_key in ('basilic', 'radial') else 0.0)
     q_ivc = q_lower + (inj.rate_ml_s if site.get('join') == 'ivc' else 0.0)
-    q_of = {29: CO, 30: CO, 31: CO, 32: q_svc, 33: q_ivc, 34: GUT_FRAC * CO,
-            35: 0.04 * CO, 36: 0.04 * CO, 37: 0.04 * CO, 38: 0.04 * CO, 39: 0.04 * CO,
-            40: 0.5 * q_upper, 41: 0.5 * q_upper, 42: 0.05 * CO}
+    # Every vessel is a TRANSPORTING member of the graph — none is a display copy. The old
+    # wiring fed the arch branches c_prox and the brachiocephalic veins c_bc without ever
+    # debiting anyone for it, which minted their entire contents (0.7-1.5 % of the dose
+    # still sitting in them at 90 s), and never solved the iliacs or the appendage at all.
+    # Flow splits: at rest the brain takes most of the head/arm share, the arms little.
+    SUB_F, CAR_F = 0.15, 0.35            # subclavian / carotid, as fractions of q_upper
+    q_direct = max(q_upper - q_arm_return, 0.0)   # upper-body return not via the arm vein
+    q_app = 0.05 * CO                    # left atrial appendage side-loop
+    q_of = {30: CO, 31: CO, 32: q_svc, 33: q_ivc, 34: GUT_FRAC * CO,
+            35: 0.5 * q_upper,                       # BCT carries the right-sided pair
+            36: SUB_F * q_upper, 37: SUB_F * q_upper,
+            38: CAR_F * q_upper, 39: CAR_F * q_upper,
+            40: 0.5 * q_direct, 41: 0.5 * q_direct, 42: q_app,
+            43: 0.5 * q_lower, 44: 0.5 * q_lower,    # iliac arteries
+            45: 0.5 * q_lower, 46: 0.5 * q_lower}    # iliac veins
 
     # Both operators are unconditionally stable, so dt is an ACCURACY choice, not a stability
     # one. A bolus feature is seconds wide and output is sampled at 1 Hz, so 10 ms resolves
@@ -469,6 +512,11 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     for k, v in V.items():
         if v is not None:
             v.set_flow(max(q_of.get(k, 0.04 * CO), 1e-6), dt)
+    # the proximal aorta carries full cardiac output; the descending line carries what is
+    # left after the arch branches take the head/arm share
+    aorta_prox.set_flow(CO, dt)
+    aorta_dist.set_flow(max(CO - q_upper, 1e-6), dt)
+    lines = [v for v in V.values() if v is not None] + [aorta_prox, aorta_dist]
     n_steps = int(np.ceil(duration_s / dt))
     if verbose:
         print(f'      dt {dt*1000:.2f} ms, {n_steps} steps, CO {CO:.0f} mL/s')
@@ -485,7 +533,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
 
     def breakdown():
         return dict(
-            vessels=sum(float((v.c * v.area).sum()) * v.dx for v in V.values() if v is not None),
+            vessels=sum(float((v.c * v.area).sum()) * v.dx for v in lines),
             chambers=sum(m.c * m.v for m in mixers)
                      + (limb_delay.mass if limb_delay is not None else 0.0),
             organ_blood=sum(o.c_iv * o.v_iv for o in beds),
@@ -493,7 +541,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
 
     def stored_mgi():
         """Total iodine held anywhere. Vessels: c * A * dx summed along the line."""
-        tot = sum(float((v.c * v.area).sum()) * v.dx for v in V.values() if v is not None)
+        tot = sum(float((v.c * v.area).sum()) * v.dx for v in lines)
         tot += sum(m.c * m.v for m in mixers)
         tot += limb_delay.mass if limb_delay is not None else 0.0
         tot += sum(o.c_iv * o.v_iv + o.c_ees * o.v_ees for o in beds)
@@ -536,20 +584,32 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         # flow varies with the injection. Dividing by the instantaneous junction flow instead
         # leaves the vessel charged at a rate it never carried, which leaked up to 9.7 % of
         # the dose once injection stopped and the arm flow dropped.
-        q_direct = max(q_upper - q_arm_return, 0.0)
-        c_bc = (arm.c * q_arm + upper.c_iv * q_direct) / q_svc
-        if V[40]: V[40].step(c_bc)
-        if V[41]: V[41].step(c_bc)
+        #
+        # The brachiocephalic veins CARRY the direct return now, half each — they used to be
+        # fed a copy of the SVC inlet that nobody was debited for, which is exactly the class
+        # of minting this file's own SVC comment warns about.
+        ret_flux = 0.0
+        for k in (40, 41):
+            if V[k]:
+                V[k].step(upper.c_iv)
+                ret_flux += V[k].c_out * 0.5 * q_direct
+            else:
+                ret_flux += upper.c_iv * 0.5 * q_direct
+        c_bc = (arm.c * q_arm + ret_flux) / q_svc
         svc.step(c_bc)
 
-        # --- lower body -> IVC, gut -> portal --------------------------------------------
-        # A femoral bolus enters here: the limb's delayed mass flux joins the lower-body
-        # return at the IVC inlet, normalised by the IVC's transport flow so the coupling is
-        # exactly conservative (same junction rule as the SVC's).
-        if site.get('join') == 'ivc':
-            ivc.step((body.c_iv * q_lower + limb_flux) / q_ivc)
-        else:
-            ivc.step(body.c_iv)
+        # --- lower body -> iliac veins -> IVC, gut -> portal ------------------------------
+        # The iliac veins carry the lower-body return when the model has them; a femoral
+        # bolus joins at the IVC inlet either way (its estimated delay already covers the
+        # run to the trunk). Mass flux over transport flow, as at every junction.
+        ven_flux = limb_flux if site.get('join') == 'ivc' else 0.0
+        for k in (45, 46):
+            if V[k]:
+                V[k].step(body.c_iv)
+                ven_flux += V[k].c_out * 0.5 * q_lower
+            else:
+                ven_flux += body.c_iv * 0.5 * q_lower
+        ivc.step(ven_flux / q_ivc)
         if portal: portal.step(body.c_iv)
 
         # --- right heart: SVC + IVC + portal + organ venous return -----------------------
@@ -573,7 +633,15 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         pa.step(right_heart.c)
         lungs.step(dt, pa.c_out * CO, CO)
         pv.step(lungs.c)
-        left_heart.step(dt, pv.c_out * CO, CO)
+        # The atrial appendage is a blind pouch on the left atrium: it borrows left-heart
+        # blood and hands it back, so the side-loop appears in BOTH the inflow and the
+        # outflow or it would mint. It used to be built, given a flow, and never stepped —
+        # the one vessel in the set that shipped identically zero enhancement.
+        if V[42]:
+            left_heart.step(dt, pv.c_out * CO + V[42].c_out * q_app, CO + q_app)
+            V[42].step(left_heart.c)
+        else:
+            left_heart.step(dt, pv.c_out * CO, CO)
 
         # --- systemic -----------------------------------------------------------------------
         # Everything systemic is fed DOWNSTREAM of the aorta, and the fractions sum to 1.0.
@@ -581,19 +649,50 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         # 2.2 x CO of arterial blood while debiting the left heart only CO — manufacturing
         # 1.2 x CO x c_art of iodine every second, which is what pushed arterial peaks past
         # the first-pass flux/CO ceiling.
-        aorta.step(left_heart.c)
-        c_ao = aorta.c_out                       # systemic arterial concentration
-        c_prox = float(aorta.c[max(0, aorta.n // 8)])   # arch branches tap the proximal aorta
-        for key in (35, 36, 37, 38, 39):
-            if V[key]: V[key].step(c_prox)
+        #
+        # The arch is a real junction now. The proximal line carries full CO to the arch;
+        # there the branches take the head/arm share and the descending line carries the
+        # rest. Every taker reads c at the STATION its vessel is debited — the proximal
+        # outlet — which is what makes the split conservative. The old c_prox read tapped a
+        # station the aorta was never debited at, minting 0.19 * CO * (c_prox - c_out) for
+        # as long as the bolus front sat between the arch and the bifurcation; on the CAP
+        # model's 568 mm aorta that was most of a +3.9 % audit error.
+        aorta_prox.step(left_heart.c)
+        c_arch = aorta_prox.c_out
+        # brachiocephalic trunk feeds the right-sided pair; the left pair leaves directly
+        if V[35]: V[35].step(c_arch)
+        c_bct = V[35].c_out if V[35] else c_arch
+        art_flux = 0.0
+        for k, f, feed in ((36, SUB_F, c_bct), (37, SUB_F, c_arch),
+                           (38, CAR_F, c_bct), (39, CAR_F, c_arch)):
+            if V[k]:
+                V[k].step(feed)
+                art_flux += V[k].c_out * f * q_upper
+            else:
+                art_flux += feed * f * q_upper
+        # upper body: fed by what actually comes OUT of the arch branches, drained by the
+        # SVC (and the arm return). The branch transit is a second or two of genuine delay
+        # the old direct c_prox feed skipped.
+        upper.step(dt, q_upper, art_flux / q_upper)
+
+        aorta_dist.step(c_arch)
+        c_ao = aorta_dist.c_out                  # systemic arterial concentration
         c_portal = portal.c_out if portal else body.c_iv
         for o in organs:
             o.step(dt, o.flow_frac * CO, c_ao, GFR_ML_S if o.name == 'kidney' else 0.0,
                    o.portal_frac * CO, c_portal)
-        # upper body: fed by the arch branches, drained by the SVC (and the arm return)
-        upper.step(dt, q_upper, c_prox)
-        # lower body + gut: fed by the distal aorta, drained by the IVC and the portal vein
-        body.step(dt, (LOWER_FRAC + GUT_FRAC - perfusion_shift) * CO, c_ao)
+        # lower body + gut: the gut's share leaves the aorta along its length and stays a
+        # direct c_ao feed; the leg/pelvis share travels the iliac arteries when the model
+        # has them, which both lights them up and delays the lower body by their transit.
+        il_flux = 0.0
+        for k in (43, 44):
+            if V[k]:
+                V[k].step(c_ao)
+                il_flux += V[k].c_out * 0.5 * q_lower
+            else:
+                il_flux += c_ao * 0.5 * q_lower
+        q_body = (LOWER_FRAC + GUT_FRAC - perfusion_shift) * CO
+        body.step(dt, q_body, (GUT_FRAC * CO * c_ao + il_flux) / q_body)
 
         injected_mgi += inj.flux_mgi_s(t) * dt
         excreted_mgi += GFR_ML_S * next(o for o in organs if o.name == 'kidney').c_iv * dt
@@ -603,6 +702,10 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
             for k, v in V.items():
                 if v is not None:
                     frames[str(k)].append(np.round(v.c, 4).tolist())
+            # the two solved aortic lines are ONE display vessel: the renderer's arclength
+            # runs the whole aorta, so the frames do too
+            frames['29'].append(np.round(np.concatenate([aorta_prox.c, aorta_dist.c]),
+                                         4).tolist())
             for o in organs:
                 organ_series[o.name].append(round(o.c_mean, 4))
             chamber_series['right_heart'].append(round(right_heart.c, 4))
