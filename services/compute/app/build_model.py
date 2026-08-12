@@ -34,6 +34,71 @@ AIR, LUNG, FAT, WATER, CSF, SIMPLE_FLUID, BILE, MUSCLE, BLOOD, CLOT, SOFT, \
     LIVER, SPLEEN, KIDNEY, PANCREAS, HEART, CARTILAGE, TRABECULAR, CORTICAL, \
     ENAMEL, IODINE, CALCIF, STONE, SKIN, ALUMINUM, TITANIUM, STEEL, LEAD, PLASTIC = range(29)
 
+# ---- named vessels (ids 29+) ------------------------------------------------
+# Every one of these used to collapse into BLOOD, which threw away the only thing the
+# contrast simulation needs: WHICH vessel a voxel belongs to. The aorta and the SVC opacify
+# ~15 s apart, and a single id cannot express that. Giving each its own material id makes
+# vessel identity == material identity, so it costs nothing per voxel.
+#
+# They all carry blood's 45 HU, so an unenhanced scan is byte-identical to before; only the
+# contrast layer (which indexes by material id) can tell them apart.
+AORTA, PULM_ARTERY, PULM_VEIN, SVC, IVC, PORTAL_VEIN, \
+    BRACHIOceph_TRUNK, SUBCLAV_A_R, SUBCLAV_A_L, CAROTID_R, CAROTID_L, \
+    BRACHIOceph_V_R, BRACHIOceph_V_L, ATRIAL_APP_L, \
+    ILIAC_A_R, ILIAC_A_L, ILIAC_V_R, ILIAC_V_L = range(29, 47)
+
+# ---- GI tract (47+) ---------------------------------------------------------
+# Same argument as the vessels: a barium study is watching the agent move from one part of
+# the gut to the next, so the model has to know which part a voxel is in. GAS is its own id
+# because the gastric bubble, the colonic gas and the fluid levels are real findings — see
+# the note in materialize() on why the lumen ids are not stamped over them.
+GAS, OESOPHAGUS, STOMACH, DUODENUM, SMALL_BOWEL, COLON = range(47, 53)
+GI_HU = 15             # unopacified lumen content, until the barium layer says otherwise
+# Kept as one named list in id order so scripts/check-legends.mjs can read it the same way
+# it reads VESSELS — a concatenation expression is invisible to that parser, and a legend
+# the checker cannot see is exactly the drift it exists to catch.
+GI_LEGEND = [
+    (GAS, "Bowel gas", -1000, 0x1b2129),
+    (OESOPHAGUS, "Oesophagus lumen", GI_HU, 0xc98f6a),
+    (STOMACH, "Stomach lumen", GI_HU, 0xb97f4e),
+    (DUODENUM, "Duodenum lumen", GI_HU, 0xc59a5e),
+    (SMALL_BOWEL, "Small bowel lumen", GI_HU, 0xd0a86a),
+    (COLON, "Colon lumen", GI_HU, 0xa8804e),
+]
+GI_BY_TS_NAME = {
+    "esophagus": OESOPHAGUS, "stomach": STOMACH, "duodenum": DUODENUM,
+    "small_bowel": SMALL_BOWEL, "colon": COLON,
+}
+
+BLOOD_HU = 45          # every vessel is unenhanced blood until the contrast layer says otherwise
+VESSELS = [
+    (AORTA, "Aorta"), (PULM_ARTERY, "Pulmonary artery"), (PULM_VEIN, "Pulmonary vein"),
+    (SVC, "Superior vena cava"), (IVC, "Inferior vena cava"),
+    (PORTAL_VEIN, "Portal / splenic vein"),
+    (BRACHIOceph_TRUNK, "Brachiocephalic trunk"),
+    (SUBCLAV_A_R, "Subclavian artery R"), (SUBCLAV_A_L, "Subclavian artery L"),
+    (CAROTID_R, "Common carotid R"), (CAROTID_L, "Common carotid L"),
+    (BRACHIOceph_V_R, "Brachiocephalic vein R"), (BRACHIOceph_V_L, "Brachiocephalic vein L"),
+    (ATRIAL_APP_L, "Left atrial appendage"),
+    (ILIAC_A_R, "Iliac artery R"), (ILIAC_A_L, "Iliac artery L"),
+    (ILIAC_V_R, "Iliac vein R"), (ILIAC_V_L, "Iliac vein L"),
+]
+
+# TotalSegmentator structure name -> vessel material id. Sided names are explicit rather
+# than matched on a substring, so a left/right mix-up cannot pass silently.
+VESSEL_BY_TS_NAME = {
+    "aorta": AORTA, "pulmonary_artery": PULM_ARTERY, "pulmonary_vein": PULM_VEIN,
+    "superior_vena_cava": SVC, "inferior_vena_cava": IVC,
+    "portal_vein_and_splenic_vein": PORTAL_VEIN,
+    "brachiocephalic_trunk": BRACHIOceph_TRUNK,
+    "subclavian_artery_right": SUBCLAV_A_R, "subclavian_artery_left": SUBCLAV_A_L,
+    "common_carotid_artery_right": CAROTID_R, "common_carotid_artery_left": CAROTID_L,
+    "brachiocephalic_vein_right": BRACHIOceph_V_R, "brachiocephalic_vein_left": BRACHIOceph_V_L,
+    "atrial_appendage_left": ATRIAL_APP_L,
+    "iliac_artery_right": ILIAC_A_R, "iliac_artery_left": ILIAC_A_L,
+    "iliac_vena_right": ILIAC_V_R, "iliac_vena_left": ILIAC_V_L,
+}
+
 LEGEND = [
     (AIR, "Air", -1000, 0x000000), (LUNG, "Lung", -700, 0x3a4a63),
     (FAT, "Fat", -90, 0xf2e2b0), (WATER, "Water", 0, 0x2f6fb0),
@@ -50,7 +115,7 @@ LEGEND = [
     (ALUMINUM, "Aluminum", None, 0x9fb4c0), (TITANIUM, "Titanium", None, 0xb8c2cc),
     (STEEL, "Stainless steel", None, 0xd0d4d8), (LEAD, "Lead", None, 0x6a6f77),
     (PLASTIC, "Acrylic", 120, 0x9fb6a8),
-]
+] + [(vid, nm, BLOOD_HU, 0xb23a3a) for vid, nm in VESSELS] + GI_LEGEND
 
 BONE_PREFIX = ("vertebrae", "rib", "sternum", "scapula", "clavicula", "humerus",
                "femur", "hip", "sacrum", "skull", "costal", "radius", "ulna",
@@ -89,7 +154,10 @@ def name_to_material(name: str) -> int:
         return MUSCLE
     if n == "brain":
         return SOFT
-    # great vessels + venous/arterial structures -> blood
+    # named great vessels keep their identity (the contrast layer needs to know WHICH
+    # vessel a voxel is); anything else vascular still falls back to generic blood
+    if n in VESSEL_BY_TS_NAME:
+        return VESSEL_BY_TS_NAME[n]
     if any(k in n for k in ("aorta", "vena_cava", "pulmonary_vein", "pulmonary_artery",
                             "brachiocephalic", "subclavian", "carotid", "iliac", "portal",
                             "atrial_appendage", "artery", "vein")):
@@ -175,7 +243,7 @@ def _region_bounds(region, lab, cmap, shape, spacing):
     return (max(0, zs.min() - mg), min(zN, zs.max() + mg + 1), 0, yN, 0, xN)
 
 
-def materialize(hu, lab, spacing, body_restrict=None):
+def materialize(hu, lab, spacing, body_restrict=None, overlay=None):
     """Assign a body-material id to every voxel of an (already-resampled) HU + label
     volume. Returns (mat uint8, body mask). Reused by build() and build_highres.
     body_restrict: optional bool mask (e.g. TotalSegmentator's `body` task) to clip the
@@ -215,6 +283,37 @@ def materialize(hu, lab, spacing, body_restrict=None):
             mat_of[lid] = mm
     for lid, mm in mat_of.items():
         mat[lab == lid] = mm
+    # ---- GI lumen: stamp identity WITHOUT flattening the contents ----------------------
+    # The gut differs from every other labelled structure in that what is inside it is the
+    # point. A stomach label covers wall, fluid AND the gastric air bubble, so stamping one
+    # id at one HU across it would erase the bubble, the colonic gas and every fluid level —
+    # findings a barium study is largely about. So gas inside a GI label becomes GAS, and the
+    # lumen id is stamped only where the HU says fluid or soft tissue.
+    # This also fixes an older inaccuracy: bowel gas used to fall through the HU thresholds
+    # and be classified as LUNG, which is neither its density nor its identity.
+    gi_lids = {lid: GI_BY_TS_NAME[nm] for lid, nm in cmap.items() if nm in GI_BY_TS_NAME}
+    if gi_lids:
+        for lid, mm in gi_lids.items():
+            here = lab == lid
+            if not here.any():
+                continue
+            gas = here & (hu < -200)
+            mat[gas] = GAS
+            mat[here & ~gas] = mm
+            print(f"        GI -> id {mm}: {int((here & ~gas).sum())} lumen, "
+                  f"{int(gas.sum())} gas voxels")
+    # Extra single-structure masks from other TotalSegmentator tasks (the `total` task has
+    # no pulmonary artery, so the PE study's tracker vessel has to come from lung_vessels).
+    # Stamped AFTER the label pass so they win over the lung parenchyma they run through,
+    # but only over materials a vessel could plausibly be mistaken for — never over heart,
+    # aorta or bone, so a mask that bleeds slightly cannot carve holes in solid anatomy.
+    if overlay:
+        takeable = np.isin(mat, [LUNG, SOFT, MUSCLE, BLOOD, FAT])
+        for mm, mask in overlay.items():
+            sel = mask & takeable
+            mat[sel] = mm
+            print(f"        overlay -> id {mm}: {int(sel.sum())} voxels "
+                  f"({int(mask.sum() - sel.sum())} rejected as solid anatomy)")
     if bone_ids:
         bone_mask = np.isin(lab, bone_ids)
         mat[bone_mask & (hu >= 350)] = CORTICAL
@@ -295,7 +394,7 @@ def add_hip_prosthesis(mat, lab, cmap, spacing):
     return mat
 
 
-def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None, flip=(0, 0, 0), hip_titanium=False):
+def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None, flip=(0, 0, 0), hip_titanium=False, lung_vessels=None):
     print(f"[1/4] loading + resampling to {spacing} mm iso …")
     ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
     seg = sitk.ReadImage(seg_path)
@@ -317,8 +416,27 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
         body_restrict = ndi.binary_fill_holes(body_restrict)
         print(f"      body-envelope restrict (+{r}vox): {body_restrict.sum()/1e6:.0f} M voxels")
 
+    # Extra masks from TotalSegmentator's lung_vessels task. The `total` task has no
+    # pulmonary artery at all, so without this the PE study has no vessel to put a bolus
+    # tracker on. That task separates arteries from veins (its LEGACY version does not).
+    overlay = None
+    if lung_vessels:
+        overlay = {}
+        for fn, mm, what in (("lung_arteries.nii.gz", PULM_ARTERY, "arteries"),
+                             ("lung_veins.nii.gz",    PULM_VEIN,   "veins")):
+            path = os.path.join(lung_vessels, fn)
+            if not os.path.exists(path):
+                print(f"      ! {fn} missing — skipped")
+                continue
+            img = sitk.ReadImage(path)
+            img = sitk.Resample(img, ct, sitk.Transform(), sitk.sitkNearestNeighbor, 0,
+                                img.GetPixelID())
+            m = sitk.GetArrayFromImage(img) > 0
+            overlay[mm] = m
+            print(f"      lung {what}: {int(m.sum())} voxels")
+
     print("[2/4] materials …")
-    mat, body = materialize(hu, lab, spacing, body_restrict=body_restrict)
+    mat, body = materialize(hu, lab, spacing, body_restrict=body_restrict, overlay=overlay)
 
     print("[3/4] region crop + tight body bbox …")
     if box is not None:
@@ -416,10 +534,14 @@ if __name__ == "__main__":
     ap.add_argument("--flip", type=int, nargs=3, default=(0, 0, 0), metavar=("Z", "Y", "X"),
                     help="bake anatomical axis flips (z y x) into the volume+mesh, e.g. "
                          "--flip 1 0 0 for VSD head-first scans")
+    ap.add_argument("--lung-vessels", default=None,
+                    help="directory of TotalSegmentator lung_vessels output "
+                         "(lung_arteries.nii.gz / lung_veins.nii.gz) — the `total` task has "
+                         "no pulmonary artery, which the PE bolus tracker needs")
     ap.add_argument("--hip-titanium", action="store_true",
                     help="replace both native hip joints with a titanium total hip replacement "
                          "(femoral ball + stem + acetabular cup) — for metal-artifact demos")
     a = ap.parse_args()
     build(a.ct, a.seg, a.out, a.name, a.title or a.name, a.region, a.spacing,
           mesh=not a.no_mesh, source=a.source, box=a.box, body_path=a.body, flip=a.flip,
-          hip_titanium=a.hip_titanium)
+          hip_titanium=a.hip_titanium, lung_vessels=a.lung_vessels)

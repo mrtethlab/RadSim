@@ -11,6 +11,7 @@
 import { Spectrum } from './core/spectrum.js';
 import { Materials, BodyMaterials } from './core/materials.js';
 import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
+import { buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
 import { Sound } from './audio/sound.js';
 
 let ctx = null;
@@ -893,13 +894,20 @@ function updateScanMarkers() {
 }
 
 function wireModeToggle() {
-  const bar = ctx.$('modeBar');
-  if (!bar) return;
-  bar.addEventListener('click', (e) => {
-    const b = e.target.closest('button');
-    if (b) applyMode(b.dataset.mode);
+  const home = ctx.$('homeBtn');
+  if (home) home.addEventListener('click', () => applyMode('home'));
+  document.querySelectorAll('#homeScreen .home-card').forEach((card) => {
+    if (!card.dataset.mode) return;            // in-development cards open nothing
+    // The card is clickable as a whole, but the Tutorial button inside it must not read as
+    // "open the mode" — it stops the event itself (see tutorial.js).
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.hc-tut')) return;
+      applyMode(card.dataset.mode);
+    });
   });
 }
+
+export function ctApplyMode(mode) { applyMode(mode); }
 
 // Tear down the CT scout session to a clean slate: no scouts, no live-view mirror,
 // idle console, patient/couch/isocentre zeroed. Called on every mode switch so the
@@ -926,13 +934,23 @@ function resetCTSession() {
 }
 
 function applyMode(mode) {
+  // 'home' is a real mode, not the absence of one: it parks the app on the menu with every
+  // mode torn down, so nothing from the last machine leaks into the next.
+  document.body.classList.toggle('mode-home', mode === 'home');
+  if (mode === 'home') {
+    ctx.S.mode = 'home';
+    ['mode-ct', 'mode-xray', 'mode-editor'].forEach(c => document.body.classList.remove(c));
+    resetCTSession();
+    ctx.editorMode?.(false);
+    return;
+  }
   ctx.S.mode = mode;
   document.body.classList.toggle('mode-ct', mode === 'ct');
   document.body.classList.toggle('mode-xray', mode === 'xray');
   document.body.classList.toggle('mode-editor', mode === 'editor');
+  const cur = ctx.$('modeCur');
+  if (cur) cur.textContent = mode === 'ct' ? 'CT' : mode === 'editor' ? 'MODEL EDITOR' : 'X-RAY';
   ctApplyColorTheme();                            // x-ray drops any vendor theme; CT re-applies it
-  const bar = ctx.$('modeBar');
-  if (bar) [...bar.querySelectorAll('button')].forEach(b => b.classList.toggle('on', b.dataset.mode === mode));
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition'
     : mode === 'editor' ? 'Model editor · voxel builder' : 'Digit · Hand phantom';
@@ -1141,7 +1159,8 @@ function setPhase(p) {
   const iso = $('ctIsocentre');
   if (iso) { iso.disabled = (p !== 'idle'); if (iso.disabled) iso.classList.remove('needzero', 'flashiso'); }
   const labels = { idle: 'CT · STANDBY', scout: 'CT · SCOUT', planning: 'CT · PLAN SCAN',
-                   moving: 'CT · TABLE MOVE', scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
+                   moving: 'CT · TABLE MOVE', tracking: 'CT · BOLUS TRACKING',
+                   scanning: 'CT · SCANNING', done: 'CT · COMPLETE' };
   const wt = $('ctWarnT'); if (wt) wt.textContent = labels[p] || 'CT';
   // 3D <-> Image can be swapped freely through the whole scout/plan workflow
   ctx.setBay3DEnabled(true);
@@ -1654,7 +1673,13 @@ function defaultGroups() {
   // Default acquisition is SSCT (single detector row) → beam collimation = 1 × 0.625 mm DEL.
   // Switching to MSCT restores a multi-row default (see ctApplyAcqMode).
   const sf = defaultSfov();
-  const base = { detRows: 1, beamColl: DEL_MM, pitch: 0.938, rotSpeed: 0.5, sfovMM: sf.mm, sfovName: sf.name };
+  const base = { detRows: 1, beamColl: DEL_MM, pitch: 0.938, rotSpeed: 0.5, sfovMM: sf.mm, sfovName: sf.name,
+    // Scan delay is either a fixed wait or a bolus-tracked trigger. A group set to 'bolus'
+    // IS the monitoring series: a single slice at one location, scanned repeatedly while an
+    // ROI is watched, exactly as a console plans a monitoring series ahead of the diagnostic
+    // one. When it triggers, the scan moves on to the next enabled group.
+    delayMode: 'time',
+    bolus: { thrHU: 150, auto: true, roi: { x: 0.5, y: 0.44, r: 0.055 }, postDelay: 4 } };
   return [
     { on: true,  vis: true, box: { top: 0.10, bot: 0.90, apL: 0.28, apR: 0.72, latL: 0.28, latR: 0.72 }, kv: 120, ma: 295, sliceThk: 5,    ...base, interval: 5,    tilt: 0, delay: 0 },
     { on: false, vis: true, box: { top: 0.14, bot: 0.50, apL: 0.36, apR: 0.64, latL: 0.36, latR: 0.64 }, kv: 120, ma: 295, sliceThk: 2.5,  ...base, interval: 2.5,  tilt: 0, delay: 0 },
@@ -1960,7 +1985,39 @@ function openFieldEditor(gi, act) {
   else if (act === 'tilt') type('Gantry tilt (degrees)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
   else if (act === 'ma') type('Tube current (mA)', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
-  else if (act === 'delay') type('Scan delay (seconds)', g.delay, (v) => { g.delay = clampV(Math.round(v), 0, 600); });
+  else if (act === 'delay') {
+    // The monitoring row's own delay is not editable — it is 0 by definition, because the
+    // delay is what the series exists to measure. Editing is done on its enhanced partner.
+    if (g.monitor) { setHint('The monitoring series has no delay — set the trigger on its enhanced group below.'); done(); return; }
+    const cur = g.delayMode === 'test' ? 3 : g.delayMode === 'bolus' ? (g.bolus.auto ? 1 : 2) : 0;
+    station('Scan delay', [0, 1, 2, 3], cur,
+      (i) => ['Fixed time delay', 'Bolus tracking · auto trigger', 'Bolus tracking · manual trigger',
+              'Test bolus · measure the delay'][i],
+      (i) => {
+        if (i === 0) {
+          clearBolusPair(gi);
+          setTimeout(() => type('Scan delay (seconds)', g.delay,
+            (v) => { g.delay = clampV(Math.round(v), 0, 600); }), 60);
+          return;
+        }
+        const kind = i === 3 ? 'test' : 'bolus';
+        // Already paired: switch technique in place rather than rebuilding the pair.
+        if (g.delayMode === 'bolus' || g.delayMode === 'test') {
+          g.delayMode = kind; g.bolus.auto = (i === 1);
+          setTimeout(() => askFor(g, kind), 60);
+        } else if (makeBolusPair(gi, i === 1, kind)) {
+          setTimeout(() => askFor(grp(gi + 1), kind), 60);
+        }
+      });
+    // A tracked scan is defined by its threshold; a test bolus by how long you watch for.
+    function askFor(e, kind) {
+      if (!e) return;
+      if (kind === 'test') type('Test-bolus duration (seconds)', e.bolus.testDur || 40,
+        (v) => { e.bolus.testDur = clampV(Math.round(v), 15, 120); });
+      else type('Trigger threshold (HU)', e.bolus.thrHU,
+        (v) => { e.bolus.thrHU = clampV(Math.round(v), 40, 600); });
+    }
+  }
   else if (act === 'sfov') {
     const cur = Math.max(0, SFOV_OPTIONS.findIndex((o) => o.name === (g.sfovName || 'Large Body')));
     station('Scan field of view (SFOV)', SFOV_OPTIONS.map((o, i) => i), cur,
@@ -2076,7 +2133,9 @@ function renderScanGroups() {
     const num = gi > 0
       ? '<span class="sg-num del" title="Delete scan group"><span class="lbl">' + (gi + 1) + '</span><span class="trash">' + TRASH + '</span></span>'
       : '<span class="sg-num">' + (gi + 1) + '</span>';
-    rows += '<tr class="sg-row gc' + gi + (gi === c.activeGroup ? ' active' : '') + '" data-group="' + gi + '">'
+    rows += '<tr class="sg-row ' + colourOf(gi) + (gi === c.activeGroup ? ' active' : '')
+      + (g.monitor ? (nextIsTest(gi) ? ' sg-monitor sg-testmon' : ' sg-monitor') : '')
+      + '" data-group="' + gi + '">'
       + '<td>' + num + '</td>'
       + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle scan lines on the scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
       + cell('sg-edit', 'start', fmtTablePos(scanStartMM() + g.box.top * c.scanLen))
@@ -2095,7 +2154,14 @@ function renderScanGroups() {
       + cell('sg-edit', 'kv', g.kv + ' kV')
       + cell('sg-edit', 'ma', g.ma + ' mA')
       + cell('sg-calc', '', groupExpTime(g).toFixed(1) + ' s')
-      + cell('sg-edit', 'delay', g.delay + ' s')
+      + cell('sg-edit' + (g.delayMode === 'bolus' || g.delayMode === 'test' ? ' sg-bolus' : '')
+               + (g.monitor ? ' sg-mon' : ''), 'delay',
+             g.monitor ? (nextIsTest(gi) ? 'Test bolus · 0 s' : 'Tracking · 0 s')
+               : g.delayMode === 'test'
+                 ? (g.measured != null ? 'Test &rarr; ' + g.measured + ' s' : 'Test bolus · — s')
+                 : g.delayMode === 'bolus'
+                   ? 'Bolus &gt; ' + g.bolus.thrHU + ' HU' + (g.bolus.auto ? '' : ' · manual')
+                   : g.delay + ' s')
       + '</tr>';
   }
   const anyOff = c.groups.some((g) => !g.on);
@@ -2663,11 +2729,373 @@ let scanToken = 0;                // invalidates an in-flight scan on abort / mo
 function cancelScan() { scanToken++; }
 let spinRAF = null;               // gantry-spin animation handle
 
+
+/* ---- bolus tracking: the monitoring series --------------------------------------------
+   A group whose delay mode is 'bolus' IS the monitoring series — one slice at one location,
+   reconstructed over and over while an ROI is watched. That is how a console plans it: a
+   monitoring series ahead of the diagnostic one, not a property bolted onto the diagnostic
+   scan. When it triggers, runScan carries on to the next enabled group.
+
+   The images are deliberately cheap (QUICK_RT, no noise, no beam hardening): a real
+   monitoring series is low-dose and nobody diagnoses from it. What matters is the ROI number
+   and how fast it is climbing. */
+const BTRK_PERIOD_MS = 1500;      // console monitoring interval, ~1-2 s on real scanners
+const BTRK_WW = 400, BTRK_WL = 50;
+
+let btrkState = null;
+let btrkOnROIMove = null;         // set while a monitoring series is open, so ROI drags re-measure
+let btrkLastPeak = null;          // a test bolus's answer, kept after the window closes
+
+function btrkROIMeanHU(img, N, muW, roi){
+  // ROI is stored normalised to the image, so it survives a change of recon grid
+  const cx=roi.x*N, cy=(1-roi.y)*N, r=roi.r*N, r2=r*r;
+  let sum=0, n=0;
+  const y0=Math.max(0,Math.floor(cy-r)), y1=Math.min(N-1,Math.ceil(cy+r));
+  const x0=Math.max(0,Math.floor(cx-r)), x1=Math.min(N-1,Math.ceil(cx+r));
+  for(let y=y0;y<=y1;y++) for(let x=x0;x<=x1;x++){
+    const dx=x-cx, dy=y-cy; if(dx*dx+dy*dy>r2) continue;
+    sum += 1000*(img[y*N+x]-muW)/muW; n++;
+  }
+  return n? sum/n : 0;
+}
+
+function btrkDrawSlice(img, N, muW){
+  const cv=ctx.$('ctBtrkSlice'); if(!cv) return;
+  if(cv.width!==N){ cv.width=N; cv.height=N; }
+  const g=cv.getContext('2d'), im=g.createImageData(N,N), d=im.data;
+  const lo=BTRK_WL-BTRK_WW/2, hi=BTRK_WL+BTRK_WW/2;
+  for(let iy=0; iy<N; iy++){ const sy=N-1-iy;
+    for(let ix=0; ix<N; ix++){
+      const hu=1000*(img[sy*N+ix]-muW)/muW;
+      const v=Math.max(0,Math.min(255, Math.round((hu-lo)/(hi-lo)*255)));
+      const k=(iy*N+ix)*4; d[k]=d[k+1]=d[k+2]=v; d[k+3]=255;
+    }
+  }
+  g.putImageData(im,0,0);
+}
+
+/* The enhancement curve, drawn the way a console draws it: HU against time with the trigger
+   level marked, so the operator can see the slope and judge whether to fire early.
+
+   This is redrawn on an animation frame, not only when a measurement lands. A monitoring series
+   samples every ~1.5 s, so a plot that only repainted on each sample sat frozen between them and
+   did not read as live at all — the axes were not even drawn until the first sample arrived. Now
+   the axes are up from the moment the window opens, the time cursor sweeps continuously, and the
+   samples appear on it as they are taken. */
+function btrkDrawPlot(){
+  const st=btrkState, cv=ctx.$('ctBtrkPlot'); if(!st||!cv) return;
+  const g=cv.getContext('2d'), W=cv.width, H=cv.height;
+  g.fillStyle='#000'; g.fillRect(0,0,W,H);
+  const pad={l:38,r:8,t:10,b:22}, pw=W-pad.l-pad.r, ph=H-pad.t-pad.b;
+  // `now` runs off the wall clock so the cursor moves between samples; the axis grows with it
+  const now = st.tracking && st.t0!=null ? (performance.now()-st.t0)/1000 : 0;
+  const TMAX=Math.max(40, Math.ceil(Math.max(st.t||0, now)/10)*10+10);
+  // The y-range follows the data. A fixed -100..350 window hid the trace completely whenever
+  // the ROI sat somewhere unenhanced — lung is around -700 — and a blank graph reads as broken
+  // rather than as "your ROI is in the wrong place", which is what it is actually telling you.
+  let lo=-100, hi=Math.max(350, st.mode==='test'?200:st.thrHU+120);
+  for(const p of st.pts){ if(p.hu<lo) lo=p.hu; if(p.hu>hi) hi=p.hu; }
+  const LO=Math.floor(lo/100)*100, HI=Math.ceil(hi/100)*100;
+  const GRID=(HI-LO)>1200?400:(HI-LO)>600?200:100;
+  const X=(t)=>pad.l+t/TMAX*pw, Y=(hu)=>pad.t+ph-(hu-LO)/(HI-LO)*ph;
+  g.strokeStyle='#2a3038'; g.lineWidth=1; g.font='9px monospace'; g.fillStyle='#7f8c99';
+  for(let hu=LO; hu<=HI; hu+=GRID){
+    const y=Y(hu); g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke();
+    g.fillText(String(hu), 4, y+3);
+  }
+  for(let t=0;t<=TMAX;t+=10){ const x=X(t);
+    g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke();
+    if(t) g.fillText(String(t), x-6, H-6);
+  }
+  // trigger level — a test bolus has no threshold, it measures the peak instead
+  if(st.mode!=='test'){
+    g.strokeStyle='#e8e8e8'; g.lineWidth=1.2;
+    g.beginPath(); g.moveTo(pad.l,Y(st.thrHU)); g.lineTo(W-pad.r,Y(st.thrHU)); g.stroke();
+  }
+  // the curve so far, with each measurement marked — a monitoring series is a set of discrete
+  // samples, and showing them as points is what makes the sampling interval legible
+  if(st.pts.length){
+    g.strokeStyle='#fff'; g.lineWidth=1.6; g.beginPath();
+    st.pts.forEach((p,i)=>{ const x=X(p.t), y=Y(p.hu); i?g.lineTo(x,y):g.moveTo(x,y); });
+    g.stroke();
+    g.fillStyle='#9fb3c4';
+    st.pts.forEach((p)=>{ g.beginPath(); g.arc(X(p.t),Y(p.hu),1.7,0,Math.PI*2); g.fill(); });
+    const last=st.pts[st.pts.length-1];
+    g.fillStyle='#35c6d6'; g.beginPath(); g.arc(X(last.t),Y(last.hu),3.4,0,Math.PI*2); g.fill();
+  }
+  // the sweeping "now" cursor: it is what tells the operator the series is still running when
+  // the curve happens to be flat, which on an unenhanced baseline is most of the first 10 s
+  if(st.tracking && !st.done){
+    const x=X(now);
+    g.strokeStyle='rgba(53,198,214,.55)'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke();
+  }
+  if(st.peakAt!=null){                              // test bolus: the answer it exists to give
+    const x=X(st.peakAt);
+    g.strokeStyle='#ffb23e'; g.setLineDash([5,3]); g.lineWidth=1.3;
+    g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke(); g.setLineDash([]);
+    g.fillStyle='#ffb23e'; g.font='10px monospace';
+    g.fillText('peak '+st.peakAt.toFixed(1)+' s', Math.min(x+4, W-pad.r-62), pad.t+11);
+  }
+  if(st.firedAt!=null){
+    const x=X(st.firedAt);
+    g.strokeStyle='#4fd06a'; g.setLineDash([4,3]);
+    g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke(); g.setLineDash([]);
+  }
+}
+
+function btrkPlaceROI(){
+  const st=btrkState, el=ctx.$('ctBtrkRoi'), wrap=ctx.$('ctBtrkImgWrap');
+  if(!st||!el||!wrap) return;
+  const w=wrap.clientWidth||1, h=wrap.clientHeight||1, d=st.roi.r*2*w;
+  el.style.width=d+'px'; el.style.height=d+'px';
+  el.style.left=(st.roi.x*w-d/2)+'px'; el.style.top=((1-st.roi.y)*h-d/2)+'px';
+}
+function btrkWireROI(){
+  const el=ctx.$('ctBtrkRoi'), wrap=ctx.$('ctBtrkImgWrap');
+  if(!el||el._wired) return; el._wired=true;
+  const move=(e)=>{
+    if(!btrkState) return;
+    const r=wrap.getBoundingClientRect();
+    btrkState.roi.x=Math.max(0.05,Math.min(0.95,(e.clientX-r.left)/r.width));
+    btrkState.roi.y=Math.max(0.05,Math.min(0.95,1-(e.clientY-r.top)/r.height));
+    btrkPlaceROI();
+    if(btrkOnROIMove) btrkOnROIMove();
+  };
+  el.addEventListener('pointerdown',e=>{ el.setPointerCapture(e.pointerId); e.preventDefault(); });
+  el.addEventListener('pointermove',e=>{ if(e.buttons&1) move(e); });
+  wrap.addEventListener('pointerdown',e=>{ if(e.target===wrap||e.target.tagName==='CANVAS') move(e); });
+}
+
+/* Run the monitoring series. Resolves 'scan' when the diagnostic scan should start, or
+   'abort' if the operator stops. */
+function runBolusTracking(g, alive, enhanced){
+  return new Promise((resolve)=>{
+    const S=ctx.S;
+    // The trigger lives on the enhanced group — the monitoring series only supplies the ROI
+    // and the images. Fall back to the monitor's own settings when run standalone (QC hook).
+    const bt=(enhanced && enhanced.bolus) || g.bolus;
+    // Two techniques share this window because they are the same acquisition: a single slice
+    // watched over time. Tracking fires when the ROI crosses a threshold; a test bolus never
+    // fires — it runs to a fixed duration and reports when the ROI PEAKED, which is the
+    // transit time you then use as a fixed delay for the diagnostic scan.
+    const mode=(enhanced && enhanced.delayMode==='test') || g.testBolus ? 'test' : 'track';
+    const setup=scanSetup(g);
+    const geo=reconGeoM(groupDFOV(g), setup.cx||0, (setup.cy!=null?setup.cy:ISO_Y), QUICK_RT, g.sfovMM||500);
+    const h=buildKernel(geo.ds, geo.m.nDet, geo.m.fixedPitch);
+    const mu={ ...setup.mu, muMat:null, bhc:null };
+    const N=geo.m.gridN;
+    // `img` is kept so moving the ROI can re-measure from the slice already on screen. Without
+    // it the HU readout only refreshed on the next reconstruction, so during ROI placement —
+    // when there is no timer running at all — dragging the circle showed a stale number.
+    btrkState={ mode, roi:g.bolus.roi, thrHU:bt.thrHU, auto:bt.auto, img:null, N, muW:setup.muW,
+                pts:[], t:0, t0:null, firedAt:null, peakAt:null, peakHU:null,
+                tracking:false, done:false };
+    const panel=ctx.$('ctBtrk'); panel.classList.add('show');
+    panel.classList.toggle('testbolus', mode==='test');
+    ctx.$('ctBtrkTitle').textContent = mode==='test' ? 'TEST BOLUS' : 'BOLUS TRACKING';
+    ctx.$('ctBtrkLoc').textContent='slice '+fmtTablePos(setup.positions[0]);
+    ctx.$('ctBtrkThrK').textContent = mode==='test' ? 'Duration' : 'Trigger';
+    ctx.$('ctBtrkThr').textContent = mode==='test'
+      ? (bt.testDur||40)+' s'
+      : bt.thrHU+' HU'+(bt.auto?' · auto':' · manual');
+    ctx.$('ctBtrkState').textContent='POSITION ROI';
+    ctx.$('ctBtrkT').textContent='0.0 s';      // a new series starts its own clock, not the last one's
+    const go=ctx.$('ctBtrkGo');
+    go.textContent = mode==='test' ? 'START TEST BOLUS' : 'START TRACKING';
+    go.classList.remove('armed');
+    btrkWireROI();
+
+    let timer=null, injTimer=null, raf=null;
+    const finish=(how)=>{
+      if(btrkState){ btrkState.done=true; btrkLastPeak=btrkState.peakAt; }
+      // The measured transit time belongs to the diagnostic group, and writing it here rather
+      // than in the scan loop means it lands whoever ran the series.
+      if(how==='measured' && enhanced && btrkLastPeak!=null){
+        enhanced.measured=Math.round(btrkLastPeak);
+        enhanced.delay=enhanced.measured;
+        renderScanGroups();
+      }
+      if(timer) clearInterval(timer);
+      clearInterval(injTimer);
+      clearInterval(raf);
+      panel.classList.remove('show');
+      btrkState=null; btrkOnROIMove=null;
+      resolve(how);
+    };
+    const frame=()=>{
+      if(!alive()) return finish('abort');
+      const st=btrkState; if(!st) return;
+      // the monitored slice is reconstructed at the CURRENT injector time
+      if(ctx.contrastLatch) ctx.contrastLatch();
+      setup.phantom=ctx.buildPhantom();
+      const img=previewReconSlice(setup, 0, geo, h, mu);
+      st.img=img;
+      btrkDrawSlice(img, N, setup.muW);
+      btrkPlaceROI();
+      const hu=btrkROIMeanHU(img, N, setup.muW, st.roi);
+      ctx.$('ctBtrkHU').textContent=Math.round(hu)+' HU';
+      syncInj();
+      if(st.tracking){
+        st.t=(performance.now()-st.t0)/1000;
+        ctx.$('ctBtrkT').textContent=st.t.toFixed(1)+' s';
+        st.pts.push({t:st.t, hu});
+        if(st.mode==='test'){
+          // A test bolus does not trigger. It watches the small dose come and go, and the
+          // number it exists to produce is the time of the peak — the transit time from the
+          // arm to the vessel, which is what a fixed delay is really trying to guess.
+          if(st.peakHU==null || hu>st.peakHU){ st.peakHU=hu; st.peakAt=st.t; }
+          ctx.$('ctBtrkState').textContent='TEST BOLUS · '
+            + (st.peakAt!=null ? 'peak '+st.peakAt.toFixed(1)+' s' : 'measuring');
+          if(st.t >= (bt.testDur||40)) finish('measured');
+        } else if(st.auto && st.firedAt==null && hu>=st.thrHU){
+          st.firedAt=st.t;
+          ctx.$('ctBtrkState').textContent='TRIGGERED';
+          setTimeout(()=>{ if(btrkState && !btrkState.done) finish('scan'); }, (bt.postDelay||4)*1000);
+        }
+      }
+    };
+    // Re-measure from the slice already on screen. Dragging the ROI has to answer immediately —
+    // finding the vessel IS the task, and a number that only catches up 1.5 s later makes it
+    // guesswork.
+    const remeasure=()=>{
+      const st=btrkState; if(!st||!st.img) return;
+      ctx.$('ctBtrkHU').textContent=Math.round(btrkROIMeanHU(st.img, st.N, st.muW, st.roi))+' HU';
+    };
+    btrkOnROIMove=remeasure;
+    const inj=ctx.$('ctBtrkInj');
+    const syncInj=()=>{
+      const running=ctx.contrastRunning && ctx.contrastRunning();
+      const ready=ctx.contrastReady && ctx.contrastReady();
+      inj.disabled=!ready;
+      inj.classList.toggle('running', !!running);
+      inj.textContent = running ? '■' : '▶';
+      const clk=ctx.contrastClock && ctx.contrastClock();
+      ctx.$('ctBtrkInjT').textContent = ready ? (clk==null ? '0.0 s' : clk.toFixed(1)+' s')
+                                              : 'contrast off';
+    };
+    inj.onclick=()=>{
+      if(ctx.contrastRunning && ctx.contrastRunning()) ctx.contrastReset();
+      else if(ctx.contrastStart) ctx.contrastStart();
+      syncInj();
+    };
+    syncInj();
+    // The injector clock has to run on its own beat, not on the monitoring series': the whole
+    // point of starting the injection first is to watch that gap grow before arming tracking.
+    injTimer=setInterval(syncInj, 200);
+    frame();                                   // first image immediately, for ROI placement
+    // The plot repaints on its own timer for the whole life of the window: the axes and the
+    // trigger level are up before anything is measured, and once the series is running the time
+    // cursor sweeps continuously instead of the graph sitting still between the ~1.5 s samples.
+    // A timer, not requestAnimationFrame — rAF is tied to compositing, so it is throttled to a
+    // crawl whenever the page is not being painted (an embedded pane, a background tab), which
+    // is exactly when the graph looked frozen. It is a 320x248 canvas; 60 ms costs nothing.
+    raf=setInterval(btrkDrawPlot, 60);
+    btrkDrawPlot();
+    go.onclick=()=>{
+      const st=btrkState; if(!st) return;
+      if(!st.tracking){
+        // One press arms the series AND starts the injection, because that is how it is done:
+        // the operator starts the injector and the monitoring series together, and the gap
+        // between them would otherwise be an invisible error in every run.
+        if(ctx.contrastReady && ctx.contrastReady() && !(ctx.contrastRunning && ctx.contrastRunning()))
+          ctx.contrastStart();
+        st.tracking=true; st.t0=performance.now(); st.pts=[];
+        ctx.$('ctBtrkState').textContent = st.mode==='test' ? 'TEST BOLUS · measuring' : 'TRACKING';
+        go.textContent = st.mode==='test' ? 'END TEST' : 'SCANNING PHASE';
+        go.classList.add('armed');
+        timer=setInterval(frame, BTRK_PERIOD_MS);
+        frame();
+      } else {
+        finish(st.mode==='test' ? 'measured' : 'scan');   // manual trigger / end the test early
+      }
+    };
+    ctx.$('ctBtrkAbort').onclick=()=>finish('abort');
+  });
+}
+
+/* Test/QC hook, mirroring window.radsimQC in the x-ray module. Bolus tracking sits behind a
+   full console workflow (zero, move, scout, plan), so this exposes the monitoring series on
+   its own — otherwise the only way to exercise it is to drive that whole sequence. */
+if (typeof window !== 'undefined') window.radsimCT = {
+  groups: () => ctx.S.ct.groups,
+  // Pass the partner group, exactly as runScan does — otherwise the hook always runs the
+  // tracking technique and a planned test bolus could not be exercised through it.
+  bolusTracking: (gi) => runBolusTracking(grp(gi || 0), () => true, grp((gi || 0) + 1)),
+  trackState: () => btrkState,
+};
+
+
+/* ---- bolus-tracked pairs ---------------------------------------------------------------
+   A bolus-tracked acquisition is always TWO scan groups, because that is what it is on the
+   machine: a monitoring series and the diagnostic series it triggers. Selecting bolus
+   tracking therefore turns the chosen group into the monitoring series — one slice, no delay,
+   since the delay is the thing being measured — and creates the enhanced group beneath it,
+   which is where the trigger threshold lives. They share a colour so the pair reads as one
+   plan. */
+function nextIsTest(gi) { const e = grp(gi + 1); return !!(e && e.delayMode === 'test'); }
+function colourOf(gi) { const g = grp(gi); return 'gc' + (g && g.cg != null ? g.cg : gi); }
+
+function makeBolusPair(gi, auto, kind) {
+  const c = ctx.S.ct, g = grp(gi);
+  const dm = kind === 'test' ? 'test' : 'bolus';
+  if (g.monitor) {                              // already a pair: just switch the technique
+    const e = grp(gi + 1);
+    if (e && (e.delayMode === 'bolus' || e.delayMode === 'test')) {
+      e.delayMode = dm; e.bolus.auto = auto;
+      if (dm === 'test') { e.delay = e.measured || 0; }
+    }
+    return true;
+  }
+  if (!c.groups.some((x) => !x.on)) {           // every slot in use
+    setHint('This technique needs a spare scan group for the diagnostic series — disable one first.');
+    return false;
+  }
+  const enhanced = JSON.parse(JSON.stringify(g));   // the diagnostic scan keeps the planned range
+  enhanced.on = true; enhanced.vis = true; enhanced.monitor = false;
+  enhanced.delayMode = dm; enhanced.delay = 0; enhanced.measured = null;
+  enhanced.bolus = { ...(g.bolus || {}), auto };
+  enhanced.cg = gi;
+  // the chosen group becomes the monitoring series: a single slice at its own centre
+  g.monitor = true; g.delayMode = 'time'; g.delay = 0; g.cg = gi;
+  const mid = (g.box.top + g.box.bot) / 2;
+  g.box.top = g.box.bot = mid;
+  c.groups.splice(gi + 1, 0, enhanced);
+  // keep the array at N_GROUPS by dropping a disabled group from the end
+  for (let k = c.groups.length - 1; k >= 0 && c.groups.length > N_GROUPS; k--)
+    if (!c.groups[k].on) c.groups.splice(k, 1);
+  return true;
+}
+
+function clearBolusPair(gi) {
+  // Dissolving a pair has to leave ONE ordinary group holding the planned range, whichever
+  // half the user edited — otherwise switching the enhanced row back to a time delay would
+  // strand its monitoring row as a lone single-slice series with nothing to trigger.
+  const g = grp(gi);
+  if (g.monitor) {                                  // edited the monitoring row
+    const e = grp(gi + 1);
+    if (e && (e.delayMode === 'bolus' || e.delayMode === 'test') && e.cg === g.cg) {
+      g.box = JSON.parse(JSON.stringify(e.box));    // it takes the diagnostic range back
+      e.on = false; e.delayMode = 'time'; e.cg = null; e.monitor = false;
+    }
+    g.monitor = false; g.cg = null;
+  } else {                                          // edited the enhanced row
+    const m = grp(gi - 1);
+    if (m && m.monitor && m.cg === g.cg) {          // retire the monitoring series
+      m.on = false; m.monitor = false; m.cg = null;
+    }
+    g.cg = null;
+  }
+  g.delayMode = 'time';
+}
+
 // ---- scan sequence ----
 async function runScan() {
   const S = ctx.S, tok = ++scanToken, alive = () => tok === scanToken;
   const groups = S.ct.groups.map((g, i) => ({ g, i })).filter(x => x.g.on);
   if (!groups.length) { setHint('No scan groups enabled.'); return; }
+  // Freeze the contrast clock as the scan begins; per-slice timing counts on from there.
+  if (ctx.contrastLatch) ctx.contrastLatch();
   setBusy(true);
   setPhase('scanning');
   setConsoleEnabled(false);
@@ -2678,6 +3106,27 @@ async function runScan() {
   try {
     for (const { g, i } of groups) {
       if (!alive()) return;
+      // The MONITORING group is not an acquisition: run the tracking series, then carry on
+      // to the next group, which is the enhanced scan it was triggering.
+      if (g.monitor) {
+        setPhase('tracking');
+        const partner = groups.find(x => x.i > i && (x.g.delayMode === 'bolus' || x.g.delayMode === 'test'))?.g;
+        const how = await runBolusTracking(g, alive, partner);
+        if (how === 'measured') {
+          // A test bolus measures and stops. It CANNOT roll straight into the diagnostic scan:
+          // that scan needs the full injection, given fresh and timed from its own start, while
+          // the injector clock is already tens of seconds into the test dose. The transit time
+          // has been written into the diagnostic group; hand the console back to the operator.
+          const t = btrkLastPeak;
+          setHint(t == null ? 'Test bolus ended with no peak measured — was the ROI on a vessel?'
+            : 'Test bolus: peak at ' + t.toFixed(1) + ' s, and that is now the scan delay. '
+              + 'Reset the injector, give the full dose, then START.');
+          return;
+        }
+        if (how !== 'scan' || !alive()) { setHint('Bolus tracking stopped.'); return; }
+        setPhase('scanning');
+        continue;
+      }
       await repositionForGroup(i, alive);                  // 1) move the couch for this group
       if (!alive()) return;
       if (g.delay > 0) { await scanDelay(g.delay, alive); if (!alive()) return; }   // 2) scan delay
@@ -3159,6 +3608,17 @@ function buildWaterBHC(binW, muWbins, muWeff) {
   };
 }
 
+/* Couch speed (mm/s) = table travel per rotation / rotation time. */
+export function couchSpeedMMps(g) {
+  return tableSpeedOf(g) / Math.max(g.rotSpeed, 1e-6);
+}
+/* When slice i is acquired, in seconds since the injection started.
+   Distance is measured from the FIRST slice in acquisition order, so a caudocranial scan
+   times correctly too (|z - z0| rather than a signed offset). */
+export function sliceTime(g, positions, i, t0) {
+  return t0 + Math.abs(positions[i] - positions[0]) / Math.max(couchSpeedMMps(g), 1e-6);
+}
+
 function scanSetup(g) {
   const spec = Spectrum.make(g.kv), bins = spec.bins, effE = spec.meanE;
   const phantom = ctx.buildPhantom();            // built at the committed table position (patient.z = isoZ)
@@ -3228,6 +3688,24 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
   // up live (the couch advances to that slice's position as it appears).
   const N = geo.m.gridN, nz = positions.length, vol = new Float32Array(nz * N * N);
   const meta = { gridN: N, fovMM, muWater: muW };
+  /* ---- when each slice is actually acquired ------------------------------------------
+     A CT scan is not an instant. The couch travels at pitch x beam collimation per
+     rotation, so a chest-abdomen helical takes 8-12 s end to end and the liver is imaged
+     seconds after the lungs — often in a different contrast phase. Imaging every slice at
+     one moment is what makes "you scanned too early" invisible, so each slice gets its own
+     time and its own concentration table.
+     Distance is measured from the FIRST slice in acquisition order, so a caudocranial scan
+     times correctly too (|z - z0| rather than a signed offset). */
+  const mmPerSec = couchSpeedMMps(g);
+  const tOfSlice = (i) => sliceTime(g, positions, i, ctx.S.contrast.scanTime);
+  const contrastAt = (t) => {
+    const C = ctx.S.contrast;
+    return (C.on && C.timeline && C.sVol) ? buildConcLUT(C.timeline, t) : null;
+  };
+  if (ctx.S.contrast.on && ctx.S.contrast.timeline) {
+    meta.contrast = { tStart: +tOfSlice(0).toFixed(1), tEnd: +tOfSlice(nz - 1).toFixed(1),
+                      mmPerSec: +mmPerSec.toFixed(1) };
+  }
   // ---- Python GPU engine (voxel subjects): reconstruct in slice batches ----
   let done = false;
   if (voxel && ctx.S.ct.backend === 'python' && ctx.S.computeInfo && ctx.compute) {
@@ -3250,7 +3728,14 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
       for (let s0 = 0; s0 < nz; s0 += BATCH) {
         if (!alive()) return null;
         const zs = positions.slice(s0, s0 + BATCH).map(d => d / MM_PER_UNIT);
-        const batch = await ctx.compute.ctSlices({ ...base, z0List: zs });
+        // One concentration table per batch, at the batch's middle slice. Four slices span
+        // ~0.3 s of couch travel at a typical 75 mm/s, which is well inside the timeline's
+        // 1 s temporal resolution — so this is not a compromise, it is below the resolution
+        // of the data underneath it. Sending a table per slice would be ~96 KB of JSON each.
+        const bl = contrastAt(tOfSlice(Math.min(s0 + (zs.length >> 1), nz - 1)));
+        const batch = await ctx.compute.ctSlices({ ...base, z0List: zs,
+          concLUT: bl ? Array.from(bl) : null,
+          iodineCol: bl ? BodyMaterials.IODINE_COL : null });
         for (let b = 0; b < zs.length; b++) {
           const si = s0 + b;
           vol.set(batch.subarray(b * N * N, (b + 1) * N * N), si * N * N);
@@ -3275,6 +3760,10 @@ async function reconstructSlices(g, alive, onProgress, onSlice, setup) {
     for (let si = 0; si < nz; si++) {
       if (!alive()) return null;
       const zw = positions[si] / MM_PER_UNIT;    // world plane for this slice (see scoutProjection geometry)
+      // This slice's own moment in the bolus — the browser engine can afford a table per
+      // slice, so it takes one.
+      const sl = contrastAt(tOfSlice(si));
+      if (sl) phantom.setContrast(sl, ctx.S.contrast.sVol, CONTRAST_NS);
       const sino = projectSlice(phantom, zw, mu, photons0, geo, cone);
       const q = filterSino(blurOn ? sinoBlur(sino, geo.m) : sino, h, geo.ds, geo.m);
       const img = backproject(q, geo);

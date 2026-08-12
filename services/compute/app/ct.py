@@ -22,7 +22,8 @@ from typing import Any
 import numpy as np
 import torch
 
-from .gpu import DEVICE, get_volume, sample_ids, rot_tensor, mat_columns
+from .gpu import (DEVICE, get_volume, sample_ids, sample_ids_s, rot_tensor,
+                  mat_columns, NS_CONC)
 
 STEP = 0.05          # in-plane march step, world units (0.5 mm)
 FWD_BATCH = 16       # forward-projection angle batching ((a,K,S,3) points tensor)
@@ -109,6 +110,13 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
     ds = float(p["ds"])                                # channel spacing (world units)
     ray_r = float(p["rayR"])                           # ray half-length (covers the object)
     dfov_r = float(p["dfovR"])                         # display-FOV radius (backprojected region)
+    # Contrast for THIS batch of slices: mgI/mL per material per arclength bin, built by
+    # the client at the batch's acquisition time. Iodine is not a material here — it adds to
+    # each sample's mu in proportion to the concentration that sample carries.
+    _iod = p.get("iodineCol")
+    _conc = p.get("concLUT")
+    conc_t = (torch.tensor(_conc, dtype=torch.float32, device=DEVICE)
+              if _conc and _iod is not None else None)
     mu = torch.tensor(p["muArr"], dtype=torch.float32, device=DEVICE)
     mu[0] = 0.0                                        # air
     photons0 = float(p["photons0"])
@@ -174,16 +182,26 @@ def recon_slices(p: dict[str, Any]) -> np.ndarray:
             for kz, dz, wz in cone_rays:
                 zt = (z0 + dz + kz * (ts - ray_r)).view(1, 1, -1).expand_as(pxr)  # slice-thickness offset + cone tilt
                 pts = torch.stack([pxr, pyr, zt], dim=-1)                     # (a, K, S, 3)
-                ids = sample_ids(vv, pts, center, rot)
+                if conc_t is not None:
+                    ids, svals = sample_ids_s(vv, pts, center, rot)
+                    c_s = conc_t[ids * NS_CONC + svals]          # mgI/mL at each sample
+                else:
+                    ids, c_s = sample_ids(vv, pts, center, rot), None
                 if poly:
                     # transmission over spectral bins (loop over bins to keep the per-material
                     # (a,K,S) tensor small); T = Σ w_b · exp(-∫μ_b dl)
                     T = torch.zeros(a1 - a0, n_det, device=DEVICE)
                     for b in range(binW.shape[0]):
-                        e_b = (muMat[ids, b] * STEP).sum(dim=-1)              # (a, K)
+                        mu_s = muMat[ids, b]
+                        if c_s is not None:                       # + iodine: c x mu per mgI/mL
+                            mu_s = mu_s + c_s * muMat[_iod, b]
+                        e_b = (mu_s * STEP).sum(dim=-1)                       # (a, K)
                         T += binW[b] * torch.exp(-e_b)
                 else:
-                    T = torch.exp(-(mu[ids] * STEP).sum(dim=-1))
+                    mu_s = mu[ids]
+                    if c_s is not None:
+                        mu_s = mu_s + c_s * mu[_iod]
+                    T = torch.exp(-(mu_s * STEP).sum(dim=-1))
                 Tcone += wz * T
             sino[a0:a1] = -torch.log(Tcone.clamp(min=1e-30))
         if photons0 > 0:

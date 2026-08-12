@@ -5,16 +5,20 @@ import * as THREE from 'three';
 import { Spectrum } from './core/spectrum.js';
 import { Phantom } from './core/phantom.js';
 import { AttenuationEngine } from './core/engine.js';
-import { Detector } from './core/detector.js';
+import { Detector, EI_K, AEC_CHAMBER_CAL } from './core/detector.js';
 import { Sound } from './audio/sound.js';
 import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
+import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
+import { decodeGITimeline, buildGIVolume, buildBariumLUT, buildGasLUT, NS as GI_NS } from './core/gi.js';
+import { GIStudy, SEGMENTS as GI_SEGMENTS } from './core/giSolve.js';
 import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
-import { initCT, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme } from './ct.js';
+import { initTutorial } from './tutorial.js';
+import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 
 /* ============================================================================
@@ -316,6 +320,18 @@ async function setSubject(sub){
   if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
   // backend-only models (large, no volume in the browser) MUST use the Python engine
   applyBackendOnly(!!vm.backendOnly);
+  // A new subject invalidates any solved timeline: the arclength volume and the vessel set
+  // both belong to the old model.
+  S.contrast.timeline=null; S.contrast.sVol=null; S.contrast.sVolFor=null;
+  S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false; S.contrast.static=false;
+  // The barium field belongs to the old model in exactly the same way.
+  S.barium.timeline=null; S.barium.giVol=null; S.barium.giVolFor=null;
+  S.barium.lut=null; S.barium.lutT=null; S.barium.on=false;
+  if($('ctrstPanel')) ctrstApply();
+  // The GI geometry belongs to the old model too, so drop it and re-evaluate whether the new
+  // subject can carry barium at all.
+  S.barium.gi=null; S.barium.study=null; S.barium.running=false;
+  if($('giPanel')) giApply();
   showActive(sub);
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
   if(sel) sel.value=sub;
@@ -339,12 +355,14 @@ function prepSkinMesh(grp){
 /* Show either the photographic skin or the material-shaded mesh for every loaded subject.
    Models without a skin mesh always show the plain one. */
 function applyPhotoSkin(){
-  const want=!!S.photoSkin;
+  // The photo-textured skin is simply the default whenever the model ships one — there is
+  // no toggle. It is display only; the physics always reads the voxel volume. Models
+  // without a skin (all but the hand, today) show the material-shaded mesh.
   for(const k in (three.voxelMeshes||{})){
     const wrap=three.voxelMeshes[k]; if(!wrap||!wrap.children) continue;
     const hasSkin=wrap.children.some(c=>c.userData&&c.userData.role==='skin');
     wrap.children.forEach(c=>{ const r=c.userData&&c.userData.role; if(!r) return;
-      c.visible = hasSkin ? (r==='skin')===want : r==='plain'; });
+      c.visible = r === (hasSkin?'skin':'plain'); });
   }
 }
 
@@ -421,9 +439,12 @@ function setDetOrient(o){ S.detOrient=o; applyDet(); }
    STATE + WIRING
    ============================================================================ */
 const S = {
+  // oid is DERIVED, not set: it is the air gap under the object, i.e. the height offset.
+  // It used to be a stepper that changed only this number — the geometry never moved, so
+  // magnification never changed, which is what "OID is broken" meant.
   pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
-  objOff:{x:0,z:0},            // x-ray object offset on the receptor (cm): x cross / z long axis
+  objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
   aecOn:false, aecCells:{l:false,c:true,r:false}, aecResult:null,  // AEC: cells + achieved mAs of the last exposure
@@ -432,7 +453,6 @@ const S = {
   detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
-  photoSkin:true,              // show the photo-textured display skin (cosmetic only)
   curve:null, curveManual:false,                   // response-curve handles; null = follow the image
   resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
@@ -442,6 +462,32 @@ const S = {
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
   voxelModel:null,             // loaded voxel model (dims/spacing/data/legend/makePhantom)
+  // Contrast (docs/contrast-simulation.md). `timeline` is the solved haemodynamics for the
+  // current injector settings; `scanTime` is when the acquisition happens relative to the
+  // start of the injection, which is the single most consequential number in a CTA.
+  contrast:{ on:false, timeline:null, sVol:null, scanTime:25,
+             params:{ volume_ml:100, rate_ml_s:4.0, conc_mgi_ml:350, delay_s:0, saline_ml:40,
+                      volume2_ml:0, rate2_ml_s:2.0,
+                      saline_rate_ml_s:4.0, cardiac_output_l_min:5.0, blood_volume_ml:5000,
+                      vessel_scale:1.0, perfusion_scale:1.0, site:'basilic' },
+             lut:null, lutT:null, busy:false, error:null,
+             // injector transport: t0 = when START was pressed, latched = the elapsed time
+             // frozen at the moment an image was actually acquired
+             run:{ t0:null, latched:null, timer:null },
+             // true when the timeline came from the model's shipped preset rather than a
+             // live solve — the protocol is then fixed and the controls are locked
+             static:false,
+             },
+  // Barium studies. `studyTime` is seconds since the agent was given, and is the analogue of
+  // the injector clock: for a swallow it is seconds, for a follow-through it is minutes.
+  barium:{ on:false, timeline:null, giVol:null, giVolFor:null, studyTime:60,
+           lut:null, lutT:null, busy:false, error:null, static:false,
+           // live study (core/giSolve.js): the clock advances it and the pose is read from
+           // the rotate/tilt sliders, so turning the patient moves the agent from that moment
+           gi:null, study:null, running:false, speed:10, lastTick:0,
+           route:'oral', volumeMl:150, concPct:100, erect:false,
+           // double contrast: gas volume in mL (0 = single contrast) and its own LUT
+           gasMl:0, gasLut:null },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -641,10 +687,467 @@ function buildPhantom(){
   const vm=S.voxelModel;
   if(!vm) return new Phantom();          // nothing loaded yet (first frames during boot)
   const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
-  const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
+  // x-ray: the object rests on the receptor plus the height offset — which is where OID
+  // comes from. Lifting it moves the anatomy toward the source: real magnification and
+  // real geometric unsharpness, because the divergent rays do the rest.
+  const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10 + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
-  return vm.makePhantom([cx,cy,cz], voxelFlips(), R);
+  const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R);
+  applyContrast(ph);
+  applyBarium(ph);
+  return ph;
 }
+
+
+
+/* ---- barium / fluoroscopy panel --------------------------------------------------------
+   The study is LIVE (core/giSolve.js): the clock advances the solver and the pose is read
+   from the same rotate/tilt sliders that position the patient for the image. Turning them
+   mid-study changes gravity from that moment, which is the whole examination.
+
+   The clock runs faster than real time by default. A barium meal takes half an hour to reach
+   the caecum and nobody watches that at 1x; the rate selector is part of the instrument, not
+   a debug affordance. */
+const GI_SEG_ORDER = [48, 49, 50, 51, 52];
+
+function giPose(){
+  return { rotX:S.objRot.x, rotY:S.objRot.y, rotZ:S.objRot.z, erect:S.barium.erect };
+}
+function giPoseLabel(){
+  const r = S.objRot, bits = [S.barium.erect ? 'Erect' : 'Recumbent'];
+  if(r.x) bits.push(`tilt ${r.x}\u00b0`);
+  if(r.y) bits.push(`rot ${r.y}\u00b0`);
+  if(r.z) bits.push(`roll ${r.z}\u00b0`);
+  // Name the classic positions, because that is what they are called on the request card.
+  // +z is superior and +x is the patient's right (liver at high x, spleen at low x), so a
+  // positive roll about z swings the right side anteriorly \u2014 the patient ends up on their
+  // LEFT. The decubitus is named for the side that is DOWN.
+  const named = (!r.x && !r.y && Math.abs(r.z)===90) ? (r.z>0 ? ' \u2014 left lateral decubitus'
+                                                             : ' \u2014 right lateral decubitus')
+              : (!r.y && !r.z && Math.abs(r.x)===180) ? ' \u2014 prone' : '';
+  return bits.join(' \u00b7 ') + named;
+}
+function giClock(){ return S.barium.study ? S.barium.study.t : 0; }
+function giFmt(t){
+  const m = Math.floor(t/60), s2 = Math.floor(t%60);
+  return String(m).padStart(2,'0')+':'+String(s2).padStart(2,'0');
+}
+
+/* Start (or restart) the study from t=0 with the current administration and pose. */
+function giBegin(){
+  const B = S.barium, vm = S.voxelModel;
+  if(!vm || !vm.hasGI){ B.error = `${S.subject} has no GI transport data`; return false; }
+  if(!B.gi){ B.error = 'GI geometry not loaded'; return false; }
+  try{
+    B.study = new GIStudy(B.gi, {
+      route:B.route, volumeMl:B.volumeMl, concMgBaMl:B.concPct*5.88, overS:B.route==='rectal'?120:5,
+      pose:giPose(),
+      // effervescent granules fizz out in seconds; an insufflator takes a minute of squeezing
+      gasMl:B.gasMl, gasOverS:B.route==='rectal'?60:10,
+    });
+    B.error = null; B.lut = null; B.lutT = null; B.gasLut = null;
+    B.timeline = B.study.sample();
+    return true;
+  }catch(err){ B.error = err.message; B.study = null; return false; }
+}
+
+/* Advance the study and refresh what the renderer sees. Called on a timer while running. */
+function giTick(){
+  const B = S.barium;
+  if(!B.study || !B.running) return;
+  const now = performance.now();
+  const wall = Math.min((now - (B.lastTick || now)) / 1000, 0.5);   // cap after a tab stall
+  B.lastTick = now;
+  // The solver steps in 0.5 s quanta and advance() rounds — so at 1x a 100 ms tick asked
+  // for 0.1 s, rounded to zero steps, and the clock never moved: 1x behaved as a pause.
+  // Bank the un-stepped remainder instead; advance() returns what it actually consumed.
+  B.acc = (B.acc || 0) + wall * B.speed;
+  B.acc -= B.study.advance(B.acc);
+  B.timeline = B.study.sample();
+  B.lut = null; B.lutT = null;
+  giRender();
+  refreshFilmViewer?.();
+}
+
+function giSetPose(){
+  const B = S.barium;
+  if(B.study) B.study.setPose(giPose());
+  const el = $('giPose'); if(el) el.textContent = giPoseLabel();
+}
+
+function giBars(){
+  const cv = $('giBars'); if(!cv) return;
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.fillStyle = '#05070a'; g.fillRect(0,0,W,H);
+  const B = S.barium, st = B.study;
+  const pad = {l:74, r:8, t:6, b:6}, rows = GI_SEG_ORDER.length;
+  const bh = (H - pad.t - pad.b) / rows;
+  g.font = '9px monospace';
+  // scale to the administered concentration, so a full lumen is a full bar
+  const cmax = Math.max(B.concPct * 5.88, 1);
+  for(let i=0;i<rows;i++){
+    const vid = GI_SEG_ORDER[i], y = pad.t + i*bh;
+    const name = (GI_SEGMENTS[vid] || {}).name || String(vid);
+    g.fillStyle = '#7f8c99';
+    g.fillText(name.slice(0,11), 4, y + bh*0.62);
+    let lum = 0, wal = 0, gas = 0;
+    if(st && st.tubes[vid]){
+      const c = st.tubes[vid].c, w = st.wall[vid], q = st.gas[vid];
+      for(let j=0;j<c.length;j++){ lum += c[j]; wal += w[j]; gas += q[j]; }
+      lum /= c.length; wal /= w.length; gas /= q.length;
+    }
+    const bw = W - pad.l - pad.r;
+    g.fillStyle = '#1a2028'; g.fillRect(pad.l, y+3, bw, bh-8);
+    // Gas first, as the space it has taken: it is drawn from the right because it is what
+    // the barium no longer has, and it reads as the lucency it will be on the film.
+    if(gas > 0){
+      const gw = Math.min(1, gas) * bw;
+      g.fillStyle = 'rgba(70,110,150,.30)'; g.fillRect(pad.l+bw-gw, y+3, gw, bh-8);
+    }
+    // lumen in amber, mucosal coat stacked on it in a paler tone — the coat is what a
+    // double-contrast film shows once the lumen has emptied, so it must stay visible
+    const lw = Math.min(1, lum/cmax) * bw;
+    g.fillStyle = '#e0a83c'; g.fillRect(pad.l, y+3, lw, bh-8);
+    const ww = Math.min(1, wal/12) * bw * 0.35;
+    g.fillStyle = 'rgba(240,220,170,.55)'; g.fillRect(pad.l+lw, y+3, ww, bh-8);
+  }
+}
+
+function giRender(){
+  const B = S.barium;
+  const el = (id)=>$(id);
+  if(el('giElapsed')) el('giElapsed').textContent = giFmt(giClock());
+  const go = el('giGo');
+  if(go){ go.textContent = B.running ? '\u25a0' : '\u25b6'; go.classList.toggle('running', !!B.running); }
+  if(el('giPhase')){
+    const t = giClock();
+    el('giPhase').textContent = !B.study ? 'not started'
+      : B.running ? (t<15 ? 'swallowing' : t<300 ? 'gastric' : t<1800 ? 'small bowel' : 'colon')
+      : 'paused';
+  }
+  if(el('giPose')) el('giPose').textContent = giPoseLabel();
+  if(el('giAudit') && B.study){
+    const a = B.study.audit();
+    el('giAudit').textContent = `${(a.given/1000).toFixed(1)} g given \u00b7 `
+      + `${(a.lumen/1000).toFixed(1)} g in the lumen \u00b7 ${(a.mucosa/1000).toFixed(1)} g coating`
+      + (a.gasGiven > 0 ? ` \u00b7 ${a.gasHeld.toFixed(0)} mL gas` : '')
+      + (Math.abs(a.errPct) > 0.5 ? `  (mass ${a.errPct.toFixed(1)} %)` : '');
+  }
+  if(el('giStatus')){
+    el('giStatus').textContent = B.error ? B.error
+      : !B.on ? 'Barium off.'
+      : !B.study ? 'Ready. Press \u25b6 to give the agent and start the clock.'
+      : B.running ? 'Running. Turn the patient and the barium follows.'
+      : 'Paused. Expose whenever the anatomy is filled.';
+  }
+  giBars();
+}
+
+async function giApply(){
+  const B = S.barium, panel = $('giPanel');
+  if(!panel) return;
+  const vm = S.voxelModel;
+  const blocked = !vm || !vm.hasGI;
+  panel.classList.toggle('blocked', blocked);
+  const tab = $('giTab');
+  if(tab){
+    tab.disabled = blocked;
+    tab.title = blocked ? `${S.subject} has no GI transport data — build_gi has not been run for it`
+                        : 'Barium studies';
+  }
+  if(blocked){ B.on = false; B.running = false; panel.classList.remove('open'); }
+  syncFlyouts();
+  const pow = $('giOn');
+  if(pow){ pow.textContent = B.on ? 'ON' : 'OFF'; pow.classList.toggle('on', !!B.on); }
+  if(B.on && vm && vm.hasGI){
+    try{
+      if(!B.gi) B.gi = await vm.loadGI();
+      // The solver works in arclength; the tracer works in voxels. Without this map the
+      // study runs perfectly and reaches no image at all, which is a silent kind of wrong.
+      if(!B.giVol || B.giVolFor !== S.subject){
+        B.giVol = buildGIVolume(vm.data, await vm.loadGIArc());
+        B.giVolFor = S.subject;
+      }
+    }catch(err){ B.error = 'Could not load the GI geometry: '+err.message; }
+  }
+  giRender();
+}
+
+function initGIPanel(){
+  if(!$('giPanel')) return;
+  const B = S.barium;
+  $('giTab').addEventListener('click', ()=>{
+    if($('giTab').disabled) return;
+    $('giPanel').classList.toggle('open');
+    syncFlyouts();
+  });
+  $('giOn').addEventListener('click', async ()=>{
+    B.on = !B.on;
+    if(!B.on){ B.running = false; B.study = null; B.timeline = null; B.lut = null; }
+    await giApply(); syncScene();
+  });
+  $('giGo').addEventListener('click', ()=>{
+    if(!B.on) return;
+    if(!B.study && !giBegin()){ giRender(); return; }
+    B.running = !B.running;
+    B.lastTick = performance.now(); B.acc = 0;
+    giRender();
+  });
+  $('giReset').addEventListener('click', ()=>{
+    B.running = false; B.study = null; B.timeline = null; B.lut = null; B.lutT = null;
+    B.acc = 0;
+    giRender(); syncScene();
+  });
+  document.querySelectorAll('#giSpeedSeg button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      B.speed = +b.dataset.sp;
+      document.querySelectorAll('#giSpeedSeg button').forEach(x=>x.classList.toggle('on', x===b));
+    });
+  });
+  document.querySelectorAll('#giRouteSeg button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      B.route = b.dataset.route;
+      document.querySelectorAll('#giRouteSeg button').forEach(x=>x.classList.toggle('on', x===b));
+      // a change of route is a different examination, so the study restarts
+      B.study = null; B.running = false;
+      $('giVol').value = B.volumeMl = (B.route==='rectal' ? 800 : 150);
+      $('giVolV').textContent = B.volumeMl+' mL';
+      if(B.gasMl) giSetGas(giGasDefault());
+      giRender();
+    });
+  });
+  document.querySelectorAll('#giGasSeg button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('#giGasSeg button').forEach(x=>x.classList.toggle('on', x===b));
+      giSetGas(b.dataset.gas === '1' ? giGasDefault() : 0);
+      B.study = null; B.running = false;     // a different technique is a different study
+      giRender();
+    });
+  });
+  $('giGas').addEventListener('input', e=>{
+    giSetGas(+e.target.value);
+    if(B.study){ B.study = null; B.running = false; }
+    giRender();
+  });
+  document.querySelectorAll('#giStandSeg button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      B.erect = b.dataset.erect === '1';
+      document.querySelectorAll('#giStandSeg button').forEach(x=>x.classList.toggle('on', x===b));
+      giSetPose(); giRender();
+    });
+  });
+  $('giVol').addEventListener('input', e=>{
+    B.volumeMl = +e.target.value; $('giVolV').textContent = B.volumeMl+' mL';
+    if(B.study){ B.study = null; B.running = false; }      // dose changed: start again
+    giRender();
+  });
+  $('giConc').addEventListener('input', e=>{
+    B.concPct = +e.target.value; $('giConcV').textContent = B.concPct+' % w/v';
+    $('giAdmNote').textContent = `${(B.concPct*5.88).toFixed(0)} mg Ba/mL \u00b7 `
+      + `${(B.volumeMl*B.concPct*5.88/1000).toFixed(0)} g of barium`;
+    if(B.study){ B.study = null; B.running = false; }
+    giRender();
+  });
+  $('giConc').dispatchEvent(new Event('input'));
+  giSetGas(0);
+  // one timer for the whole study; it does nothing while paused
+  setInterval(giTick, 100);
+  giApply();
+}
+
+/* The lumen the gas has to work with. The segmentation caught this subject's gut at REST, so
+   it is smaller than the distended bowel a real double-contrast study inflates — the 400 mL
+   of CO2 effervescent granules make would simply fill it. The default is therefore taken
+   from the geometry rather than from the packet, and the slider still reaches over-distension
+   if you want to see what that looks like. */
+function giGasTarget(){
+  const B = S.barium, seg = B.route==='rectal' ? 52 : 49;
+  const ml = B.gi && B.gi.segments && B.gi.segments[seg] ? B.gi.segments[seg].volumeML : 0;
+  return { seg, ml };
+}
+function giGasDefault(){
+  const t = giGasTarget();
+  if(!t.ml) return B_GAS_FALLBACK;
+  return Math.max(50, Math.round(t.ml * 0.45 / 50) * 50);
+}
+const B_GAS_FALLBACK = 400;
+
+/* Gas volume in mL. 0 is a single-contrast study, which disables the slider rather than
+   leaving it live at a value that does nothing. */
+function giSetGas(ml){
+  const B = S.barium;
+  B.gasMl = Math.max(0, ml|0);
+  const on = B.gasMl > 0;
+  if(on) $('giGas').value = B.gasMl;
+  $('giGas').disabled = !on;
+  $('giGasV').textContent = on ? B.gasMl+' mL' : '—';
+  document.querySelectorAll('#giGasSeg button').forEach(x=>
+    x.classList.toggle('on', (x.dataset.gas === '1') === on));
+  const note = $('giGasNote');
+  if(note && on){
+    const t = giGasTarget(), name = (GI_SEGMENTS[t.seg]||{}).name || 'the lumen';
+    const fill = t.ml ? Math.min(100, B.gasMl/t.ml*100) : 0;
+    note.innerHTML = `Gas goes into the <b>${name.toLowerCase()}</b>, which this subject's CT `
+      + `segmented at <b>${t.ml.toFixed(0)} mL</b> — a lumen at rest, not the distended one a `
+      + `real study inflates. ${B.gasMl} mL fills <b>${fill.toFixed(0)} %</b> of it`
+      + (fill > 92 ? `, so it is over-distended: the barium is pushed out ahead of it and what `
+                   + `is left is a coat.` : `, so the barium is driven off the non-dependent `
+                   + `wall and left there as a coat. Turn the patient and both move.`);
+  } else if(note){
+    note.innerHTML = 'Single contrast: the lumen fills, and you read its outline. Double '
+      + 'contrast adds gas — effervescent granules on a swallow, an insufflator on an enema — '
+      + 'which pushes the barium off the non-dependent wall and leaves it coated. You then '
+      + 'read the <b>surface</b>, which is where mucosal disease lives.';
+  }
+}
+
+/* ---- contrast ------------------------------------------------------------------------
+   The solver's output lives on the vascular graph, so turning it into something the
+   ray-caster can use is two lookups: which arclength bin each voxel sits at (per model,
+   built once) and the concentration at each bin for THIS acquisition time (per image). */
+function contrastLUT(){
+  const C=S.contrast;
+  if(!C.on || !C.timeline) return null;
+  // Nothing is enhanced until the injector has actually run. Before START the patient has
+  // no contrast in them, and the images should say so.
+  if(C.run.t0==null && C.run.latched==null) return null;
+  if(C.lut && C.lutT===C.scanTime) return C.lut;      // one table per acquisition time
+  C.lut=buildConcLUT(C.timeline, C.scanTime); C.lutT=C.scanTime;
+  return C.lut;
+}
+function applyContrast(ph){
+  const C=S.contrast, lut=contrastLUT();
+  if(lut && C.sVol) ph.setContrast(lut, C.sVol, CONTRAST_NS);
+  else ph.setContrast(null, null, CONTRAST_NS);
+}
+function bariumLUT(){
+  const B=S.barium;
+  if(!B.on || !B.timeline) return null;
+  // A live study's sample() is a one-frame timeline, so the lookup time is its own clock.
+  const t = B.study ? B.study.t : B.studyTime;
+  if(B.lut && B.lutT===t) return B.lut;
+  B.lut=buildBariumLUT(B.timeline, t);
+  B.gasLut=buildGasLUT(B.timeline, t);      // null unless gas was given
+  B.lutT=t;
+  return B.lut;
+}
+function applyBarium(ph){
+  const B=S.barium, lut=bariumLUT();
+  if(lut && B.giVol) ph.setBarium(lut, B.giVol, GI_NS, B.gasLut);
+  else ph.setBarium(null, null, GI_NS, null);
+}
+/* Load the barium field for the current subject. Unlike contrast there is no live solve in
+   the browser: a GI study runs for half an hour of simulated time, so it is always the
+   shipped timeline. The pose it was solved for is fixed with it — see the note in
+   gi_solver.py on why turning the patient is the examination. */
+async function bariumLoad(){
+  const B=S.barium, vm=S.voxelModel;
+  B.error=null;
+  if(!vm || !vm.hasGI){
+    B.error=`${S.subject} has no GI transport data — run build_gi for this model`;
+    B.timeline=null; return false;
+  }
+  if(!vm.hasPresetBarium){
+    B.error=`${S.subject} ships no barium timeline — run gi_export for this model`;
+    B.timeline=null; return false;
+  }
+  B.busy=true;
+  try{
+    const [json, giarc]=await Promise.all([vm.loadPresetBarium(), vm.loadGIArc()]);
+    B.timeline=decodeGITimeline(json);
+    B.static=true;
+    if(!B.giVol || B.giVolFor!==S.subject){ B.giVol=buildGIVolume(vm.data, giarc); B.giVolFor=S.subject; }
+    B.lut=null; B.lutT=null;
+    return true;
+  }catch(err){
+    B.error='Could not load the barium timeline: '+err.message;
+    B.timeline=null; return false;
+  }finally{ B.busy=false; }
+}
+/* Solve for the current injector settings. The solve is ~1.2 s on the backend and the
+   result is ~0.45 MB, so it is re-run on any injector change rather than cached as presets. */
+async function contrastSolve(){
+  const C=S.contrast, vm=S.voxelModel;
+  C.error=null;
+  if(!vm || !vm.hasVessels){
+    C.error=`${S.subject} has no vessel data — run build_vessels for this model`;
+    C.timeline=null; return false;
+  }
+  // No service: fall back to the timeline shipped with the model. The solver is Python-only,
+  // but a SOLVED timeline is just data — the whole timing exercise (start the injector, judge
+  // the moment, scan) is client-side and works exactly the same. Only reprogramming the
+  // injector needs the service, so those controls get locked rather than the feature removed.
+  if(!S.computeInfo){
+    if(!vm.hasPresetContrast){
+      C.error='Python compute service unreachable, and this model ships no preset timeline.';
+      C.timeline=null; return false;
+    }
+    C.busy=true;
+    try{
+      const [json, arclen]=await Promise.all([
+        vm.loadPresetContrast(C.params.site), vm.loadArclen()]);
+      C.timeline=decodeTimeline(json);
+      C.static=true;
+      if(json.preset) Object.assign(C.params, json.preset);   // show what it was solved for
+      if(!C.sVol || C.sVolFor!==S.subject){ C.sVol=buildSVolume(vm.data, arclen); C.sVolFor=S.subject; }
+      C.lut=null; C.lutT=null;
+      return true;
+    }catch(err){
+      C.error='Could not load the preset timeline: '+err.message;
+      C.timeline=null; return false;
+    }finally{ C.busy=false; }
+  }
+  C.static=false;
+  C.busy=true;
+  try{
+    const [json, arclen]=await Promise.all([
+      compute.contrastTimeline({ model:S.subject, ...C.params }),
+      vm.loadArclen(),
+    ]);
+    C.timeline=decodeTimeline(json);
+    if(!C.sVol || C.sVolFor!==S.subject){ C.sVol=buildSVolume(vm.data, arclen); C.sVolFor=S.subject; }
+    C.lut=null; C.lutT=null;
+    return true;
+  }catch(err){
+    // A dropped connection surfaces as the browser's bare "Failed to fetch", which tells the
+    // user nothing and does not name the thing to restart. It also means the health poll's
+    // view is stale — up to 5 s out of date — so mark the service down immediately rather
+    // than leaving the panel enabled and inviting a second identical failure.
+    const gone = (err instanceof TypeError) || /failed to fetch|networkerror|load failed/i.test(err.message||'');
+    if(gone){
+      S.computeInfo=null;
+      C.error='Lost the Python compute service mid-solve. Restart it, then press ON again.';
+    } else {
+      C.error=err.message;
+    }
+    C.timeline=null;
+    if($('ctrstPanel')) ctrstApply(true);      // re-grey the tab now, not at the next poll
+    return false;
+  }finally{ C.busy=false; }
+}
+// Drive contrast before the panel exists (Phase 3). Also the hook the tests use.
+window.radsimContrast={
+  state:()=>S.contrast,
+  async enable(params){
+    Object.assign(S.contrast.params, params||{});
+    S.contrast.on=true;
+    const ok=await contrastSolve();
+    if(!ok) S.contrast.on=false;
+    return ok ? S.contrast.timeline : S.contrast.error;
+  },
+  disable(){ S.contrast.on=false; S.contrast.lut=null; },
+  setScanTime(t){ S.contrast.scanTime=t; },
+  // Acquisition timing for the currently selected scan group — a helical scan images each
+  // slice at its own moment, which is the whole point of per-slice timing.
+  ctTiming(){
+    const g=(S.ct.groups||[])[S.ct.sel||0]; if(!g) return null;
+    const lo=S.ct.scanStart, hi=lo+S.ct.scanLen, n=12;
+    const pos=Array.from({length:n},(_,i)=>lo+(hi-lo)*i/(n-1));
+    return { mmPerSec:+couchSpeedMMps(g).toFixed(1), lenMM:+(hi-lo).toFixed(0),
+             pitch:g.pitch, beamCollMM:g.beamColl, rotS:g.rotSpeed,
+             t:pos.map((_,i)=>+sliceTime(g,pos,i,S.contrast.scanTime).toFixed(2)) };
+  },
+};
 
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
@@ -653,8 +1156,8 @@ function syncScene(){
   const ox=S.mode!=='ct'?S.objOff.x:0, oz=S.mode!=='ct'?S.objOff.z:0;   // x-ray object offset sliders
   three.handGroup.rotation.z = 0;
   if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);       // flips are mode-dependent
-  if(S.mode!=='ct' && S.voxelModel){                                    // x-ray: rest the model on the detector
-    three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10, oz);
+  if(S.mode!=='ct' && S.voxelModel){                // x-ray: rest the model on the detector + lift
+    three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10 + S.objOff.y, oz);
   }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
@@ -1010,17 +1513,22 @@ function bind(){
   const rotAxes=[['objRotX','x'],['objRotY','y'],['objRotZ','z']];
   for(const [id,ax] of rotAxes){
     $(id)?.addEventListener('input',e=>{ S.objRot[ax]=parseInt(e.target.value);
-      $(id+'v').textContent=S.objRot[ax]+'°'; resetPrep(); syncScene(); });
+      $(id+'v').textContent=S.objRot[ax]+'°'; resetPrep(); syncScene();
+      giSetPose?.(); });
   }
   // x-ray object offset sliders (cm on the receptor: z long axis / x cross axis)
-  const offAxes=[['objOffX','x'],['objOffZ','z']];
+  const offAxes=[['objOffX','x'],['objOffZ','z'],['objOffY','y']];
   for(const [id,ax] of offAxes){
     $(id)?.addEventListener('input',e=>{ S.objOff[ax]=parseFloat(e.target.value);
-      $(id+'v').textContent=S.objOff[ax]+' cm'; resetPrep(); syncScene(); });
+      $(id+'v').textContent=S.objOff[ax]+' cm'; resetPrep(); syncScene();
+      // the height offset IS the OID — the readout in Tube & distance follows it
+      if(ax==='y'){ S.oid=S.objOff.y; const o=$('oidV'); if(o) o.textContent=S.oid+' cm'; }
+    });
   }
-  $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0};
+  $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0,y:0};
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
+    S.oid=0; const o=$('oidV'); if(o) o.textContent='0 cm';
     resetPrep(); syncScene(); });
   // sliders that only affect geometry (update chips + scene)
   const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ'];
@@ -1039,7 +1547,6 @@ function bind(){
       const kind=btn.dataset.step, d=parseFloat(btn.dataset.d);
       if(kind==='sid'){ S.sid=Math.max(20,Math.min(180,S.sid+d)); $('sidV').textContent=S.sid+' cm';
         $('sidRo').innerHTML=S.sid+'<small>cm</small>'; syncScene(); }
-      if(kind==='oid'){ S.oid=Math.max(0,Math.min(20,S.oid+d)); $('oidV').textContent=S.oid+' cm'; syncScene(); }
       if(kind==='kv'){ S.kv=Math.max(40,Math.min(120,S.kv+d)); $('kv').value=S.kv; }
       if(kind==='mas'){ let i=nearestMasIdx(); i=Math.max(0,Math.min(masSteps.length-1,i+d)); S.mas=masSteps[i]; $('mas').value=i; }
       if(kind==='ma'){ let i=nearestMaIdx(); i=Math.max(0,Math.min(maSteps.length-1,i+d)); S.ma=maSteps[i]; $('ma').value=i; }
@@ -1136,7 +1643,6 @@ function bind(){
   });
   segPick('resSeg', b=>{ S.resolution=b.dataset.res; applyDet(); });
   // photo skin vs material shading — display only, never touches the physics
-  segPick('skinSeg', b=>{ S.photoSkin=(b.dataset.skin==='photo'); applyPhotoSkin(); });
   $('detSizeSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
     [...$('detSizeSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
     setDetSize(parseInt(b.dataset.w),parseInt(b.dataset.h));});
@@ -1223,6 +1729,10 @@ function startExposure(){
                       'SELECT L, C OR R - OR SWITCH AEC OFF', 'EXPOSURE', 'INHIBITED');
     return;
   }
+  // Freeze the contrast clock at the instant the tube fires: the image belongs to the delay
+  // the operator actually achieved, not to wherever the clock has drifted by the time the
+  // projection finishes computing.
+  ctrstLatch();
   S.exposing=true; EXP.done=false; EXP.holding=true;
   // AEC terminates the exposure itself — the operator just holds through it (ms-scale);
   // manual technique requires holding the switch for the full set exposure time.
@@ -1317,6 +1827,10 @@ async function computeRadiograph(){
         source, detCenter, detU, detV, nx, ny, pxU, pxV,
         binsW:spectrum.bins.map(b=>b.w),
         muMat:muOverBins(spectrum.bins).map(r=>Array.from(r)),
+        // contrast: 48 KB of table, not a 40 MB field — the backend builds the per-voxel
+        // arclength itself from the same arclen.bin the browser reads
+        concLUT: phantom.concLUT ? Array.from(phantom.concLUT) : null,
+        iodineCol: phantom.concLUT ? BodyMaterials.IODINE_COL : null,
         I0, refDist:100,
         coneD:fd, coneW:wAxis, coneL:lAxis, coneTw:tw, coneTl:tl,
         rot: phantom.rot ? Array.from(phantom.rot) : null,
@@ -1351,11 +1865,24 @@ async function computeRadiograph(){
   // fraction of scatter a grid still passes (~15%). Kept modest so it adds realistic
   // veiling glare (lowering contrast for large no-grid fields — the reason grids exist)
   // WITHOUT washing the image out.
-  const SCAT_SPR_MAX=_t.spr??4.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
+  // SCAT_SPR_MAX is calibrated against the quantity that can actually be checked: the
+  // RESIDUAL scatter-to-primary ratio at the detector after the grid, which for a gridded PA
+  // chest is ~0.2-0.5. Measured in the lung field: 4.0 -> 0.54 (top of band, lung/mediastinum
+  // 2.45), 2.0 -> 0.27 (mid band, 3.53), 1.5 -> 0.20 (3.53 -> 4.11). 2.0 it is. Setting it by
+  // the contrast ratio instead would mean pushing residual SPR below anything defensible.
+  const SCAT_SPR_MAX=_t.spr??2.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
   let scatterFog=0;
   {
     const distC=Math.hypot(source[0],source[1],source[2])||100, invSqC=(100*100)/(distC*distC);
-    let sumP=0, nF=0; for(let k=0;k<dose.length;k++){ if(mask[k]){ sumP+=dose[k]; nF++; } }
+    // Reference the fog to the primary that actually passed THROUGH the patient, not to the
+    // whole field. Scatter is produced in tissue, so raw beam around the anatomy contributes
+    // none of it — yet averaging it in inflates meanP and therefore the fog. With an open
+    // collimator that put the mediastinum at 92 % scatter and collapsed lung/mediastinum
+    // contrast to 1.9x against a real 5-15x. Same error as the EI VOI: a field-wide mean that
+    // silently includes direct exposure.
+    let maxP=0; for(let k=0;k<dose.length;k++) if(mask[k] && dose[k]>maxP) maxP=dose[k];
+    const attenCut=maxP*0.90;                       // above this the ray missed the patient
+    let sumP=0, nF=0; for(let k=0;k<dose.length;k++){ if(mask[k] && dose[k]<attenCut){ sumP+=dose[k]; nF++; } }
     if(nF){
       const meanP=sumP/nF, meanIncident=I0*invSqC;
       const atten=Math.max(0,Math.min(1,1-meanP/(meanIncident||1)));     // 0 = air, ~1 = heavily attenuated
@@ -1390,7 +1917,9 @@ async function computeRadiograph(){
 
   // ---- AEC: the chambers integrate receptor-plane kerma DURING the exposure and cut it
   // when the average over the selected cells reaches the calibrated target (the same
-  // receptor-dose calibration the EI uses: EI = 900 × dose, so target dose = EI_target/900).
+  // receptor-dose calibration the EI uses: EI = EI_K × dose, so target = EI_target/EI_K. The
+  // constant is imported rather than repeated — a local 900 here would silently stop matching
+  // the detector's if that were ever tuned, and the AEC would aim at the wrong dose.)
   // Everything upstream is linear in mAs, so the projection computed at the BACKUP mAs is
   // simply rescaled to the terminated mAs — noise is applied after, at the true exposure.
   // If the target is never reached (cells behind dense anatomy / collimated off), the
@@ -1398,7 +1927,9 @@ async function computeRadiograph(){
   S.aecResult=null;
   if(aecActive()){
     const cd=aecCellDose(dose,nx,ny,pxU,pxV);       // mean chamber dose at backup mAs
-    const target=S.eiTarget/900;                     // calibrated receptor dose (EI 100 = 1 µGy)
+    // Chamber target, not VOI target — see AEC_CHAMBER_CAL. Metering the mediastinum at a
+    // lung-level dose is what made every AEC exposure read ~3x hot.
+    const target=S.eiTarget/EI_K/AEC_CHAMBER_CAL;
     const backup=S.mas;
     const ideal = cd>1e-12 ? backup*target/cd : Infinity;
     const masA=Math.max(AEC_MIN_MAS, Math.min(backup, ideal));
@@ -1910,7 +2441,9 @@ const compute=new ComputeClient();
 /* Ping the backend; update the status chips + enable/disable the Python buttons in
    both modes. Called at boot and whenever a toggle is pressed. */
 async function refreshComputeStatus(){
+  const was=!!S.computeInfo;
   S.computeInfo=await compute.health();
+  if(was!==!!S.computeInfo) ctrstBackendChanged();
   const on=!!S.computeInfo, dev=on?(S.computeInfo.compute||{}):null;
   const label=on ? ((dev.device==='cuda'?(dev.name||'GPU'):'CPU')) : 'offline';
   for(const id of ['backendStatusX','backendStatusCT']){
@@ -2061,6 +2594,515 @@ function updateDetWarn(){
     : '⚠ The enabled physics features increase processing time. Turn them off for the fastest previews.';
 }
 
+
+/* ---- power injector (docs/contrast-simulation.md Phase 3) ----------------------------
+   Modelled on a dual-syringe CT injector: one barrel of contrast medium, one of saline, a
+   programmed sequence drawn to scale in time, and a transport bar.
+
+   The scan delay is NOT a number you dial. You start the injector, the clock runs, and the
+   enhancement you get is whatever the anatomy had reached at the moment you took the
+   exposure — which is the actual skill the machine demands. Dialling "scan at 25 s" let you
+   pick the answer; this makes you commit to it. */
+const CTRST_EL = { conc:'ctrstConc', hr:'ctrstHr', sv:'ctrstSv',
+                   cal:'ctrstCal', perf:'ctrstPerf' };
+// What each access route means for the bolus. The arterial sites are estimates and the note
+// says so in the same breath — the limb is not in any model's anatomy, so its transit is a
+// mixing bed plus a delay, entering the segmented circulation at the named trunk vein.
+const CTRST_SITE_NOTE = {
+  basilic: 'The reference route: arm vein → SVC → right heart. Every timing chart '
+    + 'assumes this access.',
+  central: 'Catheter tip at the cavoatrial junction — no peripheral veins to cross, so '
+    + 'arrival is the earliest and sharpest the circulation can produce.',
+  radial: 'Arterial access: the bolus must cross the forearm capillary bed before it can '
+    + 'return. The forearm is not in this anatomy — estimated as an 80 mL bed + 5 s '
+    + 'vessel run, rejoining at the SVC. Expect a later, blunter peak.',
+  femoral: 'Arterial access: the bolus crosses the leg and returns via the IVC. The leg is '
+    + 'not in this anatomy — estimated as a 150 mL bed + 8 s run. The latest, most '
+    + 'dispersed arrival of the four.',
+};
+let ctrstTimer = null;
+
+/* Injection line pressure, Poiseuille through the 2.5 m coiled line and a 20 G cannula.
+   Real physics rather than decoration: it is why 8 mL/s of 400 mgI/mL through a small
+   cannula is a genuine constraint, and the fourth-power radius term is what makes cannula
+   choice matter more than anything else on the panel. Viscosity is for 37 degC. */
+const CONTRAST_ETA = [[240, 0.0030], [300, 0.0049], [350, 0.0080], [400, 0.0120]];  // Pa.s
+function injViscosity(conc){
+  const t = CONTRAST_ETA;
+  if(conc <= t[0][0]) return t[0][1];
+  for(let i=1;i<t.length;i++){
+    if(conc <= t[i][0]){
+      const f=(conc-t[i-1][0])/(t[i][0]-t[i-1][0]);
+      return t[i-1][1]+(t[i][1]-t[i-1][1])*f;
+    }
+  }
+  return t[t.length-1][1];
+}
+function injPressureBar(rate_ml_s, conc){
+  const eta=injViscosity(conc), Q=rate_ml_s*1e-6;             // m^3/s
+  const seg=(L,r)=> 8*eta*L*Q/(Math.PI*Math.pow(r,4));        // Pa
+  return (seg(2.5, 0.75e-3) + seg(0.032, 0.40e-3)) / 1e5;     // line + cannula, Pa -> bar
+}
+
+/* The programmed sequence: an optional start delay, the contrast bolus, the saline chaser. */
+function ctrstPhases(){
+  const P=S.contrast.params;
+  // Every phase is always present, even at zero, because the bar is the only place a phase
+  // can be programmed — a segment that vanishes when you set it to 0 cannot be set back.
+  return [
+    {kind:'delay', t:P.delay_s, ml:0, rate:0},
+    {kind:'cm',    t:P.volume_ml/Math.max(P.rate_ml_s,.1),        ml:P.volume_ml, rate:P.rate_ml_s},
+    {kind:'cm2',   t:P.volume2_ml/Math.max(P.rate2_ml_s,.1),      ml:P.volume2_ml, rate:P.rate2_ml_s},
+    {kind:'nacl',  t:P.saline_ml/Math.max(P.saline_rate_ml_s,.1), ml:P.saline_ml, rate:P.saline_rate_ml_s},
+  ];
+}
+const ctrstTotalTime = () => ctrstPhases().reduce((a,p)=>a+p.t, 0);
+const fmtClock = (sec)=>{
+  const s=Math.max(0,Math.floor(sec));
+  return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
+};
+
+/* ---- the running clock -------------------------------------------------------------- */
+function ctrstClock(){
+  const R=S.contrast.run;
+  return R.t0==null ? null : (performance.now()-R.t0)/1000;
+}
+function ctrstStart(){
+  const R=S.contrast.run;
+  R.t0=performance.now(); R.latched=null;
+  S.contrast.scanTime=0; S.contrast.lut=null; S.contrast.lutT=null;
+  if(!R.timer) R.timer=setInterval(ctrstTick, 100);
+  ctrstRenderRun(); ctrstDrawCurve();
+}
+function ctrstReset(){
+  const R=S.contrast.run;
+  if(R.timer){ clearInterval(R.timer); R.timer=null; }
+  R.t0=null; R.latched=null;
+  S.contrast.scanTime=0; S.contrast.lut=null; S.contrast.lutT=null;
+  ctrstRenderRun(); ctrstDrawCurve();
+}
+function ctrstTick(){
+  const t=ctrstClock();
+  if(t==null) return;
+  if(S.contrast.run.latched==null){
+    S.contrast.scanTime=Math.min(t, 90);
+    S.contrast.lut=null; S.contrast.lutT=null;
+  }
+  ctrstRenderRun(); ctrstDrawCurve();
+  if(t>150){ const R=S.contrast.run; clearInterval(R.timer); R.timer=null; }   // stop ticking, keep the time
+}
+/* Freeze the acquisition time at the instant the tube fires. Everything downstream — the
+   x-ray projection, every CT slice — reads S.contrast.scanTime, so latching here is what
+   ties the image to the delay the operator actually achieved. */
+function ctrstLatch(){
+  const t=ctrstClock();
+  if(t==null) return null;
+  S.contrast.run.latched=Math.min(t, 90);
+  S.contrast.scanTime=S.contrast.run.latched;
+  S.contrast.lut=null; S.contrast.lutT=null;
+  ctrstRenderRun();
+  return S.contrast.run.latched;
+}
+
+function ctrstReadUI(){
+  const v=(k)=> +$(CTRST_EL[k]).value;
+  const P=S.contrast.params;
+  P.conc_mgi_ml=v('conc');
+  // Cardiac output is what the haemodynamics depend on; heart rate is what a student
+  // changes. CO = HR x stroke volume, so expose both and derive the one the solver wants.
+  P.cardiac_output_l_min=v('hr')*v('sv')/1000;
+  P.vessel_scale=v('cal'); P.perfusion_scale=v('perf');
+  $('ctrstConcV').textContent=P.conc_mgi_ml+' mgI/mL';
+  $('ctrstHrV').textContent=v('hr')+' bpm';
+  $('ctrstSvV').textContent=v('sv')+' mL';
+  $('ctrstCalV').textContent=P.vessel_scale.toFixed(2)+'×';
+  $('ctrstPerfV').textContent=P.perfusion_scale.toFixed(2)+'×';
+  $('ctrstTotal').textContent=(P.volume_ml+P.volume2_ml+P.saline_ml)+' ml total';
+  $('ctrstDur').textContent=fmtClock(ctrstTotalTime());
+  // both contrast phases carry iodine; peak pressure is whichever phase runs fastest
+  $('ctrstInjNote').textContent=((P.volume_ml+P.volume2_ml)*P.conc_mgi_ml/1000).toFixed(1)
+    +' g iodine · peak line pressure '
+    +injPressureBar(Math.max(P.rate_ml_s, P.volume2_ml>0?P.rate2_ml_s:0),P.conc_mgi_ml).toFixed(1)+' bar';
+  $('ctrstCoNote').textContent='cardiac output '+P.cardiac_output_l_min.toFixed(1)+' L/min'
+    +' · calibre scales transit time, perfusion scales organ uptake';
+  ctrstRenderBar();
+}
+
+/* Phase bar, drawn to scale in time. */
+function ctrstRenderBar(){
+  const el=$('ctrstBar'); if(!el) return;
+  const ph=ctrstPhases(), tot=Math.max(ctrstTotalTime(),.1);
+  el.innerHTML=ph.map(p=>{
+    const lab=p.kind==='delay' ? 'Delay' : p.ml+' ml';
+    const sub=p.kind==='delay' ? fmtClock(p.t) : p.rate.toFixed(1)+' mL/s · '+p.t.toFixed(1)+'s';
+    // grow in proportion to duration, but never below a tappable width
+    return `<button class="inj-seg ${p.kind}" data-phase="${p.kind}" `
+         + `style="flex:${Math.max(p.t,0.01)} 1 0"><div>${lab}</div><small>${sub}</small></button>`;
+  }).join('');
+  const editable = S.contrast.on && !ctrstBlocker() && !S.contrast.static;
+  el.querySelectorAll('.inj-seg').forEach(b=>{
+    b.disabled=!editable;
+    b.addEventListener('click',()=>kpadOpen(b.dataset.phase));
+  });
+}
+
+/* Live readouts while the injector runs. */
+function ctrstRenderRun(){
+  if(!$('ctrstElapsed')) return;
+  const P=S.contrast.params, t=ctrstClock(), R=S.contrast.run;
+  const tot=ctrstTotalTime();
+  $('ctrstElapsed').textContent = t==null ? '00:00' : fmtClock(t);
+  $('ctrstProg').style.width = t==null ? '0%' : Math.min(100, t/Math.max(tot,.1)*100)+'%';
+  // delivered volume: walk the programmed phases up to the elapsed time
+  let cm=0, na=0, left=t==null?0:t;
+  for(const p of ctrstPhases()){
+    const d=Math.min(Math.max(left,0), p.t);
+    if(p.kind==='cm') cm+=d*p.rate;
+    if(p.kind==='nacl') na+=d*p.rate;
+    left-=p.t;
+  }
+  const inj = t!=null && t<tot;
+  $('ctrstPress').textContent = (inj ? injPressureBar(P.rate_ml_s,P.conc_mgi_ml) : 0).toFixed(1)+' bar';
+  $('ctrstDeliv').innerHTML = Math.round(cm)+' ml CM &nbsp;·&nbsp; '+Math.round(na)+' ml NaCl delivered';
+  const go=$('ctrstGo');
+  go.classList.toggle('running', t!=null);
+  go.textContent = t==null ? '▶' : (inj ? '● INJECTING' : '● RUNNING');
+  $('ctrstReset').disabled = t==null;
+}
+
+function ctrstStatus(msg, cls){
+  const el=$('ctrstStatus'); if(!el) return;
+  el.textContent=msg; el.className='ctrst-status'+(cls?' '+cls:'');
+}
+
+/* Re-solve, debounced. */
+function ctrstQueueSolve(){
+  if(!S.contrast.on) return;
+  clearTimeout(ctrstTimer);
+  ctrstStatus('Solving haemodynamics…','busy');
+  ctrstTimer = setTimeout(async ()=>{
+    const ok = await contrastSolve();
+    if(!ok){
+      S.contrast.on=false; ctrstApply(true);
+      ctrstStatus(S.contrast.error || 'Solve failed.','err');
+    } else {
+      ctrstApply(true);          // the timeline now exists, so START can arm
+      ctrstStatus(S.contrast.static
+        ? 'Preset timeline loaded. Press START, then take the exposure when the timing is right.'
+        : 'Ready. Press START, then take the exposure when the timing is right.');
+    }
+    S.contrast.lut=null; S.contrast.lutT=null;
+    ctrstDrawCurve(); refreshReadouts();
+  }, 350);
+}
+
+
+/* Enhancement of one vessel at a given time on the injector clock, as an ROI would read it.
+   The CT console's bolus-tracking series calls this; it is a pure read of the timeline, so it
+   needs no solve and works on the shipped preset too. */
+export function contrastVesselHU(vesselId, t){
+  const tl=S.contrast.timeline; if(!tl) return 0;
+  const f=tl.vessels.get(vesselId); if(!f) return 0;
+  const i=Math.max(0, Math.min(tl.nT-1, Math.round(t)));
+  let m=0; const a=i*tl.nS;
+  for(let k=0;k<tl.nS;k++) if(f[a+k]>m) m=f[a+k];
+  return m * BodyMaterials.huPerMgIml(70);
+}
+
+/* Predicted enhancement + where the clock currently is. */
+function ctrstDrawCurve(){
+  const cv=$('ctrstCurve'); if(!cv) return;
+  const g=cv.getContext('2d'), W=cv.width, H=cv.height;
+  g.clearRect(0,0,W,H); g.fillStyle='#070a0d'; g.fillRect(0,0,W,H);
+  const tl=S.contrast.timeline, TMAX=90;
+  const K=BodyMaterials.huPerMgIml(70);        // dHU per mgI/mL at a 120 kVp effective energy
+  const pad={l:26,r:6,t:8,b:14}, pw=W-pad.l-pad.r, ph=H-pad.t-pad.b, HMAX=520;
+  g.lineWidth=1; g.font='8px monospace';
+  for(let hu=0; hu<=HMAX; hu+=130){
+    const y=pad.t+ph-hu/HMAX*ph;
+    g.strokeStyle='#1b232b'; g.beginPath(); g.moveTo(pad.l,y); g.lineTo(W-pad.r,y); g.stroke();
+    g.fillStyle='#5a6570'; g.fillText(String(hu), 3, y+3);
+  }
+  for(let t=0;t<=TMAX;t+=15){
+    const x=pad.l+t/TMAX*pw;
+    g.strokeStyle='#1b232b'; g.beginPath(); g.moveTo(x,pad.t); g.lineTo(x,pad.t+ph); g.stroke();
+    if(t){ g.fillStyle='#5a6570'; g.fillText(t+'s', x-7, H-3); }
+  }
+  if(tl){
+    const line=(series,col)=>{
+      g.strokeStyle=col; g.lineWidth=1.6; g.beginPath();
+      for(let t=0;t<tl.nT && t<=TMAX;t++){
+        const x=pad.l+t/TMAX*pw, y=pad.t+ph-Math.min(series(t)*K,HMAX)/HMAX*ph;
+        if(t) g.lineTo(x,y); else g.moveTo(x,y);
+      }
+      g.stroke();
+    };
+    // a vessel enhances unevenly along its length, so plot its peak — the number a
+    // bolus-tracking ROI would read
+    const vmax=(id)=>{ const f=tl.vessels.get(id); if(!f) return ()=>0;
+      return (t)=>{ let m=0; const a=t*tl.nS; for(let k=0;k<tl.nS;k++) if(f[a+k]>m) m=f[a+k]; return m; }; };
+    const org=(id)=>{ const f=tl.organs.get(id); return f?((t)=>f[t]):()=>0; };
+    line(vmax(29),'#ff7d7d'); line(vmax(30),'#7dc4ff');
+    line(org(11),'#c79bff');  line(org(13),'#8fe08f');
+  } else {
+    g.fillStyle='#4a5560'; g.font='9px monospace';
+    g.fillText('turn contrast on to solve', pad.l+38, pad.t+ph/2);
+  }
+  const mark=(t,col,solid)=>{
+    const x=pad.l+Math.min(t,TMAX)/TMAX*pw;
+    g.strokeStyle=col; g.lineWidth=1.5;
+    if(!solid) g.setLineDash([3,3]);
+    g.beginPath(); g.moveTo(x,pad.t-3); g.lineTo(x,pad.t+ph+3); g.stroke();
+    g.setLineDash([]);
+    if(solid){ g.fillStyle=col; g.beginPath();
+      g.moveTo(x,pad.t-3); g.lineTo(x-4,pad.t-8); g.lineTo(x+4,pad.t-8); g.closePath(); g.fill(); }
+  };
+  // The running clock is the ONLY cue for when to fire — no target is drawn, because
+  // judging the moment against the curve is the exercise. The amber mark appears only
+  // after an exposure, as feedback on where you actually landed.
+  const live=ctrstClock(), R=S.contrast.run;
+  if(live!=null) mark(live, R.latched==null ? '#4fd06a' : '#3a4a55', R.latched==null);
+  if(R.latched!=null) mark(R.latched,'#ffb23e',true);
+}
+
+/* Why contrast cannot run right now, or null if it can.
+
+   Note what is NOT a blocker: the compute-engine choice. The browser ray-caster renders the
+   iodine column perfectly well — what needs the Python service is the haemodynamic SOLVE,
+   which has no JS implementation. Gating on the engine toggle would take away a combination
+   that works. The gate is service reachability. */
+function ctrstBlocker(){
+  const vm=S.voxelModel;
+  if(!vm || !vm.hasVessels)
+    return ['Contrast unavailable — '+S.subject+' has no vessel map (build_vessels not run)'];
+  if(!S.computeInfo && !(vm.hasPresetContrast))
+    return ['Contrast unavailable — needs the Python compute service, and this model ships no preset'];
+  return null;
+}
+
+function ctrstApply(keepStatus){
+  const panel=$('ctrstPanel'); if(!panel) return;
+  const blocked=ctrstBlocker();
+  // Grey the tab itself, not just the controls inside: the honest signal belongs on the
+  // closed panel. When blocked the tab is inert and the reason lives in its tooltip only.
+  panel.classList.toggle('blocked', !!blocked);
+  $('ctrstTab').title = blocked ? blocked[0] : 'Contrast injector';
+  if(blocked){ panel.classList.remove('open'); syncFlyouts(); }
+  panel.classList.toggle('armed', S.contrast.on);
+  $('ctrstOn').classList.toggle('on', S.contrast.on);
+  $('ctrstOn').textContent = S.contrast.on ? 'ON' : 'OFF';
+  // Editable only when a live solver is behind it. On the shipped preset the protocol is
+  // fixed, so every control that would change it is locked — a slider that silently does
+  // nothing is worse than one that is visibly unavailable.
+  const live = S.contrast.on && !blocked;
+  const editable = live && !S.contrast.static;
+  Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!editable; });
+  // The site select follows `live`, not `editable`: presets ship one timeline per site, so
+  // switching access still works without the service. Individual options grey out when the
+  // model's manifest lacks that site's file (an old single-preset model).
+  const siteEl=$('ctrstSite');
+  if(siteEl){
+    siteEl.disabled = !live;
+    const sites=(S.voxelModel && S.voxelModel.presetSites) || [];
+    [...siteEl.options].forEach(o=>{
+      o.disabled = S.contrast.static && !sites.includes(o.value); });
+  }
+  const lock=$('ctrstLock');
+  if(lock){
+    lock.style.display = (live && S.contrast.static) ? '' : 'none';
+    lock.textContent = 'Preset timeline — protocol locked. The haemodynamic solver runs on the '
+      + 'Python compute service; without it the shipped solve is used, so the injector settings '
+      + 'cannot be changed. The injection site still switches — each site ships its own solved '
+      + 'timeline. Timing, scanning and bolus tracking all still work.';
+  }
+  ctrstRenderBar();          // the phase buttons take their enabled state from `editable` too
+  $('ctrstGo').disabled = !live || !S.contrast.timeline;
+  $('ctrstOn').disabled = !!blocked;
+  if(!live) ctrstReset();
+  if(!blocked && !keepStatus && !S.contrast.on) ctrstStatus('Contrast off. Unenhanced scans are unaffected.');
+  ctrstRenderRun(); ctrstDrawCurve();
+}
+
+/* The service can come and go while the panel is open, so re-evaluate on every health poll.
+   Contrast that is already solved keeps working — the timeline is client-side by then. */
+function ctrstBackendChanged(){
+  if(!$('ctrstPanel')) return;
+  if(S.contrast.on && !S.computeInfo && !S.contrast.timeline){ S.contrast.on=false; }
+  // Service back: unlock. The preset timeline stays in place until something is actually
+  // changed, so the image on screen does not silently move under the user.
+  if(S.computeInfo && S.contrast.static) S.contrast.static=false;
+  ctrstApply(true);
+}
+
+
+/* ---- injector phase keypad -----------------------------------------------------------
+   Tap a phase on the bar, type the value. A number is entered rather than nudged because
+   97 mL is twenty-four presses away from 100 on a +/- key — which is exactly why the real
+   console puts a keypad here and not a pair of arrows. */
+const KPAD = {
+  cm:    { title:'CM', fields:[
+            {k:'volume_ml',       lab:'Volume',    unit:'mL',   min:1,   max:200, dp:0},
+            {k:'rate_ml_s',       lab:'Flow rate', unit:'mL/s', min:0.1, max:10,  dp:1}] },
+  cm2:   { title:'CM · phase 2', fields:[
+            {k:'volume2_ml',      lab:'Volume',    unit:'mL',   min:0,   max:200, dp:0},
+            {k:'rate2_ml_s',      lab:'Flow rate', unit:'mL/s', min:0.1, max:10,  dp:1}] },
+  nacl:  { title:'NaCl', fields:[
+            {k:'saline_ml',       lab:'Volume',    unit:'mL',   min:0,   max:100, dp:0},
+            {k:'saline_rate_ml_s',lab:'Flow rate', unit:'mL/s', min:0.1, max:10,  dp:1}] },
+  delay: { title:'Delay', fields:[
+            {k:'delay_s',         lab:'Start delay', unit:'s',  min:0,   max:60,  dp:0}] },
+};
+let kpadState=null;      // { phase, fields:[{spec, text}], sel }
+
+function kpadRender(){
+  const box=$('kpadFields');
+  box.innerHTML=kpadState.fields.map((f,i)=>{
+    const sp=f.spec;
+    return `<div class="kpad-f${i===kpadState.sel?' sel':''}" data-i="${i}">`
+         + `<div class="fmeta"><b>${sp.lab}</b>Min ${sp.min} ${sp.unit}<br>Max ${sp.max} ${sp.unit}</div>`
+         + `<div class="fv">${f.text===''?'—':f.text} <small>${sp.unit}</small></div></div>`;
+  }).join('');
+  box.querySelectorAll('.kpad-f').forEach(el=>{
+    el.addEventListener('click',()=>{
+      kpadState.sel=+el.dataset.i;
+      kpadState.fields[kpadState.sel].fresh=true;   // its first key replaces too
+      kpadRender();
+    });
+  });
+}
+function kpadOpen(phase){
+  const spec=KPAD[phase]; if(!spec) return;
+  const P=S.contrast.params;
+  kpadState={ phase, sel:0,
+    // `fresh` marks a field still showing its stored value: the first digit typed replaces
+    // it outright. Appending to the existing number is almost never what is wanted — you are
+    // entering 65, not 10065 — so the console overwrites and offers a clear key instead.
+    fields: spec.fields.map(sp=>({ spec:sp, text:String(+P[sp.k].toFixed(sp.dp)), fresh:true })) };
+  $('kpadTitle').textContent=spec.title;
+  kpadRender();
+  $('kpad').className='kpad open '+phase;      // header rule takes the phase colour
+}
+function kpadClose(){ $('kpad').className='kpad'; kpadState=null; }
+function kpadKey(k){
+  if(!kpadState) return;
+  const f=kpadState.fields[kpadState.sel];
+  if(k==='bs'){ f.text=''; f.fresh=false; }                    // clear, not backspace
+  else if(k==='.'){
+    if(f.fresh){ f.text='0'; f.fresh=false; }
+    if(f.spec.dp>0 && !f.text.includes('.')) f.text=(f.text||'0')+'.';
+  } else {
+    if(f.fresh){ f.text=''; f.fresh=false; }                   // first key replaces
+    f.text=(f.text==='0'?'':f.text)+k;
+  }
+  kpadRender();
+}
+function kpadCommit(){
+  if(!kpadState) return;
+  const P=S.contrast.params;
+  for(const f of kpadState.fields){
+    const sp=f.spec, v=parseFloat(f.text);
+    // An out-of-range or empty entry is clamped rather than rejected: the min/max are beside
+    // the field, so the corrected number is visible feedback, not a silent swap.
+    P[sp.k]=isFinite(v) ? Math.max(sp.min, Math.min(sp.max, v)) : sp.min;
+  }
+  kpadClose();
+  if(S.contrast.run.t0!=null) ctrstReset();     // cannot reprogram a running injection
+  ctrstReadUI(); ctrstQueueSolve();
+}
+function initKeypad(){
+  $('kpadKeys').querySelectorAll('button').forEach(b=>
+    b.addEventListener('click',()=>kpadKey(b.dataset.k)));
+  $('kpadDel').addEventListener('click',()=>{
+    if(kpadState){ kpadState.fields[kpadState.sel].text=''; kpadRender(); }
+  });
+  $('kpadOk').addEventListener('click', kpadCommit);
+  $('kpadCancel').addEventListener('click', kpadClose);
+  $('kpad').addEventListener('click',e=>{ if(e.target.id==='kpad') kpadClose(); });
+  document.addEventListener('keydown',e=>{
+    if(!$('kpad').classList.contains('open')) return;
+    if(e.key==='Escape') kpadClose();
+    else if(e.key==='Enter') kpadCommit();
+    else if(/^[0-9]$/.test(e.key)) kpadKey(e.key);
+    else if(e.key==='.') kpadKey('.');
+    else if(e.key==='Backspace') kpadKey('bs');
+    else if(e.key==='Tab' && kpadState){ e.preventDefault();
+      kpadState.sel=(kpadState.sel+1)%kpadState.fields.length;
+      kpadState.fields[kpadState.sel].fresh=true; kpadRender(); }
+  });
+}
+
+/* The left flyouts share an edge: whenever one is open, every tab on that rail slides out
+   with it so no tab is left sitting over the open panel. */
+function syncFlyouts(){
+  document.body.classList.toggle('lflyout', !!document.querySelector('.ctrst.open'));
+}
+function initContrastPanel(){
+  const panel=$('ctrstPanel');
+  $('ctrstTab').addEventListener('click',()=>{
+    if(panel.classList.contains('blocked')) return;      // inert while unavailable
+    panel.classList.toggle('open');
+    syncFlyouts();
+    if(panel.classList.contains('open')) ctrstDrawCurve();
+  });
+  $('ctrstOn').addEventListener('click', async ()=>{
+    S.contrast.on = !S.contrast.on;
+    ctrstApply();
+    if(S.contrast.on) ctrstQueueSolve();
+    else { S.contrast.lut=null; S.contrast.lutT=null; refreshReadouts(); }
+  });
+  ['conc','hr','sv','cal','perf'].forEach(k=>{
+    $(CTRST_EL[k]).addEventListener('input',()=>{
+      if(S.contrast.run.t0!=null) ctrstReset();   // cannot reprogram a running injection
+      ctrstReadUI(); ctrstQueueSolve();
+    });
+  });
+  // The access site is deliberately NOT in CTRST_EL: on a preset it must stay switchable,
+  // because each site ships its own solved timeline — the route changes the topology of the
+  // solve, which no amount of parameter-locking captures.
+  $('ctrstSite')?.addEventListener('change', e=>{
+    const C=S.contrast;
+    C.params.site = e.target.value;
+    $('ctrstSiteNote').textContent = CTRST_SITE_NOTE[C.params.site] || '';
+    if(C.run.t0!=null) ctrstReset();              // a new access is a new injection
+    if(!C.on) return;
+    C.timeline=null; C.lut=null; C.lutT=null;
+    ctrstQueueSolve();
+  });
+  if($('ctrstSiteNote')) $('ctrstSiteNote').textContent = CTRST_SITE_NOTE.basilic;
+  $('ctrstGo').addEventListener('click', ctrstStart);
+  $('ctrstReset').addEventListener('click', ctrstReset);
+  initKeypad();
+  ctrstReadUI(); ctrstApply();
+}
+
+// Drive the injector from a script or a test.
+window.radsimContrast={
+  state:()=>S.contrast,
+  async enable(params){
+    Object.assign(S.contrast.params, params||{});
+    S.contrast.on=true;
+    const ok=await contrastSolve();
+    ctrstApply(true);
+    if(!ok) S.contrast.on=false;
+    return ok ? S.contrast.timeline : S.contrast.error;
+  },
+  disable(){ S.contrast.on=false; ctrstApply(); },
+  start:()=>ctrstStart(),
+  reset:()=>ctrstReset(),
+  latch:()=>ctrstLatch(),
+  vesselHU:(id,t)=>contrastVesselHU(id,t),
+  clock:()=>ctrstClock(),
+  // Acquisition timing for the selected CT scan group — a helical scan images each slice at
+  // its own moment, which is the whole point of per-slice timing.
+  ctTiming(){
+    const g=(S.ct.groups||[])[S.ct.sel||0]; if(!g) return null;
+    const lo=S.ct.scanStart, hi=lo+S.ct.scanLen, n=12;
+    const pos=Array.from({length:n},(_,i)=>lo+(hi-lo)*i/(n-1));
+    return { mmPerSec:+couchSpeedMMps(g).toFixed(1), lenMM:+(hi-lo).toFixed(0),
+             t:pos.map((_,i)=>+sliceTime(g,pos,i,S.contrast.scanTime).toFixed(2)) };
+  },
+};
+
 function initExtras(){
   wireBackendToggles();
   syncFeatureToggles();
@@ -2073,15 +3115,53 @@ function initExtras(){
 /* ---- boot ---- */
 window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
-  Sound.init(); initExtras();
+  Sound.init(); initExtras(); initContrastPanel(); initGIPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
-           refreshFilmViewer, compute, drawHistogram,
+           refreshFilmViewer, compute, drawHistogram, contrastLatch: ctrstLatch,
+           contrastVesselHU, contrastClock: ctrstClock,
+           // The monitoring series needs to start the injection with the same press that
+           // starts tracking — on the machine one person does both, and the delay between
+           // them is exactly what the exercise is about.
+           contrastStart: ()=>{ if(S.contrast.on && S.contrast.timeline) ctrstStart(); },
+           contrastReset: ()=>ctrstReset(),
+           contrastRunning: ()=>ctrstClock()!=null,
+           contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on) });
+  // The tutorials drive the real UI, so they need the mode switch and the live state.
+  window.__radsimState = S;
+  initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
   setSubject('hand');                           // default subject: the voxel hand phantom
+  document.body.classList.add('mode-home');     // open on the menu, not inside a mode
+  S.mode='home';
 });
+
+/* Test/QC hook for the barium field. The fluoroscopy UI is not built yet, so this is how the
+   study is driven: load the shipped timeline, set the clock, and the next exposure renders at
+   that moment. Mirrors window.radsimCT in ct.js. */
+if (typeof window !== 'undefined') window.radsimBa = {
+  load: () => bariumLoad(),
+  on: (v = true) => { S.barium.on = v; S.barium.lut = null; },
+  at: (t) => { S.barium.studyTime = t; S.barium.lut = null; },
+  state: () => ({ on: S.barium.on, t: S.barium.studyTime, has: !!S.barium.timeline,
+                  giVol: !!S.barium.giVol, error: S.barium.error }),
+  /* Path length per material for a fan of rays through the model, so what the tracer
+     actually books for a barium study can be checked without inferring it from an image.
+     `axis` is 0/1/2; the rays are cast across the other two over a span of `half` cm. */
+  probe: (axis = 1, centre = [0, 0, 25], half = 5, step = 0.6) => {
+    const ph = buildPhantom(), tot = new Float64Array(BodyMaterials.TRACE_LEN);
+    const a = (axis + 1) % 3, b = (axis + 2) % 3;
+    const o = [0, 0, 0], d = [0, 0, 0]; d[axis] = 1;
+    for (let p = -half; p <= half; p += step) for (let q = -half; q <= half; q += step) {
+      o[axis] = ph.min[axis] - 1; o[a] = centre[a] + p; o[b] = centre[b] + q;
+      const L = ph.trace(o.slice(), d, 1e4);
+      for (let m = 0; m < tot.length; m++) tot[m] += L[m];
+    }
+    return Array.from(tot);
+  },
+};

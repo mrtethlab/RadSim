@@ -21,10 +21,11 @@ from __future__ import annotations
 from typing import Any, Optional
 
 import numpy as np
-from fastapi import FastAPI, File, Response, UploadFile
+from fastapi import FastAPI, File, HTTPException, Response, UploadFile
 from pydantic import BaseModel
 
 from . import convert, ct, engine, gpu
+from .gpu import MODELS_DIR
 
 app = FastAPI(title="RadSim Compute", version="0.2.0")
 
@@ -84,6 +85,42 @@ class VoxelProjectRequest(BaseModel):
     coneTw: float
     coneTl: float
     rot: list[float] | None = None
+    # contrast, when the acquisition has any: concentration (mgI/mL) per material per
+    # arclength bin, flattened (nmat * 256), plus which mu column iodine occupies
+    concLUT: list[float] | None = None
+    iodineCol: int | None = None
+
+
+class ContrastTimelineRequest(BaseModel):
+    model: str
+    volume_ml: float = 100.0
+    rate_ml_s: float = 4.0
+    conc_mgi_ml: float = 350.0
+    volume2_ml: float = 0.0
+    rate2_ml_s: float = 2.0
+    delay_s: float = 0.0
+    saline_ml: float = 40.0
+    saline_rate_ml_s: float = 4.0
+    cardiac_output_l_min: float = 5.0
+    blood_volume_ml: float = 5000.0
+    vessel_scale: float = 1.0
+    perfusion_scale: float = 1.0
+    duration_s: float = 90.0
+    site: str = "basilic"        # injection access — see contrast_solver.INJECTION_SITES
+
+
+@app.post("/contrast/timeline")
+def contrast_timeline(req: ContrastTimelineRequest) -> dict:
+    """Solve the haemodynamics for one set of injector settings.
+
+    ~1.2 s for a 90 s run, which is why there is no precomputed library and every injector
+    parameter is freely continuous rather than one of N presets (docs 1)."""
+    from . import contrast_export
+    p = MODELS_DIR / req.model / f"{req.model}.vessels.json"
+    if not p.exists():
+        raise HTTPException(404, f"{req.model} has no vessel data — run build_vessels first")
+    d = req.model_dump(); d.pop("model")
+    return contrast_export.timeline(str(p), **d)
 
 
 @app.post("/project/voxel")
@@ -108,6 +145,9 @@ class CTSlicesRequest(BaseModel):
     photons0: float
     rot: list[float] | None = None
     kernel: str = "ramlak"      # 'ramlak' (quick preview) | 'shepp' (realistic detector)
+    # contrast for this batch of slices (see /contrast/timeline)
+    concLUT: list[float] | None = None
+    iodineCol: int | None = None
 
 
 @app.post("/ct/slices")

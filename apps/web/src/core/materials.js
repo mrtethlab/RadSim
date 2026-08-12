@@ -63,15 +63,60 @@ export const BodyMaterials = (()=>{
     steel:    { rho:7.90,  mr:[25.70,8.176,3.629,1.958,1.205,0.5952,0.3717,0.2790,0.1964] },   // ~stainless (Fe)
     lead:     { rho:11.35, mr:[86.36,30.32,14.36,8.041,5.021,2.419,5.549,3.301,1.910] },        // K-edge ~88 keV
   };
-  function interp(mr, keV){
+  function interp(mr, keV, grid){
+    const g = grid || lnE;
     const x = Math.log(keV);
-    if(x<=lnE[0]) return mr[0];
-    if(x>=lnE[lnE.length-1]) return mr[mr.length-1];
-    let i=0; while(x>lnE[i+1]) i++;
-    const f=(x-lnE[i])/(lnE[i+1]-lnE[i]);
+    if(x<=g[0]) return mr[0];
+    if(x>=g[g.length-1]) return mr[mr.length-1];
+    let i=0; while(x>g[i+1]) i++;
+    const f=(x-g[i])/(g[i+1]-g[i]);
     return Math.exp(Math.log(mr[i])*(1-f)+Math.log(mr[i+1])*f);
   }
   const muWaterAt = (keV)=> interp(waterMR,keV);       // rho water = 1
+
+  /* ---- iodine: its own energy grid, because of the K-edge -------------------
+     Iodine's K absorption edge sits at 33.17 keV, where mu/rho jumps ~4x (8.86 ->
+     35.7 cm^2/g). That discontinuity is the whole reason iodine works as a contrast
+     agent and the reason low kVp boosts it: drop the tube from 120 to 80 kVp and the
+     spectrum shifts toward the edge, roughly doubling HU per mgI/mL. The shared 9-point
+     grid straddles the edge between 30 and 40 keV, so log-log interpolation across it
+     would draw a smooth ramp and erase the effect. Iodine therefore carries its own
+     grid with the edge bracketed by two points 0.01 keV apart.
+     Values are NIST XCOM (total with coherent), cm^2/g. */
+  const IODINE_E  = [20, 25, 30, 33.16, 33.18, 40, 50, 60, 80, 100, 120, 150];
+  const IODINE_MR = [34.4, 18.8, 11.6, 8.86, 35.7, 22.4, 12.3, 7.60, 3.55, 2.05, 1.39, 0.848];
+  const lnIodineE = IODINE_E.map(Math.log);
+  // Linear attenuation (cm^-1) contributed by ONE mgI/mL of iodine in solution.
+  // 1 mgI/mL = 1 mg/cm^3 = 1e-3 g/cm^3, so mu = (mu/rho) * 1e-3.
+  // Sanity: at 70 keV (the effective energy of a 120 kVp beam) this gives 26.7 HU per
+  // mgI/mL against water, which is the textbook ~25-26.
+  function muIodinePerConc(keV){ return interp(IODINE_MR, keV, lnIodineE) * 1e-3; }
+
+  /* ---- barium: the same story one shell up ---------------------------------
+     Barium (Z=56) K-edge is at 37.44 keV, and the jump is if anything sharper than
+     iodine's — which is why a barium study works at all at diagnostic kVp, and why
+     barium is opaque where iodine is merely bright.
+
+     The agent is barium SULPHATE, BaSO4, given as a suspension quoted in % w/v: a
+     "100 % w/v" barium is 1 g of BaSO4 per mL. BaSO4 is 58.84 % barium by mass
+     (137.33 / 233.39), so the concentration carried here is mg of ELEMENTAL Ba per mL,
+     with the sulphate's own contribution folded in via the compound curve below.
+
+     Grid straddles the edge with two points 0.02 keV apart, exactly as iodine's does —
+     interpolating across a K-edge on the shared 9-point grid would draw a smooth ramp
+     through the discontinuity and erase the effect that makes the agent work.
+
+     CAVEAT, and it matters before anyone quotes an absolute barium HU: unlike the iodine
+     row above, this grid has NOT been checked point by point against NIST XCOM. It is a
+     literature reconstruction, and the 40 keV point is an E^-3 extrapolation from the
+     measured post-edge value rather than a tabulated one. What IS sound is the part the
+     teaching rests on — the edge sits at 37.44 keV and the jump ratio comes out at 5.42
+     against a literature Ba value of ~5.3-5.5. Verify the row before trusting the numbers. */
+  const BARIUM_E  = [20, 25, 30, 35, 37.43, 37.45, 40, 50, 60, 80, 100, 120, 150];
+  const BARIUM_MR = [24.9, 13.9, 8.60, 5.71, 4.87, 26.4, 21.7, 12.6, 7.90, 3.83, 2.20, 1.48, 0.900];
+  const lnBariumE = BARIUM_E.map(Math.log);
+  // Linear attenuation (cm^-1) per ONE mg of elemental Ba per mL.
+  function muBariumPerConc(keV){ return interp(BARIUM_MR, keV, lnBariumE) * 1e-3; }
   // water+bone basis densities that reproduce a target HU at EREF
   function basis(hu){
     const muw = muWaterAt(EREF);
@@ -113,6 +158,50 @@ export const BodyMaterials = (()=>{
     { id:26, name:'Stainless steel',  hu:null,  kind:'elem',   key:'steel',    color:0xd0d4d8 },
     { id:27, name:'Lead',             hu:null,  kind:'elem',   key:'lead',     color:0x6a6f77 },
     { id:28, name:'Acrylic',          hu:120,   kind:'tissue',                 color:0x9fb6a8 },
+    // ---- named vessels (29+) ------------------------------------------------
+    // One id per great vessel, because the contrast simulation has to know WHICH vessel a
+    // voxel belongs to — the aorta and the SVC opacify ~15 s apart and a single 'Blood' id
+    // cannot express that. All carry blood's 45 HU, so an unenhanced scan is unchanged;
+    // only the contrast layer distinguishes them. MUST stay in lockstep with
+    // build_model.py VESSELS (id, order and name) — see scripts/check-legends.mjs.
+    { id:29, name:'Aorta',                 hu:45, kind:'tissue', color:0xb23a3a },
+    { id:30, name:'Pulmonary artery',      hu:45, kind:'tissue', color:0xb23a3a },
+    { id:31, name:'Pulmonary vein',        hu:45, kind:'tissue', color:0xb23a3a },
+    { id:32, name:'Superior vena cava',    hu:45, kind:'tissue', color:0xb23a3a },
+    { id:33, name:'Inferior vena cava',    hu:45, kind:'tissue', color:0xb23a3a },
+    { id:34, name:'Portal / splenic vein', hu:45, kind:'tissue', color:0xb23a3a },
+    { id:35, name:'Brachiocephalic trunk', hu:45, kind:'tissue', color:0xb23a3a },
+    { id:36, name:'Subclavian artery R',   hu:45, kind:'tissue', color:0xb23a3a },
+    { id:37, name:'Subclavian artery L',   hu:45, kind:'tissue', color:0xb23a3a },
+    { id:38, name:'Common carotid R',      hu:45, kind:'tissue', color:0xb23a3a },
+    { id:39, name:'Common carotid L',      hu:45, kind:'tissue', color:0xb23a3a },
+    { id:40, name:'Brachiocephalic vein R',hu:45, kind:'tissue', color:0xb23a3a },
+    { id:41, name:'Brachiocephalic vein L',hu:45, kind:'tissue', color:0xb23a3a },
+    { id:42, name:'Left atrial appendage', hu:45, kind:'tissue', color:0xb23a3a },
+    { id:43, name:'Iliac artery R',        hu:45, kind:'tissue', color:0xb23a3a },
+    { id:44, name:'Iliac artery L',        hu:45, kind:'tissue', color:0xb23a3a },
+    { id:45, name:'Iliac vein R',          hu:45, kind:'tissue', color:0xb23a3a },
+    { id:46, name:'Iliac vein L',          hu:45, kind:'tissue', color:0xb23a3a },
+    // ---- GI tract (47+) -----------------------------------------------------
+    // Same argument as the vessels: a barium study has to know WHICH part of the gut a
+    // voxel is in, because the whole examination is watching the agent move from one part
+    // to the next. A single 'Soft tissue' id cannot express a swallow.
+    //
+    // The lumen ids are stamped ONLY where the segmentation says gut AND the HU says
+    // fluid/soft. Where the lumen holds gas it gets id 47 instead, which matters more than
+    // it sounds: the gastric bubble, the colonic gas and the fluid levels are real
+    // findings, and stamping one fixed HU across a whole labelled stomach would erase
+    // them. It is also more honest than what happened before, where bowel gas fell through
+    // the HU thresholds and was classified as LUNG.
+    //
+    // Id 47 is what CO2 insufflation fills in a double-contrast study.
+    // MUST stay in lockstep with build_model.py LEGEND — see scripts/check-legends.mjs.
+    { id:47, name:'Bowel gas',        hu:-1000, kind:'elem', key:'air', color:0x1b2129 },
+    { id:48, name:'Oesophagus lumen', hu:15,    kind:'tissue',          color:0xc98f6a },
+    { id:49, name:'Stomach lumen',    hu:15,    kind:'tissue',          color:0xb97f4e },
+    { id:50, name:'Duodenum lumen',   hu:15,    kind:'tissue',          color:0xc59a5e },
+    { id:51, name:'Small bowel lumen',hu:15,    kind:'tissue',          color:0xd0a86a },
+    { id:52, name:'Colon lumen',      hu:15,    kind:'tissue',          color:0xa8804e },
   ];
   const idByName = {}; LIST.forEach(m=> idByName[m.name]=m.id);
 
@@ -126,6 +215,28 @@ export const BodyMaterials = (()=>{
     muById, muByName, huOf,
     muWater: (keV)=> muWaterAt(keV),                    // cm^-1 (rho water = 1) — HU reference for recon
     count: LIST.length,
+    // ---- iodine as a virtual material column --------------------------------
+    // Contrast is not a material a voxel can BE — it is a concentration a voxel can
+    // CARRY, varying continuously in space and time. So it rides as one extra column
+    // past the end of the legend: the tracer accumulates concentration-weighted path
+    // length (cm x mgI/mL) into it, and this row of mu (cm^-1 per mgI/mL) turns that
+    // into optical depth. Both engines already compute L @ mu, so neither integration
+    // loop changes — and an unenhanced scan puts zero in the column and is untouched.
+    IODINE_COL: LIST.length,
+    muIodinePerConc,
+    // HU per mgI/mL at a given energy — the energy dependence a fixed constant cannot show
+    huPerMgIml: (keV)=> 1000 * muIodinePerConc(keV) / muWaterAt(keV),
+    // Barium rides in a second virtual column, for the same reason and by the same
+    // mechanism. Two columns rather than one shared "contrast" column because the agents
+    // have different K-edges (33.17 vs 37.44 keV) and a GI study can have both present at
+    // once — an enteric barium with IV iodine is an ordinary abdominal CT.
+    BARIUM_COL: LIST.length + 1,
+    muBariumPerConc,
+    huPerMgBaMl: (keV)=> 1000 * muBariumPerConc(keV) / muWaterAt(keV),
+    // Length of a path-length vector: the legend plus one column per agent. Everything that
+    // allocates or indexes one uses this rather than counting, so adding a third agent later
+    // is one line here instead of a hunt through the tracer and both mu tables.
+    TRACE_LEN: LIST.length + 2,
   };
 })();
 

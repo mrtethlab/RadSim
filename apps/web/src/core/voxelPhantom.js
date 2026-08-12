@@ -37,6 +37,10 @@ export class VoxelPhantom {
     this.geometryOnly = !model.data;
     this.vs = model.vs.slice();                 // cm/voxel per axis
     this.nmat = BodyMaterials.count;
+    this.concLUT = null;                        // contrast off — see setContrast()
+    this.sVol = null;
+    this.baLUT = null;                          // barium off — see setBarium()
+    this.giVol = null;
     this.setCenter(center);
     this.flip = flip.slice();
     this.setRotation(rot);
@@ -54,12 +58,46 @@ export class VoxelPhantom {
     this.max = [center[0] + ext[0] / 2, center[1] + ext[1] / 2, center[2] + ext[2] / 2];
     this.extent = ext;
   }
-  // material id at grid index (with anatomical flips applied on the data lookup)
-  idAt(ix, iy, iz) {
+  // flat data index at a grid index (with anatomical flips applied)
+  dataIndex(ix, iy, iz) {
     const dx = this.flip[0] ? this.nx - 1 - ix : ix;
     const dy = this.flip[1] ? this.ny - 1 - iy : iy;
     const dz = this.flip[2] ? this.nz - 1 - iz : iz;
-    return this.data[dx + this.nx * (dy + this.ny * dz)];
+    return dx + this.nx * (dy + this.ny * dz);
+  }
+  // material id at grid index (with anatomical flips applied on the data lookup)
+  idAt(ix, iy, iz) { return this.data[this.dataIndex(ix, iy, iz)]; }
+
+  /* Attach a contrast field for one acquisition.
+       concLUT — Float32Array(nmat * NS): iodine concentration (mgI/mL) for
+                 [material id][arclength bin]. Organs are uniform, so every bin of an
+                 organ's row holds the same value; vessels vary along the row. Folding
+                 both into one table means the trace needs no branch to tell them apart.
+       sVol    — Uint8Array(nvox): arclength bin per voxel, 0 for everything that is not
+                 a vessel, which is exactly the bin an organ's uniform row wants anyway.
+     Pass null to turn contrast off. */
+  setContrast(concLUT, sVol, ns) {
+    this.concLUT = concLUT || null;
+    this.sVol = sVol || null;
+    this.ns = ns || 256;
+  }
+
+  /* The same mechanism for enteric barium, on its own table and its own per-voxel bin map.
+     Separate from the iodine pair rather than sharing one "contrast" channel, because the
+     two agents have different K-edges and can be present at once — enteric barium with IV
+     iodine is an ordinary abdominal CT, and a shared column could not tell them apart at
+     the point where mu(E) is applied.
+       baLUT — Float32Array(nmat * NS): mg Ba/mL for [material id][arclength bin]
+       giVol — Uint8Array(nvox): arclength bin per voxel, 0 outside the gut */
+  /* gasLUT — Float32Array(nmat * NS): gas volume fraction for [material id][arclength bin].
+     A double-contrast study is two agents at once, and the gas is not an attenuator to add
+     but an attenuator to REMOVE: it takes the place of the fluid the segmentation put in the
+     lumen. Optional — null leaves the lumen filled, which is a single-contrast study. */
+  setBarium(baLUT, giVol, ns, gasLUT) {
+    this.baLUT = baLUT || null;
+    this.giVol = giVol || null;
+    this.gasLUT = gasLUT || null;
+    this.ns = ns || this.ns || 256;
   }
   // material id at a world point (or -1 outside the volume) — used for previews/debug
   idAtWorld(p) {
@@ -71,8 +109,10 @@ export class VoxelPhantom {
   }
   // path length (cm) spent in each material along ray o + t*d, t in [0, maxT].
   // d is a unit vector; returns a Float32Array indexed by BodyMaterials id.
+  // The extra slot past the materials is the iodine column: concentration-weighted path
+  // length, cm x mgI/mL. It stays zero unless setContrast() has been called.
   trace(o, d, maxT = Infinity) {
-    const L = new Float32Array(this.nmat);
+    const L = new Float32Array(BodyMaterials.TRACE_LEN);
     if (this.geometryOnly) return L;   // no volume in the browser — the GPU backend traces
     // rotate the object by inverse-rotating the ray into the volume's local frame
     // (about the centre); the DDA below stays axis-aligned. Lengths are preserved.
@@ -111,10 +151,27 @@ export class VoxelPhantom {
     const tDy = Math.abs(d[1]) < 1e-12 ? Infinity : vs[1] / Math.abs(d[1]);
     const tDz = Math.abs(d[2]) < 1e-12 ? Infinity : vs[2] / Math.abs(d[2]);
     let t = t0;
+    const conc = this.concLUT, sVol = this.sVol, NS = this.ns;
+    const IOD = BodyMaterials.IODINE_COL, BAR = BodyMaterials.BARIUM_COL;
+    const ba = this.baLUT, giVol = this.giVol, gasL = this.gasLUT;
+    const GASM = BodyMaterials.idByName['Bowel gas'];
     while (t < t1) {
       const tNext = Math.min(tMaxX, tMaxY, tMaxZ, t1);
       const seg = tNext - t;
-      if (seg > 0) L[this.idAt(ix, iy, iz)] += seg;
+      if (seg > 0) {
+        const di = this.dataIndex(ix, iy, iz), id = this.data[di];
+        // Gas displaces the lumen rather than adding to it, so it is the one agent that
+        // changes how the base material length is booked.
+        if (gasL) {
+          const gf = gasL[id * NS + (giVol ? giVol[di] : 0)];
+          if (gf > 0) { L[id] += seg * (1 - gf); L[GASM] += seg * gf; }
+          else L[id] += seg;
+        } else L[id] += seg;
+        // Both agents ride the same walk: concentration-weighted length into their own
+        // columns. Neither costs anything when its table is absent.
+        if (conc) L[IOD] += seg * conc[id * NS + (sVol ? sVol[di] : 0)];
+        if (ba) L[BAR] += seg * ba[id * NS + (giVol ? giVol[di] : 0)];
+      }
       t = tNext;
       if (tNext >= t1) break;
       if (tMaxX <= tMaxY && tMaxX <= tMaxZ) { ix += stepx; tMaxX += tDx; if (ix < 0 || ix >= nx) break; }
@@ -127,15 +184,29 @@ export class VoxelPhantom {
 
 // Precompute per-material linear attenuation (cm^-1) at a single energy — used by the
 // monochromatic CT reconstruction (line integral Σ μ_m · L_m).
+// Length is count+1: the trailing entry is iodine in cm^-1 per mgI/mL, matching the
+// concentration column the tracer fills. See muOverBins.
 export function muAtEnergy(keV) {
-  const n = BodyMaterials.count, arr = new Float64Array(n);
+  const n = BodyMaterials.count, arr = new Float64Array(BodyMaterials.TRACE_LEN);
   for (let i = 0; i < n; i++) arr[i] = BodyMaterials.muById(i, keV);
+  arr[BodyMaterials.IODINE_COL] = BodyMaterials.muIodinePerConc(keV);
+  arr[BodyMaterials.BARIUM_COL] = BodyMaterials.muBariumPerConc(keV);
   return arr;
 }
 // Precompute per-material μ over a polyenergetic spectrum's bins — used by the scout
-// (polyenergetic transmission Σ_bin w·exp(−Σ_m μ_m·L_m)). Returns [nmat][nbins].
+// (polyenergetic transmission Σ_bin w·exp(−Σ_m μ_m·L_m)). Returns [nmat+1][nbins].
+// The extra trailing row is iodine, in cm^-1 per mgI/mL: the tracer puts
+// concentration-weighted path length in the matching column, so the same L @ mu that
+// integrates the materials also integrates the contrast. See BodyMaterials.IODINE_COL.
 export function muOverBins(bins) {
-  const n = BodyMaterials.count, tbl = new Array(n);
+  const n = BodyMaterials.count, tbl = new Array(BodyMaterials.TRACE_LEN);
   for (let i = 0; i < n; i++) { const row = new Float64Array(bins.length); for (let b = 0; b < bins.length; b++) row[b] = BodyMaterials.muById(i, bins[b].E); tbl[i] = row; }
+  const io = new Float64Array(bins.length), ba = new Float64Array(bins.length);
+  for (let b = 0; b < bins.length; b++) {
+    io[b] = BodyMaterials.muIodinePerConc(bins[b].E);
+    ba[b] = BodyMaterials.muBariumPerConc(bins[b].E);
+  }
+  tbl[BodyMaterials.IODINE_COL] = io;
+  tbl[BodyMaterials.BARIUM_COL] = ba;
   return tbl;
 }

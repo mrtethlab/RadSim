@@ -83,3 +83,19 @@ scipy>=1.11
 scikit-image>=0.22
 trimesh>=4.0
 TotalSegmentator>=2.4
+
+# ---- CAP with a real vessel map (docs/contrast-simulation.md §6.8) ----------------------
+# The whole-body sources are postmortem and segment to almost nothing. CAP comes instead from
+# the TotalSegmentator dataset (Zenodo 10047292, CC BY 4.0), fetched a subject at a time:
+#   B=./.venv/Scripts/python.exe
+#   $B -m app.fetch_totalseg --list                    # candidates, by body region
+#   $B -m app.fetch_totalseg --subject s1379           # 64 MB, not the 23.6 GB archive
+#   $B -m totalsegmentator.bin.TotalSegmentator -i data/totalseg/s1379/ct.nii.gz \
+#        -o data/totalseg/s1379/lung_vessels -ta lung_vessels     # the PA is NOT in `total`
+#   $B -m app.combine_seg --case data/totalseg/s1379 --out data/totalseg/s1379/seg_ml.nii.gz
+#   $B -m app.build_model --ct data/totalseg/s1379/ct.nii.gz --seg data/totalseg/s1379/seg_ml.nii.gz \
+#        --lung-vessels data/totalseg/s1379/lung_vessels \
+#        --out ../../apps/web/public/models/chestabdopelvis --name chestabdopelvis \
+#        --title "Chest / abdomen / pelvis" --region chestabdopelvis --spacing 2.0
+#   $B -m app.build_vessels --model ../../apps/web/public/models/chestabdopelvis --name chestabdopelvis
+# then generate the shipped preset timeline and declare it in the .model.json as "contrast".

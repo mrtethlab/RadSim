@@ -8,6 +8,154 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 </head>
 <body>
+<!-- ============ TUTORIAL — dim mask, ring and blurb ============ -->
+<div class="tut" id="tutLayer">
+  <div class="tut-mask" id="tutMaskT"></div>
+  <div class="tut-mask" id="tutMaskB"></div>
+  <div class="tut-mask" id="tutMaskL"></div>
+  <div class="tut-mask" id="tutMaskR"></div>
+  <div class="tut-ring" id="tutRing"></div>
+  <div class="tut-card" id="tutCard"></div>
+  <button id="tutNext" hidden></button><button id="tutPrev" hidden></button><button id="tutExit" hidden></button>
+</div>
+
+<!-- ============ WELCOME SCREEN — the arcade of modes ============ -->
+<div class="home" id="homeScreen">
+  <div class="home-inner">
+    <h1 class="home-title">RAD<span>SIM</span></h1>
+    <p class="home-sub">Physics-based radiography and CT — position, expose, reconstruct</p>
+    <div class="home-welcome-row">
+      <button class="home-welcome-btn" id="welcomeBtn" aria-expanded="false" aria-controls="welcomeMsg">
+        <span class="wb-i">&#9432;</span><span class="wb-t">Welcome &mdash; read this first</span><span class="wb-c">&#9662;</span>
+      </button>
+    </div>
+    <div class="home-welcome" id="welcomeMsg" hidden>
+      <h2>Hi! Welcome to RadSim.</h2>
+      <p>This program simulates real x-ray interactions behind realistic user interfaces. I wanted
+        access to a software suite like this while going through a Radiation Technology program,
+        but the product either did not exist or was prohibitively expensive. Here you can test
+        adaptations, get familiar with the concepts, and play with the effects of ionising
+        radiation without any of it landing on a patient.</p>
+
+      <p>Everything you image is a real voxel volume segmented from CT data, and the picture is
+        made by casting rays through it. Nothing is drawn or faked: change the kV and the contrast
+        changes because the photoelectric effect falls away, not because a slider told it to.</p>
+
+      <h3>Some housekeeping</h3>
+      <ul>
+        <li><b>This project was built substantially with AI-assisted coding (Claude Code).</b>
+          Getting it to where it is now would have taken me years; instead it took days. Some
+          features may not be fully functional because the AI believed they were working
+          correctly. Take the simulations with a grain of salt.</li>
+
+        <li><b>There are two compute engines.</b> Browser mode runs on your computer's CPU and is
+          what you get if you are using this online. It computes quickly but the images are
+          coarser. If you have a dedicated GPU you can download and run the software locally,
+          which unlocks the Python GPU engine and with it much larger, much more detailed
+          simulations. A few features stay locked in browser mode simply because they would take
+          tens of minutes to compute otherwise &mdash; the contrast injector is the main one, so
+          it falls back to a fixed preset timeline you can watch but not reprogram.</li>
+
+        <li><b>The EI and DI values can be finicky.</b> With no real machine to benchmark against
+          they do not carry much weight. Manual chest technique reads about right; lateral chest,
+          hand and knee still read a few DI high, and I am fairly sure that is the technique chart
+          against the phantom rather than the exposure index itself. Still working on it.</li>
+
+        <li><b>Some of these interfaces are reconstructed from my own memory of using them.</b>
+          I have no recorded video or photographs to work from, so there will be inaccuracies. If
+          you see me in person, tell me what I got wrong.</li>
+
+        <li><b>This is a teaching tool, not a clinical one.</b> Nothing here should be used to set
+          real technique, estimate real dose, or make any decision about a real patient.</li>
+      </ul>
+
+      <p class="hw-tip">If you are new, start with a mode's <b>Tutorial</b> button rather than
+        <b>Open</b> &mdash; it walks the whole workflow control by control and explains what each
+        one does to the beam and to the image.</p>
+
+      <p class="hw-sign">Enjoy. Working on this has ironed out a few of my own misunderstandings,
+        so hopefully it does the same for you.<br><span>&mdash;Matt&mdash;</span></p>
+    </div>
+    <div class="home-grid">
+      <div class="home-card hc-xray" data-mode="xray">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">X-ray</div>
+          <div class="hc-tag">Projection radiography — AEC, grids, technique</div>
+          <div class="hc-desc">Position the subject, set the technique or let the AEC chambers
+            meter it, and expose. Polyenergetic ray-casting through real voxel anatomy, with
+            scatter, grids, beam hardening and an exposure index you can miss.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="xray">Open</button>
+            <button class="hc-tut" data-tut="xray" title="Walk through this mode control by control">&#9654; Tutorial</button>
+            <button class="hc-tut" data-tut="barium" title="Barium studies: swallow or enema, gravity, double contrast, expose on the study clock">&#9654; Barium</button>
+          </div>
+        </div>
+      </div>
+      <div class="home-card hc-ct" data-mode="ct">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">CT</div>
+          <div class="hc-tag">Scout, plan, acquire, reconstruct</div>
+          <div class="hc-desc">Zero the table, take scouts, plan scan groups and recons, then
+            watch the gantry acquire. Filtered back-projection with contrast timing and
+            bolus tracking on the console.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="ct">Open</button>
+            <button class="hc-tut" data-tut="ct" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
+        </div>
+      </div>
+      <div class="home-card hc-editor" data-mode="editor">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">Model Editor</div>
+          <div class="hc-tag">Paint voxel phantoms slice by slice</div>
+          <div class="hc-desc">Build or alter a phantom directly: paint materials onto
+            transverse slices with a live 3D preview, then save it as a subject the scanners
+            can image.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="editor">Open</button>
+            <button class="hc-tut" data-tut="editor" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Modes on the roadmap but not yet in the build: parked in plain sight, not clickable.
+           No data-mode, so the card wiring skips them entirely. -->
+      <div class="home-card hc-dev hc-fluoro" aria-disabled="true">
+        <div class="hc-art"><span class="hc-badge">In development</span></div>
+        <div class="hc-body">
+          <div class="hc-name">Fluoroscopy</div>
+          <div class="hc-tag">Live screening &mdash; a beam you drive with your foot</div>
+          <div class="hc-desc">Pulsed screening, last-image hold, and dose that accumulates for
+            as long as the pedal is down. The barium engine already runs live under X-ray mode;
+            this gives it a room of its own.</div>
+        </div>
+      </div>
+      <div class="home-card hc-dev hc-mammo" aria-disabled="true">
+        <div class="hc-art"><span class="hc-badge">In development</span></div>
+        <div class="hc-body">
+          <div class="hc-name">Mammography</div>
+          <div class="hc-tag">Soft-tissue contrast at 26&ndash;32 kV</div>
+          <div class="hc-desc">Target/filter combinations, compression, an AEC tuned for a beam
+            an order of magnitude softer than radiography's, and the CC / MLO positioning that
+            makes screening work.</div>
+        </div>
+      </div>
+      <div class="home-card hc-dev hc-bmd" aria-disabled="true">
+        <div class="hc-art"><span class="hc-badge">In development</span></div>
+        <div class="hc-body">
+          <div class="hc-name">Bone Mineral Density</div>
+          <div class="hc-tag">DXA &mdash; two energies, one answer</div>
+          <div class="hc-desc">Dual-energy absorptiometry of the spine and hip: two beams, a
+            basis-material decomposition, and a T-score at the end of it.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="app">
 
   <!-- ============ POSITIONING BAY (Three.js) ============ -->
@@ -15,10 +163,212 @@
     <canvas id="view"></canvas>
     <canvas id="bigFilm"></canvas>
     <div class="modebar" id="modeBar">
-      <button data-mode="xray" class="on">X-RAY</button>
-      <button data-mode="ct">CT</button>
-      <button data-mode="editor">MODEL EDITOR</button>
+      <button id="homeBtn" title="Leave this mode and return to the menu">&#8962; HOME</button>
+      <span class="modebar-cur" id="modeCur">X-RAY</span>
     </div>
+    <!-- ============ BOLUS TRACKING (monitoring series; overlays the bay) ============ -->
+    <div class="btrk" id="ctBtrk">
+      <div class="btrk-hdr">
+        <span class="t" id="ctBtrkTitle">BOLUS TRACKING</span>
+        <span class="loc" id="ctBtrkLoc">—</span>
+        <span class="st" id="ctBtrkState">POSITION ROI</span>
+      </div>
+      <div class="btrk-body">
+        <div class="btrk-img" id="ctBtrkImgWrap">
+          <canvas id="ctBtrkSlice" width="256" height="256"></canvas>
+          <div class="btrk-roi" id="ctBtrkRoi" title="Drag onto the vessel you want to monitor"></div>
+        </div>
+        <div class="btrk-plot"><canvas id="ctBtrkPlot" width="320" height="248"></canvas></div>
+      </div>
+      <div class="btrk-foot">
+        <div class="btrk-ro"><span class="k">ROI</span><span class="v" id="ctBtrkHU">—</span></div>
+        <div class="btrk-ro"><span class="k" id="ctBtrkThrK">Trigger</span><span class="v" id="ctBtrkThr">—</span></div>
+        <div class="btrk-ro"><span class="k">Elapsed</span><span class="v" id="ctBtrkT">0.0 s</span></div>
+        <div class="btrk-inj"><span class="k">Injector</span>
+          <button id="ctBtrkInj" title="Start the injection">▶</button>
+          <span class="v" id="ctBtrkInjT">—</span></div>
+        <button class="btrk-go" id="ctBtrkGo">START TRACKING</button>
+        <button class="btrk-abort" id="ctBtrkAbort">ABORT</button>
+      </div>
+    </div>
+
+
+    <!-- ============ BARIUM / FLUOROSCOPY (pull-out, left edge, x-ray only) ============ -->
+    <div class="ctrst gi xray-only" id="giPanel">
+      <button class="ctrst-tab" id="giTab" title="Barium studies"><span>BARIUM</span></button>
+      <div class="ctrst-body">
+        <div class="ctrst-hdr">
+          <div class="t"><b>BARIUM</b> / FLUOROSCOPY</div>
+          <button class="ctrst-pow" id="giOn">OFF</button>
+        </div>
+        <div class="ctrst-pad">
+          <div class="ctrst-lock" id="giLock" style="display:none"></div>
+
+          <!-- the study clock. A barium study runs over half an hour, so it is watched at
+               speed rather than in real time; the rate is part of the instrument. -->
+          <div class="gi-clock">
+            <div class="gi-t" id="giElapsed">00:00</div>
+            <div class="gi-phase" id="giPhase">not started</div>
+          </div>
+          <div class="inj-tx">
+            <button class="inj-go" id="giGo" title="Run the study">&#9654;</button>
+            <button class="inj-rst" id="giReset" title="Reset the study">&#9632;</button>
+          </div>
+          <div class="gi-speed">
+            <span class="k">Rate</span>
+            <div class="seg" id="giSpeedSeg">
+              <button data-sp="1">1&times;</button>
+              <button data-sp="10" class="on">10&times;</button>
+              <button data-sp="60">60&times;</button>
+              <button data-sp="300">300&times;</button>
+            </div>
+          </div>
+          <div class="ctrst-note" id="giNote">Give the agent, then run the clock. Turn the
+            patient with the rotate / tilt sliders and the barium follows.</div>
+
+          <div class="grp">
+            <div class="lab">Administration</div>
+            <div class="bod">
+              <div class="row"><div class="rl">Route</div></div>
+              <div class="seg" id="giRouteSeg">
+                <button data-route="oral" class="on">Swallow</button>
+                <button data-route="rectal">Enema</button>
+              </div>
+              <div class="row" style="margin-top:10px"><div class="rl">Volume</div>
+                <div class="valchip" id="giVolV">150 mL</div></div>
+              <input type="range" id="giVol" min="20" max="1200" value="150" step="10">
+              <div class="row" style="margin-top:8px"><div class="rl">Density</div>
+                <div class="valchip" id="giConcV">100 % w/v</div></div>
+              <input type="range" id="giConc" min="20" max="250" value="100" step="5">
+              <div class="ctrst-note" id="giAdmNote">&mdash;</div>
+              <div class="row" style="margin-top:12px"><div class="rl">Technique</div></div>
+              <div class="seg" id="giGasSeg">
+                <button data-gas="0" class="on">Single</button>
+                <button data-gas="1">Double</button>
+              </div>
+              <div class="row" style="margin-top:10px"><div class="rl">Gas</div>
+                <div class="valchip" id="giGasV">&mdash;</div></div>
+              <input type="range" id="giGas" min="100" max="2000" value="400" step="50" disabled>
+              <div class="ctrst-note" id="giGasNote">Single contrast: the lumen fills, and you
+                read its outline. Double contrast adds gas &mdash; effervescent granules on a
+                swallow, an insufflator on an enema &mdash; which pushes the barium off the
+                non-dependent wall and leaves it coated. You then read the <b>surface</b>,
+                which is where mucosal disease lives.</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Patient position</div>
+            <div class="bod">
+              <div class="seg" id="giStandSeg">
+                <button data-erect="0" class="on">Recumbent</button>
+                <button data-erect="1">Erect</button>
+              </div>
+              <div class="gi-pose" id="giPose">&mdash;</div>
+              <div class="ctrst-note">Rotation comes from the <b>Object &middot; rotate / tilt</b>
+                sliders, so positioning the patient to move the agent is the same control it is
+                for positioning them to image. Gravity is applied from the moment you turn.</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Where the barium is</div>
+            <div class="bod">
+              <canvas id="giBars" width="330" height="132"></canvas>
+              <div class="ctrst-note" id="giAudit">&mdash;</div>
+            </div>
+          </div>
+
+          <div class="ctrst-status" id="giStatus">Barium off.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ CONTRAST INJECTOR (pull-out, left edge of the bay) ============ -->
+    <div class="ctrst" id="ctrstPanel">
+      <button class="ctrst-tab" id="ctrstTab" title="Contrast injector"><span>CONTRAST</span></button>
+      <div class="ctrst-body">
+        <div class="ctrst-hdr">
+          <div class="t"><b>CONTRAST</b> / INJECTOR</div>
+          <button class="ctrst-pow" id="ctrstOn">OFF</button>
+        </div>
+        <div class="ctrst-pad">
+
+          <div class="ctrst-lock" id="ctrstLock" style="display:none"></div>
+          <div class="inj-total"><span id="ctrstTotal">140 ml total</span><span id="ctrstDur">00:00</span></div>
+
+          <!-- programmed phases, drawn to scale in time. Tap a phase to program it. -->
+          <div class="inj-bar" id="ctrstBar"></div>
+          <div class="inj-prog"><div class="inj-progfill" id="ctrstProg"></div></div>
+
+          <!-- injector readouts -->
+          <div class="inj-ro">
+            <div><div class="k">Elapsed</div><div class="v" id="ctrstElapsed">00:00</div></div>
+            <div><div class="k">Pressure</div><div class="v" id="ctrstPress">0 bar</div></div>
+          </div>
+          <div class="inj-deliv" id="ctrstDeliv">0 ml CM &nbsp;·&nbsp; 0 ml NaCl delivered</div>
+
+          <!-- transport -->
+          <div class="inj-tx">
+            <button class="inj-go" id="ctrstGo" title="Start the injection">▶</button>
+            <button class="inj-rst" id="ctrstReset" title="Reset the injector">■</button>
+          </div>
+          <div class="ctrst-note" id="ctrstArmNote">Tap a phase to program it. Start the injector, then expose when the timing is right.</div>
+
+          <div class="grp">
+            <div class="lab">Access</div>
+            <div class="bod">
+              <div class="row"><div class="rl">Injection site</div></div>
+              <select id="ctrstSite" class="slsel" style="width:100%; margin-top:5px">
+                <option value="basilic" selected>Basilic vein</option>
+                <option value="central">Central line</option>
+                <option value="radial">Radial artery</option>
+                <option value="femoral">Femoral artery</option>
+              </select>
+              <div class="ctrst-note" id="ctrstSiteNote">&mdash;</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Agent</div>
+            <div class="bod">
+              <div class="row"><div class="rl">Concentration</div><div class="valchip" id="ctrstConcV">350 mgI/mL</div></div>
+              <input type="range" id="ctrstConc" min="240" max="400" value="350" step="10">
+              <div class="ctrst-note" id="ctrstInjNote">—</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Patient</div>
+            <div class="bod">
+              <div class="row"><div class="rl">Heart rate</div><div class="valchip" id="ctrstHrV">72 bpm</div></div>
+              <input type="range" id="ctrstHr" min="40" max="140" value="72" step="2">
+              <div class="row" style="margin-top:8px"><div class="rl">Stroke volume</div><div class="valchip" id="ctrstSvV">70 mL</div></div>
+              <input type="range" id="ctrstSv" min="40" max="110" value="70" step="5">
+              <div class="row" style="margin-top:8px"><div class="rl">Vessel calibre</div><div class="valchip" id="ctrstCalV">1.00×</div></div>
+              <input type="range" id="ctrstCal" min="0.7" max="1.4" value="1" step="0.05">
+              <div class="row" style="margin-top:8px"><div class="rl">Organ perfusion</div><div class="valchip" id="ctrstPerfV">1.00×</div></div>
+              <input type="range" id="ctrstPerf" min="0.4" max="2" value="1" step="0.05">
+              <div class="ctrst-note" id="ctrstCoNote">—</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Predicted enhancement</div>
+            <div class="bod">
+              <canvas id="ctrstCurve" width="330" height="120"></canvas>
+              <div class="ctrst-key">
+                <span style="color:#ff7d7d">aorta</span><span style="color:#7dc4ff">pulm art</span>
+                <span style="color:#c79bff">liver</span><span style="color:#8fe08f">kidney</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="ctrst-status" id="ctrstStatus">Contrast off.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- ============ MODEL EDITOR (paint voxel slices; 3D preview shows through on the right) ============ -->
     <div class="edpage" id="edPage">
       <div class="edleft">
@@ -177,28 +527,6 @@
             </div>
           </div>
         </div>
-        <div>
-          <div class="cl">Subject</div>
-          <select id="subjectSel" class="subjectsel">
-            <option value="hand" selected>Hand</option>
-            <option value="hand_hires">Hand · 0.2 mm (GPU)</option>
-            <option value="chest">Chest</option>
-            <option value="headneck">Head &amp; neck</option>
-            <option value="chestabdopelvis">Chest / abdo / pelvis</option>
-            <option value="upperextremity">Upper extremity</option>
-            <option value="lowerextremity">Lower extremity</option>
-            <option value="totalhipreplacement">Total Hip Replacement</option>
-            <option value="wholebody">Whole body</option>
-            <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
-            <option value="metalphantom">Metal Test Phantom</option>
-            <option value="linepair">Line-pair test pattern (QC)</option>
-          </select>
-          <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:4px; text-align:left; letter-spacing:.3px; max-width:190px"></div>
-          <div class="segmini" id="skinSeg" style="margin-top:6px" title="Display only — the image is always made from the voxel volume">
-            <button data-skin="photo" class="on">Photo skin</button>
-            <button data-skin="mat">Materials</button>
-          </div>
-        </div>
       </div>
       </div>
       <div class="baydrop ct-only" id="soundDrop">
@@ -228,6 +556,27 @@
     <div class="hdr"><div class="t"><b>POSITION</b> / SETUP</div></div>
     <div class="pad">
 
+      <div class="grp" id="subjectGrp">
+        <div class="lab">Object · model</div>
+        <div class="bod">
+          <select id="subjectSel" class="subjectsel" style="width:100%">
+            <option value="hand" selected>Hand</option>
+            <option value="hand_hires">Hand · 0.2 mm (GPU)</option>
+            <option value="chest">Chest</option>
+            <option value="headneck">Head &amp; neck</option>
+            <option value="chestabdopelvis">Chest / abdo / pelvis</option>
+            <option value="upperextremity">Upper extremity</option>
+            <option value="lowerextremity">Lower extremity</option>
+            <option value="totalhipreplacement">Total Hip Replacement</option>
+            <option value="wholebody">Whole body</option>
+            <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
+            <option value="metalphantom">Metal Test Phantom</option>
+            <option value="linepair">Line-pair test pattern (QC)</option>
+          </select>
+          <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:5px; letter-spacing:.3px"></div>
+        </div>
+      </div>
+
       <div class="grp">
         <div class="lab">Object · rotate / tilt</div>
         <div class="bod">
@@ -247,6 +596,9 @@
             <div class="row" style="margin-top:8px"><div class="rl">Offset <small>cross axis</small></div>
               <div class="valchip" id="objOffXv">0 cm</div></div>
             <input type="range" id="objOffX" min="-45" max="45" value="0" step="0.5">
+            <div class="row" style="margin-top:8px"><div class="rl">Height <small>off receptor</small></div>
+              <div class="valchip" id="objOffYv">0 cm</div></div>
+            <input type="range" id="objOffY" min="0" max="20" value="0" step="0.5">
           </div>
           <div class="mini"><button id="objRotReset">↺ reset orientation &amp; offset</button></div>
         </div>
@@ -367,11 +719,7 @@
           </div>
           <div class="row">
             <div class="rl">OID <small>object→image</small></div>
-            <div class="stepper">
-              <button data-step="oid" data-d="-1">−</button>
-              <div class="sv" id="oidV">0 cm</div>
-              <button data-step="oid" data-d="1">+</button>
-            </div>
+            <div class="valchip" id="oidV" title="Derived from geometry — lift the object with the Height offset to change it">0 cm</div>
           </div>
           <div class="row"><div class="rl">Centre · long</div>
             <input type="range" id="tubeZ" min="-18" max="18" value="0" step="0.5" style="max-width:150px"></div>
@@ -657,6 +1005,27 @@
             <input type="range" id="windo" min="15" max="340" value="100"></div>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- Injector phase editor: tap a phase on the bar, type the value on the keypad -->
+<div class="kpad" id="kpad">
+  <div class="kpad-win">
+    <div class="kpad-hdr"><span id="kpadTitle">CM</span><div class="kpad-rule"></div></div>
+    <div class="kpad-body">
+      <div class="kpad-fields" id="kpadFields"></div>
+      <div class="kpad-keys" id="kpadKeys">
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button>
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button>
+        <button data-k=".">.</button><button data-k="0">0</button><button data-k="bs" title="Clear">C</button>
+      </div>
+    </div>
+    <div class="kpad-btns">
+      <button id="kpadDel">Delete</button>
+      <button id="kpadOk" class="ok">OK</button>
+      <button id="kpadCancel">Cancel</button>
     </div>
   </div>
 </div>
