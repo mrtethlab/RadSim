@@ -11,6 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
+import { decodeGITimeline, buildGIVolume, buildBariumLUT, NS as GI_NS } from './core/gi.js';
 import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
@@ -322,6 +323,9 @@ async function setSubject(sub){
   // both belong to the old model.
   S.contrast.timeline=null; S.contrast.sVol=null; S.contrast.sVolFor=null;
   S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false; S.contrast.static=false;
+  // The barium field belongs to the old model in exactly the same way.
+  S.barium.timeline=null; S.barium.giVol=null; S.barium.giVolFor=null;
+  S.barium.lut=null; S.barium.lutT=null; S.barium.on=false;
   if($('ctrstPanel')) ctrstApply();
   showActive(sub);
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
@@ -465,6 +469,10 @@ const S = {
              // live solve — the protocol is then fixed and the controls are locked
              static:false,
              },
+  // Barium studies. `studyTime` is seconds since the agent was given, and is the analogue of
+  // the injector clock: for a swallow it is seconds, for a follow-through it is minutes.
+  barium:{ on:false, timeline:null, giVol:null, giVolFor:null, studyTime:60,
+           lut:null, lutT:null, busy:false, error:null, static:false },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -668,6 +676,7 @@ function buildPhantom(){
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
   const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R);
   applyContrast(ph);
+  applyBarium(ph);
   return ph;
 }
 
@@ -689,6 +698,46 @@ function applyContrast(ph){
   const C=S.contrast, lut=contrastLUT();
   if(lut && C.sVol) ph.setContrast(lut, C.sVol, CONTRAST_NS);
   else ph.setContrast(null, null, CONTRAST_NS);
+}
+function bariumLUT(){
+  const B=S.barium;
+  if(!B.on || !B.timeline) return null;
+  if(B.lut && B.lutT===B.studyTime) return B.lut;     // one table per acquisition time
+  B.lut=buildBariumLUT(B.timeline, B.studyTime); B.lutT=B.studyTime;
+  return B.lut;
+}
+function applyBarium(ph){
+  const B=S.barium, lut=bariumLUT();
+  if(lut && B.giVol) ph.setBarium(lut, B.giVol, GI_NS);
+  else ph.setBarium(null, null, GI_NS);
+}
+/* Load the barium field for the current subject. Unlike contrast there is no live solve in
+   the browser: a GI study runs for half an hour of simulated time, so it is always the
+   shipped timeline. The pose it was solved for is fixed with it — see the note in
+   gi_solver.py on why turning the patient is the examination. */
+async function bariumLoad(){
+  const B=S.barium, vm=S.voxelModel;
+  B.error=null;
+  if(!vm || !vm.hasGI){
+    B.error=`${S.subject} has no GI transport data — run build_gi for this model`;
+    B.timeline=null; return false;
+  }
+  if(!vm.hasPresetBarium){
+    B.error=`${S.subject} ships no barium timeline — run gi_export for this model`;
+    B.timeline=null; return false;
+  }
+  B.busy=true;
+  try{
+    const [json, giarc]=await Promise.all([vm.loadPresetBarium(), vm.loadGIArc()]);
+    B.timeline=decodeGITimeline(json);
+    B.static=true;
+    if(!B.giVol || B.giVolFor!==S.subject){ B.giVol=buildGIVolume(vm.data, giarc); B.giVolFor=S.subject; }
+    B.lut=null; B.lutT=null;
+    return true;
+  }catch(err){
+    B.error='Could not load the barium timeline: '+err.message;
+    B.timeline=null; return false;
+  }finally{ B.busy=false; }
 }
 /* Solve for the current injector settings. The solve is ~1.2 s on the backend and the
    result is ~0.45 MB, so it is re-run on any injector change rather than cached as presets. */
@@ -2717,3 +2766,14 @@ window.addEventListener('load',()=>{
   document.body.classList.add('mode-home');     // open on the menu, not inside a mode
   S.mode='home';
 });
+
+/* Test/QC hook for the barium field. The fluoroscopy UI is not built yet, so this is how the
+   study is driven: load the shipped timeline, set the clock, and the next exposure renders at
+   that moment. Mirrors window.radsimCT in ct.js. */
+if (typeof window !== 'undefined') window.radsimBa = {
+  load: () => bariumLoad(),
+  on: (v = true) => { S.barium.on = v; S.barium.lut = null; },
+  at: (t) => { S.barium.studyTime = t; S.barium.lut = null; },
+  state: () => ({ on: S.barium.on, t: S.barium.studyTime, has: !!S.barium.timeline,
+                  giVol: !!S.barium.giVol, error: S.barium.error }),
+};

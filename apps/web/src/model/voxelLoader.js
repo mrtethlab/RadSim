@@ -46,6 +46,24 @@ export async function loadVoxelModel(baseUrl, name) {
       if (!this._preset) this._preset = await (await fetch(`${baseUrl}/${hdr.contrast}`)).json();
       return this._preset;
     },
+    // GI: models built with build_gi carry a transport coordinate for the gut, and may ship
+    // a solved barium timeline. Same lazy contract as the vascular pair above — a model that
+    // is never given barium never pays for the expanded per-voxel form.
+    hasGI: !!hdr.giarc,
+    hasPresetBarium: !!hdr.barium,
+    async loadPresetBarium() {
+      if (!hdr.barium) return null;
+      if (!this._barium) this._barium = await (await fetch(`${baseUrl}/${hdr.barium}`)).json();
+      return this._barium;
+    },
+    async loadGIArc() {
+      if (!hdr.giarc) return null;
+      if (!this._giarc) {
+        const buf = await (await fetch(`${baseUrl}/${hdr.giarc}`)).arrayBuffer();
+        this._giarc = new Uint16Array(buf);
+      }
+      return this._giarc;
+    },
     arclenUrl: hdr.arclen ? `${baseUrl}/${hdr.arclen}` : null,
     async loadArclen() {
       if (!hdr.arclen) return null;

@@ -465,8 +465,33 @@ the rate the physiology changes — every second through the swallow, every five
 emptying, every thirty after. Keeping the solver's flat 1 Hz wrote 1801 frames and 5.5 MB, more
 than fourteen times the contrast preset for a study that changes far more slowly.
 
-**Still to do for Phase 5:** loading the barium field in the app (the renderer accepts it; the
-app does not yet fetch it), the double-contrast gas phase, and the fluoroscopy UI.
+### 5.5 The app loads it, and it shows up on the film
+
+`voxelLoader` gained `hasGI` / `hasPresetBarium` with the same lazy contract as the vascular
+pair — a model never given barium never pays for the expanded per-voxel form. `S.barium`
+mirrors `S.contrast` minus the injector transport, because a meal has no pump: `studyTime` is
+seconds since the agent was given, and it is the analogue of the injector clock.
+
+There is no live solve in the browser and there is not meant to be. A GI study runs for half an
+hour of simulated time, so it is always the shipped timeline, and the pose it was solved for is
+fixed with it.
+
+Measured on the CAP model, exposing the same abdomen with and without the field at t = 10 min:
+
+| | barium off | barium on |
+| --- | --- | --- |
+| darkest 1 % of transmitted signal | 0.00893 | 0.00257 (**3.5x** less) |
+| single most-attenuated path | 0.00273 | 0.0000380 (**72x** less — effectively opaque) |
+| median | 0.0187 | 0.0114 |
+
+At an AP abdomen technique the stomach and the duodenal C-loop render as a solid white column,
+which is what a barium meal looks like.
+
+`window.radsimBa` drives it until the UI exists: `.load()`, `.on()`, `.at(t)`.
+
+**Still to do for Phase 5:** the double-contrast gas phase, and the fluoroscopy UI — a study
+clock, the administration controls, and the patient-position coupling that §5.3 already solves
+for but which nothing on screen yet exposes.
 
 ---
 
