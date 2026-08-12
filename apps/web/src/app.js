@@ -12,6 +12,7 @@ import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
 import { decodeGITimeline, buildGIVolume, buildBariumLUT, NS as GI_NS } from './core/gi.js';
+import { GIStudy, SEGMENTS as GI_SEGMENTS } from './core/giSolve.js';
 import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import { BodyMaterials } from './core/materials.js';
@@ -327,6 +328,10 @@ async function setSubject(sub){
   S.barium.timeline=null; S.barium.giVol=null; S.barium.giVolFor=null;
   S.barium.lut=null; S.barium.lutT=null; S.barium.on=false;
   if($('ctrstPanel')) ctrstApply();
+  // The GI geometry belongs to the old model too, so drop it and re-evaluate whether the new
+  // subject can carry barium at all.
+  S.barium.gi=null; S.barium.study=null; S.barium.running=false;
+  if($('giPanel')) giApply();
   showActive(sub);
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
   if(sel) sel.value=sub;
@@ -472,7 +477,11 @@ const S = {
   // Barium studies. `studyTime` is seconds since the agent was given, and is the analogue of
   // the injector clock: for a swallow it is seconds, for a follow-through it is minutes.
   barium:{ on:false, timeline:null, giVol:null, giVolFor:null, studyTime:60,
-           lut:null, lutT:null, busy:false, error:null, static:false },
+           lut:null, lutT:null, busy:false, error:null, static:false,
+           // live study (core/giSolve.js): the clock advances it and the pose is read from
+           // the rotate/tilt sliders, so turning the patient moves the agent from that moment
+           gi:null, study:null, running:false, speed:10, lastTick:0,
+           route:'oral', volumeMl:150, concPct:100, erect:false },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -680,6 +689,224 @@ function buildPhantom(){
   return ph;
 }
 
+
+
+/* ---- barium / fluoroscopy panel --------------------------------------------------------
+   The study is LIVE (core/giSolve.js): the clock advances the solver and the pose is read
+   from the same rotate/tilt sliders that position the patient for the image. Turning them
+   mid-study changes gravity from that moment, which is the whole examination.
+
+   The clock runs faster than real time by default. A barium meal takes half an hour to reach
+   the caecum and nobody watches that at 1x; the rate selector is part of the instrument, not
+   a debug affordance. */
+const GI_SEG_ORDER = [48, 49, 50, 51, 52];
+
+function giPose(){
+  return { rotX:S.objRot.x, rotY:S.objRot.y, rotZ:S.objRot.z, erect:S.barium.erect };
+}
+function giPoseLabel(){
+  const r = S.objRot, bits = [S.barium.erect ? 'Erect' : 'Recumbent'];
+  if(r.x) bits.push(`tilt ${r.x}\u00b0`);
+  if(r.y) bits.push(`rot ${r.y}\u00b0`);
+  if(r.z) bits.push(`roll ${r.z}\u00b0`);
+  // Name the classic positions, because that is what they are called on the request card.
+  // +z is superior and +x is the patient's right (liver at high x, spleen at low x), so a
+  // positive roll about z swings the right side anteriorly \u2014 the patient ends up on their
+  // LEFT. The decubitus is named for the side that is DOWN.
+  const named = (!r.x && !r.y && Math.abs(r.z)===90) ? (r.z>0 ? ' \u2014 left lateral decubitus'
+                                                             : ' \u2014 right lateral decubitus')
+              : (!r.y && !r.z && Math.abs(r.x)===180) ? ' \u2014 prone' : '';
+  return bits.join(' \u00b7 ') + named;
+}
+function giClock(){ return S.barium.study ? S.barium.study.t : 0; }
+function giFmt(t){
+  const m = Math.floor(t/60), s2 = Math.floor(t%60);
+  return String(m).padStart(2,'0')+':'+String(s2).padStart(2,'0');
+}
+
+/* Start (or restart) the study from t=0 with the current administration and pose. */
+function giBegin(){
+  const B = S.barium, vm = S.voxelModel;
+  if(!vm || !vm.hasGI){ B.error = `${S.subject} has no GI transport data`; return false; }
+  if(!B.gi){ B.error = 'GI geometry not loaded'; return false; }
+  try{
+    B.study = new GIStudy(B.gi, {
+      route:B.route, volumeMl:B.volumeMl, concMgBaMl:B.concPct*5.88, overS:B.route==='rectal'?120:5,
+      pose:giPose(),
+    });
+    B.error = null; B.lut = null; B.lutT = null;
+    B.timeline = B.study.sample();
+    return true;
+  }catch(err){ B.error = err.message; B.study = null; return false; }
+}
+
+/* Advance the study and refresh what the renderer sees. Called on a timer while running. */
+function giTick(){
+  const B = S.barium;
+  if(!B.study || !B.running) return;
+  const now = performance.now();
+  const wall = Math.min((now - (B.lastTick || now)) / 1000, 0.5);   // cap after a tab stall
+  B.lastTick = now;
+  B.study.advance(wall * B.speed);
+  B.timeline = B.study.sample();
+  B.lut = null; B.lutT = null;
+  giRender();
+  refreshFilmViewer?.();
+}
+
+function giSetPose(){
+  const B = S.barium;
+  if(B.study) B.study.setPose(giPose());
+  const el = $('giPose'); if(el) el.textContent = giPoseLabel();
+}
+
+function giBars(){
+  const cv = $('giBars'); if(!cv) return;
+  const g = cv.getContext('2d'), W = cv.width, H = cv.height;
+  g.fillStyle = '#05070a'; g.fillRect(0,0,W,H);
+  const B = S.barium, st = B.study;
+  const pad = {l:74, r:8, t:6, b:6}, rows = GI_SEG_ORDER.length;
+  const bh = (H - pad.t - pad.b) / rows;
+  g.font = '9px monospace';
+  // scale to the administered concentration, so a full lumen is a full bar
+  const cmax = Math.max(B.concPct * 5.88, 1);
+  for(let i=0;i<rows;i++){
+    const vid = GI_SEG_ORDER[i], y = pad.t + i*bh;
+    const name = (GI_SEGMENTS[vid] || {}).name || String(vid);
+    g.fillStyle = '#7f8c99';
+    g.fillText(name.slice(0,11), 4, y + bh*0.62);
+    let lum = 0, wal = 0;
+    if(st && st.tubes[vid]){
+      const c = st.tubes[vid].c, w = st.wall[vid];
+      for(let j=0;j<c.length;j++){ lum += c[j]; wal += w[j]; }
+      lum /= c.length; wal /= w.length;
+    }
+    const bw = W - pad.l - pad.r;
+    g.fillStyle = '#1a2028'; g.fillRect(pad.l, y+3, bw, bh-8);
+    // lumen in amber, mucosal coat stacked on it in a paler tone — the coat is what a
+    // double-contrast film shows once the lumen has emptied, so it must stay visible
+    const lw = Math.min(1, lum/cmax) * bw;
+    g.fillStyle = '#e0a83c'; g.fillRect(pad.l, y+3, lw, bh-8);
+    const ww = Math.min(1, wal/12) * bw * 0.35;
+    g.fillStyle = 'rgba(240,220,170,.55)'; g.fillRect(pad.l+lw, y+3, ww, bh-8);
+  }
+}
+
+function giRender(){
+  const B = S.barium;
+  const el = (id)=>$(id);
+  if(el('giElapsed')) el('giElapsed').textContent = giFmt(giClock());
+  const go = el('giGo');
+  if(go){ go.textContent = B.running ? '\u25a0' : '\u25b6'; go.classList.toggle('running', !!B.running); }
+  if(el('giPhase')){
+    const t = giClock();
+    el('giPhase').textContent = !B.study ? 'not started'
+      : B.running ? (t<15 ? 'swallowing' : t<300 ? 'gastric' : t<1800 ? 'small bowel' : 'colon')
+      : 'paused';
+  }
+  if(el('giPose')) el('giPose').textContent = giPoseLabel();
+  if(el('giAudit') && B.study){
+    const a = B.study.audit();
+    el('giAudit').textContent = `${(a.given/1000).toFixed(1)} g given \u00b7 `
+      + `${(a.lumen/1000).toFixed(1)} g in the lumen \u00b7 ${(a.mucosa/1000).toFixed(1)} g coating`
+      + (Math.abs(a.errPct) > 0.5 ? `  (mass ${a.errPct.toFixed(1)} %)` : '');
+  }
+  if(el('giStatus')){
+    el('giStatus').textContent = B.error ? B.error
+      : !B.on ? 'Barium off.'
+      : !B.study ? 'Ready. Press \u25b6 to give the agent and start the clock.'
+      : B.running ? 'Running. Turn the patient and the barium follows.'
+      : 'Paused. Expose whenever the anatomy is filled.';
+  }
+  giBars();
+}
+
+async function giApply(){
+  const B = S.barium, panel = $('giPanel');
+  if(!panel) return;
+  const vm = S.voxelModel;
+  const blocked = !vm || !vm.hasGI;
+  panel.classList.toggle('blocked', blocked);
+  const tab = $('giTab');
+  if(tab){
+    tab.disabled = blocked;
+    tab.title = blocked ? `${S.subject} has no GI transport data — build_gi has not been run for it`
+                        : 'Barium studies';
+  }
+  if(blocked){ B.on = false; B.running = false; }
+  const pow = $('giOn');
+  if(pow){ pow.textContent = B.on ? 'ON' : 'OFF'; pow.classList.toggle('on', !!B.on); }
+  if(B.on && !B.gi && vm && vm.hasGI){
+    try{ B.gi = await vm.loadGI(); }catch(err){ B.error = 'Could not load the GI geometry: '+err.message; }
+  }
+  giRender();
+}
+
+function initGIPanel(){
+  if(!$('giPanel')) return;
+  const B = S.barium;
+  $('giTab').addEventListener('click', ()=>{
+    if($('giTab').disabled) return;
+    $('giPanel').classList.toggle('open');
+  });
+  $('giOn').addEventListener('click', async ()=>{
+    B.on = !B.on;
+    if(!B.on){ B.running = false; B.study = null; B.timeline = null; B.lut = null; }
+    await giApply(); syncScene();
+  });
+  $('giGo').addEventListener('click', ()=>{
+    if(!B.on) return;
+    if(!B.study && !giBegin()){ giRender(); return; }
+    B.running = !B.running;
+    B.lastTick = performance.now();
+    giRender();
+  });
+  $('giReset').addEventListener('click', ()=>{
+    B.running = false; B.study = null; B.timeline = null; B.lut = null; B.lutT = null;
+    giRender(); syncScene();
+  });
+  document.querySelectorAll('#giSpeedSeg button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      B.speed = +b.dataset.sp;
+      document.querySelectorAll('#giSpeedSeg button').forEach(x=>x.classList.toggle('on', x===b));
+    });
+  });
+  document.querySelectorAll('#giRouteSeg button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      B.route = b.dataset.route;
+      document.querySelectorAll('#giRouteSeg button').forEach(x=>x.classList.toggle('on', x===b));
+      // a change of route is a different examination, so the study restarts
+      B.study = null; B.running = false;
+      $('giVol').value = B.volumeMl = (B.route==='rectal' ? 800 : 150);
+      $('giVolV').textContent = B.volumeMl+' mL';
+      giRender();
+    });
+  });
+  document.querySelectorAll('#giStandSeg button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      B.erect = b.dataset.erect === '1';
+      document.querySelectorAll('#giStandSeg button').forEach(x=>x.classList.toggle('on', x===b));
+      giSetPose(); giRender();
+    });
+  });
+  $('giVol').addEventListener('input', e=>{
+    B.volumeMl = +e.target.value; $('giVolV').textContent = B.volumeMl+' mL';
+    if(B.study){ B.study = null; B.running = false; }      // dose changed: start again
+    giRender();
+  });
+  $('giConc').addEventListener('input', e=>{
+    B.concPct = +e.target.value; $('giConcV').textContent = B.concPct+' % w/v';
+    $('giAdmNote').textContent = `${(B.concPct*5.88).toFixed(0)} mg Ba/mL \u00b7 `
+      + `${(B.volumeMl*B.concPct*5.88/1000).toFixed(0)} g of barium`;
+    if(B.study){ B.study = null; B.running = false; }
+    giRender();
+  });
+  $('giConc').dispatchEvent(new Event('input'));
+  // one timer for the whole study; it does nothing while paused
+  setInterval(giTick, 100);
+  giApply();
+}
+
 /* ---- contrast ------------------------------------------------------------------------
    The solver's output lives on the vascular graph, so turning it into something the
    ray-caster can use is two lookups: which arclength bin each voxel sits at (per model,
@@ -702,8 +929,10 @@ function applyContrast(ph){
 function bariumLUT(){
   const B=S.barium;
   if(!B.on || !B.timeline) return null;
-  if(B.lut && B.lutT===B.studyTime) return B.lut;     // one table per acquisition time
-  B.lut=buildBariumLUT(B.timeline, B.studyTime); B.lutT=B.studyTime;
+  // A live study's sample() is a one-frame timeline, so the lookup time is its own clock.
+  const t = B.study ? B.study.t : B.studyTime;
+  if(B.lut && B.lutT===t) return B.lut;
+  B.lut=buildBariumLUT(B.timeline, t); B.lutT=t;
   return B.lut;
 }
 function applyBarium(ph){
@@ -1187,7 +1416,8 @@ function bind(){
   const rotAxes=[['objRotX','x'],['objRotY','y'],['objRotZ','z']];
   for(const [id,ax] of rotAxes){
     $(id)?.addEventListener('input',e=>{ S.objRot[ax]=parseInt(e.target.value);
-      $(id+'v').textContent=S.objRot[ax]+'°'; resetPrep(); syncScene(); });
+      $(id+'v').textContent=S.objRot[ax]+'°'; resetPrep(); syncScene();
+      giSetPose?.(); });
   }
   // x-ray object offset sliders (cm on the receptor: z long axis / x cross axis)
   const offAxes=[['objOffX','x'],['objOffZ','z']];
@@ -2741,7 +2971,7 @@ function initExtras(){
 /* ---- boot ---- */
 window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
-  Sound.init(); initExtras(); initContrastPanel();
+  Sound.init(); initExtras(); initContrastPanel(); initGIPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound,
            syncScene, refreshReadouts, updateGeomReadouts,

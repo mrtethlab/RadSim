@@ -1306,3 +1306,21 @@ body.tut-on .tut{display:block}
 .home-welcome .hw-sign{margin-top:16px; color:#93a3b2; font-size:13.5px}
 .home-welcome .hw-sign span{color:var(--hi); font-family:var(--disp); font-size:15px;
   letter-spacing:1px}
+
+/* ---- barium / fluoroscopy panel -------------------------------------------------------
+   Shares the injector's drawer chrome, its own accent. Barium is not a vendor surface any
+   more than the injector is, so it keeps its palette under every CT theme. */
+.gi .ctrst-tab{top:196px}
+.gi{--hi:#e0a83c}
+.gi .ctrst-hdr{border-bottom-color:#4a3a1c}
+.gi .ctrst-hdr .t b{color:var(--hi)}
+.gi-clock{display:flex; align-items:baseline; justify-content:space-between; margin:2px 0 8px}
+.gi-t{font-family:var(--seg); font-size:30px; color:var(--hi); letter-spacing:2px}
+.gi-phase{font-family:var(--seg); font-size:10px; letter-spacing:1.5px; color:var(--muted)}
+.gi-speed{display:flex; align-items:center; gap:9px; margin-top:9px}
+.gi-speed .k{font-family:var(--seg); font-size:9px; letter-spacing:1.5px; color:var(--muted2)}
+.gi-pose{font-family:var(--seg); font-size:11px; color:var(--txt); margin-top:8px;
+  padding:7px 9px; background:#141a20; border:1px solid var(--edge); border-radius:5px}
+.gi .inj-go{background:linear-gradient(180deg,#f0c46a,#d0912a); color:#241703}
+.gi .inj-go.running{background:linear-gradient(180deg,#7fe0a0,#2fa84c); color:#06210d}
+#giBars{width:100%; height:auto; display:block; background:#05070a; border-radius:5px}

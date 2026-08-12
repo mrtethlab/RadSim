@@ -276,7 +276,9 @@ export class GIStudy {
       if (refluxed > 0) {            // back up the tract: reflux is a finding, not an error
         const mass = refluxed * volNode[v];
         if (i > 0) handover[order[i - 1]] += mass / volNode[order[i - 1]];
-        else this.spill += mass;     // out of the mouth
+        // past the near end of the first segment: out of the mouth on a swallow, back out
+        // the rectum on an enema — an over-filled enema without a retention balloon.
+        else this.spill += mass;
       }
     }
     this.t += dt;

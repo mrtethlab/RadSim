@@ -56,6 +56,13 @@ export async function loadVoxelModel(baseUrl, name) {
       if (!this._barium) this._barium = await (await fetch(`${baseUrl}/${hdr.barium}`)).json();
       return this._barium;
     },
+    // The GI segment geometry itself: per-segment volume, area profile and the bin centroids
+    // the live solver rotates into the patient's pose to get an elevation profile.
+    async loadGI() {
+      if (!hdr.gi) return null;
+      if (!this._gi) this._gi = await (await fetch(`${baseUrl}/${hdr.gi}`)).json();
+      return this._gi;
+    },
     async loadGIArc() {
       if (!hdr.giarc) return null;
       if (!this._giarc) {

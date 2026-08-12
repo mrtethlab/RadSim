@@ -159,6 +159,85 @@
       </div>
     </div>
 
+
+    <!-- ============ BARIUM / FLUOROSCOPY (pull-out, left edge, x-ray only) ============ -->
+    <div class="ctrst gi xray-only" id="giPanel">
+      <button class="ctrst-tab" id="giTab" title="Barium studies"><span>BARIUM</span></button>
+      <div class="ctrst-body">
+        <div class="ctrst-hdr">
+          <div class="t"><b>BARIUM</b> / FLUOROSCOPY</div>
+          <button class="ctrst-pow" id="giOn">OFF</button>
+        </div>
+        <div class="ctrst-pad">
+          <div class="ctrst-lock" id="giLock" style="display:none"></div>
+
+          <!-- the study clock. A barium study runs over half an hour, so it is watched at
+               speed rather than in real time; the rate is part of the instrument. -->
+          <div class="gi-clock">
+            <div class="gi-t" id="giElapsed">00:00</div>
+            <div class="gi-phase" id="giPhase">not started</div>
+          </div>
+          <div class="inj-tx">
+            <button class="inj-go" id="giGo" title="Run the study">&#9654;</button>
+            <button class="inj-rst" id="giReset" title="Reset the study">&#9632;</button>
+          </div>
+          <div class="gi-speed">
+            <span class="k">Rate</span>
+            <div class="seg" id="giSpeedSeg">
+              <button data-sp="1">1&times;</button>
+              <button data-sp="10" class="on">10&times;</button>
+              <button data-sp="60">60&times;</button>
+              <button data-sp="300">300&times;</button>
+            </div>
+          </div>
+          <div class="ctrst-note" id="giNote">Give the agent, then run the clock. Turn the
+            patient with the rotate / tilt sliders and the barium follows.</div>
+
+          <div class="grp">
+            <div class="lab">Administration</div>
+            <div class="bod">
+              <div class="row"><div class="rl">Route</div></div>
+              <div class="seg" id="giRouteSeg">
+                <button data-route="oral" class="on">Swallow</button>
+                <button data-route="rectal">Enema</button>
+              </div>
+              <div class="row" style="margin-top:10px"><div class="rl">Volume</div>
+                <div class="valchip" id="giVolV">150 mL</div></div>
+              <input type="range" id="giVol" min="20" max="1200" value="150" step="10">
+              <div class="row" style="margin-top:8px"><div class="rl">Density</div>
+                <div class="valchip" id="giConcV">100 % w/v</div></div>
+              <input type="range" id="giConc" min="20" max="250" value="100" step="5">
+              <div class="ctrst-note" id="giAdmNote">&mdash;</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Patient position</div>
+            <div class="bod">
+              <div class="seg" id="giStandSeg">
+                <button data-erect="0" class="on">Recumbent</button>
+                <button data-erect="1">Erect</button>
+              </div>
+              <div class="gi-pose" id="giPose">&mdash;</div>
+              <div class="ctrst-note">Rotation comes from the <b>Object &middot; rotate / tilt</b>
+                sliders, so positioning the patient to move the agent is the same control it is
+                for positioning them to image. Gravity is applied from the moment you turn.</div>
+            </div>
+          </div>
+
+          <div class="grp">
+            <div class="lab">Where the barium is</div>
+            <div class="bod">
+              <canvas id="giBars" width="330" height="132"></canvas>
+              <div class="ctrst-note" id="giAudit">&mdash;</div>
+            </div>
+          </div>
+
+          <div class="ctrst-status" id="giStatus">Barium off.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- ============ CONTRAST INJECTOR (pull-out, left edge of the bay) ============ -->
     <div class="ctrst" id="ctrstPanel">
       <button class="ctrst-tab" id="ctrstTab" title="Contrast injector"><span>CONTRAST</span></button>
