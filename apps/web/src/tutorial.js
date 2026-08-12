@@ -278,6 +278,12 @@ function scrollTargetIntoView(s) {
   const els = target(s);
   if (!els) return;
   const el = els[0];
+  // On the mobile pager the target may live on another PAGE entirely — bring that page to
+  // the front first (no-op on desktop). The step's first paint ran before this and saw a
+  // hidden target (zero rect), so a repaint is owed whether or not a scroll follows.
+  const hadNoRect = !el.getBoundingClientRect().width;
+  window.__mobilePageFor?.(el);
+  if (hadNoRect) setTimeout(paint, 60);
   const r = el.getBoundingClientRect();
   if (r.top >= 0 && r.bottom <= innerHeight) return;
   el.scrollIntoView({ block: 'center', behavior: 'smooth' });

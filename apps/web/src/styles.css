@@ -1358,3 +1358,121 @@ body.tut-on .tut{display:block}
 .gi .inj-go{background:linear-gradient(180deg,#f0c46a,#d0912a); color:#241703}
 .gi .inj-go.running{background:linear-gradient(180deg,#7fe0a0,#2fa84c); color:#06210d}
 #giBars{width:100%; height:auto; display:block; background:#05070a; border-radius:5px}
+
+/* ============================================================================
+   MOBILE VIEW (docs/mobile-view.md) — same program, different layout.
+   Everything below is gated on body.mobile (set by src/mobile.js from a media query), so
+   desktop above the breakpoint is untouched. The one exception is the first rule, which
+   fixes the narrow-DESKTOP fallback too: grid-template-rows:100% survived into the ≤1180
+   linear layout, where the grid's auto height made the bay resolve to thousands of px.
+   ============================================================================ */
+@media (max-width:1180px){
+  .app{grid-template-rows:none}
+  .bay{height:62vh; min-height:340px}
+}
+
+/* ---- the pager: three columns become pages behind a bottom tab bar ---- */
+body.mobile .app{display:block; height:100dvh; overflow:hidden}
+body.mobile #consoleCol{display:contents}
+.consec{display:contents}                    /* invisible wrappers on desktop */
+/* NOTE: no :not(#consoleCol) here — :not() adopts its argument's specificity, so an ID
+   inside it made this hide-rule unbeatable by .mpage-on and the Setup page rendered blank.
+   The #consoleCol{display:contents} rule above outranks this by its own ID instead. */
+body.mobile .bay,
+body.mobile .app > .col,
+body.mobile .consec{
+  display:none; position:fixed; left:0; right:0; top:0;
+  bottom:calc(56px + env(safe-area-inset-bottom));
+  overflow-y:auto; overflow-x:hidden; background:var(--bg); z-index:5}
+body.mobile .bay{overflow:hidden; height:auto; min-height:0}
+body.mobile .mpage-on, body.mobile .app > .col.mpage-on{display:block}
+/* the setup/console pages keep their column styling but full-width */
+body.mobile .app > .col{width:auto; border:0}
+
+/* ---- bottom tab bar ---- */
+.mtabs{display:none}
+body.mobile .mtabs.show{display:flex; position:fixed; left:0; right:0; bottom:0; z-index:220;
+  height:calc(56px + env(safe-area-inset-bottom)); padding-bottom:env(safe-area-inset-bottom);
+  background:#0d1218; border-top:1px solid var(--edge2)}
+.mtabs button{flex:1; border:0; background:transparent; color:var(--muted); cursor:pointer;
+  font-family:var(--disp); font-weight:700; font-size:13px; letter-spacing:1.5px;
+  text-transform:uppercase}
+.mtabs button.on{color:var(--cyan); box-shadow:inset 0 3px 0 var(--cyan)}
+
+/* ---- exposure dock: the real ROTOR/EXPOSE (or CT transport) block, reparented ---- */
+.mdock{display:none}
+body.mobile .mdock.has{display:block; position:fixed; left:0; right:0; z-index:210;
+  bottom:calc(56px + env(safe-area-inset-bottom));
+  padding:8px 10px; background:rgba(10,14,18,.94); border-top:1px solid var(--edge2);
+  backdrop-filter:blur(6px)}
+body.mobile .mdock .btns2 button{min-height:46px}
+body.mobile .mdock.has ~ * .mpage-on{bottom:calc(120px + env(safe-area-inset-bottom))}
+/* pages must not hide content under the dock: pad their scroll end instead */
+body.mobile .app > .col.mpage-on,
+body.mobile .consec.mpage-on{padding-bottom:78px}
+
+/* ---- touch + legibility pass ---- */
+body.mobile{-webkit-text-size-adjust:100%}
+body.mobile .row{min-height:34px}
+body.mobile .grp .bod{padding:12px 12px 14px}
+body.mobile .rl{font-size:11.5px}
+body.mobile .valchip{font-size:12px; padding:4px 9px}
+body.mobile .ctrst-note{font-size:11px; line-height:1.55}
+body.mobile input[type=range]{height:34px}
+body.mobile input[type=range]::-webkit-slider-thumb{width:26px; height:26px}
+body.mobile .stepper button{min-width:44px; min-height:40px; font-size:18px}
+body.mobile .seg button, body.mobile .segmini button{min-height:40px}
+body.mobile .hc-acts button{min-height:44px}
+body.mobile select{min-height:42px; font-size:14px}
+body.mobile .mini button{min-height:40px}
+body.mobile .imgtools button{min-width:44px; min-height:40px}
+
+/* ---- editor is desktop-only on the mobile layout ---- */
+.hc-mobnote{display:none}
+body.mobile .hc-editor .hc-acts{display:none}
+body.mobile .hc-editor .hc-mobnote{display:block; margin-top:14px; font-family:var(--seg);
+  font-size:11px; letter-spacing:1px; color:var(--muted); text-transform:uppercase}
+
+/* ---- flyouts become bottom sheets ----
+   The desktop drawer is an absolutely positioned BODY sliding by translateX inside a
+   zero-width container; the sheet keeps that structure but re-hangs the body from the
+   bottom edge and slides it by translateY instead. */
+body.mobile .ctrst{position:fixed; inset:0; pointer-events:none; z-index:230}
+body.mobile .ctrst-body{position:fixed; left:0; right:0; width:auto; top:auto;
+  bottom:calc(120px + env(safe-area-inset-bottom)); height:66dvh;
+  transform:translateY(115%); transition:transform .22s ease;
+  border-radius:14px 14px 0 0; border:1px solid var(--edge2)}
+body.mobile .ctrst.open .ctrst-body{transform:none}
+/* the sheet stops ABOVE the exposure dock on purpose: fluoroscopy is expose-while-
+   screening, so EXPOSE stays under the thumb with the barium clock running */
+body.mobile:has(.ctrst.open) .ctrst:not(.open) .ctrst-tab{display:none}
+/* the tabs turn into chips pinned above the tab bar, always visible */
+/* Chips clear BOTH bars: the tab bar and the exposure dock above it (the dock is present
+   whenever a mode is active, which is the only time the chips are visible anyway). */
+body.mobile .ctrst-tab{position:fixed; left:auto; top:auto; writing-mode:horizontal-tb;
+  bottom:calc(132px + env(safe-area-inset-bottom)); padding:9px 14px; border-radius:8px;
+  border:1px solid var(--edge2); box-shadow:0 6px 18px rgba(0,0,0,.5); pointer-events:auto;
+  font-size:11px; letter-spacing:2px}
+body.mobile #ctrstPanel .ctrst-tab{right:10px}
+body.mobile #giPanel .ctrst-tab{right:118px}
+body.mobile .ctrst.open .ctrst-tab{left:auto}
+/* the desktop rail-slide has no meaning on sheets */
+body.mobile.lflyout .ctrst-tab{left:auto}
+
+/* ---- popups sized to the phone ---- */
+body.mobile .kpad-win{width:min(94vw, 380px)}
+body.mobile .kpad-keys button{min-height:52px; font-size:20px}
+body.mobile #protoPop .protowin, body.mobile .protowin{width:94vw; max-height:80dvh}
+
+/* ---- tutorial: the card docks to the bottom, full width ---- */
+body.mobile .tut-card{left:8px !important; right:8px !important; width:auto; max-width:none;
+  top:auto !important; bottom:calc(64px + env(safe-area-inset-bottom)) !important;
+  max-height:44dvh; overflow-y:auto}
+
+/* ---- mobile top bar: the centred mode pill collided with the view-options drop ---- */
+body.mobile .modebar{left:8px; transform:none; top:8px}
+body.mobile .modebar button{font-size:12px; letter-spacing:2px; padding:6px 10px}
+body.mobile .baydrop{top:8px}
+/* the full DR matrices are a ~30 s raycast on a phone CPU — parked, not pretended */
+body.mobile #resSeg [data-res="std"], body.mobile #resSeg [data-res="high"]{
+  opacity:.35; pointer-events:none}
