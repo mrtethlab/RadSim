@@ -366,9 +366,66 @@ pylorus they did not, and the duodenum came out **reversed**, s=0 at the duodeno
 the labels touch or sit a few mm apart. And the fallback reference was "the first other present
 segment", which for the duodenum meant the oesophagus — two segments upstream and irrelevant.
 
-**Still to do for Phase 5:** the transport solver (peristalsis, gravity, patient position), the
-mucosal coating layer for double contrast, wiring the barium column through both render
-engines, and the fluoroscopy UI.
+### 5.3 The transport solver — `app/gi_solver.py`
+
+Kinematic, as §5 argued it must be. Four things determine the image and each maps to something
+the operator does: where the agent is along the tract, how fast it is moving, which way gravity
+is pulling it, and how much has stuck to the wall.
+
+**Transit comes from physiology, not from the geometry.** `u = 1/T` in normalised units, with T
+per segment — because build_gi cannot measure the small bowel's length (§5.2). The geometry
+supplies the path's order and shape, which it gets right.
+
+**Gravity MODULATES that rate rather than adding to it**: `u = u0 (1 + G x mobility x -dh/ds)`.
+The first version added a velocity, and with gravity ~0.5/s against a gastric u0 of 1/1800 the
+whole tract drained in seconds regardless of physiology. As a multiplier, a dependent segment
+runs faster and an anti-dependent one stalls or reverses.
+
+That coupling is the point of the whole phase, and it reproduces the behaviour it should. Mean
+lumen concentration at 10 minutes after a 150 mL meal:
+
+| pose | stomach | duodenum | small bowel |
+| --- | --- | --- | --- |
+| erect | 162.7 | 76.0 | 4.7 |
+| supine | 106.0 | 71.0 | 13.8 |
+| **right lateral decubitus** | 131.7 | **159.5** | 6.6 |
+| **left lateral decubitus** | 246.3 | **4.0** | 0.2 |
+
+**A 40x difference in duodenal filling from turning the patient over** — right-side-down makes
+the pylorus dependent and empties the stomach, left-side-down pools barium in the fundus and
+holds it there. That is why you turn a patient during a barium meal.
+
+**Numerics: the same scheme as the contrast solver, for the same reason.** Explicit upwind
+advection blew up on the first run — the oesophagus transits in 8 s, so with 128 nodes a parcel
+crosses a cell in 63 ms against a 250 ms step, a Courant number of 4 before gravity was added.
+Semi-Lagrangian advection has no Courant limit and backward-Euler diffusion has no diffusive
+limit. 2 hours of tract simulates in 1.7 s.
+
+**Mass audit, and what it caught.** Every gram is in a lumen, on a mucosa, in transit, or past
+the end; the audit closes at **+0.01 %**. Getting there found three real errors:
+
+- *Mass manufactured at every inlet.* Incoming concentration was fed through the semi-Lagrangian
+  upstream padding, so all `pad` cells took that value and the mass admitted was `pad` times the
+  mass handed over. The duodenum read 64,682 mgBa/mL against an administered 588. Incoming mass
+  now enters as a parcel at node 0.
+- *The mucosa was 2.5x too big.* Coating used A(s), a CROSS-SECTION, as if it were wall area —
+  giving the small bowel 5,900 cm2 of mucosa and 71 g of coating capacity against an 88 g dose,
+  so 95 % of the barium ended up on the wall. Mucosal area is now 2V/r from the segment volume
+  and a physiological radius, both trustworthy where the measured length is not.
+- *The administration over-delivered by 10 %.* `start <= t <= start+over` is inclusive at both
+  ends, so a 5 s administration at dt=0.5 fired 11 times, not 10. The audit read +10 % and the
+  solver wore the blame until the audit was itemised.
+
+A lumen also cannot exceed the administered concentration — there is nothing here that removes
+water — so a parcel that will not fit fills forward and overflows to the next segment, which is
+what 150 mL of barium does to a 46 mL oesophagus. Peak anywhere is now 587 against 588 given.
+
+**Asserted, not validated:** the rate constants (transit times are order-of-magnitude clinical),
+the coating kinetics, and the per-segment mobilities. What IS verified is mass closure, the
+ordering and timing of the transit, and the decubitus asymmetry.
+
+**Still to do for Phase 5:** wiring the barium column through both render engines, the
+double-contrast gas phase, and the fluoroscopy UI.
 
 ---
 

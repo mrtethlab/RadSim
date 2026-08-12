@@ -174,6 +174,17 @@ def build(model_dir, name):
         cnt = np.bincount(bins, minlength=N_SAMPLES).astype(float)
         binlen = max(L / N_SAMPLES, 1e-6)
         area = cnt * float(np.prod(spacing)) / binlen
+        # Where each bin SITS, in model mm. Gravity is the whole point of a barium study —
+        # you turn the patient to move the agent — and to model that the solver needs the
+        # elevation profile along the tract, which it gets by rotating these centroids into
+        # the patient's current pose. A(s) alone cannot express "the fundus is now dependent".
+        vox = np.argwhere(m)                      # (z, y, x) index order
+        cz = np.bincount(bins, weights=vox[:, 0], minlength=N_SAMPLES)
+        cy = np.bincount(bins, weights=vox[:, 1], minlength=N_SAMPLES)
+        cx = np.bincount(bins, weights=vox[:, 2], minlength=N_SAMPLES)
+        n = np.maximum(cnt, 1.0)
+        centre = np.stack([cx / n * spacing[0], cy / n * spacing[1], cz / n * spacing[2]], 1)
+        centre[cnt == 0] = np.nan                 # empty bin: no position to report
         ratio = L / anat_mm if anat_mm else 0.0
         flag = ''
         if unreachable:
@@ -187,7 +198,9 @@ def build(model_dir, name):
                              anatomicalLengthMM=anat_mm,
                              geodesicFraction=round(ratio, 3),
                              components=int(ncomp), unreachable=int(unreachable),
-                             areaMM2=[round(a, 1) for a in area])
+                             areaMM2=[round(a, 1) for a in area],
+                             centreMM=[[None if np.isnan(v) else round(float(v), 1)
+                                        for v in p] for p in centre])
         print(f'      {nm:14s} {L:7.1f} mm  {vol:7.1f} mL  '
               f'mean A {area[area>0].mean() if (area>0).any() else 0:7.1f} mm2{flag}')
         prev_mask = m
