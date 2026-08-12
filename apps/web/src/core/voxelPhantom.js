@@ -89,9 +89,14 @@ export class VoxelPhantom {
      the point where mu(E) is applied.
        baLUT — Float32Array(nmat * NS): mg Ba/mL for [material id][arclength bin]
        giVol — Uint8Array(nvox): arclength bin per voxel, 0 outside the gut */
-  setBarium(baLUT, giVol, ns) {
+  /* gasLUT — Float32Array(nmat * NS): gas volume fraction for [material id][arclength bin].
+     A double-contrast study is two agents at once, and the gas is not an attenuator to add
+     but an attenuator to REMOVE: it takes the place of the fluid the segmentation put in the
+     lumen. Optional — null leaves the lumen filled, which is a single-contrast study. */
+  setBarium(baLUT, giVol, ns, gasLUT) {
     this.baLUT = baLUT || null;
     this.giVol = giVol || null;
+    this.gasLUT = gasLUT || null;
     this.ns = ns || this.ns || 256;
   }
   // material id at a world point (or -1 outside the volume) — used for previews/debug
@@ -148,13 +153,20 @@ export class VoxelPhantom {
     let t = t0;
     const conc = this.concLUT, sVol = this.sVol, NS = this.ns;
     const IOD = BodyMaterials.IODINE_COL, BAR = BodyMaterials.BARIUM_COL;
-    const ba = this.baLUT, giVol = this.giVol;
+    const ba = this.baLUT, giVol = this.giVol, gasL = this.gasLUT;
+    const GASM = BodyMaterials.idByName['Bowel gas'];
     while (t < t1) {
       const tNext = Math.min(tMaxX, tMaxY, tMaxZ, t1);
       const seg = tNext - t;
       if (seg > 0) {
         const di = this.dataIndex(ix, iy, iz), id = this.data[di];
-        L[id] += seg;
+        // Gas displaces the lumen rather than adding to it, so it is the one agent that
+        // changes how the base material length is booked.
+        if (gasL) {
+          const gf = gasL[id * NS + (giVol ? giVol[di] : 0)];
+          if (gf > 0) { L[id] += seg * (1 - gf); L[GASM] += seg * gf; }
+          else L[id] += seg;
+        } else L[id] += seg;
         // Both agents ride the same walk: concentration-weighted length into their own
         // columns. Neither costs anything when its table is absent.
         if (conc) L[IOD] += seg * conc[id * NS + (sVol ? sVol[di] : 0)];

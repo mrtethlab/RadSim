@@ -61,39 +61,65 @@ export function buildGIVolume(mat, giarc) {
    `times` is NOT uniform — gi_export samples every second through the swallow and every
    thirty minutes later — so the bracketing search cannot assume a 1 Hz grid the way the
    contrast version can. */
-export function buildBariumLUT(tl, tSec) {
-  const nmat = BodyMaterials.count;
-  const lut = new Float32Array(nmat * NS);
-  if (!tl) return lut;
+/* Bracket `tSec` in the timeline's (non-uniform) time axis. */
+function bracket(tl, tSec) {
   const T = tl.times;
   let i0 = 0;
   while (i0 + 1 < T.length && T[i0 + 1] <= tSec) i0++;
   const i1 = Math.min(T.length - 1, i0 + 1);
   const span = T[i1] - T[i0];
-  const ft = span > 0 ? Math.max(0, Math.min(1, (tSec - T[i0]) / span)) : 0;
+  return { a: i0 * tl.nS, b: i1 * tl.nS,
+           ft: span > 0 ? Math.max(0, Math.min(1, (tSec - T[i0]) / span)) : 0 };
+}
 
+/* One field (lumen, wall, gas) resampled from nS solver nodes onto NS bins at one time. */
+function resample(f, nS, a, b, ft, out, row) {
+  for (let k = 0; k < NS; k++) {
+    const x = (k / (NS - 1)) * (nS - 1);
+    const j0 = Math.floor(x), j1 = Math.min(nS - 1, j0 + 1), fs = x - j0;
+    const v0 = f[a + j0] * (1 - fs) + f[a + j1] * fs;
+    const v1 = f[b + j0] * (1 - fs) + f[b + j1] * fs;
+    out[row + k] += v0 * (1 - ft) + v1 * ft;
+  }
+}
+
+export function buildBariumLUT(tl, tSec) {
+  const nmat = BodyMaterials.count;
+  const lut = new Float32Array(nmat * NS);
+  if (!tl) return lut;
+  const { a, b, ft } = bracket(tl, tSec);
   for (const [id, f] of tl.lumen) {
     if (id >= nmat) continue;
+    const row = id * NS;
+    resample(f, tl.nS, a, b, ft, lut, row);
+    // mucosal coat -> equivalent suspension path length. mg/cm2 / (mg/mL) = cm, and the
+    // tracer multiplies by segment length in cm, so express it as the concentration that
+    // would give the same areal mass over one voxel of path.
     const wf = tl.wall.get(id);
-    const a = i0 * tl.nS, b = i1 * tl.nS, row = id * NS;
-    for (let k = 0; k < NS; k++) {
-      const x = (k / (NS - 1)) * (tl.nS - 1);
-      const j0 = Math.floor(x), j1 = Math.min(tl.nS - 1, j0 + 1), fs = x - j0;
-      const l0 = f[a + j0] * (1 - fs) + f[a + j1] * fs;
-      const l1 = f[b + j0] * (1 - fs) + f[b + j1] * fs;
-      let c = l0 * (1 - ft) + l1 * ft;
-      if (wf) {
-        // mucosal coat -> equivalent suspension path length. mg/cm2 / (mg/mL) = cm, and the
-        // tracer multiplies by segment length in cm, so express it as the concentration that
-        // would give the same areal mass over one voxel of path.
-        const w0 = wf[a + j0] * (1 - fs) + wf[a + j1] * fs;
-        const w1 = wf[b + j0] * (1 - fs) + wf[b + j1] * fs;
-        c += (w0 * (1 - ft) + w1 * ft) * COAT_PER_CM;
-      }
-      lut[row + k] = c;
+    if (wf) {
+      const coat = new Float32Array(NS);
+      resample(wf, tl.nS, a, b, ft, coat, 0);
+      for (let k = 0; k < NS; k++) lut[row + k] += coat[k] * COAT_PER_CM;
     }
   }
   return lut;
+}
+
+/* The gas half of a double-contrast study: what fraction of each lumen bin is CO2 rather
+   than suspension, so the tracer can spend that share of its path in bowel gas instead of
+   in the fluid-filled lumen the segmentation gave it. Null when no gas was given. */
+export function buildGasLUT(tl, tSec) {
+  if (!tl || !tl.gas) return null;
+  const nmat = BodyMaterials.count;
+  const lut = new Float32Array(nmat * NS);
+  const { a, b, ft } = bracket(tl, tSec);
+  let any = false;
+  for (const [id, f] of tl.gas) {
+    if (id >= nmat) continue;
+    resample(f, tl.nS, a, b, ft, lut, id * NS);
+    any = true;
+  }
+  return any ? lut : null;
 }
 
 /* A coat of w mg/cm2 lining a lumen contributes, per cm of ray through that lumen, the mass

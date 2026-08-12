@@ -11,7 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
-import { decodeGITimeline, buildGIVolume, buildBariumLUT, NS as GI_NS } from './core/gi.js';
+import { decodeGITimeline, buildGIVolume, buildBariumLUT, buildGasLUT, NS as GI_NS } from './core/gi.js';
 import { GIStudy, SEGMENTS as GI_SEGMENTS } from './core/giSolve.js';
 import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
@@ -481,7 +481,9 @@ const S = {
            // live study (core/giSolve.js): the clock advances it and the pose is read from
            // the rotate/tilt sliders, so turning the patient moves the agent from that moment
            gi:null, study:null, running:false, speed:10, lastTick:0,
-           route:'oral', volumeMl:150, concPct:100, erect:false },
+           route:'oral', volumeMl:150, concPct:100, erect:false,
+           // double contrast: gas volume in mL (0 = single contrast) and its own LUT
+           gasMl:0, gasLut:null },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -733,8 +735,10 @@ function giBegin(){
     B.study = new GIStudy(B.gi, {
       route:B.route, volumeMl:B.volumeMl, concMgBaMl:B.concPct*5.88, overS:B.route==='rectal'?120:5,
       pose:giPose(),
+      // effervescent granules fizz out in seconds; an insufflator takes a minute of squeezing
+      gasMl:B.gasMl, gasOverS:B.route==='rectal'?60:10,
     });
-    B.error = null; B.lut = null; B.lutT = null;
+    B.error = null; B.lut = null; B.lutT = null; B.gasLut = null;
     B.timeline = B.study.sample();
     return true;
   }catch(err){ B.error = err.message; B.study = null; return false; }
@@ -775,14 +779,20 @@ function giBars(){
     const name = (GI_SEGMENTS[vid] || {}).name || String(vid);
     g.fillStyle = '#7f8c99';
     g.fillText(name.slice(0,11), 4, y + bh*0.62);
-    let lum = 0, wal = 0;
+    let lum = 0, wal = 0, gas = 0;
     if(st && st.tubes[vid]){
-      const c = st.tubes[vid].c, w = st.wall[vid];
-      for(let j=0;j<c.length;j++){ lum += c[j]; wal += w[j]; }
-      lum /= c.length; wal /= w.length;
+      const c = st.tubes[vid].c, w = st.wall[vid], q = st.gas[vid];
+      for(let j=0;j<c.length;j++){ lum += c[j]; wal += w[j]; gas += q[j]; }
+      lum /= c.length; wal /= w.length; gas /= q.length;
     }
     const bw = W - pad.l - pad.r;
     g.fillStyle = '#1a2028'; g.fillRect(pad.l, y+3, bw, bh-8);
+    // Gas first, as the space it has taken: it is drawn from the right because it is what
+    // the barium no longer has, and it reads as the lucency it will be on the film.
+    if(gas > 0){
+      const gw = Math.min(1, gas) * bw;
+      g.fillStyle = 'rgba(70,110,150,.30)'; g.fillRect(pad.l+bw-gw, y+3, gw, bh-8);
+    }
     // lumen in amber, mucosal coat stacked on it in a paler tone — the coat is what a
     // double-contrast film shows once the lumen has emptied, so it must stay visible
     const lw = Math.min(1, lum/cmax) * bw;
@@ -809,6 +819,7 @@ function giRender(){
     const a = B.study.audit();
     el('giAudit').textContent = `${(a.given/1000).toFixed(1)} g given \u00b7 `
       + `${(a.lumen/1000).toFixed(1)} g in the lumen \u00b7 ${(a.mucosa/1000).toFixed(1)} g coating`
+      + (a.gasGiven > 0 ? ` \u00b7 ${a.gasHeld.toFixed(0)} mL gas` : '')
       + (Math.abs(a.errPct) > 0.5 ? `  (mass ${a.errPct.toFixed(1)} %)` : '');
   }
   if(el('giStatus')){
@@ -833,11 +844,20 @@ async function giApply(){
     tab.title = blocked ? `${S.subject} has no GI transport data — build_gi has not been run for it`
                         : 'Barium studies';
   }
-  if(blocked){ B.on = false; B.running = false; }
+  if(blocked){ B.on = false; B.running = false; panel.classList.remove('open'); }
+  syncFlyouts();
   const pow = $('giOn');
   if(pow){ pow.textContent = B.on ? 'ON' : 'OFF'; pow.classList.toggle('on', !!B.on); }
-  if(B.on && !B.gi && vm && vm.hasGI){
-    try{ B.gi = await vm.loadGI(); }catch(err){ B.error = 'Could not load the GI geometry: '+err.message; }
+  if(B.on && vm && vm.hasGI){
+    try{
+      if(!B.gi) B.gi = await vm.loadGI();
+      // The solver works in arclength; the tracer works in voxels. Without this map the
+      // study runs perfectly and reaches no image at all, which is a silent kind of wrong.
+      if(!B.giVol || B.giVolFor !== S.subject){
+        B.giVol = buildGIVolume(vm.data, await vm.loadGIArc());
+        B.giVolFor = S.subject;
+      }
+    }catch(err){ B.error = 'Could not load the GI geometry: '+err.message; }
   }
   giRender();
 }
@@ -848,6 +868,7 @@ function initGIPanel(){
   $('giTab').addEventListener('click', ()=>{
     if($('giTab').disabled) return;
     $('giPanel').classList.toggle('open');
+    syncFlyouts();
   });
   $('giOn').addEventListener('click', async ()=>{
     B.on = !B.on;
@@ -879,8 +900,22 @@ function initGIPanel(){
       B.study = null; B.running = false;
       $('giVol').value = B.volumeMl = (B.route==='rectal' ? 800 : 150);
       $('giVolV').textContent = B.volumeMl+' mL';
+      if(B.gasMl) giSetGas(giGasDefault());
       giRender();
     });
+  });
+  document.querySelectorAll('#giGasSeg button').forEach(b=>{
+    b.addEventListener('click', ()=>{
+      document.querySelectorAll('#giGasSeg button').forEach(x=>x.classList.toggle('on', x===b));
+      giSetGas(b.dataset.gas === '1' ? giGasDefault() : 0);
+      B.study = null; B.running = false;     // a different technique is a different study
+      giRender();
+    });
+  });
+  $('giGas').addEventListener('input', e=>{
+    giSetGas(+e.target.value);
+    if(B.study){ B.study = null; B.running = false; }
+    giRender();
   });
   document.querySelectorAll('#giStandSeg button').forEach(b=>{
     b.addEventListener('click', ()=>{
@@ -902,9 +937,56 @@ function initGIPanel(){
     giRender();
   });
   $('giConc').dispatchEvent(new Event('input'));
+  giSetGas(0);
   // one timer for the whole study; it does nothing while paused
   setInterval(giTick, 100);
   giApply();
+}
+
+/* The lumen the gas has to work with. The segmentation caught this subject's gut at REST, so
+   it is smaller than the distended bowel a real double-contrast study inflates — the 400 mL
+   of CO2 effervescent granules make would simply fill it. The default is therefore taken
+   from the geometry rather than from the packet, and the slider still reaches over-distension
+   if you want to see what that looks like. */
+function giGasTarget(){
+  const B = S.barium, seg = B.route==='rectal' ? 52 : 49;
+  const ml = B.gi && B.gi.segments && B.gi.segments[seg] ? B.gi.segments[seg].volumeML : 0;
+  return { seg, ml };
+}
+function giGasDefault(){
+  const t = giGasTarget();
+  if(!t.ml) return B_GAS_FALLBACK;
+  return Math.max(50, Math.round(t.ml * 0.45 / 50) * 50);
+}
+const B_GAS_FALLBACK = 400;
+
+/* Gas volume in mL. 0 is a single-contrast study, which disables the slider rather than
+   leaving it live at a value that does nothing. */
+function giSetGas(ml){
+  const B = S.barium;
+  B.gasMl = Math.max(0, ml|0);
+  const on = B.gasMl > 0;
+  if(on) $('giGas').value = B.gasMl;
+  $('giGas').disabled = !on;
+  $('giGasV').textContent = on ? B.gasMl+' mL' : '—';
+  document.querySelectorAll('#giGasSeg button').forEach(x=>
+    x.classList.toggle('on', (x.dataset.gas === '1') === on));
+  const note = $('giGasNote');
+  if(note && on){
+    const t = giGasTarget(), name = (GI_SEGMENTS[t.seg]||{}).name || 'the lumen';
+    const fill = t.ml ? Math.min(100, B.gasMl/t.ml*100) : 0;
+    note.innerHTML = `Gas goes into the <b>${name.toLowerCase()}</b>, which this subject's CT `
+      + `segmented at <b>${t.ml.toFixed(0)} mL</b> — a lumen at rest, not the distended one a `
+      + `real study inflates. ${B.gasMl} mL fills <b>${fill.toFixed(0)} %</b> of it`
+      + (fill > 92 ? `, so it is over-distended: the barium is pushed out ahead of it and what `
+                   + `is left is a coat.` : `, so the barium is driven off the non-dependent `
+                   + `wall and left there as a coat. Turn the patient and both move.`);
+  } else if(note){
+    note.innerHTML = 'Single contrast: the lumen fills, and you read its outline. Double '
+      + 'contrast adds gas — effervescent granules on a swallow, an insufflator on an enema — '
+      + 'which pushes the barium off the non-dependent wall and leaves it coated. You then '
+      + 'read the <b>surface</b>, which is where mucosal disease lives.';
+  }
 }
 
 /* ---- contrast ------------------------------------------------------------------------
@@ -932,13 +1014,15 @@ function bariumLUT(){
   // A live study's sample() is a one-frame timeline, so the lookup time is its own clock.
   const t = B.study ? B.study.t : B.studyTime;
   if(B.lut && B.lutT===t) return B.lut;
-  B.lut=buildBariumLUT(B.timeline, t); B.lutT=t;
+  B.lut=buildBariumLUT(B.timeline, t);
+  B.gasLut=buildGasLUT(B.timeline, t);      // null unless gas was given
+  B.lutT=t;
   return B.lut;
 }
 function applyBarium(ph){
   const B=S.barium, lut=bariumLUT();
-  if(lut && B.giVol) ph.setBarium(lut, B.giVol, GI_NS);
-  else ph.setBarium(null, null, GI_NS);
+  if(lut && B.giVol) ph.setBarium(lut, B.giVol, GI_NS, B.gasLut);
+  else ph.setBarium(null, null, GI_NS, null);
 }
 /* Load the barium field for the current subject. Unlike contrast there is no live solve in
    the browser: a GI study runs for half an hour of simulated time, so it is always the
@@ -2773,7 +2857,7 @@ function ctrstApply(keepStatus){
   // closed panel. When blocked the tab is inert and the reason lives in its tooltip only.
   panel.classList.toggle('blocked', !!blocked);
   $('ctrstTab').title = blocked ? blocked[0] : 'Contrast injector';
-  if(blocked) panel.classList.remove('open');
+  if(blocked){ panel.classList.remove('open'); syncFlyouts(); }
   panel.classList.toggle('armed', S.contrast.on);
   $('ctrstOn').classList.toggle('on', S.contrast.on);
   $('ctrstOn').textContent = S.contrast.on ? 'ON' : 'OFF';
@@ -2906,11 +2990,17 @@ function initKeypad(){
   });
 }
 
+/* The left flyouts share an edge: whenever one is open, every tab on that rail slides out
+   with it so no tab is left sitting over the open panel. */
+function syncFlyouts(){
+  document.body.classList.toggle('lflyout', !!document.querySelector('.ctrst.open'));
+}
 function initContrastPanel(){
   const panel=$('ctrstPanel');
   $('ctrstTab').addEventListener('click',()=>{
     if(panel.classList.contains('blocked')) return;      // inert while unavailable
     panel.classList.toggle('open');
+    syncFlyouts();
     if(panel.classList.contains('open')) ctrstDrawCurve();
   });
   $('ctrstOn').addEventListener('click', async ()=>{
@@ -3006,4 +3096,18 @@ if (typeof window !== 'undefined') window.radsimBa = {
   at: (t) => { S.barium.studyTime = t; S.barium.lut = null; },
   state: () => ({ on: S.barium.on, t: S.barium.studyTime, has: !!S.barium.timeline,
                   giVol: !!S.barium.giVol, error: S.barium.error }),
+  /* Path length per material for a fan of rays through the model, so what the tracer
+     actually books for a barium study can be checked without inferring it from an image.
+     `axis` is 0/1/2; the rays are cast across the other two over a span of `half` cm. */
+  probe: (axis = 1, centre = [0, 0, 25], half = 5, step = 0.6) => {
+    const ph = buildPhantom(), tot = new Float64Array(BodyMaterials.TRACE_LEN);
+    const a = (axis + 1) % 3, b = (axis + 2) % 3;
+    const o = [0, 0, 0], d = [0, 0, 0]; d[axis] = 1;
+    for (let p = -half; p <= half; p += step) for (let q = -half; q <= half; q += step) {
+      o[axis] = ph.min[axis] - 1; o[a] = centre[a] + p; o[b] = centre[b] + q;
+      const L = ph.trace(o.slice(), d, 1e4);
+      for (let m = 0; m < tot.length; m++) tot[m] += L[m];
+    }
+    return Array.from(tot);
+  },
 };

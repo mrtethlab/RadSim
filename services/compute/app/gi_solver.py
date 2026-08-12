@@ -41,6 +41,18 @@ w persists after the lumen clears, which is precisely what makes the mucosal rel
 w_max is a surface density, so it is reported per unit area and the renderer turns it into a
 path length through a coating of finite thickness.
 
+--- the gas phase lives in the browser, not here --------------------------------------------
+Double contrast is implemented in apps/web/src/core/giSolve.js and NOT in this module. That is
+a deliberate divergence, not an oversight, and it is the one place the two are not the same
+model. The defining behaviour of a gas phase is that it re-levels the instant the patient is
+turned — gas to whatever is now uppermost, barium into what has just become dependent — and
+this module solves a batch with ONE fixed pose, where that has no meaning. The export path
+(gi_export.py) ships single-contrast timelines for the same reason.
+
+The single-contrast model below remains the reference for the browser port, and the port was
+re-checked against it after the gas phase went in: with no gas the browser reproduces these
+numbers unchanged (worst case 1e-10 relative on segment mass, every pose).
+
 --- what this does NOT model ---------------------------------------------------------------
 Segmentation contractions, retropulsion in the antrum, ileocaecal valve competence, flocculation
 of barium in a wet small bowel, and the difference between a high- and low-density suspension

@@ -942,6 +942,10 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
   border-radius:0 8px 8px 0; padding:16px 7px; cursor:pointer;
   box-shadow:4px 0 16px rgba(0,0,0,.5)}
 .ctrst.open .ctrst-tab{left:356px}
+/* Both flyouts hang off the same edge, so opening EITHER has to move BOTH tabs — otherwise
+   the closed one's tab sits on top of the open one's contents. It covered the study clock's
+   leading digit, which is how it was found: a ten-minute study read as zero. */
+body.lflyout .ctrst-tab{left:356px}
 .ctrst-tab:hover{color:var(--txt)}
 .ctrst.armed .ctrst-tab{color:#1a1204; background:var(--amber); border-color:var(--amber);
   box-shadow:0 0 14px rgba(255,178,62,.55)}

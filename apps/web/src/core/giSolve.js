@@ -19,10 +19,20 @@
    Numerics are the same as the reference for the same reason: explicit upwind advection blows
    up here (the oesophagus transits in 8 s, giving a Courant number of 4 at a 0.25 s step), so
    advection is semi-Lagrangian and diffusion is backward-Euler. Neither has a stability limit.
+
+   THE ONE PLACE THE TWO MODELS DIFFER
+   -----------------------------------
+   The gas phase — double contrast — is here and not in gi_solver.py. Gas re-levels the moment
+   the patient is turned, which is meaningless in a batch solve with one fixed pose, and the
+   shipped timelines are single-contrast. With gasMl 0 every line of it is skipped and this
+   file reproduces the reference exactly (worst case 1e-10 relative on segment mass, all
+   poses), which is what keeps the cross-check worth anything.
    ============================================================================ */
 
 export const N = 128;                  // arclength nodes per segment
 export const G_GAIN = 1.5;             // gravity as a MULTIPLIER on each segment's own rate
+// A gas-distended lumen is never pure gas: the wall stays wet, and that film is the image.
+export const GAS_MAX = 0.92;           // ceiling on the gas volume fraction of a node
 
 // Must stay in step with gi_solver.py SEGMENTS.
 export const SEGMENTS = {
@@ -155,12 +165,14 @@ class Tube {
   }
 
   /* Fill forward, overflowing onward. A lumen cannot exceed the administered concentration —
-     nothing here removes water — and 150 mL of barium does not fit in a 46 mL oesophagus. */
+     nothing here removes water — and 150 mL of barium does not fit in a 46 mL oesophagus.
+     `ceiling` is a number, or a per-node array once gas is taking up some of the lumen. */
   addMass(conc, ceiling) {
     if (!(conc > 0)) return 0;
+    const arr = typeof ceiling === 'number' ? null : ceiling;
     let excess = conc;
     for (let i = 0; i < N; i++) {
-      const room = Math.max(ceiling - this.c[i], 0);
+      const room = Math.max((arr ? arr[i] : ceiling) - this.c[i], 0);
       const take = Math.min(room, excess);
       this.c[i] += take; excess -= take;
       if (excess <= 0) return 0;
@@ -189,24 +201,62 @@ export class GIStudy {
     route = 'oral', volumeMl = 150, concMgBaMl = 588, overS = 5,
     pose = {}, dt = 0.5,
     kOn = 0.010, kOff = 0.0009, wMax = 12.0, coatPerCm = 10.0,
+    gasMl = 0, gasOverS = 20, gasSeg = null,
   } = {}) {
     const segs = gi.segments || {};
     this.segs = segs;
     this.order = ORDER.filter((v) => segs[String(v)]);
     if (!this.order.length) throw new Error('this model has no GI segments');
     if (route === 'rectal') this.order = this.order.slice().reverse();
-    Object.assign(this, { route, volumeMl, concMgBaMl, overS, dt, kOn, kOff, wMax, coatPerCm });
+    Object.assign(this, { route, volumeMl, concMgBaMl, overS, dt, kOn, kOff, wMax, coatPerCm,
+                          gasMl, gasOverS });
+    // Effervescent granules act where they dissolve — the stomach. Insufflation goes in where
+    // the tube is — the colon. Either way it is the first roomy segment on the route.
+    const wantGas = route === 'rectal' ? 52 : 49;
+    this.gasSeg = gasSeg != null ? gasSeg
+                : this.order.includes(wantGas) ? wantGas : this.order[0];
     this.ds = 1 / (N - 1);
     this.t = 0; this.given = 0; this.spill = 0;
+    this.gasGiven = 0; this.gasVented = 0;
     this.volNode = {}; this.area = {}; this.wall = {}; this.handover = {}; this.tubes = {};
+    this.gas = {}; this.gasVol = {}; this.ceil = {};
     for (const v of this.order) {
       const p = SEGMENTS[v];
       this.volNode[v] = Math.max(segs[String(v)].volumeML, 1e-3) / N;
       this.area[v] = 2 * this.volNode[v] / p.radius;   // mucosal area, not the cross-section
       this.wall[v] = new Float64Array(N);
+      this.gas[v] = new Float64Array(N);
+      this.ceil[v] = new Float64Array(N).fill(concMgBaMl);
+      this.gasVol[v] = 0;
       this.handover[v] = 0;
     }
     this.setPose(pose);
+  }
+
+  /* Where the gas sits, given the pose. Gas does not need transport dynamics: it finds the
+     top of a lumen in seconds, against a study measured in minutes. So it is placed rather
+     than advected — highest node first, down to whatever is left — which is why turning the
+     patient moves it AT ONCE and pushes the barium into what has just become dependent.
+     That is the whole technique of a double-contrast study. */
+  placeGas() {
+    for (let i = 0; i < this.order.length; i++) {
+      const v = this.order[i], g = this.gas[v], rank = this.hrank[v];
+      const cap = GAS_MAX * this.volNode[v];
+      let left = this.gasVol[v];
+      g.fill(0);
+      for (let k = N - 1; k >= 0 && left > 0; k--) {     // hrank is height-ascending
+        const j = rank[k], take = Math.min(cap, left);
+        g[j] = take / this.volNode[v];
+        left -= take;
+      }
+      if (left > 1e-9) {                                  // this segment is full of gas
+        this.gasVol[v] -= left;
+        if (i + 1 < this.order.length) this.gasVol[this.order[i + 1]] += left;
+        else this.gasVented += left;                      // belched, or passed per rectum
+      }
+      const ceil = this.ceil[v];
+      for (let j = 0; j < N; j++) ceil[j] = this.concMgBaMl * (1 - g[j]);
+    }
   }
 
   /* Rebuild the velocity field for a new patient position. The lumen and mucosal state are
@@ -225,6 +275,14 @@ export class GIStudy {
     }
     const span = Math.max(hi - lo, 1);
     const sgn = this.route === 'rectal' ? -1 : 1;
+    // Nodes ordered most-dependent first. Gas fills this from the far end, displaced barium
+    // from the near end, so both find their level the moment the patient moves.
+    this.h = hprof; this.hrank = {};
+    for (const v of this.order) {
+      const idx = Array.from({ length: N }, (_, i) => i);
+      idx.sort((a, b) => hprof[v][a] - hprof[v][b]);
+      this.hrank[v] = Int32Array.from(idx);
+    }
     for (const v of this.order) {
       const p = SEGMENTS[v], u = new Float64Array(N), u0 = 1 / Math.max(p.transit, 1e-3);
       for (let i = 0; i < N; i++) {
@@ -238,35 +296,93 @@ export class GIStudy {
       if (old) tube.c.set(old.c);                     // contents carry across the change
       this.tubes[v] = tube;
     }
+    this.placeGas();     // gas re-levels on the turn itself, not on the next step
   }
 
   stepOnce() {
-    const { order, dt, volNode, area, wall, handover, tubes } = this;
+    const { order, dt, volNode, area, wall, handover, tubes, gas, ceil } = this;
     const t = this.t;
     const rate = (t >= 0 && t < this.overS)
       ? this.volumeMl * this.concMgBaMl / Math.max(this.overS, 1e-3) : 0;
     const mg = rate * dt; this.given += mg;
     const cInFirst = mg > 0 ? mg / volNode[order[0]] : 0;
+    // Effervescent granules fizz for a few seconds; an insufflator runs for as long as you
+    // squeeze it. Either way the gas arrives over a window, not instantly.
+    if (this.gasMl > 0 && t >= 0 && t < this.gasOverS) {
+      const dv = this.gasMl / Math.max(this.gasOverS, 1e-3) * dt;
+      this.gasVol[this.gasSeg] += dv; this.gasGiven += dv;
+    }
+    if (this.gasGiven > 0) this.placeGas();
 
     for (let i = 0; i < order.length; i++) {
       const v = order[i], tube = tubes[v];
-      const over = tube.addMass((i === 0 ? cInFirst : 0) + handover[v], this.concMgBaMl);
+      const gassy = this.gasVol[v] > 1e-9;
+      const over = tube.addMass((i === 0 ? cInFirst : 0) + handover[v],
+                                gassy ? ceil[v] : this.concMgBaMl);
       handover[v] = 0;
       if (over > 0) {
         if (i + 1 < order.length) handover[order[i + 1]] += over * volNode[v] / volNode[order[i + 1]];
         else this.spill += over * volNode[v];
       }
       const [left, refluxed] = tube.step();
-      const c = tube.c, w = wall[v];
+      const c = tube.c, w = wall[v], g = gas[v];
       for (let j = 0; j < N; j++) {
         const on = this.kOn * c[j] * Math.max(0, Math.min(1, 1 - w[j] / this.wMax));
-        const off = this.kOff * w[j];
+        // A coat washes back into the suspension it came from. Against gas there is nothing
+        // for it to wash into, so it stays — which is why the film is worth taking and why
+        // the window for taking it is the few minutes before the barium runs back over it.
+        const off = this.kOff * w[j] * (gassy ? 1 - g[j] : 1);
         let dm = (on - off) * area[v] * dt;
         dm = Math.min(dm, c[j] * volNode[v]);
         dm = Math.max(dm, -w[j] * area[v]);
         dm = Math.min(dm, (this.wMax - w[j]) * area[v]);
         c[j] -= dm / Math.max(volNode[v], 1e-6);
         w[j] += dm / Math.max(area[v], 1e-9);
+      }
+      // A lumen held open by gas is a cavity, and liquid in a cavity finds its level instead
+      // of staying where the peristaltic wave left it. So the barium the gas has reached is
+      // pooled and re-laid dependent-first, along with anything that no longer fits under its
+      // ceiling. Nodes the gas has not reached keep their transported profile, and a study
+      // with no gas skips all of it and steps exactly as it did before.
+      if (gassy) {
+        let ex = 0;
+        for (let j = 0; j < N; j++) {
+          if (g[j] > 0) {
+            // Gas displaces the share of the node it actually occupies — not the whole node.
+            // Emptying the node outright starved the outlet whenever the outlet happened to
+            // be the part the gas had risen into, and a stomach with gas in it does still
+            // empty.
+            const have = c[j] * g[j] * volNode[v];
+            // Barium driven across the mucosa wets it, and the film left behind IS the
+            // image. Without this the gas would push the barium away and leave a bare wall,
+            // which is the one thing a double-contrast study is not.
+            const film = Math.min(Math.max(this.wMax - w[j], 0) * area[v], have);
+            w[j] += film / area[v];
+            ex += have - film; c[j] *= 1 - g[j];
+          } else if (c[j] > ceil[v][j]) {
+            ex += (c[j] - ceil[v][j]) * volNode[v]; c[j] = ceil[v][j];
+          }
+        }
+        if (ex > 0) {
+          const rank = this.hrank[v];
+          // Re-lay it in the cavity the gas opened, most dependent first — that pool is what
+          // runs to the low side when you turn the patient. Only what will not fit there
+          // spills into the rest of the segment, which keeps the profile peristalsis gave it
+          // so that a gassy lumen still empties instead of holding everything in a tank.
+          for (let pass = 0; pass < 2 && ex > 0; pass++) {
+            for (let k = 0; k < N && ex > 0; k++) {
+              const j = rank[k];
+              if ((g[j] > 0) !== (pass === 0)) continue;
+              const room = Math.max(ceil[v][j] - c[j], 0) * volNode[v];
+              const take = Math.min(room, ex);
+              c[j] += take / volNode[v]; ex -= take;
+            }
+          }
+          if (ex > 1e-12) {                            // nowhere left in this segment
+            if (i + 1 < order.length) handover[order[i + 1]] += ex / volNode[order[i + 1]];
+            else this.spill += ex;
+          }
+        }
       }
       if (left > 0) {
         const mass = left * volNode[v];
@@ -294,27 +410,32 @@ export class GIStudy {
 
   /* The current state in the shape buildBariumLUT consumes — a one-frame timeline. */
   sample() {
-    const lumen = new Map(), wall = new Map();
+    const lumen = new Map(), wall = new Map(), gas = new Map();
     for (const v of this.order) {
       lumen.set(v, Float32Array.from(this.tubes[v].c));
       wall.set(v, Float32Array.from(this.wall[v]));
+      gas.set(v, Float32Array.from(this.gas[v]));
     }
-    return { nS: N, nT: 1, times: [this.t], lumen, wall,
+    return { nS: N, nT: 1, times: [this.t], lumen, wall, gas,
              coatConc: this.concMgBaMl, coatPerCm: this.coatPerCm };
   }
 
   audit() {
-    let lum = 0, muc = 0, pend = 0;
+    let lum = 0, muc = 0, pend = 0, gasHeld = 0;
     for (const v of this.order) {
       for (let j = 0; j < N; j++) {
         lum += this.tubes[v].c[j] * this.volNode[v];
         muc += this.wall[v][j] * this.area[v];
       }
       pend += this.handover[v] * this.volNode[v];
+      gasHeld += this.gasVol[v];
     }
     const total = lum + muc + this.spill + pend;
+    const gasTot = gasHeld + this.gasVented;
     return { t: this.t, given: this.given, lumen: lum, mucosa: muc, spill: this.spill,
-             errPct: this.given ? (total - this.given) / this.given * 100 : 0 };
+             errPct: this.given ? (total - this.given) / this.given * 100 : 0,
+             gasGiven: this.gasGiven, gasHeld, gasVented: this.gasVented,
+             gasErrPct: this.gasGiven ? (gasTot - this.gasGiven) / this.gasGiven * 100 : 0 };
   }
 }
 
@@ -324,15 +445,19 @@ export function solveGI(gi, { duration = 1800, ...opts } = {}) {
   const st = new GIStudy(gi, opts);
   const steps = Math.round(duration / st.dt);
   const keepEvery = (t) => (t <= 30 ? 1 : t <= 300 ? 5 : 30);
-  const times = [], lumOut = {}, walOut = {};
-  for (const v of st.order) { lumOut[v] = []; walOut[v] = []; }
+  const times = [], lumOut = {}, walOut = {}, gasOut = {};
+  for (const v of st.order) { lumOut[v] = []; walOut[v] = []; gasOut[v] = []; }
   // Frame k is labelled with the time the step was taken FOR, and holds the state AFTER it,
   // which is what gi_solver.py records. Keeping before the step instead labelled every frame
   // with the previous step's state — a one-step lag that showed up as an 11 % disagreement
   // with the reference at 10 s, where the duodenum is filling fastest.
   const keep = (label) => {
     times.push(label);
-    for (const v of st.order) { lumOut[v].push(st.tubes[v].c.slice()); walOut[v].push(st.wall[v].slice()); }
+    for (const v of st.order) {
+      lumOut[v].push(st.tubes[v].c.slice());
+      walOut[v].push(st.wall[v].slice());
+      gasOut[v].push(st.gas[v].slice());
+    }
     return label;
   };
   let lastKept = -1e9;
@@ -341,15 +466,18 @@ export function solveGI(gi, { duration = 1800, ...opts } = {}) {
     st.stepOnce();
     if (label - lastKept >= keepEvery(label) - 1e-6 || k === steps) lastKept = keep(label);
   }
-  const nT = times.length, lumen = new Map(), wallM = new Map();
+  const nT = times.length, lumen = new Map(), wallM = new Map(), gasM = new Map();
   for (const v of st.order) {
-    const L = new Float32Array(nT * N), W = new Float32Array(nT * N);
-    for (let i = 0; i < nT; i++) { L.set(lumOut[v][i], i * N); W.set(walOut[v][i], i * N); }
-    lumen.set(v, L); wallM.set(v, W);
+    const L = new Float32Array(nT * N), W = new Float32Array(nT * N), G = new Float32Array(nT * N);
+    for (let i = 0; i < nT; i++) {
+      L.set(lumOut[v][i], i * N); W.set(walOut[v][i], i * N); G.set(gasOut[v][i], i * N);
+    }
+    lumen.set(v, L); wallM.set(v, W); gasM.set(v, G);
   }
   const a = st.audit();
   return {
-    nS: N, nT, times, lumen, wall: wallM, coatConc: st.concMgBaMl, coatPerCm: st.coatPerCm,
+    nS: N, nT, times, lumen, wall: wallM, gas: gasM,
+    coatConc: st.concMgBaMl, coatPerCm: st.coatPerCm,
     audit: a,
     notes: ['given ' + (a.given / 1000).toFixed(1) + ' g Ba; lumen ' + (a.lumen / 1000).toFixed(1)
             + ' g, mucosa ' + (a.mucosa / 1000).toFixed(1) + ' g, past-end '
