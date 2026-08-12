@@ -180,9 +180,17 @@ class Tube:
         xi = np.arange(n) - u * dt / ds            # where each cell's contents came from
         i0 = np.floor(xi).astype(np.int64)
         self.w = xi - i0
+        # Pad BOTH ends. Gravity can reverse the flow — it is meant to, that is how a
+        # dependent fundus holds barium — and a reversed cell's departure point lies
+        # DOWNSTREAM, past the outlet. Clamping those to the last cell made several outlet
+        # cells gather the same value and duplicated it: a pose-dependent mass EXCESS, +2.1 %
+        # in left lateral decubitus where 44 % of the colon runs backwards, against +0.01 %
+        # erect where almost nothing does. Nothing flows back in from beyond the outlet, so
+        # the downstream pad is zero.
         self.pad = int(max(0, -i0.min()))          # cells that came from upstream of s=0
-        self.idx = np.clip(i0 + self.pad, 0, n + self.pad - 1)
-        self._ext = np.empty(n + self.pad)
+        self.pad_hi = int(max(0, i0.max() + 1 - (n - 1)))
+        self.idx = i0 + self.pad
+        self._ext = np.zeros(n + self.pad + self.pad_hi)
         r = dt / ds ** 2
         ab = np.zeros((3, n))
         Dp = np.full(n, disp); Dp[-1] = 0.0        # zero flux out of the far end
@@ -201,18 +209,43 @@ class Tube:
         the mass admitted was pad times the mass handed over, and pad grows with u*dt/ds. The
         duodenum was reading 64,682 mg/mL against an administered 588."""
         before = self.c.sum()
+        # Outflow at the ends, upwind, computed BEFORE the gather. It has to be explicit:
+        # semi-Lagrangian advection is conservative only for a UNIFORM velocity, and u varies
+        # along s here because gravity does. Inferring the outflow from the change in total
+        # mass therefore attributed the scheme's own divergence error to the boundaries — a
+        # pose-dependent gain of up to +4.7 % (prone), and the reason an isolated tube with
+        # constant u conserved perfectly while the real tract did not.
+        r = self.dt / self.ds
         ext = self._ext
-        if self.pad:
-            ext[:self.pad] = 0.0
-        ext[self.pad:] = self.c
+        ext[:] = 0.0
+        ext[self.pad:self.pad + self.n] = self.c
         i = self.idx
         lo = ext[i]
-        hi = ext[np.minimum(i + 1, ext.size - 1)]
+        hi = ext[i + 1]
         cs = lo + self.w * (hi - lo)
+        # Let the scheme set the SHAPE and impose the conservation law on top of it. This is
+        # the standard remedy for non-conservative semi-Lagrangian transport, and it is honest
+        # about which part is doing what: the interpolation decides where the bolus is, the
+        # rescale decides how much of it there is.
+        # Normalise the gathered field back to the mass that went in. The gather decides the
+        # SHAPE; this restores the conservation law the scheme does not obey. Doing it before
+        # the boundary flux matters: subtracting the flux from `target` as well as letting the
+        # gather drop it took the same mass out twice and cost -26 % prone.
+        tot = cs.sum()
+        if tot > 1e-12:
+            cs *= before / tot
+        # Now the outflow, upwind and explicit, off the end cells of the conserved field.
+        self._out_fwd = min(cs[-1] * max(self.u[-1], 0.0) * r, cs[-1])
+        self._out_back = min(cs[0] * max(-self.u[0], 0.0) * r, cs[0])
+        cs[-1] -= self._out_fwd
+        cs[0] -= self._out_back
         self.c = solve_banded((1, 1), self._ab, cs, overwrite_b=True, check_finite=False)
         np.clip(self.c, 0.0, None, out=self.c)
-        # Diffusion is zero-flux so it conserves; whatever is missing left the far end.
-        return max(before - self.c.sum(), 0.0)
+        # Diffusion is zero-flux so it conserves; what is missing left one end or the other.
+        # Split it by which way the ends are flowing: barium going back out of the INLET is
+        # reflux, and it belongs to the segment upstream — gastro-oesophageal reflux is a
+        # finding a barium study exists to show, not an error to discard.
+        return self._out_fwd, self._out_back
 
     def add_mass(self, conc, ceiling=None):
         """Put an incoming parcel in at the inlet, overflowing forward if it will not fit.
@@ -325,7 +358,13 @@ def solve(gi_path, adm: Administration, pose: Pose = None, coat: Coating = None,
         for i, v in enumerate(order):
             tube = tubes[v]
             # incoming mass goes in as a parcel at node 0, never through the padding
-            over = tube.add_mass(c_in_first if i == 0 else handover[v],
+            # The administration AND anything refluxed back into this segment. Passing only
+            # c_in_first for i == 0 and then zeroing handover[0] discarded every gram the
+            # stomach pushed back into the oesophagus — which prone and head-down positioning
+            # actively promote, so prone lost 26 % of the dose while every other pose closed
+            # exactly. Gastro-oesophageal reflux is a finding a barium study exists to show;
+            # throwing it away was both a mass leak and the wrong physiology.
+            over = tube.add_mass((c_in_first if i == 0 else 0.0) + handover[v],
                                  ceiling=adm.conc_mg_ba_ml)
             handover[v] = 0.0
             if over > 0:                                  # this segment is brim full
@@ -333,17 +372,25 @@ def solve(gi_path, adm: Administration, pose: Pose = None, coat: Coating = None,
                     handover[order[i + 1]] += over * vol_node[v] / vol_node[order[i + 1]]
                 else:
                     spill += over * vol_node[v]
-            left = tube.step()                            # concentration off the far end
+            left, refluxed = tube.step()                  # off the far end / back out the inlet
 
             # ---- coating exchange --------------------------------------------------------
             cv = tube.c
+            # Exchange is written as ONE mass transfer that both sides derive from, so it is
+            # conservative by construction. Updating each side independently and clipping
+            # afterwards was not: the clip on the lumen at zero invented mass that the wall had
+            # already been credited with. It cost +0.44 % on a single segment over 3600 steps,
+            # and up to +2.1 % over a whole tract in the poses with the most reversed flow.
+            # (In Tube.step the same clip is harmless, because the return value is measured
+            # after it and absorbs whatever it changed.)
             on = coat.k_on * cv * np.clip(1.0 - w[v] / coat.w_max, 0.0, 1.0)
             off = coat.k_off * w[v]
-            w[v] += (on - off) * dt
-            np.clip(w[v], 0.0, coat.w_max, out=w[v])
-            # what sticks leaves the lumen: mg/cm2 x cm2 -> mg, then / mL of that node
-            cv -= (on - off) * area_cm2[v] * dt / max(vol_node[v], 1e-6)
-            np.clip(cv, 0.0, None, out=cv)
+            dm = (on - off) * area_cm2[v] * dt                   # mg lumen -> wall
+            dm = np.minimum(dm, cv * vol_node[v])                # cannot take what is not there
+            dm = np.maximum(dm, -w[v] * area_cm2[v])             # nor give back more than stuck
+            dm = np.minimum(dm, (coat.w_max - w[v]) * area_cm2[v])   # nor exceed saturation
+            cv -= dm / max(vol_node[v], 1e-6)
+            w[v] += dm / np.maximum(area_cm2[v], 1e-9)
 
             # ---- hand the tail over to the next segment -----------------------------------
             if left > 0:
@@ -353,6 +400,13 @@ def solve(gi_path, adm: Administration, pose: Pose = None, coat: Coating = None,
                     handover[nxt] += mass / vol_node[nxt]
                 else:
                     spill += mass
+            if refluxed > 0:
+                mass = refluxed * vol_node[v]
+                if i > 0:
+                    prv = order[i - 1]
+                    handover[prv] += mass / vol_node[prv]
+                else:
+                    spill += mass                     # out of the mouth (or the rectum)
 
         if audit:
             # Every gram is either in a lumen, on a mucosa, in transit, or past the end. The

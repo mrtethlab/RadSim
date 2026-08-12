@@ -489,9 +489,46 @@ which is what a barium meal looks like.
 
 `window.radsimBa` drives it until the UI exists: `.load()`, `.on()`, `.at(t)`.
 
+### 5.6 The solver moves to the browser, and the mass audit earns its keep
+
+The position coupling only teaches anything if it responds **while you drag the slider**, and a
+solved timeline cannot: the pose is baked into it. A round-trip to the Python service would not
+fix that either — it is still a request per drag, and a GI study is exactly the case where that
+service is least likely to be running. So `core/giSolve.js` is a port of `gi_solver.py`, with
+the Python module kept as the reference and the two cross-checked.
+
+It is affordable because it is small: 5 segments x 128 nodes, against the contrast solver's
+~4000 nodes x ~9000 steps with organ compartments and a closed recirculation loop. **84-117 ms**
+for a 30-minute study, so a drag can re-solve.
+
+**Agreement with the reference: worst 0.005 %** across 5 poses x 5 times x 5 segments.
+
+Getting both to close cost four real defects, and the audit found every one. Three of them
+first showed up as *pose-dependent* error, which is what made them interesting — a bug that only
+appears when the patient is prone is not one that inspection finds:
+
+| defect | signature | cause |
+| --- | --- | --- |
+| non-conservative advection | +4.7 % prone, +0.01 % erect | semi-Lagrangian advection conserves mass only for a UNIFORM velocity, and `u` varies along `s` because gravity does. An isolated tube with constant `u` conserved perfectly, which is why the first test missed it. The gather now sets the shape and the conservation law is imposed on top. |
+| coating created mass | +0.44 % on one segment | the lumen and the wall were updated independently and clipped afterwards; the clip on the lumen at zero invented mass the wall had already been credited with. Both sides now derive from one transfer. |
+| double-counted outflow | −26 % prone | subtracting the boundary flux from the target AND letting the gather drop it took the same mass out twice. |
+| **reflux discarded** | −26 % prone | `add_mass(c_in_first if i == 0 else handover[v])` passed only the administration for the first segment and then zeroed its handover — so every gram the stomach pushed back into the oesophagus was thrown away. Prone promotes exactly that. |
+
+The last one is the one worth remembering: it was a mass leak *and* the wrong physiology.
+Gastro-oesophageal reflux is a finding a barium study exists to demonstrate, and the model was
+silently deleting it. Reflux now routes to the segment upstream, and out of the mouth from the
+oesophagus.
+
+All seven poses tested — erect, supine, prone, both decubitus, Trendelenburg, oblique — close to
+machine precision.
+
+**Cross-check procedure:** run `gi_solver.solve` for a set of poses, write the per-pose,
+per-time segment means to a JSON the dev server can serve, and compare against `solveGI` in the
+browser. The artefact is scratch and is not committed.
+
 **Still to do for Phase 5:** the double-contrast gas phase, and the fluoroscopy UI — a study
-clock, the administration controls, and the patient-position coupling that §5.3 already solves
-for but which nothing on screen yet exposes.
+clock, administration controls, and wiring the pose to the existing rotate/tilt sliders, which
+the solver now supports live.
 
 ---
 
