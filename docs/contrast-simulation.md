@@ -1136,15 +1136,20 @@ Identical PA timing and aortic timing within 2 s from unrelated geometry is a go
 timing comes from the physiology rather than from either model's particular vessel lengths. A
 preset timeline ships with the model (0.36 MB) so browser-only users get CAP contrast too.
 
-**Known limitation, now visible: the portal vein and the IVC carry the same concentration.**
-Both are fed from the lower-body pool — `ivc.step(body.c_iv)` and `portal.step(body.c_iv)` — so
-they differ only by transport along their own lengths, which is why they report the same peak to
-three figures above. Physiologically the portal vein drains the gut and spleen and its contrast
-has crossed the splanchnic bed, which is the whole reason a portal-venous phase exists as a
-distinct phase at ~60-70 s. The chest model barely shows the portal vein so this never mattered;
-the CAP model is exactly where a portal-venous phase would be taught, so it does now. Fixing it
-means giving the gut its own compartment with its own transit rather than sharing the lower-body
-pool — a solver change, not a model one.
+**Resolved: the portal vein and the IVC are separate compartments now.** They used to be fed
+from one shared lower-body pool and reported the same peak to three figures. The pool is split
+in two — a splanchnic bed draining into the portal vein, a lower-body bed draining through the
+iliac veins into the IVC — and the split is more than plumbing: the shares are deliberately
+unequal. The splanchnic circulation is the body's blood reservoir, holding a disproportionate
+volume on a fifth of cardiac output (mean transit ~42 s against the legs' ~31 s), so on a
+venous injection the portal vein reads later and flatter than the IVC, and on a femoral
+arterial injection the IVC lights up with the undiluted returning bolus (~850 HU at 33 s)
+while the portal vein barely moves — both of which are the taught findings. The totals
+(intravascular volume, interstitium, PS) still sum to the old pool's, so nothing upstream
+moved. One remaining simplification: renal and hepatic venous return goes to the right heart
+directly rather than joining the IVC mid-line, so the model's IVC is leg-and-pelvis return
+only — a 1-D vessel has one inlet, and a mid-line injection point is what fixing that would
+take.
 
 `build_vessels` warns that the right common carotid's seed band is collapsing a slab. That
 vessel is clipped by the top of the FOV, so its inlet is a cut face rather than a true origin.

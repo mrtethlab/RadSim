@@ -452,7 +452,21 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     # 2 mL/s GFR as the only sink the blood pool decays over 42 min instead, so nothing ever
     # washes out and every organ EES fills monotonically to the end of the window.
     upper = OrganBed('upper_body', HEAD_ARM_FRAC, 0.12 * pat.blood_volume_ml, 3000.0, 5.0)
-    body = OrganBed('body', LOWER_FRAC + GUT_FRAC, 0.30 * pat.blood_volume_ml, 6000.0, 12.0)
+    # The gut and the lower body are SEPARATE pools, because they drain into different veins
+    # and that difference is a taught phase: portal blood has crossed the splanchnic bed, and
+    # its late, splanchnic-smeared arrival is the whole reason a portal-venous phase exists
+    # at 60-70 s. One shared pool fed the portal vein and the IVC the same number — they
+    # reported identical peaks to three figures, which docs 8.x called out as the known
+    # limitation this split removes.
+    # The totals preserve the old combined pool (0.30 x blood volume intravascular, 6 L
+    # interstitium, PS 12), but the SHARES are deliberately unequal: the splanchnic
+    # circulation is the body's blood reservoir, holding a disproportionate volume on a
+    # fifth of cardiac output, so its mean transit V/Q (~42 s) is markedly longer than the
+    # legs' (~31 s). That asymmetry — not the plumbing alone — is what makes the portal vein
+    # read later and flatter than the IVC on a venous injection. The interstitium goes the
+    # other way (the legs wrap far more muscle than the mesentery wraps gut wall).
+    gut = OrganBed('gut', GUT_FRAC, 0.14 * pat.blood_volume_ml, 1500.0, 4.0)
+    lower = OrganBed('lower_body', LOWER_FRAC, 0.16 * pat.blood_volume_ml, 4500.0, 8.0)
     # The arm vein carries the patient's own arm venous return as well as the injectate.
     # Flowing only the injection through it gave tau = 60/4 = 15 s and made every downstream
     # peak ~15 s late — the single largest timing error in the first working version.
@@ -529,7 +543,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     limb = Mixer('limb_bed', site['bed_ml']) if 'bed_ml' in site else None
     limb_delay = Delay(site['delay_s'], dt) if limb is not None else None
     mixers = [arm, right_heart, lungs, left_heart] + ([limb] if limb is not None else [])
-    beds = organs + [upper, body]
+    beds = organs + [upper, gut, lower]
 
     def breakdown():
         return dict(
@@ -598,19 +612,23 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         c_bc = (arm.c * q_arm + ret_flux) / q_svc
         svc.step(c_bc)
 
-        # --- lower body -> iliac veins -> IVC, gut -> portal ------------------------------
-        # The iliac veins carry the lower-body return when the model has them; a femoral
-        # bolus joins at the IVC inlet either way (its estimated delay already covers the
-        # run to the trunk). Mass flux over transport flow, as at every junction.
+        # --- lower body -> iliac veins -> IVC; gut -> portal ------------------------------
+        # Different pools drain into different veins: the IVC carries the LOWER body's
+        # return, the portal vein carries the GUT's. This is the split that gives the two
+        # veins different concentrations — before it they were fed the same pool and
+        # reported identical peaks. The iliac veins carry the lower return when the model
+        # has them; a femoral bolus joins at the IVC inlet either way (its estimated delay
+        # already covers the run to the trunk). Mass flux over transport flow, as at every
+        # junction.
         ven_flux = limb_flux if site.get('join') == 'ivc' else 0.0
         for k in (45, 46):
             if V[k]:
-                V[k].step(body.c_iv)
+                V[k].step(lower.c_iv)
                 ven_flux += V[k].c_out * 0.5 * q_lower
             else:
-                ven_flux += body.c_iv * 0.5 * q_lower
+                ven_flux += lower.c_iv * 0.5 * q_lower
         ivc.step(ven_flux / q_ivc)
-        if portal: portal.step(body.c_iv)
+        if portal: portal.step(gut.c_iv)
 
         # --- right heart: SVC + IVC + portal + organ venous return -----------------------
         # Organs return their TOTAL flow (the liver's includes the portal share, which is
@@ -677,13 +695,14 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
 
         aorta_dist.step(c_arch)
         c_ao = aorta_dist.c_out                  # systemic arterial concentration
-        c_portal = portal.c_out if portal else body.c_iv
+        c_portal = portal.c_out if portal else gut.c_iv
         for o in organs:
             o.step(dt, o.flow_frac * CO, c_ao, GFR_ML_S if o.name == 'kidney' else 0.0,
                    o.portal_frac * CO, c_portal)
-        # lower body + gut: the gut's share leaves the aorta along its length and stays a
-        # direct c_ao feed; the leg/pelvis share travels the iliac arteries when the model
-        # has them, which both lights them up and delays the lower body by their transit.
+        # The gut's mesenteric branches leave the aorta along its length: a direct c_ao
+        # feed. The leg/pelvis share travels the iliac arteries when the model has them,
+        # which both lights them up and delays the lower body by their transit.
+        gut.step(dt, GUT_FRAC * CO, c_ao)
         il_flux = 0.0
         for k in (43, 44):
             if V[k]:
@@ -691,8 +710,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
                 il_flux += V[k].c_out * 0.5 * q_lower
             else:
                 il_flux += c_ao * 0.5 * q_lower
-        q_body = (LOWER_FRAC + GUT_FRAC - perfusion_shift) * CO
-        body.step(dt, q_body, (GUT_FRAC * CO * c_ao + il_flux) / q_body)
+        lower.step(dt, q_lower, il_flux / q_lower)
 
         injected_mgi += inj.flux_mgi_s(t) * dt
         excreted_mgi += GFR_ML_S * next(o for o in organs if o.name == 'kidney').c_iv * dt
