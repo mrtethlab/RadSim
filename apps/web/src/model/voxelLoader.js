@@ -39,12 +39,17 @@ export async function loadVoxelModel(baseUrl, name) {
     // model that is never scanned with contrast should never pay for it.
     hasVessels: !!hdr.arclen,
     // A timeline solved offline and shipped with the model, so contrast works without the
-    // Python service. One fixed protocol — see contrastSolve().
+    // Python service. Fixed protocol, but one file PER INJECTION SITE — switching the
+    // access route is the one injector control that still works on presets, because the
+    // route changes the topology of the solve, not a continuous parameter of it.
     hasPresetContrast: !!hdr.contrast,
-    async loadPresetContrast() {
-      if (!hdr.contrast) return null;
-      if (!this._preset) this._preset = await (await fetch(`${baseUrl}/${hdr.contrast}`)).json();
-      return this._preset;
+    presetSites: hdr.contrastSites ? Object.keys(hdr.contrastSites) : (hdr.contrast ? ['basilic'] : []),
+    async loadPresetContrast(site = 'basilic') {
+      const fn = (hdr.contrastSites && hdr.contrastSites[site]) || hdr.contrast;
+      if (!fn) return null;
+      this._preset = this._preset || {};
+      if (!this._preset[fn]) this._preset[fn] = await (await fetch(`${baseUrl}/${fn}`)).json();
+      return this._preset[fn];
     },
     // GI: models built with build_gi carry a transport coordinate for the gut, and may ship
     // a solved barium timeline. Same lazy contract as the vascular pair above — a model that

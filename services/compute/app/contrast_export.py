@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from .contrast_solver import solve, Injection, Patient
+from .contrast_solver import solve, Injection, Patient, SITE_NOTES
 
 N_S = 64          # arclength samples kept per vessel
 C_MAX = 400.0     # mgI/mL quantisation ceiling — well above any physiological peak
@@ -69,13 +69,19 @@ def pack(result: dict) -> dict:
     heart = np.clip((rh + lh) * 0.5 / C_MAX * 65535.0, 0, 65535)
     organs[str(HEART_MATERIAL)] = heart.astype(np.uint16).tolist()
 
+    approx = ['heart chambers share one material id — right and left are '
+              'averaged; needs heartchambers_highres (docs 4.3.1)']
+    # An access site whose anatomy is not in the model records exactly what was estimated,
+    # so the panel can say it instead of hiding it.
+    note = SITE_NOTES.get((result['injection'] or {}).get('site'))
+    if note:
+        approx.append(note)
     return dict(
         nS=N_S, cMax=C_MAX, nT=nt, times=list(times),
         vessels=out_v, organs=organs,
         audit={k: float(v) for k, v in result['audit'].items()},
         injection=result['injection'], patient=result['patient'],
-        approximations=['heart chambers share one material id — right and left are '
-                        'averaged; needs heartchambers_highres (docs 4.3.1)'],
+        approximations=approx,
     )
 
 
@@ -83,10 +89,11 @@ def timeline(vessels_path: str, volume_ml=100.0, rate_ml_s=4.0, conc_mgi_ml=350.
              volume2_ml=0.0, rate2_ml_s=2.0,
              delay_s=0.0, saline_ml=40.0, saline_rate_ml_s=4.0, cardiac_output_l_min=5.0,
              blood_volume_ml=5000.0, vessel_scale=1.0, perfusion_scale=1.0,
-             duration_s=90.0) -> dict:
+             duration_s=90.0, site='basilic') -> dict:
     inj = Injection(volume_ml=volume_ml, rate_ml_s=rate_ml_s, conc_mgi_ml=conc_mgi_ml,
                     volume2_ml=volume2_ml, rate2_ml_s=rate2_ml_s,
-                    saline_ml=saline_ml, saline_rate_ml_s=saline_rate_ml_s, start_s=delay_s)
+                    saline_ml=saline_ml, saline_rate_ml_s=saline_rate_ml_s, start_s=delay_s,
+                    site=site)
     pat = Patient(cardiac_output_l_min=cardiac_output_l_min, blood_volume_ml=blood_volume_ml,
                   vessel_scale=vessel_scale, perfusion_scale=perfusion_scale)
     return pack(solve(vessels_path, inj, pat, duration_s=duration_s))

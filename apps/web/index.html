@@ -88,6 +88,7 @@
           <div class="hc-acts">
             <button class="hc-open" data-mode="xray">Open</button>
             <button class="hc-tut" data-tut="xray" title="Walk through this mode control by control">&#9654; Tutorial</button>
+            <button class="hc-tut" data-tut="barium" title="Barium studies: swallow or enema, gravity, double contrast, expose on the study clock">&#9654; Barium</button>
           </div>
         </div>
       </div>
@@ -281,6 +282,20 @@
             <button class="inj-rst" id="ctrstReset" title="Reset the injector">■</button>
           </div>
           <div class="ctrst-note" id="ctrstArmNote">Tap a phase to program it. Start the injector, then expose when the timing is right.</div>
+
+          <div class="grp">
+            <div class="lab">Access</div>
+            <div class="bod">
+              <div class="row"><div class="rl">Injection site</div></div>
+              <select id="ctrstSite" class="slsel" style="width:100%; margin-top:5px">
+                <option value="basilic" selected>Basilic vein</option>
+                <option value="central">Central line</option>
+                <option value="radial">Radial artery</option>
+                <option value="femoral">Femoral artery</option>
+              </select>
+              <div class="ctrst-note" id="ctrstSiteNote">&mdash;</div>
+            </div>
+          </div>
 
           <div class="grp">
             <div class="lab">Agent</div>
@@ -480,28 +495,6 @@
             </div>
           </div>
         </div>
-        <div>
-          <div class="cl">Subject</div>
-          <select id="subjectSel" class="subjectsel">
-            <option value="hand" selected>Hand</option>
-            <option value="hand_hires">Hand · 0.2 mm (GPU)</option>
-            <option value="chest">Chest</option>
-            <option value="headneck">Head &amp; neck</option>
-            <option value="chestabdopelvis">Chest / abdo / pelvis</option>
-            <option value="upperextremity">Upper extremity</option>
-            <option value="lowerextremity">Lower extremity</option>
-            <option value="totalhipreplacement">Total Hip Replacement</option>
-            <option value="wholebody">Whole body</option>
-            <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
-            <option value="metalphantom">Metal Test Phantom</option>
-            <option value="linepair">Line-pair test pattern (QC)</option>
-          </select>
-          <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:4px; text-align:left; letter-spacing:.3px; max-width:190px"></div>
-          <div class="segmini" id="skinSeg" style="margin-top:6px" title="Display only — the image is always made from the voxel volume">
-            <button data-skin="photo" class="on">Photo skin</button>
-            <button data-skin="mat">Materials</button>
-          </div>
-        </div>
       </div>
       </div>
       <div class="baydrop ct-only" id="soundDrop">
@@ -531,6 +524,27 @@
     <div class="hdr"><div class="t"><b>POSITION</b> / SETUP</div></div>
     <div class="pad">
 
+      <div class="grp" id="subjectGrp">
+        <div class="lab">Object · model</div>
+        <div class="bod">
+          <select id="subjectSel" class="subjectsel" style="width:100%">
+            <option value="hand" selected>Hand</option>
+            <option value="hand_hires">Hand · 0.2 mm (GPU)</option>
+            <option value="chest">Chest</option>
+            <option value="headneck">Head &amp; neck</option>
+            <option value="chestabdopelvis">Chest / abdo / pelvis</option>
+            <option value="upperextremity">Upper extremity</option>
+            <option value="lowerextremity">Lower extremity</option>
+            <option value="totalhipreplacement">Total Hip Replacement</option>
+            <option value="wholebody">Whole body</option>
+            <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
+            <option value="metalphantom">Metal Test Phantom</option>
+            <option value="linepair">Line-pair test pattern (QC)</option>
+          </select>
+          <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:5px; letter-spacing:.3px"></div>
+        </div>
+      </div>
+
       <div class="grp">
         <div class="lab">Object · rotate / tilt</div>
         <div class="bod">
@@ -550,6 +564,9 @@
             <div class="row" style="margin-top:8px"><div class="rl">Offset <small>cross axis</small></div>
               <div class="valchip" id="objOffXv">0 cm</div></div>
             <input type="range" id="objOffX" min="-45" max="45" value="0" step="0.5">
+            <div class="row" style="margin-top:8px"><div class="rl">Height <small>off receptor</small></div>
+              <div class="valchip" id="objOffYv">0 cm</div></div>
+            <input type="range" id="objOffY" min="0" max="20" value="0" step="0.5">
           </div>
           <div class="mini"><button id="objRotReset">↺ reset orientation &amp; offset</button></div>
         </div>
@@ -670,11 +687,7 @@
           </div>
           <div class="row">
             <div class="rl">OID <small>object→image</small></div>
-            <div class="stepper">
-              <button data-step="oid" data-d="-1">−</button>
-              <div class="sv" id="oidV">0 cm</div>
-              <button data-step="oid" data-d="1">+</button>
-            </div>
+            <div class="valchip" id="oidV" title="Derived from geometry — lift the object with the Height offset to change it">0 cm</div>
           </div>
           <div class="row"><div class="rl">Centre · long</div>
             <input type="range" id="tubeZ" min="-18" max="18" value="0" step="0.5" style="max-width:150px"></div>

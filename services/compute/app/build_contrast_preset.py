@@ -35,24 +35,48 @@ def main():
     if not os.path.exists(vessels):
         raise SystemExit(f'no {vessels} — run build_vessels first')
 
-    print(f'solving {a.name}: {a.volume_ml:.0f} mL @ {a.rate_ml_s:.1f} mL/s, '
-          f'{a.conc:.0f} mgI/mL + {a.saline_ml:.0f} mL saline …', flush=True)
-    tl = timeline(vessels, volume_ml=a.volume_ml, rate_ml_s=a.rate_ml_s,
-                  conc_mgi_ml=a.conc, saline_ml=a.saline_ml)
-
-    out = os.path.join(a.model, f'{a.name}.contrast.json')
-    with open(out, 'w') as f:
-        json.dump(tl, f, separators=(',', ':'))
-    print(f'  wrote {os.path.basename(out)}  {os.path.getsize(out) / 1e6:.2f} MB')
+    # One preset per injection site, so the browser can switch access routes without the
+    # compute service. The basilic file keeps its historical name — older manifests and the
+    # loader's fallback both point at it.
+    from .contrast_solver import INJECTION_SITES
+    sites = {}
+    for site in INJECTION_SITES:
+        print(f'solving {a.name} [{site}]: {a.volume_ml:.0f} mL @ {a.rate_ml_s:.1f} mL/s, '
+              f'{a.conc:.0f} mgI/mL + {a.saline_ml:.0f} mL saline …', flush=True)
+        tl = timeline(vessels, volume_ml=a.volume_ml, rate_ml_s=a.rate_ml_s,
+                      conc_mgi_ml=a.conc, saline_ml=a.saline_ml, site=site)
+        err = tl['audit']['error_frac']
+        # Gate on what the SITE adds, not on the model's own baseline: the CAP model ships
+        # with a known +3.9 % imbalance in its vessel junctions, and holding new sites to a
+        # stricter bar than basilic would block regeneration without catching anything new.
+        # A site whose plumbing leaks shows up as a large DELTA from basilic — the limb bed,
+        # delay line and junctions are conservative by construction, so > 1 % means broken.
+        if site == 'basilic':
+            base_err = err
+        if abs(err - base_err) > 1e-2:
+            raise SystemExit(f'  {site}: leaks {abs(err - base_err) * 100:.2f} % beyond the '
+                             f'basilic baseline — site plumbing is broken, not shipping it')
+        if abs(err) > 1e-2:
+            print(f'  WARNING {site}: absolute audit {err * 100:+.2f} % '
+                  f'(model baseline, pre-existing)')
+        fn = (f'{a.name}.contrast.json' if site == 'basilic'
+              else f'{a.name}.contrast.{site}.json')
+        out = os.path.join(a.model, fn)
+        with open(out, 'w') as f:
+            json.dump(tl, f, separators=(',', ':'))
+        print(f'  wrote {fn}  {os.path.getsize(out) / 1e6:.2f} MB '
+              f'(audit {err * 100:+.3f} %)')
+        sites[site] = fn
 
     hp = os.path.join(a.model, f'{a.name}.model.json')
     with open(hp) as f:
         hdr = json.load(f)
-    hdr['contrast'] = f'{a.name}.contrast.json'
+    hdr['contrast'] = sites['basilic']
+    hdr['contrastSites'] = sites
     with open(hp, 'w') as f:
         json.dump(hdr, f, indent=1)
-    print(f'  declared "contrast" in {os.path.basename(hp)} — the loader keys off this, '
-          'not off the file being present')
+    print(f'  declared "contrast" + "contrastSites" in {os.path.basename(hp)} — the loader '
+          'keys off these, not off the files being present')
 
 
 if __name__ == '__main__':

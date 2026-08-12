@@ -34,26 +34,20 @@ export const XRAY_STEPS = [
       + 'in the image. Drag in the bay to orbit, scroll to zoom.',
   },
   {
-    sel: '#subjectSel',
+    sel: '#subjectGrp',
     title: 'Subject',
-    text: 'Pick the body part on the table. Each subject is a segmented CT volume with its own '
-      + 'materials — bone, soft tissue, lung, fat, marrow — so a hand attenuates like a hand and '
-      + 'a chest like a chest. The subject you choose drives everything downstream: how much beam '
-      + 'gets through, what technique you need, whether a grid is worth using.',
-    before: openBayMenu,
+    text: 'Pick the body part on the table — it lives at the top of the positioning column, '
+      + 'because it is the first decision of any examination. Each subject is a segmented CT '
+      + 'volume with its own materials — bone, soft tissue, lung, fat, marrow — so a hand '
+      + 'attenuates like a hand and a chest like a chest. The subject you choose drives '
+      + 'everything downstream: how much beam gets through, what technique you need, whether a '
+      + 'grid is worth using. Models that ship a photographic skin (the hand, today) simply '
+      + 'wear it — the image is always computed from the voxel volume underneath.',
     goal: {
       label: 'Load a different subject — try the chest',
       arm: () => S().subject,
       done: (a) => S().subject !== a,
     },
-  },
-  {
-    sel: '#skinSeg',
-    title: 'Display skin',
-    text: 'Cosmetic only. It changes how the subject is drawn in the 3D bay — photographic skin '
-      + 'or a plain surface — and has no effect whatsoever on the image, which is always computed '
-      + 'from the voxel volume underneath.',
-    before: openBayMenu,
   },
   {
     sel: '.grp:has(#objRotY)',
@@ -66,6 +60,23 @@ export const XRAY_STEPS = [
       label: 'Rotate the subject away from 0°',
       arm: () => JSON.stringify(S().objRot),
       done: (a) => JSON.stringify(S().objRot) !== a,
+    },
+  },
+  {
+    sel: ['.grp:has(#objOffY)', '#oidV'],
+    title: 'Height off the receptor — where OID comes from',
+    text: 'Lift the part and you have made an air gap. The OID readout under Tube &amp; distance '
+      + 'follows this slider because OID is <i>geometry</i>, not a dial: it is the distance from '
+      + 'the part to the receptor, and the only way to change it is to move the part. The '
+      + 'divergent beam does the rest — a lifted part casts a larger, softer-edged shadow '
+      + '(magnification and geometric unsharpness), which is why the rule is part flat on the '
+      + 'receptor unless the projection says otherwise. The deliberate exception is the air-gap '
+      + 'technique: a big enough gap lets obliquely scattered photons miss the receptor '
+      + 'entirely, buying contrast without a grid.',
+    goal: {
+      label: 'Lift the part — watch the OID readout follow',
+      arm: () => S().objOff.y,
+      done: (a) => S().objOff.y !== a,
     },
   },
   {
@@ -140,9 +151,11 @@ export const XRAY_STEPS = [
     title: 'SID, OID and tube angle',
     text: 'SID is the source-to-image distance, OID the object-to-image distance. Increasing SID '
       + 'reduces magnification and geometric unsharpness but costs intensity by the inverse square '
-      + 'law — double the distance, quarter the dose at the receptor. Any OID at all magnifies the '
-      + 'part and blurs its edges. The angle sliders tilt the central ray for projections that need '
-      + 'it, and the readout tells you when the beam is no longer perpendicular.',
+      + 'law — double the distance, quarter the dose at the receptor. OID here is a readout, not '
+      + 'a control: it reports the air gap you made with the Height slider in the Object group, '
+      + 'because the only way to move the part away from the receptor is to move the part. The '
+      + 'angle sliders tilt the central ray for projections that need it, and the readout tells '
+      + 'you when the beam is no longer perpendicular.',
     goal: {
       label: 'Change the SID',
       arm: () => S().sid,
@@ -257,13 +270,13 @@ export const XRAY_STEPS = [
 // ---------------------------------------------------------------- CT
 export const CT_STEPS = [
   {
-    sel: '#subjectSel',
+    sel: '#subjectGrp',
     title: 'Subject',
-    text: 'Choose what is on the couch. CT reconstructs from projections taken all the way around '
+    text: 'Choose what is on the couch — the selector sits at the top of the positioning column. '
+      + 'CT reconstructs from projections taken all the way around '
       + 'the patient, so unlike a radiograph nothing is superimposed — but everything inside the '
       + 'scan field contributes, including the table. Chest and chest-abdomen-pelvis are the '
       + 'subjects with vessel maps, so they are the ones that can be given contrast.',
-    before: openBayMenu,
     goal: {
       label: 'Load the chest',
       done: () => S().subject === 'chest',
@@ -458,6 +471,26 @@ export const CT_STEPS = [
     },
   },
   {
+    sel: '.grp:has(#ctrstSite)',
+    title: 'Injection site',
+    text: 'Where the needle is changes when — and how sharply — the bolus arrives. The basilic '
+      + 'vein is the reference route every timing chart assumes. A central line\'s tip already '
+      + 'sits at the cavoatrial junction, so its bolus skips the peripheral veins and arrives '
+      + 'earliest and sharpest. The arterial sites are the instructive ones: a radial or femoral '
+      + 'bolus must first cross the limb\'s capillary bed before it can return to the heart, so '
+      + 'it comes back later and flatter — the limb is not part of the segmented anatomy, so its '
+      + 'transit is estimated as a mixing bed plus a transport delay, and the note under the '
+      + 'selector says exactly what was assumed. This one works on the browser engine too: each '
+      + 'site ships its own solved timeline.',
+    goal: {
+      label: 'Switch the injection site and watch the curves move',
+      when: () => S().contrast.on,
+      unless: 'Turn the injector ON first — the power button at the top of the panel.',
+      arm: () => S().contrast.params.site,
+      done: (a) => S().contrast.params.site !== a,
+    },
+  },
+  {
     sel: '.grp:has(#ctrstHr)',
     title: 'The patient',
     text: 'Cardiac output is the dominant variable in contrast timing, and this is where the '
@@ -630,6 +663,117 @@ export const EDITOR_STEPS = [
       label: 'Save the model to the session',
       arm: () => customCount(),
       done: (a) => customCount() > a,
+    },
+  },
+];
+
+// ---------------------------------------------------------------- BARIUM
+// Runs inside x-ray mode: fluoroscopy is projection radiography with a clock.
+export const BARIUM_STEPS = [
+  {
+    sel: '#subjectGrp',
+    title: 'A barium study needs a gut',
+    text: 'Barium is enteric contrast: it goes down the oesophagus, not into a vein, so the '
+      + 'subject must carry a segmented GI tract. Chest / abdo / pelvis is the one that does. '
+      + 'Everything in this tutorial — transit, gravity, coating — happens inside that '
+      + 'segmented anatomy.',
+    goal: {
+      label: 'Load Chest / abdo / pelvis',
+      done: () => S().subject === 'chestabdopelvis',
+    },
+  },
+  {
+    sel: '#giTab',
+    title: 'The fluoroscopy panel',
+    text: 'The BARIUM tab hangs on the left edge, beside CONTRAST. It is greyed out for any '
+      + 'subject without GI data — the honest signal lives on the closed tab, not buried in a '
+      + 'message after you open it.',
+    goal: {
+      label: 'Open the barium panel',
+      when: () => !$('giTab')?.disabled,
+      unless: 'The tab is greyed out — go back and load Chest / abdo / pelvis first.',
+      done: () => $('giPanel')?.classList.contains('open'),
+    },
+  },
+  {
+    sel: '#giOn',
+    title: 'Power',
+    text: 'ON loads the GI geometry — the tract\'s centreline, calibre and volume, measured from '
+      + 'the segmentation — and arms the study. Nothing is administered yet: that is what the '
+      + 'transport button below does.',
+    goal: {
+      label: 'Turn the barium study on',
+      done: () => !!S().barium.on,
+    },
+  },
+  {
+    sel: '.grp:has(#giRouteSeg)',
+    title: 'Route, volume, density — and technique',
+    text: '<b>Swallow</b> runs the tract from the top: oesophagus, stomach, small bowel, colon. '
+      + '<b>Enema</b> loads 800 mL and runs it backwards from the rectum, against peristalsis, '
+      + 'which is why an enema fills a colon in minutes that transit would take a day to reach. '
+      + 'Density is the suspension strength in % w/v. <b>Single</b> contrast fills the lumen and '
+      + 'you read its outline; <b>Double</b> adds gas — effervescent granules on a swallow, an '
+      + 'insufflator on an enema — which pushes the barium off the non-dependent wall and leaves '
+      + 'it as a thin coat. You then read the mucosal <i>surface</i>, which is where early '
+      + 'disease lives.',
+    goal: {
+      label: 'Switch the technique to Double',
+      done: () => S().barium.gasMl > 0,
+    },
+  },
+  {
+    // One rect, not two: lighting this group AND the rotate sliders across the screen made
+    // the ring span the whole viewport, which isolates nothing.
+    sel: '.grp:has(#giStandSeg)',
+    title: 'The patient is the pump',
+    text: 'There is no injector here — gravity is the only control you have over where the '
+      + 'barium goes, and you steer it by turning the patient. The stand toggle and the rotate / '
+      + 'tilt / roll sliders are the same controls you position with, because positioning the '
+      + 'patient to move the agent IS the examination. Gravity applies from the moment you turn: '
+      + 'stand the patient up and the stomach empties faster; roll them left and the fundus '
+      + 'fills. In a double-contrast study the gas re-levels the instant you turn, pushing '
+      + 'barium into whatever has just become dependent.',
+    goal: {
+      label: 'Change the patient\'s position — stand them up, or roll them',
+      arm: () => JSON.stringify([S().barium.erect, S().objRot]),
+      done: (a) => JSON.stringify([S().barium.erect, S().objRot]) !== a,
+    },
+  },
+  {
+    sel: ['.gi-clock', '#giGo', '#giSpeedSeg'],
+    title: 'The study clock',
+    text: 'Press ▶ and the agent is given: the clock starts and the solver moves barium through '
+      + 'the tract in real time. Real time is slow — a stomach empties over half an hour — so '
+      + 'the speed buttons compress it: at 300× a whole small-bowel series runs in about a '
+      + 'minute. Pause whenever you want to screen; the study holds its state and continues '
+      + 'where it left off.',
+    goal: {
+      label: 'Start the study and let it run',
+      done: () => !!S().barium.study && S().barium.study.t > 30,
+    },
+  },
+  {
+    sel: '.grp:has(#giBars)',
+    title: 'Where the barium is',
+    text: 'One bar per segment, in anatomical order. Amber is barium in the lumen; the pale band '
+      + 'stacked after it is the mucosal coat — the part a double-contrast film is actually of, '
+      + 'because the coat stays behind after the lumen empties. The blue shading from the right '
+      + 'is gas. The line underneath is the mass audit: given, in the lumen, coating. It should '
+      + 'always add up — if barium vanished anywhere, the physics would be lying to you.',
+  },
+  {
+    sel: ['#rotor', '#fire'],
+    title: 'Expose — this is fluoroscopy',
+    text: 'The generator does not know the barium panel exists: you take an ordinary exposure, '
+      + 'and whatever the study clock says is where the barium is on the film. Pause at the '
+      + 'phase you want — early gastric filling, small-bowel transit at an hour, a filled colon '
+      + 'on an enema — position, collimate, and expose. Compare films at different clock times '
+      + 'from the image history, exactly as a fluoroscopy series would.',
+    goal: {
+      label: 'Take an exposure with barium in the tract',
+      arm: () => (S().imgHistory || []).length,
+      done: (a) => (S().imgHistory || []).length > a,
     },
   },
 ];

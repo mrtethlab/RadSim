@@ -51,6 +51,56 @@ HU_PER_MGI_ML = 25.0
 # Glomerular filtration rate, ~120 mL/min. The only route by which iodine leaves the model.
 GFR_ML_S = 2.0
 
+# ---- injection sites ---------------------------------------------------------
+# The segmented anatomy starts at the trunk, so every access route is partly estimated — the
+# basilic route always was (the 30 mL arm-vein mixer in solve()); these entries just make the
+# estimate per-site. An arterial site is qualitatively different from a venous one: the bolus
+# cannot return to the heart until it has crossed the limb's capillary bed, so it picks up a
+# mixing volume (bed_ml, the smear) and a transport delay (delay_s, the vessel run the
+# segmentation does not contain) before entering the segmented circulation at `join`.
+# base_ml_s is the limb's own perfusion — the flow that keeps draining the bed after the
+# injector stops, without which the tail would sit in the limb forever.
+INJECTION_SITES = {
+    'basilic': dict(label='Basilic vein'),                 # reference: arm vein -> SVC
+    'central': dict(label='Central line'),                 # tip at the cavoatrial junction
+    'radial':  dict(label='Radial artery', bed_ml=80.0,  delay_s=5.0, base_ml_s=1.2,
+                    join='svc'),
+    'femoral': dict(label='Femoral artery', bed_ml=150.0, delay_s=8.0, base_ml_s=3.5,
+                    join='ivc'),
+}
+
+SITE_NOTES = {
+    'central': 'central line: tip at the cavoatrial junction, so the peripheral veins are '
+               'bypassed entirely — earliest, sharpest arrival the model can produce',
+    'radial': 'radial artery: the forearm is not part of this anatomy — its transit is '
+              'estimated as an 80 mL capillary bed plus a 5 s vessel run, rejoining the '
+              'segmented circulation at the SVC',
+    'femoral': 'femoral artery: the leg is not part of this anatomy — its transit is '
+               'estimated as a 150 mL capillary bed plus an 8 s vessel run, entering the '
+               'segmented circulation at the IVC',
+}
+
+
+class Delay:
+    """A pure transport delay on a mass flux (mgI/s): what goes in comes out delay_s later,
+    unchanged. The ring buffer IS the vessel run — mass in transit is sum(buf) * dt, and it
+    is counted in the audit, so the delay cannot hide iodine."""
+
+    def __init__(self, delay_s, dt):
+        self.dt = dt
+        self.buf = [0.0] * max(1, int(round(delay_s / dt)))
+        self.i = 0
+
+    def step(self, flux_in):
+        out = self.buf[self.i]
+        self.buf[self.i] = flux_in
+        self.i = (self.i + 1) % len(self.buf)
+        return out
+
+    @property
+    def mass(self):
+        return sum(self.buf) * self.dt
+
 
 @dataclass
 class Injection:
@@ -69,6 +119,7 @@ class Injection:
     saline_ml: float = 40.0       # saline chaser — pushes the tail out of the arm veins
     saline_rate_ml_s: float = 4.0
     start_s: float = 0.0
+    site: str = 'basilic'         # access route — see INJECTION_SITES
 
     def phases(self):
         """(duration_s, rate_ml_s, conc_mgi_ml) in delivery order. Saline is a phase too — it
@@ -399,9 +450,14 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     # SVC transported q_upper but the right heart was charged c_out * (q_arm + q_upper) —
     # 21.3 vs 15.8 mL/s, which minted iodine at exactly the 1.35x the right heart showed, and
     # every downstream compartment inherited it. The SVC carries upper-body return PLUS the
-    # injected volume, so that is what it must be given here and charged with below.
-    q_svc = q_upper + inj.rate_ml_s
-    q_of = {29: CO, 30: CO, 31: CO, 32: q_svc, 33: q_lower, 34: GUT_FRAC * CO,
+    # injected volume — but only when the injectate actually returns through its lumen:
+    # basilic directly, radial after the forearm. A central line's tip sits at the SVC's far
+    # end, so the bolus never transits it, and a femoral bolus comes home through the IVC.
+    site_key = inj.site if inj.site in INJECTION_SITES else 'basilic'
+    site = INJECTION_SITES[site_key]
+    q_svc = q_upper + (inj.rate_ml_s if site_key in ('basilic', 'radial') else 0.0)
+    q_ivc = q_lower + (inj.rate_ml_s if site.get('join') == 'ivc' else 0.0)
+    q_of = {29: CO, 30: CO, 31: CO, 32: q_svc, 33: q_ivc, 34: GUT_FRAC * CO,
             35: 0.04 * CO, 36: 0.04 * CO, 37: 0.04 * CO, 38: 0.04 * CO, 39: 0.04 * CO,
             40: 0.5 * q_upper, 41: 0.5 * q_upper, 42: 0.05 * CO}
 
@@ -419,13 +475,19 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
 
     out_every = max(1, int(round((1.0 / out_hz) / dt)))
     injected_mgi = excreted_mgi = 0.0
-    mixers = [arm, right_heart, lungs, left_heart]
+    # Arterial access crosses the limb before it can join the segmented circulation: a small
+    # mixing bed for the capillary crossing, a pure delay for the vessel run. Both are in the
+    # mixers/audit so the estimated limb cannot mint or hide iodine any more than the arm can.
+    limb = Mixer('limb_bed', site['bed_ml']) if 'bed_ml' in site else None
+    limb_delay = Delay(site['delay_s'], dt) if limb is not None else None
+    mixers = [arm, right_heart, lungs, left_heart] + ([limb] if limb is not None else [])
     beds = organs + [upper, body]
 
     def breakdown():
         return dict(
             vessels=sum(float((v.c * v.area).sum()) * v.dx for v in V.values() if v is not None),
-            chambers=sum(m.c * m.v for m in mixers),
+            chambers=sum(m.c * m.v for m in mixers)
+                     + (limb_delay.mass if limb_delay is not None else 0.0),
             organ_blood=sum(o.c_iv * o.v_iv for o in beds),
             interstitium=sum(o.c_ees * o.v_ees for o in beds))
 
@@ -433,6 +495,7 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         """Total iodine held anywhere. Vessels: c * A * dx summed along the line."""
         tot = sum(float((v.c * v.area).sum()) * v.dx for v in V.values() if v is not None)
         tot += sum(m.c * m.v for m in mixers)
+        tot += limb_delay.mass if limb_delay is not None else 0.0
         tot += sum(o.c_iv * o.v_iv + o.c_ees * o.v_ees for o in beds)
         return tot
     frames, times = {k: [] for k in vmeta}, []
@@ -444,10 +507,24 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
     for step in range(n_steps + 1):
         t = step * dt
 
-        # --- injection into the arm vein, carried by the injected volume itself ----------
+        # --- injection at the chosen access site -----------------------------------------
         q_inj = inj.volume_flux_ml_s(t)
-        q_arm = q_inj + q_arm_return
-        arm.step(dt, inj.flux_mgi_s(t) + q_arm_return * upper.c_iv, q_arm)
+        flux = inj.flux_mgi_s(t)
+        # Arterial sites: the bolus crosses the limb bed (smear), then the vessel run the
+        # segmentation lacks (delay), and only THEN joins the venous side. The limb's carrier
+        # blood is taken as iodine-free — recirculating arterial iodine in one forearm is
+        # ~1 % of cardiac output and does not survive first-pass accuracy concerns.
+        limb_flux = 0.0
+        if limb is not None:
+            q_limb = q_inj + site['base_ml_s']
+            limb.step(dt, flux, q_limb)
+            limb_flux = limb_delay.step(limb.c * q_limb)
+        # The arm vein carries the injected volume for basilic (directly) and radial (once
+        # the forearm returns it); a central line and a femoral bolus never pass through it.
+        q_arm = q_arm_return + (q_inj if site_key in ('basilic', 'radial') else 0.0)
+        arm_influx = flux if site_key == 'basilic' \
+            else (limb_flux if site.get('join') == 'svc' else 0.0)
+        arm.step(dt, arm_influx + q_arm_return * upper.c_iv, q_arm)
         # upper-body venous return joins the arm blood on its way to the SVC
         # The arm's return is part of the upper body's drainage, not extra to it: the direct
         # SVC path carries what is left after the arm vein takes its share, so the upper body
@@ -466,7 +543,13 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         svc.step(c_bc)
 
         # --- lower body -> IVC, gut -> portal --------------------------------------------
-        ivc.step(body.c_iv)
+        # A femoral bolus enters here: the limb's delayed mass flux joins the lower-body
+        # return at the IVC inlet, normalised by the IVC's transport flow so the coupling is
+        # exactly conservative (same junction rule as the SVC's).
+        if site.get('join') == 'ivc':
+            ivc.step((body.c_iv * q_lower + limb_flux) / q_ivc)
+        else:
+            ivc.step(body.c_iv)
         if portal: portal.step(body.c_iv)
 
         # --- right heart: SVC + IVC + portal + organ venous return -----------------------
@@ -477,7 +560,12 @@ def solve(vessels_path, injection: Injection = None, patient: Patient = None,
         # recirculation peak from a mass leak, since a leak survives the cut and returning
         # iodine does not.
         rc = 1.0 if recirculation else 0.0
-        mgi_rh = (svc.c_out * q_svc + rc * (ivc.c_out * q_lower
+        # A central line's tip sits at the cavoatrial junction, so its flux lands here
+        # directly — outside the rc gate, because fresh injectate is not recirculation and
+        # must survive the diagnostic cut.
+        mgi_rh = (svc.c_out * q_svc
+                  + (flux if site_key == 'central' else 0.0)
+                  + rc * (ivc.c_out * q_ivc
                   + sum(o.outflow_c() * o.total_frac * CO for o in organs)))
         right_heart.step(dt, mgi_rh, CO)
 

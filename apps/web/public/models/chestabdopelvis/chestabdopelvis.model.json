@@ -387,5 +387,11 @@
  "contrast": "chestabdopelvis.contrast.json",
  "gi": "chestabdopelvis.gi.json",
  "giarc": "chestabdopelvis.giarc.bin",
- "barium": "chestabdopelvis.barium.json"
+ "barium": "chestabdopelvis.barium.json",
+ "contrastSites": {
+  "basilic": "chestabdopelvis.contrast.json",
+  "central": "chestabdopelvis.contrast.central.json",
+  "radial": "chestabdopelvis.contrast.radial.json",
+  "femoral": "chestabdopelvis.contrast.femoral.json"
+ }
 }

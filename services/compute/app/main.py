@@ -106,6 +106,7 @@ class ContrastTimelineRequest(BaseModel):
     vessel_scale: float = 1.0
     perfusion_scale: float = 1.0
     duration_s: float = 90.0
+    site: str = "basilic"        # injection access — see contrast_solver.INJECTION_SITES
 
 
 @app.post("/contrast/timeline")

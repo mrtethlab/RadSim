@@ -787,9 +787,11 @@ body.subj-hand .hand-only{display:flex}
 .histcanvas{display:block; width:100%; max-width:260px; height:auto; margin:2px 0 10px;
   background:#0a0f14; border:1px solid var(--edge2); border-radius:4px}
 body.hist-off .histcanvas{display:none}
-.subjectsel{width:100%; max-width:190px; background:#0b1116; color:var(--txt);
+.subjectsel{width:100%; background:#0b1116; color:var(--txt);
   border:1px solid var(--edge2); border-radius:4px; font-family:var(--disp);
   font-size:12px; padding:4px 8px; margin-top:2px; cursor:pointer}
+/* the editor picks its models with its own Load-preset control — one selector per mode */
+body.mode-editor #subjectGrp{display:none}
 .slsel{background:#0b1116; color:var(--txt); border:1px solid var(--edge2); border-radius:4px;
   font-family:var(--disp); font-size:13px; padding:5px 10px; min-width:150px}
 .slsel:disabled{color:var(--muted2)}

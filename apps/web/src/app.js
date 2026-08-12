@@ -355,12 +355,14 @@ function prepSkinMesh(grp){
 /* Show either the photographic skin or the material-shaded mesh for every loaded subject.
    Models without a skin mesh always show the plain one. */
 function applyPhotoSkin(){
-  const want=!!S.photoSkin;
+  // The photo-textured skin is simply the default whenever the model ships one — there is
+  // no toggle. It is display only; the physics always reads the voxel volume. Models
+  // without a skin (all but the hand, today) show the material-shaded mesh.
   for(const k in (three.voxelMeshes||{})){
     const wrap=three.voxelMeshes[k]; if(!wrap||!wrap.children) continue;
     const hasSkin=wrap.children.some(c=>c.userData&&c.userData.role==='skin');
     wrap.children.forEach(c=>{ const r=c.userData&&c.userData.role; if(!r) return;
-      c.visible = hasSkin ? (r==='skin')===want : r==='plain'; });
+      c.visible = r === (hasSkin?'skin':'plain'); });
   }
 }
 
@@ -437,9 +439,12 @@ function setDetOrient(o){ S.detOrient=o; applyDet(); }
    STATE + WIRING
    ============================================================================ */
 const S = {
+  // oid is DERIVED, not set: it is the air gap under the object, i.e. the height offset.
+  // It used to be a stepper that changed only this number — the geometry never moved, so
+  // magnification never changed, which is what "OID is broken" meant.
   pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
-  objOff:{x:0,z:0},            // x-ray object offset on the receptor (cm): x cross / z long axis
+  objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
   aecOn:false, aecCells:{l:false,c:true,r:false}, aecResult:null,  // AEC: cells + achieved mAs of the last exposure
@@ -448,7 +453,6 @@ const S = {
   detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
-  photoSkin:true,              // show the photo-textured display skin (cosmetic only)
   curve:null, curveManual:false,                   // response-curve handles; null = follow the image
   resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
@@ -465,7 +469,7 @@ const S = {
              params:{ volume_ml:100, rate_ml_s:4.0, conc_mgi_ml:350, delay_s:0, saline_ml:40,
                       volume2_ml:0, rate2_ml_s:2.0,
                       saline_rate_ml_s:4.0, cardiac_output_l_min:5.0, blood_volume_ml:5000,
-                      vessel_scale:1.0, perfusion_scale:1.0 },
+                      vessel_scale:1.0, perfusion_scale:1.0, site:'basilic' },
              lut:null, lutT:null, busy:false, error:null,
              // injector transport: t0 = when START was pressed, latched = the elapsed time
              // frozen at the moment an image was actually acquired
@@ -683,7 +687,10 @@ function buildPhantom(){
   const vm=S.voxelModel;
   if(!vm) return new Phantom();          // nothing loaded yet (first frames during boot)
   const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
-  const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10;
+  // x-ray: the object rests on the receptor plus the height offset — which is where OID
+  // comes from. Lifting it moves the anatomy toward the source: real magnification and
+  // real geometric unsharpness, because the divergent rays do the rest.
+  const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10 + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
   const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R);
   applyContrast(ph);
@@ -1072,7 +1079,8 @@ async function contrastSolve(){
     }
     C.busy=true;
     try{
-      const [json, arclen]=await Promise.all([vm.loadPresetContrast(), vm.loadArclen()]);
+      const [json, arclen]=await Promise.all([
+        vm.loadPresetContrast(C.params.site), vm.loadArclen()]);
       C.timeline=decodeTimeline(json);
       C.static=true;
       if(json.preset) Object.assign(C.params, json.preset);   // show what it was solved for
@@ -1143,8 +1151,8 @@ function syncScene(){
   const ox=S.mode!=='ct'?S.objOff.x:0, oz=S.mode!=='ct'?S.objOff.z:0;   // x-ray object offset sliders
   three.handGroup.rotation.z = 0;
   if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);       // flips are mode-dependent
-  if(S.mode!=='ct' && S.voxelModel){                                    // x-ray: rest the model on the detector
-    three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10, oz);
+  if(S.mode!=='ct' && S.voxelModel){                // x-ray: rest the model on the detector + lift
+    three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10 + S.objOff.y, oz);
   }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
@@ -1504,14 +1512,18 @@ function bind(){
       giSetPose?.(); });
   }
   // x-ray object offset sliders (cm on the receptor: z long axis / x cross axis)
-  const offAxes=[['objOffX','x'],['objOffZ','z']];
+  const offAxes=[['objOffX','x'],['objOffZ','z'],['objOffY','y']];
   for(const [id,ax] of offAxes){
     $(id)?.addEventListener('input',e=>{ S.objOff[ax]=parseFloat(e.target.value);
-      $(id+'v').textContent=S.objOff[ax]+' cm'; resetPrep(); syncScene(); });
+      $(id+'v').textContent=S.objOff[ax]+' cm'; resetPrep(); syncScene();
+      // the height offset IS the OID — the readout in Tube & distance follows it
+      if(ax==='y'){ S.oid=S.objOff.y; const o=$('oidV'); if(o) o.textContent=S.oid+' cm'; }
+    });
   }
-  $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0};
+  $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0,y:0};
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
+    S.oid=0; const o=$('oidV'); if(o) o.textContent='0 cm';
     resetPrep(); syncScene(); });
   // sliders that only affect geometry (update chips + scene)
   const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ'];
@@ -1530,7 +1542,6 @@ function bind(){
       const kind=btn.dataset.step, d=parseFloat(btn.dataset.d);
       if(kind==='sid'){ S.sid=Math.max(20,Math.min(180,S.sid+d)); $('sidV').textContent=S.sid+' cm';
         $('sidRo').innerHTML=S.sid+'<small>cm</small>'; syncScene(); }
-      if(kind==='oid'){ S.oid=Math.max(0,Math.min(20,S.oid+d)); $('oidV').textContent=S.oid+' cm'; syncScene(); }
       if(kind==='kv'){ S.kv=Math.max(40,Math.min(120,S.kv+d)); $('kv').value=S.kv; }
       if(kind==='mas'){ let i=nearestMasIdx(); i=Math.max(0,Math.min(masSteps.length-1,i+d)); S.mas=masSteps[i]; $('mas').value=i; }
       if(kind==='ma'){ let i=nearestMaIdx(); i=Math.max(0,Math.min(maSteps.length-1,i+d)); S.ma=maSteps[i]; $('ma').value=i; }
@@ -1627,7 +1638,6 @@ function bind(){
   });
   segPick('resSeg', b=>{ S.resolution=b.dataset.res; applyDet(); });
   // photo skin vs material shading — display only, never touches the physics
-  segPick('skinSeg', b=>{ S.photoSkin=(b.dataset.skin==='photo'); applyPhotoSkin(); });
   $('detSizeSeg')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return;
     [...$('detSizeSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
     setDetSize(parseInt(b.dataset.w),parseInt(b.dataset.h));});
@@ -2590,6 +2600,21 @@ function updateDetWarn(){
    pick the answer; this makes you commit to it. */
 const CTRST_EL = { conc:'ctrstConc', hr:'ctrstHr', sv:'ctrstSv',
                    cal:'ctrstCal', perf:'ctrstPerf' };
+// What each access route means for the bolus. The arterial sites are estimates and the note
+// says so in the same breath — the limb is not in any model's anatomy, so its transit is a
+// mixing bed plus a delay, entering the segmented circulation at the named trunk vein.
+const CTRST_SITE_NOTE = {
+  basilic: 'The reference route: arm vein → SVC → right heart. Every timing chart '
+    + 'assumes this access.',
+  central: 'Catheter tip at the cavoatrial junction — no peripheral veins to cross, so '
+    + 'arrival is the earliest and sharpest the circulation can produce.',
+  radial: 'Arterial access: the bolus must cross the forearm capillary bed before it can '
+    + 'return. The forearm is not in this anatomy — estimated as an 80 mL bed + 5 s '
+    + 'vessel run, rejoining at the SVC. Expect a later, blunter peak.',
+  femoral: 'Arterial access: the bolus crosses the leg and returns via the IVC. The leg is '
+    + 'not in this anatomy — estimated as a 150 mL bed + 8 s run. The latest, most '
+    + 'dispersed arrival of the four.',
+};
 let ctrstTimer = null;
 
 /* Injection line pressure, Poiseuille through the 2.5 m coiled line and a 20 G cannula.
@@ -2867,12 +2892,23 @@ function ctrstApply(keepStatus){
   const live = S.contrast.on && !blocked;
   const editable = live && !S.contrast.static;
   Object.values(CTRST_EL).forEach(id=>{ const el=$(id); if(el) el.disabled=!editable; });
+  // The site select follows `live`, not `editable`: presets ship one timeline per site, so
+  // switching access still works without the service. Individual options grey out when the
+  // model's manifest lacks that site's file (an old single-preset model).
+  const siteEl=$('ctrstSite');
+  if(siteEl){
+    siteEl.disabled = !live;
+    const sites=(S.voxelModel && S.voxelModel.presetSites) || [];
+    [...siteEl.options].forEach(o=>{
+      o.disabled = S.contrast.static && !sites.includes(o.value); });
+  }
   const lock=$('ctrstLock');
   if(lock){
     lock.style.display = (live && S.contrast.static) ? '' : 'none';
     lock.textContent = 'Preset timeline — protocol locked. The haemodynamic solver runs on the '
       + 'Python compute service; without it the shipped solve is used, so the injector settings '
-      + 'cannot be changed. Timing, scanning and bolus tracking all still work.';
+      + 'cannot be changed. The injection site still switches — each site ships its own solved '
+      + 'timeline. Timing, scanning and bolus tracking all still work.';
   }
   ctrstRenderBar();          // the phase buttons take their enabled state from `editable` too
   $('ctrstGo').disabled = !live || !S.contrast.timeline;
@@ -3015,6 +3051,19 @@ function initContrastPanel(){
       ctrstReadUI(); ctrstQueueSolve();
     });
   });
+  // The access site is deliberately NOT in CTRST_EL: on a preset it must stay switchable,
+  // because each site ships its own solved timeline — the route changes the topology of the
+  // solve, which no amount of parameter-locking captures.
+  $('ctrstSite')?.addEventListener('change', e=>{
+    const C=S.contrast;
+    C.params.site = e.target.value;
+    $('ctrstSiteNote').textContent = CTRST_SITE_NOTE[C.params.site] || '';
+    if(C.run.t0!=null) ctrstReset();              // a new access is a new injection
+    if(!C.on) return;
+    C.timeline=null; C.lut=null; C.lutT=null;
+    ctrstQueueSolve();
+  });
+  if($('ctrstSiteNote')) $('ctrstSiteNote').textContent = CTRST_SITE_NOTE.basilic;
   $('ctrstGo').addEventListener('click', ctrstStart);
   $('ctrstReset').addEventListener('click', ctrstReset);
   initKeypad();

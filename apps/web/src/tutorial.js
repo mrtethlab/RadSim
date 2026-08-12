@@ -17,7 +17,7 @@
 //    theme) have no sensible goal at all and are explanation-only.
 // ============================================================================
 
-import { XRAY_STEPS, CT_STEPS, EDITOR_STEPS } from './tutorial-content.js';
+import { XRAY_STEPS, CT_STEPS, EDITOR_STEPS, BARIUM_STEPS } from './tutorial-content.js';
 
 let ctx = null;
 let T = null;            // the running tutorial, or null
@@ -65,12 +65,15 @@ export function initTutorial(context) {
   addEventListener('resize', () => { if (T) paint(); });
 }
 
-const STEPS = { xray: XRAY_STEPS, ct: CT_STEPS, editor: EDITOR_STEPS };
+const STEPS = { xray: XRAY_STEPS, ct: CT_STEPS, editor: EDITOR_STEPS, barium: BARIUM_STEPS };
+// A tutorial does not have to be a mode of its own: the barium walkthrough is a set of
+// steps that happens to run inside x-ray mode, because fluoroscopy IS x-ray with a clock.
+const TUT_MODE = { barium: 'xray' };
 
 export function startTutorial(mode) {
   const steps = STEPS[mode];
   if (!steps) return;
-  ctx.applyMode(mode);                       // the tutorial runs inside the real mode
+  ctx.applyMode(TUT_MODE[mode] || mode);     // the tutorial runs inside the real mode
   T = { mode, steps, i: -1, met: false };
   document.body.classList.add('tut-on');
   tickTimer = setInterval(tick, TICK);
