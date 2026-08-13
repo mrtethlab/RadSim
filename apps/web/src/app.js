@@ -818,6 +818,31 @@ function giTick(){
   refreshFilmViewer?.();
 }
 
+/* A sip on command — fluoro's Swallow button (docs/fluoroscopy.md Phase D). Pours a small
+   bolus into the top of the oesophagus of the LIVE study, exactly as the staged
+   administration would: node by node, respecting the gas ceiling. The x-ray panel's own
+   administration is untouched; this is the extra mouthful the operator asks for while
+   screening ("another swallow, please"). */
+function giSip(ml = 15){
+  const B = S.barium;
+  if(!B.on || B.route === 'rectal') return;             // a swallow needs a mouth
+  if(!B.study && !giBegin()) return;
+  const st = B.study, v = 48, tube = st.tubes[v];
+  if(!tube) return;
+  B.running = true; B.lastTick = performance.now();     // a swallow starts the clock
+  const ceil = st.ceil[v], vn = st.volNode[v], cmax = st.concMgBaMl;
+  let left = ml;
+  for(let j = 0; j < tube.c.length && left > 1e-6; j++){
+    const room = Math.max(0, ceil[j] - tube.c[j]) / cmax * vn;
+    const take = Math.min(room, left);
+    tube.c[j] += take / vn * cmax;
+    left -= take;
+  }
+  st.given += ml - left;                                // the audit counts what went in
+  B.timeline = st.sample(); B.lut = null; B.lutT = null;
+  giRender();
+}
+
 function giSetPose(){
   const B = S.barium;
   if(B.study) B.study.setPose(giPose());
@@ -3197,7 +3222,15 @@ window.addEventListener('load',()=>{
     // flips, same rotation — one geometry, two consumers
     phantomPose: () => ({
       center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
-      flip: voxelFlips(), rot: objMat() }) });
+      flip: voxelFlips(), rot: objMat() }),
+    // Phase D: the LIVE barium study rides the pulses. bariumLUT() rebuilds only when the
+    // study clock moved; null while the panel is off or the subject has no gut.
+    bariumPulse: () => {
+      const lut = bariumLUT();
+      return lut && S.barium.giVol
+        ? { ba: lut, gas: S.barium.gasLut, giVol: S.barium.giVol, ns: GI_NS } : null;
+    },
+    bariumSwallow: () => giSip() });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

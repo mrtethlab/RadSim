@@ -16,6 +16,7 @@ let F = null;            // ctx.S.fluoro
 // discarded, never drawn over a newer frame. Mobile keeps a pool of one: the second
 // volume copy costs more memory than 7.5 pps is worth.
 let workers = [], busy = [], readyCount = 0, workerSub = null;
+let giVolSent = false;   // whether this pool has the barium arclength map
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
 let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null, oecCol = null;
 let pendShown = false;   // the orientation pad's triangle: pending rotation being dialled in
@@ -104,6 +105,7 @@ function ensureWorker() {
   if (workers.length && workerSub === S.subject) return readyCount === workers.length;
   workers.forEach((w) => w.terminate());
   workers = []; busy = []; readyCount = 0; workerSub = S.subject; lastDrawn = 0;
+  giVolSent = false;                         // the fresh pool has no arclength map yet
   const pose = ctx.phantomPose();
   for (let i = 0; i < poolSize(); i++) {
     const w = new Worker(new URL('./fluoro-worker.js', import.meta.url), { type: 'module' });
@@ -243,9 +245,17 @@ function firePulse() {
   F.pulses++;
   dosePulse();
   const g = beamFrame(), pose = ctx.phantomPose();
+  // A LIVE barium study rides along: the LUT snapshot travels with every pulse (tens of
+  // kB), the per-voxel arclength map once per pool (it is per-subject and megabytes).
+  const bp = ctx.bariumPulse?.();
+  if (bp && !giVolSent) {
+    workers.forEach((w) => w.postMessage({ type: 'givol', giVol: bp.giVol, ns: bp.ns }));
+    giVolSent = true;
+  }
   workers[slot].postMessage({ type: 'pulse', id: ++pulseId, kv: F.kv, photons: photonsPerPulse(),
     src: g.src, detC: g.detC, detU: g.detU, detV: g.detV, half: fieldCm() / 2, iris: irisCm(),
     n: nPx(), rot: pose.rot, center: pose.center, anim: animTick(),
+    ba: bp ? bp.ba : null, gas: bp ? bp.gas : null, giNS: bp ? bp.ns : 0,
     seed: F.fixedSeed || (Math.random() * 1e9) | 0 });
 }
 
@@ -630,7 +640,10 @@ export function initFluoro(context) {
     F.hold = !F.hold;
     $('flHold').classList.toggle('on', F.hold);
   });
-  $('flSwallow')?.addEventListener('click', () => { F.swallowAt = performance.now() / 1000; });
+  $('flSwallow')?.addEventListener('click', () => {
+    F.swallowAt = performance.now() / 1000;      // the wall wave
+    ctx.bariumSwallow?.();                       // and, when a study is on, the bolus in it
+  });
   $('flHr')?.addEventListener('input', (e) => {
     F.hr = +e.target.value;
     const el = $('flHrV'); if (el) el.textContent = F.hr + ' bpm';

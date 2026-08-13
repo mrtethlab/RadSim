@@ -20,6 +20,7 @@
    breath-hold trivial); the worker stays stateless between pulses.
    ============================================================================ */
 import { VoxelPhantom, muOverBins } from './core/voxelPhantom.js';
+import { BodyMaterials } from './core/materials.js';
 
 let ph = null;
 let anim = null;
@@ -27,6 +28,12 @@ let vsMM = [2, 2, 2];
 let binKv = 0, binW = null;
 let mu0 = null, mu1 = null, mu2 = null;      // flat per-material mu, one array per bin
 let muLung = [0, 0, 0];                       // unscaled lung mu per bin, for breathing
+// Enteric barium (docs/fluoroscopy.md Phase D): the x-ray tracer's mechanism, inlined the
+// worker's way. giVol maps each voxel to its arclength bin (per subject, sent once);
+// ba/gas LUTs are [material id][bin] snapshots of the LIVE study, sent per pulse.
+let giVol = null, baLut = null, gasLut = null, giNS = 256;
+let muBa0 = 0, muBa1 = 0, muBa2 = 0;          // mu per (mg Ba/mL)·cm, one per bin
+let muGas0 = 0, muGas1 = 0, muGas2 = 0;       // bowel gas, for the double-contrast displacement
 
 function setBins(kv) {
   const E = [0.45 * kv, 0.65 * kv, 0.88 * kv];
@@ -36,6 +43,9 @@ function setBins(kv) {
   mu0 = new Float64Array(n); mu1 = new Float64Array(n); mu2 = new Float64Array(n);
   for (let k = 0; k < n; k++) { mu0[k] = mu[k][0]; mu1[k] = mu[k][1]; mu2[k] = mu[k][2]; }
   muLung = [mu0[1], mu1[1], mu2[1]];
+  const BARC = BodyMaterials.BARIUM_COL, GASI = BodyMaterials.idByName['Bowel gas'] || 0;
+  muBa0 = mu0[BARC]; muBa1 = mu1[BARC]; muBa2 = mu2[BARC];
+  muGas0 = mu0[GASI]; muGas1 = mu1[GASI]; muGas2 = mu2[GASI];
   binKv = kv;
 }
 
@@ -178,6 +188,7 @@ function applyAnimPulse(p) {
    Three attenuation sums (one per spectrum bin) for the ray o + t*d. A straight port of
    VoxelPhantom.trace's Amanatides-Woo DDA with the warp and mu accumulation inlined. */
 const A3 = new Float64Array(3);
+let bV = null;   // giVol when a study is live this pulse, else null — hoisted for the march
 function traceMu(ox, oy, oz, dx, dy, dz) {
   A3[0] = A3[1] = A3[2] = 0;
   if (ph.rotated) {
@@ -260,7 +271,27 @@ function traceMu(ox, oy, oz, dx, dy, dz) {
         }
       }
       const id = data[di];
-      if (id) { A3[0] += mu0[id] * seg; A3[1] += mu1[id] * seg; A3[2] += mu2[id] * seg; }
+      if (id) {
+        let m0 = mu0[id], m1 = mu1[id], m2 = mu2[id];
+        // barium rides the SAME (warped) index as the anatomy, so the bolus follows the
+        // wall wave for free; costs one boolean test per cell while no study runs
+        if (bV) {
+          const b = bV[di];
+          if (b) {
+            const k = id * giNS + b;
+            if (gasLut) {
+              const gf = gasLut[k];
+              if (gf > 0) {   // gas displaces lumen fluid: swap that fraction of the material
+                const g1 = 1 - gf;
+                m0 = m0 * g1 + muGas0 * gf; m1 = m1 * g1 + muGas1 * gf; m2 = m2 * g1 + muGas2 * gf;
+              }
+            }
+            const c = baLut[k];
+            if (c > 0) { m0 += c * muBa0; m1 += c * muBa1; m2 += c * muBa2; }
+          }
+        }
+        A3[0] += m0 * seg; A3[1] += m1 * seg; A3[2] += m2 * seg;
+      }
     }
     t = tNext;
     if (tNext >= t1) break;
@@ -278,17 +309,23 @@ onmessage = (e) => {
       m.center, m.flip, m.rot || null);
     vsMM = m.vsMM || [2, 2, 2];
     anim = null;
+    giVol = null; baLut = null; gasLut = null;
     scanAnim(m.dims);
     postMessage({ type: 'ready',
       anim: anim ? Object.keys(anim).filter((k) => k !== 'any' && anim[k]) : [] });
     return;
   }
+  // the per-subject voxel -> arclength-bin map, sent once when a study first goes live
+  if (m.type === 'givol') { giVol = new Uint8Array(m.giVol); giNS = m.ns || giNS; return; }
   if (m.type !== 'pulse' || !ph) return;
   const t0 = performance.now();
   if (m.rot !== undefined) ph.setRotation(m.rot);
   if (m.center) ph.setCenter(m.center);
   if (m.kv !== binKv) setBins(m.kv);
   applyAnimPulse(m.anim);
+  baLut = m.ba || null; gasLut = m.gas || null;
+  if (m.giNS) giNS = m.giNS;
+  bV = (baLut && giVol) ? giVol : null;
 
   const { src, detC, detU, detV, half, n, photons } = m;
   const iris = m.iris || half;
