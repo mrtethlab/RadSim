@@ -734,18 +734,25 @@ export function initFluoro(context) {
     F.flipV = !F.flipV; $('flFlipV').classList.toggle('on', F.flipV); blitFilm();
   });
   // ---- DSA / roadmap ----
+  // One lit button tells the truth about the display chain: Off, DSA or Roadmap.
+  const syncDsaSeg = () => {
+    $('flDsaOff')?.classList.toggle('on', !dsaOn && !roadOn);
+    $('flDsa')?.classList.toggle('on', dsaOn);
+    $('flRoad')?.classList.toggle('on', roadOn);
+  };
+  const dsaAllOff = () => {
+    dsaOn = false; roadOn = false; dsaMask = null; dsaAcc = null;
+    syncDsaSeg();
+    if (lastRaw) drawFrame(lastRaw, lastN);  // back to plain fluoro on the held image
+  };
+  $('flDsaOff')?.addEventListener('click', dsaAllOff);
   $('flDsa')?.addEventListener('click', () => {
-    dsaOn = !dsaOn;
-    $('flDsa').classList.toggle('on', dsaOn);
-    if (dsaOn) {
-      dsaN = nPx();                          // freeze the sampling tier for the whole run
-      dsaMask = null; dsaAcc = null; roadOn = false;
-      $('flRoad')?.classList.remove('on');
-      setStatus('DSA armed — the start of the next run takes the mask.');
-    } else {
-      dsaMask = null; dsaAcc = null;
-      if (lastRaw) drawFrame(lastRaw, lastN);  // back to plain fluoro on the held image
-    }
+    if (dsaOn) { dsaAllOff(); return; }
+    dsaOn = true;
+    dsaN = nPx();                            // freeze the sampling tier for the whole run
+    dsaMask = null; dsaAcc = null; roadOn = false;
+    syncDsaSeg();
+    setStatus('DSA armed — the start of the next run takes the mask.');
   });
   $('flRemask')?.addEventListener('click', () => {
     if (!dsaOn) return;
@@ -754,9 +761,9 @@ export function initFluoro(context) {
   });
   $('flRoad')?.addEventListener('click', () => {
     if (!roadmap) return;
-    roadOn = !roadOn;
-    $('flRoad').classList.toggle('on', roadOn);
-    if (roadOn && dsaOn) { dsaOn = false; dsaMask = null; $('flDsa').classList.remove('on'); }
+    if (roadOn) { dsaAllOff(); return; }
+    roadOn = true; dsaOn = false; dsaMask = null; dsaAcc = null;
+    syncDsaSeg();
     if (lastRaw) drawFrame(lastRaw, lastN);
   });
   // pixel shift: nudge the mask under the live frame (the real button for a patient who
