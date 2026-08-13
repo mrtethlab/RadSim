@@ -17,10 +17,11 @@ let F = null;            // ctx.S.fluoro
 // volume copy costs more memory than 7.5 pps is worth.
 let workers = [], busy = [], readyCount = 0, workerSub = null;
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
-let rig = null, stretcher = null, oecBody = null, oecCarm = null;
+let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null;
 
 // GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°.
-const OEC = { SID: 99, SRC_ISO: 60, FIELD: 23 };
+// LARM: boom pivot (the column axis) to the beam axis, cm — wig-wag's arc radius.
+const OEC = { SID: 99, SRC_ISO: 60, FIELD: 23, LARM: 94 };
 // Circular-field sampling, adaptive: measured on the hand, one worker does 192 px in
 // ~54 ms (≈18 pps) and the pool of two sustains 15 pps clean but only ~23 of 30. The
 // last third comes from sampling: 160 px is 0.69x the rays, and both sizes upscale into
@@ -52,19 +53,33 @@ const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] 
    long axis (z), tilt angulates craniocaudally. At 0/0 the beam points straight up —
    tube UNDER the patient, the standard C-arm setup (scatter goes at the floor, not the
    operator's eyes). */
-function beamDir() {
+// Beam direction before wig-wag: orbital about z, tilt about x, 0° = up.
+function beamDir0() {
   const th = F.orbital * Math.PI / 180, ti = F.tilt * Math.PI / 180;
   return [Math.sin(th) * Math.cos(ti), Math.cos(th) * Math.cos(ti), Math.sin(ti)];
+}
+// Wig-wag yaws the whole boom+C about the column's vertical axis.
+function beamDir() {
+  const d = beamDir0(), w = F.wig * Math.PI / 180, c = Math.cos(w), s = Math.sin(w);
+  return [d[0] * c + d[2] * s, d[1], -d[0] * s + d[2] * c];
 }
 /* The C-arm's isocentre is a point in the ROOM, not on the patient: it sits over the
    stretcher's centre at the subject's nominal mid-plane, and the offset sliders slide the
    PATIENT through the field. The first version tracked objOff here, which aimed the beam
    at the subject's centre wherever it went — panning changed nothing, which is exactly
    the bug the ABC exit test caught (lung and liver read identical technique). */
-function isoPoint() {
+function isoBase() {
   const vm = ctx.S.voxelModel;
   const ey = vm ? (vm.extentMM[1] / 2) / 10 : 5;
   return [0, ey, 0];
+}
+/* The column motions move the ISOCENTRE itself: lift raises the whole C (the patient
+   drops toward the source — magnification), extend slides the beam across the table,
+   wig-wag arcs it about the column axis LARM behind the beam. All three feed straight
+   into beamFrame(), so the image pans and magnifies for real, and ABC re-meters. */
+function isoPoint() {
+  const b = isoBase(), w = F.wig * Math.PI / 180, r = OEC.LARM + F.ext;
+  return [b[0] - OEC.LARM + Math.cos(w) * r, b[1] + F.lift, b[2] - Math.sin(w) * r];
 }
 function beamFrame() {
   const dir = beamDir(), iso = isoPoint();
@@ -304,6 +319,9 @@ function renderReadouts() {
   set('flPerfV', F.msAvg ? `${F.msAvg.toFixed(0)} ms · ${F.dropped} dropped` : '—');
   set('flOrbV', F.orbital + '°');
   set('flTiltV', F.tilt + '°');
+  set('flLiftV', F.lift + ' cm');
+  set('flExtV', (F.ext > 0 ? '+' : '') + F.ext + ' cm');
+  set('flWigV', F.wig + '°');
   set('flAkV', (F.akMGy < 10 ? F.akMGy.toFixed(2) : F.akMGy.toFixed(1)) + ' mGy');
   set('flAkRateV', (akPerPulseMGy() * F.pps * 60).toFixed(1) + ' mGy/min');
   set('flDapV', F.dapUGym2.toFixed(1) + ' uGy·m²');
@@ -338,23 +356,31 @@ function buildRig() {
   // is the fallback if the fetch fails.
   ctx.loadModelUrl?.(ctx.baseUrl + 'models/rigs/oec_rig.glb').then((g) => {
     g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
-    let carmNode = null;
-    g.traverse((o) => { if (!carmNode && o.name && o.name.toLowerCase().includes('carm')) carmNode = o; });
-    // scale from the BODY alone — the carm's pivot shift would skew a combined box
+    let carmNode = null, boomNode = null;
+    g.traverse((o) => {
+      const n = (o.name || '').toLowerCase();
+      if (!carmNode && n.includes('carm')) carmNode = o;
+      else if (!boomNode && n.includes('boom')) boomNode = o;
+    });
+    // scale from the BODY alone — the movable nodes' pivot shifts would skew a combined box
     if (carmNode) carmNode.removeFromParent();
+    if (boomNode) boomNode.removeFromParent();
     const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3());
     const sc = 180 / Math.max(size.x, size.y, size.z);   // tallest dimension -> ~1.8 m
     g.scale.setScalar(sc);
     g.visible = false;
     three.handGroup.parent.add(g);
     oecBody = g;
-    if (carmNode) {
-      oecCarm = new THREE.Group();
-      carmNode.scale.setScalar(sc);
-      oecCarm.add(carmNode);
-      oecCarm.visible = false;
-      three.handGroup.parent.add(oecCarm);
-    }
+    const wrap = (node) => {
+      const grp = new THREE.Group();
+      node.scale.setScalar(sc);
+      grp.add(node);
+      grp.visible = false;
+      three.handGroup.parent.add(grp);
+      return grp;
+    };
+    if (carmNode) oecCarm = wrap(carmNode);
+    if (boomNode) oecBoom = wrap(boomNode);
     fluoroSyncScene();
   }).catch(() => { /* the beam line remains */ });
   // the stretcher the subject lies on (the x-ray placement already lies flat at y≈0)
@@ -377,27 +403,45 @@ export function fluoroSyncScene() {
     // y ~ -0.45, II at y ~ +0.6, i.e. ~96 cm apart at this scale, which is the OEC's real
     // SID to within 3 cm. The throat midpoint (0.72, 0.07, 0) goes to the isocentre; no
     // rotation needed, the scanned machine already holds its beam upright.
-    const iso = isoPoint(), sc = oecBody.scale.x;
-    oecBody.position.set(iso[0] - 0.72 * sc, iso[1] - 0.07 * sc, iso[2]);
+    const b = isoBase(), sc = oecBody.scale.x;
+    oecBody.position.set(b[0] - 0.72 * sc, b[1] - 0.07 * sc, b[2]);
   }
   if (oecCarm) oecCarm.visible = on;
+  if (oecBoom) oecBoom.visible = on;
   // The x-ray rig belongs to the other room. Hiding is enough: ctSyncScene restores the
   // tube on every sync once the mode is no longer fluoro, so there is nothing to undo.
   if (on) {
     if (three.tube) three.tube.visible = false;
     if (three.lamp) three.lamp.intensity = 0;
     if (three.cr) three.cr.visible = false;
-    const iso = isoPoint();
+    const iso = isoPoint(), b = isoBase();
     rig.position.set(iso[0], iso[1], iso[2]);
-    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(...beamDir()));
+    // Compose the joint chain explicitly so the C keeps its roll: wig-wag yaw about the
+    // room's vertical axis, times the orbital/tilt rotation. (setFromUnitVectors on the
+    // final beam direction would pick an arbitrary twist once yaw is involved.)
+    const w = F.wig * Math.PI / 180;
+    const qw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), w);
+    const q0 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0),
+      new THREE.Vector3(...beamDir0()));
+    const q = qw.clone().multiply(q0);
     rig.quaternion.copy(q);
-    // The segmented C rotates about the same isocentre with the same quaternion — its
-    // local origin was pre-shifted to the throat centre at export, so position + rotate
-    // is the whole articulation. (The real OEC slides its C through the holder; rigid
-    // rotation about the iso is the same motion for the C itself, at the cost of the
-    // C visually leaving its holder at large angles.)
+    // The segmented C rotates about the (moving) isocentre — its local origin was
+    // pre-shifted to the throat centre at export, so position + rotate is the whole
+    // articulation. (The real OEC slides its C through the holder; rigid rotation
+    // about the iso is the same motion for the C itself, at the cost of the C
+    // visually leaving its holder at large orbital angles.)
     if (oecCarm) { oecCarm.position.set(iso[0], iso[1], iso[2]); oecCarm.quaternion.copy(q); }
+    // The boom pivots at the column axis (its local origin, LARM behind the beam):
+    // wig-wag yaws it, lift raises it, extend slides it along its own yawed axis, and
+    // tilt ROLLS it about its own long axis — the flip-flop pivot line runs along the
+    // boom through both the holder hub and the C's centre, so the roll is in place.
+    if (oecBoom) {
+      oecBoom.position.set(b[0] - OEC.LARM + Math.cos(w) * F.ext, b[1] + F.lift,
+        b[2] - Math.sin(w) * F.ext);
+      const qt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0),
+        F.tilt * Math.PI / 180);
+      oecBoom.quaternion.copy(qw).multiply(qt);
+    }
   }
 }
 
@@ -446,10 +490,11 @@ export function initFluoro(context) {
     $(id)?.addEventListener('input', (e) => {
       F[key] = parseFloat(e.target.value);
       renderReadouts();
-      if (key === 'orbital' || key === 'tilt') fluoroSyncScene();
+      if (['orbital', 'tilt', 'lift', 'ext', 'wig'].includes(key)) fluoroSyncScene();
     });
   };
   slide('flKv', 'kv'); slide('flMa', 'ma'); slide('flOrb', 'orbital'); slide('flTilt', 'tilt');
+  slide('flLift', 'lift'); slide('flExt', 'ext'); slide('flWig', 'wig');
   slide('flIris', 'iris');
   document.querySelectorAll('#flAbcSeg button').forEach((b) => {
     b.addEventListener('click', () => {

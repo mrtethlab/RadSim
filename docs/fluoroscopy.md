@@ -90,11 +90,15 @@ stays pristine for x-ray/CT; sampling resolution is governed by a drop-rate tier
 photogrammetry OEC (public/models/rigs/oec_rig.glb, 1.2 MB from the 8.6 MB OBJ) stands in
 the room with its C-throat aligned to the isocentre from orthographic mesh analysis — its
 beam housings sit 96 cm apart, the real machine's SID to within 3 cm. The scan's 821 fused
-fragments were segmented geometrically (`scripts/segment_oec.py`): the II and tube anchor
-the beam axis, the C's shell plates fall on an annulus about the throat centre, and the
-workstation box and cart column fail those fences — so the machine's OWN C, tube and II
-now swing with the orbital/tilt sliders while the cart stands still, with a faint cyan
-line marking the invisible beam.
+fragments were segmented geometrically (`scripts/segment_oec.py`) into THREE nodes: the
+C + tube + II (annulus about the throat centre plus beam-axis fences), the boom arm (the
+horizontal member reaching the flip-flop hub, pivoted at the column axis), and the static
+cart. The machine's own C swings with orbital/tilt; the boom yaws with wig-wag, rises
+with the column lift, slides with the boom extend, and ROLLS with tilt about its own long
+axis (the flip-flop line runs through both hub and arc centre). All three column motions
+move the isocentre itself, so lift magnifies and extend/wig-wag pan the live image — and
+the ABC re-meters as the beam crosses new anatomy. A faint cyan line marks the invisible
+beam.
 
 The tracer learns time-dependent *warps*: `VoxelPhantom` gets `setAnimTime(t)` and a list
 of regions; a sample inside a region's bounding box remaps its lookup coordinate before

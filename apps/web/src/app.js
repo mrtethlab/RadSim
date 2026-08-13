@@ -526,6 +526,9 @@ const S = {
   // ---- fluoroscopy (docs/fluoroscopy.md): the OEC C-arm and its pulse loop ----
   fluoro:{ machine:'oec', pps:15, kv:70, ma:2.0, pedal:false, lih:false,
            beamS:0, pulses:0, dropped:0, msAvg:0, orbital:0, tilt:0,
+           // column motions: lift raises the C (cm), extend slides the boom (cm),
+           // wig-wag swivels it about the column axis (deg) — all move the isocentre
+           lift:0, ext:0, wig:0,
            // Phase B: ABC curve parameter, collimator iris (fraction), mag mode, dose
            abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0,
            // Phase C: motion clocks (phases accumulated here; the worker is stateless)
