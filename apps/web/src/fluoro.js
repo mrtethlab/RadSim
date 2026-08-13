@@ -17,7 +17,7 @@ let F = null;            // ctx.S.fluoro
 // volume copy costs more memory than 7.5 pps is worth.
 let workers = [], busy = [], readyCount = 0, workerSub = null;
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
-let rig = null, stretcher = null, oecBody = null;
+let rig = null, stretcher = null, oecBody = null, oecCarm = null;
 
 // GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°.
 const OEC = { SID: 99, SRC_ISO: 60, FIELD: 23 };
@@ -319,38 +319,44 @@ function setStatus(msg) { const el = $('flStatus'); if (el) el.textContent = msg
 function buildRig() {
   const { THREE, three } = ctx;
   rig = new THREE.Group();
-  // With ML's real OEC mesh standing in the room, the primitive C is demoted to a BEAM
-  // INDICATOR: a translucent cyan arc + source/detector markers that rotate with the
-  // orbital and tilt sliders — a HUD for where the beam is, not a second machine. (The
-  // photogrammetry mesh is one fused body — 821 fragments, no articulable C — so the
-  // indicator is what makes the joint angles legible.)
-  const glow = new THREE.MeshBasicMaterial({ color: 0x35c6d6, transparent: true, opacity: 0.3,
+  // With the OEC's own C now articulating (below), the indicator shrinks to the one thing
+  // the mesh cannot show: the invisible beam itself — a faint cyan line from tube to II.
+  const glow = new THREE.MeshBasicMaterial({ color: 0x35c6d6, transparent: true, opacity: 0.16,
     depthWrite: false });
-  const c = new THREE.Mesh(new THREE.TorusGeometry(46, 1.1, 8, 48, Math.PI * 1.45), glow);
-  c.rotation.z = Math.PI * (0.5 - 0.725);
-  rig.add(c);
-  const tube = new THREE.Mesh(new THREE.ConeGeometry(6, 12, 18), glow);
-  tube.position.set(0, -42, 0); rig.add(tube);
-  const ii = new THREE.Mesh(new THREE.CylinderGeometry(11.5, 11.5, 2, 24), glow);
-  ii.position.set(0, 40, 0); rig.add(ii);
+  const beam = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 3.4, OEC.SID, 14), glow);
+  beam.position.set(0, (OEC.SID - 2 * OEC.SRC_ISO) / 2, 0);   // source below iso, II above
+  rig.add(beam);
   rig.visible = false;
   three.handGroup.parent.add(rig);
-  // The real machine: ML's photogrammetry model of the OEC (public/models/rigs/oec.glb,
-  // 50k triangles, one fused mesh). It stands as the machine BODY; the primitive C above
-  // stays as the ARTICULATING part, because the scan mesh cannot split its C from its
-  // cart (821 disconnected fragments). Loaded async; the primitives alone are a complete
-  // fallback if the fetch fails.
-  ctx.loadModelUrl?.(ctx.baseUrl + 'models/rigs/oec.glb').then((g) => {
-    oecBody = g;
+  // The real machine: ML's photogrammetry OEC, segmented in two (public/models/rigs/
+  // oec_rig.glb). The scan's 821 fused fragments were classified geometrically — the II
+  // and tube anchor the beam axis, the C's shell plates fall on an annulus about the
+  // throat centre (r 0.30–0.78 m), and the workstation box and cart column fail those
+  // fences — so the 'carm' node (13k faces: C + tube + II, pivot pre-shifted to the
+  // throat centre) rotates with the orbital/tilt sliders while the 'body' node (37k
+  // faces: cart, column, workstation) stands still. Loaded async; the beam line alone
+  // is the fallback if the fetch fails.
+  ctx.loadModelUrl?.(ctx.baseUrl + 'models/rigs/oec_rig.glb').then((g) => {
     g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
-    const box = new THREE.Box3().setFromObject(g);
-    const size = box.getSize(new THREE.Vector3());
+    let carmNode = null;
+    g.traverse((o) => { if (!carmNode && o.name && o.name.toLowerCase().includes('carm')) carmNode = o; });
+    // scale from the BODY alone — the carm's pivot shift would skew a combined box
+    if (carmNode) carmNode.removeFromParent();
+    const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3());
     const sc = 180 / Math.max(size.x, size.y, size.z);   // tallest dimension -> ~1.8 m
     g.scale.setScalar(sc);
     g.visible = false;
     three.handGroup.parent.add(g);
+    oecBody = g;
+    if (carmNode) {
+      oecCarm = new THREE.Group();
+      carmNode.scale.setScalar(sc);
+      oecCarm.add(carmNode);
+      oecCarm.visible = false;
+      three.handGroup.parent.add(oecCarm);
+    }
     fluoroSyncScene();
-  }).catch(() => { /* primitives remain */ });
+  }).catch(() => { /* the beam line remains */ });
   // the stretcher the subject lies on (the x-ray placement already lies flat at y≈0)
   stretcher = new THREE.Mesh(new THREE.BoxGeometry(55, 2.4, 210),
     new THREE.MeshStandardMaterial({ color: 0x3c4650, roughness: 0.85 }));
@@ -374,6 +380,7 @@ export function fluoroSyncScene() {
     const iso = isoPoint(), sc = oecBody.scale.x;
     oecBody.position.set(iso[0] - 0.72 * sc, iso[1] - 0.07 * sc, iso[2]);
   }
+  if (oecCarm) oecCarm.visible = on;
   // The x-ray rig belongs to the other room. Hiding is enough: ctSyncScene restores the
   // tube on every sync once the mode is no longer fluoro, so there is nothing to undo.
   if (on) {
@@ -385,6 +392,12 @@ export function fluoroSyncScene() {
     const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0),
       new THREE.Vector3(...beamDir()));
     rig.quaternion.copy(q);
+    // The segmented C rotates about the same isocentre with the same quaternion — its
+    // local origin was pre-shifted to the throat centre at export, so position + rotate
+    // is the whole articulation. (The real OEC slides its C through the holder; rigid
+    // rotation about the iso is the same motion for the C itself, at the cost of the
+    // C visually leaving its holder at large angles.)
+    if (oecCarm) { oecCarm.position.set(iso[0], iso[1], iso[2]); oecCarm.quaternion.copy(q); }
   }
 }
 

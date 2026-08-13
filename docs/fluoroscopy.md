@@ -87,11 +87,14 @@ on the shared tracer cost 5× the raycast (9M uninlinable closure calls per ches
 the worker carries its own specialised DDA with the warp inlined and `VoxelPhantom.trace`
 stays pristine for x-ray/CT; sampling resolution is governed by a drop-rate tier controller
 (192→112 px) because no single constant serves both a hand and an animated chest; and ML's
-photogrammetry OEC (public/models/rigs/oec.glb, 1.2 MB from the 8.6 MB OBJ) stands in the
-room with its C-throat aligned to the isocentre from orthographic mesh analysis — its beam
-housings sit 96 cm apart, the real machine's SID to within 3 cm. The scanned mesh is one
-fused body, so the articulating joints are shown by a translucent beam-indicator arc that
-swings with the orbital/tilt sliders.
+photogrammetry OEC (public/models/rigs/oec_rig.glb, 1.2 MB from the 8.6 MB OBJ) stands in
+the room with its C-throat aligned to the isocentre from orthographic mesh analysis — its
+beam housings sit 96 cm apart, the real machine's SID to within 3 cm. The scan's 821 fused
+fragments were segmented geometrically (`scripts/segment_oec.py`): the II and tube anchor
+the beam axis, the C's shell plates fall on an annulus about the throat centre, and the
+workstation box and cart column fail those fences — so the machine's OWN C, tube and II
+now swing with the orbital/tilt sliders while the cart stands still, with a faint cyan
+line marking the invisible beam.
 
 The tracer learns time-dependent *warps*: `VoxelPhantom` gets `setAnimTime(t)` and a list
 of regions; a sample inside a region's bounding box remaps its lookup coordinate before
