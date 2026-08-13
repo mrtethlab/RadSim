@@ -141,7 +141,7 @@ audits, x-ray and CT modes, the preset pipeline, the mobile pager architecture, 
 | Phase | Scope | Exit test |
 | --- | --- | --- |
 | **A — pulse loop** ✅ | fluoro mode shell, OEC scene, pedal, 4 pulse rates, worker raycaster, **budget measurements** | screen the hand at all four rates; measured ms/pulse table in this doc |
-| **B — image chain** | ABC loop + manual override, LIH, per-pulse noise, collimation, dose/timer/5-min alarm; mag modes if budget allows | pan chest→abdomen and watch kV/mA track; dose rate visibly scales with pulse rate |
+| **B — image chain** ✅ | ABC loop + manual override, LIH, per-pulse noise, collimation, dose/timer/5-min alarm; mag modes | **passed**: lung 67 kV/1.1 mA → abdomen 110 kV/10 mA (rails, as real machines do on thick views); dose rate ×4.0 from 7.5→30 pps; iris halving cuts DAP/AK exactly 4.0×; alarm fires at 300 s and clears on reset |
 | **C — animation** | build_anim.py, tracer warps, lung µ modulation; breathing + heartbeat (chest/CAP), swallow (H&N), peristalsis (CAP); breath-hold | visible motion at 15 pps; HR slider changes the beat; breath-hold freezes the dome |
 | **D — barium** | BARIUM panel docked in fluoro; Swallow button = bolus + wall wave together | a swallow screened at 15 pps, LIH spot of the filled stomach |
 | **E — vascular** | DSA mask/subtract/pixel-shift/remask, roadmap overlay, per-site contrast | femoral-injection iliac DSA on CAP; breathing ruins it; breath-hold fixes it |

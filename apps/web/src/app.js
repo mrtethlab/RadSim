@@ -525,7 +525,9 @@ const S = {
            gasMl:0, gasLut:null },
   // ---- fluoroscopy (docs/fluoroscopy.md): the OEC C-arm and its pulse loop ----
   fluoro:{ machine:'oec', pps:15, kv:70, ma:2.0, pedal:false, lih:false,
-           beamS:0, pulses:0, dropped:0, msAvg:0, orbital:0, tilt:0 },
+           beamS:0, pulses:0, dropped:0, msAvg:0, orbital:0, tilt:0,
+           // Phase B: ABC curve parameter, collimator iris (fraction), mag mode, dose
+           abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0 },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable

@@ -949,12 +949,33 @@
             <button data-pps="15" class="on">15</button>
             <button data-pps="30">30</button>
           </div>
+          <div class="row" style="margin-top:10px"><div class="rl">Brightness control</div></div>
+          <div class="seg" id="flAbcSeg">
+            <button data-abc="1" class="on">ABC</button>
+            <button data-abc="0">Manual</button>
+          </div>
           <div class="row" style="margin-top:10px"><div class="rl">kV</div></div>
           <input type="range" id="flKv" min="50" max="120" value="70" step="1">
           <div class="row" style="margin-top:6px"><div class="rl">mA</div></div>
           <input type="range" id="flMa" min="0.5" max="10" value="2" step="0.5">
-          <div class="ctrst-note">Manual technique for now &mdash; the ABC loop that drives
-            these for you is Phase B. Watch the noise change as you trade mA for kV.</div>
+          <div class="ctrst-note">ABC is the fluoroscopic AEC: a closed loop on the detector
+            that drives kV and mA along the machine's fluoro curve, every pulse. Pan from lung
+            to abdomen and watch the readouts climb &mdash; and the contrast fall as the kV
+            takes it. Manual hands you the sliders and the consequences.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Dose</div>
+        <div class="bod">
+          <div class="flro">
+            <div><div class="k">Air kerma</div><div class="v" id="flAkV">0.00 mGy</div></div>
+            <div><div class="k">Rate</div><div class="v" id="flAkRateV">&mdash;</div></div>
+            <div><div class="k">DAP</div><div class="v" id="flDapV">0.0 uGy&middot;m&sup2;</div></div>
+            <div><div class="k">&nbsp;</div><button class="fldose-rst" id="flDoseReset">reset</button></div>
+          </div>
+          <div class="ctrst-note">Beam-on time alarms at every five minutes, as the real
+            machine must. The iris shrinks DAP without touching air kerma &mdash; collimation
+            protects everything the beam no longer crosses.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -966,8 +987,18 @@
           <div class="row" style="margin-top:8px"><div class="rl">Tilt <small>cran / caud</small></div>
             <div class="valchip" id="flTiltV">0&deg;</div></div>
           <input type="range" id="flTilt" min="-45" max="45" value="0" step="1">
+          <div class="row" style="margin-top:10px"><div class="rl">Iris <small>collimation</small></div>
+            <div class="valchip" id="flIrisV">100 %</div></div>
+          <input type="range" id="flIris" min="0.3" max="1" value="1" step="0.05">
+          <div class="row" style="margin-top:8px"><div class="rl">Mag <small>II field</small></div>
+            <div class="valchip" id="flMagV">9&Prime;</div></div>
+          <div class="seg" id="flMagSeg">
+            <button data-mag="0" class="on">9&Prime;</button>
+            <button data-mag="1">6&Prime;</button>
+            <button data-mag="2">4.5&Prime;</button>
+          </div>
           <div class="ctrst-note">SID is fixed at 99 cm on the OEC &mdash; the C moves, the
-            patient does not. Slide the subject with the offset sliders opposite.</div>
+            patient does not. Mag trades field for sharpness and pays in dose rate.</div>
         </div>
       </div>
       <div class="expose fl-only" id="flPedalRow">

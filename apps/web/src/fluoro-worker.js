@@ -53,16 +53,25 @@ onmessage = (e) => {
   if (m.kv !== binKv) setBins(m.kv);
 
   const { src, detC, detU, detV, half, n, photons } = m;
+  const iris = m.iris || half;             // collimator iris radius; beam beyond it is cut
   seed = m.seed || seed;
   const img = new Float32Array(n * n);
   const nm = mu.length;
   const L0 = [src[0], src[1], src[2]];
+  // ABC reads the mean transmission of the central disc BEFORE noise — the closed loop
+  // wants the signal, not one pulse's mottle
+  let roiSum = 0, roiCnt = 0;
+  const roiR2 = (0.30 * half) * (0.30 * half);
+  const cutR = Math.min(half, iris);
   for (let j = 0; j < n; j++) {
     const v = ((j + 0.5) / n - 0.5) * 2 * half;
     for (let i = 0; i < n; i++) {
       const u = ((i + 0.5) / n - 0.5) * 2 * half;
-      // circular II field: outside the circle there is no detector, flagged -1
-      if (u * u + v * v > half * half) { img[j * n + i] = -1; continue; }
+      // circular II field: outside the circle there is no detector; inside it but outside
+      // the IRIS the beam never left the collimator — both draw black, but the iris is the
+      // one that saves the patient dose
+      const r2 = u * u + v * v;
+      if (r2 > cutR * cutR) { img[j * n + i] = -1; continue; }
       const px = detC[0] + u * detU[0] + v * detV[0];
       const py = detC[1] + u * detU[1] + v * detV[1];
       const pz = detC[2] + u * detU[2] + v * detV[2];
@@ -75,8 +84,10 @@ onmessage = (e) => {
         for (let k = 1; k < nm; k++) { const l = L[k]; if (l) a += mu[k][b] * l; }
         T += binW[b] * Math.exp(-a);
       }
+      if (r2 < roiR2) { roiSum += T; roiCnt++; }
       img[j * n + i] = photons > 0 ? poisson(photons * T) / photons : T;
     }
   }
-  postMessage({ type: 'frame', img, ms: performance.now() - t0, id: m.id }, [img.buffer]);
+  postMessage({ type: 'frame', img, ms: performance.now() - t0, id: m.id,
+    roi: roiCnt ? roiSum / roiCnt : 0, photons }, [img.buffer]);
 };

@@ -42,10 +42,15 @@ function beamDir() {
   const th = F.orbital * Math.PI / 180, ti = F.tilt * Math.PI / 180;
   return [Math.sin(th) * Math.cos(ti), Math.cos(th) * Math.cos(ti), Math.sin(ti)];
 }
+/* The C-arm's isocentre is a point in the ROOM, not on the patient: it sits over the
+   stretcher's centre at the subject's nominal mid-plane, and the offset sliders slide the
+   PATIENT through the field. The first version tracked objOff here, which aimed the beam
+   at the subject's centre wherever it went — panning changed nothing, which is exactly
+   the bug the ABC exit test caught (lung and liver read identical technique). */
 function isoPoint() {
-  const S = ctx.S, vm = S.voxelModel;
+  const vm = ctx.S.voxelModel;
   const ey = vm ? (vm.extentMM[1] / 2) / 10 : 5;
-  return [S.objOff.x, ey + S.objOff.y, S.objOff.z];
+  return [0, ey, 0];
 }
 function beamFrame() {
   const dir = beamDir(), iso = isoPoint();
@@ -81,6 +86,7 @@ function ensureWorker() {
       if (m.type === 'frame') {
         busy[slot] = false;
         F.msAvg = F.msAvg ? 0.85 * F.msAvg + 0.15 * m.ms : m.ms;
+        abcStep(m.roi, m.photons);           // the next pulse fires at the adjusted technique
         if (m.id > lastDrawn) {              // a slower older pulse never overdraws a newer one
           lastDrawn = m.id;
           drawFrame(m.img, Math.sqrt(m.img.length) | 0);
@@ -100,10 +106,78 @@ function ensureWorker() {
 
 /* Per-pulse photon budget: fluoro runs ~5-10 ms pulses at a few mA — three orders of
    magnitude under a radiograph, which is where the mottle comes from. Reference: 400
-   photons/pixel at 70 kV / 2 mA / 8 ms; kV² tracks tube output. Phase B calibrates
-   against the main spectrum; Phase A needs the noise CHARACTER, not absolute dose. */
+   photons/pixel at 70 kV / 2 mA / 8 ms; kV² tracks tube output. */
 function photonsPerPulse() {
-  return 400 * (F.ma / 2) * Math.pow(F.kv / 70, 2);
+  // Reference 1300 photons/pixel at 70 kV / 2 mA: set so that RAIL technique (110 kV,
+  // 10 mA) detects ~60/pixel through an adult abdomen (T ~ 0.4 %) — the thickest thing
+  // the ABC must be able to serve. 400, the first guess, left the loop railed with the
+  // detector still starving through any torso.
+  return 1300 * (F.ma / 2) * Math.pow(F.kv / 70, 2);
+}
+
+/* ---- ABC: the fluoroscopic sibling of the AEC ----------------------------------------
+   A per-pulse closed loop on the detector's central ROI, driving technique along the
+   machine's FLUORO CURVE — one parameter q from (50 kV, 0.5 mA) to (110 kV, 10 mA),
+   kV-weighted first the way GE tunes it. Pan from lung to abdomen and q climbs until the
+   detector sees its target again; park over the spine and watch the kV take the contrast
+   with it. That trade IS the lesson, and it is why the console shows kV/mA moving on
+   their own. */
+// Calibrated against what the beam model can actually deliver: mid-curve technique over a
+// torso detects ~40-60 photons/pixel (emitted x transmission), a hand floors the curve.
+// 340 — the first guess — was unreachable through 20 cm of tissue, so the loop railed at
+// 110 kV / 10 mA everywhere and the pan test showed no difference between lung and liver.
+const ABC_TARGET = 45;                      // detected photons/pixel the loop defends
+function abcApply() {
+  const q = F.q;
+  F.kv = Math.round(52 + 58 * q);
+  F.ma = Math.round((0.5 + 9.5 * q * q) * 10) / 10;
+}
+function abcStep(roi, photons) {
+  if (!F.abc || !F.pedal) return;
+  const meas = photons * roi;               // what the detector actually collected
+  if (meas <= 0) return;
+  // log-domain proportional step: the full curve spans ~e^6 of detected signal, and a
+  // gain of 0.3 settles chest->abdomen in four or five pulses without hunting
+  F.q = Math.max(0, Math.min(1, F.q + 0.3 * Math.log(ABC_TARGET / meas) / 6));
+  abcApply();
+}
+
+/* ---- dose ----------------------------------------------------------------------------
+   Reference-point air kerma modelled on a mid-size C-arm: ~12 mGy/min at 70 kV / 2 mA /
+   15 pps, scaling with tube output (kV^2.5 x mA), pulse count, and the mag factor (a
+   smaller II field needs more input dose for the same brightness). DAP adds the field
+   area at the patient, which is what the iris exists to shrink. */
+function fieldCm() { return [23, 15, 11][F.mag] || 23; }
+function irisCm() { return (fieldCm() / 2) * F.iris; }
+function akPerPulseMGy() {
+  const mag = Math.pow(OEC.FIELD / fieldCm(), 2);
+  return (12 / (60 * 15)) * (F.ma / 2) * Math.pow(F.kv / 70, 2.5) * mag;
+}
+function dosePulse() {
+  const ak = akPerPulseMGy();
+  F.akMGy += ak;
+  // field area at the patient entrance (~0.6 of the detector-plane iris), in m^2
+  const r = irisCm() * 0.6 / 100;
+  F.dapUGym2 += ak * 1000 * Math.PI * r * r;
+}
+
+/* The 5-minute alarm every real machine mandates: three beeps and a flashing timer at
+   each multiple, acknowledged by the dose-reset button (between-patient reset). */
+let alarmAt = 300;
+function doseAlarm(beamS) {
+  if (beamS < alarmAt) return;
+  alarmAt += 300;
+  ctx.$('flBeamV')?.classList.add('alarm');
+  try {
+    const ac = new (window.AudioContext || window.webkitAudioContext)();
+    for (let i = 0; i < 3; i++) {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = 880; o.connect(g); g.connect(ac.destination);
+      g.gain.setValueAtTime(0.12, ac.currentTime + i * 0.35);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + i * 0.35 + 0.22);
+      o.start(ac.currentTime + i * 0.35); o.stop(ac.currentTime + i * 0.35 + 0.25);
+    }
+  } catch (err) { /* no audio context — the flash still shows */ }
 }
 
 function firePulse() {
@@ -112,10 +186,11 @@ function firePulse() {
   if (slot < 0) { F.dropped++; renderReadouts(); return; }
   busy[slot] = true;
   F.pulses++;
+  dosePulse();
   const g = beamFrame(), pose = ctx.phantomPose();
   workers[slot].postMessage({ type: 'pulse', id: ++pulseId, kv: F.kv, photons: photonsPerPulse(),
-    src: g.src, detC: g.detC, detU: g.detU, detV: g.detV, half: g.half, n: nPx(),
-    rot: pose.rot, center: pose.center, seed: (Math.random() * 1e9) | 0 });
+    src: g.src, detC: g.detC, detU: g.detU, detV: g.detV, half: fieldCm() / 2, iris: irisCm(),
+    n: nPx(), rot: pose.rot, center: pose.center, seed: (Math.random() * 1e9) | 0 });
 }
 
 /* ---- display ------------------------------------------------------------- */
@@ -182,6 +257,14 @@ function renderReadouts() {
   set('flPerfV', F.msAvg ? `${F.msAvg.toFixed(0)} ms · ${F.dropped} dropped` : '—');
   set('flOrbV', F.orbital + '°');
   set('flTiltV', F.tilt + '°');
+  set('flAkV', (F.akMGy < 10 ? F.akMGy.toFixed(2) : F.akMGy.toFixed(1)) + ' mGy');
+  set('flAkRateV', (akPerPulseMGy() * F.pps * 60).toFixed(1) + ' mGy/min');
+  set('flDapV', F.dapUGym2.toFixed(1) + ' uGy·m²');
+  set('flIrisV', Math.round(F.iris * 100) + ' %');
+  set('flMagV', ['9"', '6"', '4.5"'][F.mag]);
+  const kvS = $('flKv'), maS = $('flMa');
+  if (F.abc) { if (kvS) kvS.value = F.kv; if (maS) maS.value = F.ma; }
+  doseAlarm(beam);
 }
 function setStatus(msg) { const el = $('flStatus'); if (el) el.textContent = msg; }
 
@@ -269,9 +352,10 @@ export function initFluoro(context) {
       F.pps = parseFloat(b.dataset.pps);
       document.querySelectorAll('#flPpsSeg button').forEach((x) => x.classList.toggle('on', x === b));
       if (F.pedal) { clearInterval(timer); timer = setInterval(firePulse, 1000 / F.pps); }
+      renderReadouts();          // the dose RATE depends on pps even while the beam is off
     });
   });
-  const slide = (id, key, chip, fmt) => {
+  const slide = (id, key) => {
     $(id)?.addEventListener('input', (e) => {
       F[key] = parseFloat(e.target.value);
       renderReadouts();
@@ -279,6 +363,35 @@ export function initFluoro(context) {
     });
   };
   slide('flKv', 'kv'); slide('flMa', 'ma'); slide('flOrb', 'orbital'); slide('flTilt', 'tilt');
+  slide('flIris', 'iris');
+  document.querySelectorAll('#flAbcSeg button').forEach((b) => {
+    b.addEventListener('click', () => {
+      F.abc = b.dataset.abc === '1';
+      document.querySelectorAll('#flAbcSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      const kvEl = $('flKv'), maEl = $('flMa');
+      if (kvEl) kvEl.disabled = F.abc;
+      if (maEl) maEl.disabled = F.abc;
+      if (!F.abc) { F.kv = +kvEl.value; F.ma = +maEl.value; }
+      renderReadouts();
+    });
+  });
+  document.querySelectorAll('#flMagSeg button').forEach((b) => {
+    b.addEventListener('click', () => {
+      F.mag = +b.dataset.mag;
+      document.querySelectorAll('#flMagSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      renderReadouts();
+    });
+  });
+  $('flDoseReset')?.addEventListener('click', () => {
+    F.akMGy = 0; F.dapUGym2 = 0; F.beamS = 0; alarmAt = 300;
+    $('flBeamV')?.classList.remove('alarm');
+    renderReadouts();
+  });
+  // ABC starts ON: the sliders are the override, not the default
+  const kvEl = $('flKv'), maEl = $('flMa');
+  if (kvEl) kvEl.disabled = true;
+  if (maEl) maEl.disabled = true;
+  abcApply();
   // a subject change invalidates the worker's copy of the volume
   const sel = $('subjectSel');
   sel?.addEventListener('change', () => { workerSub = null; });
