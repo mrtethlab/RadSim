@@ -1514,3 +1514,4 @@ body.mode-fluoro .flkeep{display:block}   /* subject offsets are positioning, no
 .fldose-rst:hover{color:var(--txt); border-color:#6b8aa4}
 .flro .v.alarm{color:var(--red); animation:flalarm .7s ease-in-out infinite}
 @keyframes flalarm{0%,100%{opacity:1}50%{opacity:.35}}
+body.mode-fluoro .mini #flHold.on{background:#3a2a0e; border-color:#ffb23e; color:#ffd9b0}

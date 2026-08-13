@@ -78,10 +78,20 @@ camera — it is a chain of tiny exposures.
 
 ## 3. Animated anatomy
 
-**No new volumes.** The existing chest, CAP and head/neck models gain an `anim.json` built
-by a new `build_anim.py` from data already in the segmentation — the moving-region geometry
-is derivable, and the volumes themselves are untouched (a 10-frame 4D chest would be
-400 MB; this is ~5 KB per model).
+**No new volumes — and, as built, no new FILES either.** The plan's `build_anim.py` +
+`anim.json` turned out unnecessary: the pulse worker already holds the volume, so one scan
+pass at init derives every moving region from the material ids themselves (~100 ms per
+subject, stride-2). Zero build artifacts, and the motion geometry cannot drift from the
+data it animates. Implementation notes from the build, all measured: a per-cell warp hook
+on the shared tracer cost 5× the raycast (9M uninlinable closure calls per chest pulse), so
+the worker carries its own specialised DDA with the warp inlined and `VoxelPhantom.trace`
+stays pristine for x-ray/CT; sampling resolution is governed by a drop-rate tier controller
+(192→112 px) because no single constant serves both a hand and an animated chest; and ML's
+photogrammetry OEC (public/models/rigs/oec.glb, 1.2 MB from the 8.6 MB OBJ) stands in the
+room with its C-throat aligned to the isocentre from orthographic mesh analysis — its beam
+housings sit 96 cm apart, the real machine's SID to within 3 cm. The scanned mesh is one
+fused body, so the articulating joints are shown by a translucent beam-indicator arc that
+swings with the orbital/tilt sliders.
 
 The tracer learns time-dependent *warps*: `VoxelPhantom` gets `setAnimTime(t)` and a list
 of regions; a sample inside a region's bounding box remaps its lookup coordinate before
@@ -142,7 +152,7 @@ audits, x-ray and CT modes, the preset pipeline, the mobile pager architecture, 
 | --- | --- | --- |
 | **A — pulse loop** ✅ | fluoro mode shell, OEC scene, pedal, 4 pulse rates, worker raycaster, **budget measurements** | screen the hand at all four rates; measured ms/pulse table in this doc |
 | **B — image chain** ✅ | ABC loop + manual override, LIH, per-pulse noise, collimation, dose/timer/5-min alarm; mag modes | **passed**: lung 67 kV/1.1 mA → abdomen 110 kV/10 mA (rails, as real machines do on thick views); dose rate ×4.0 from 7.5→30 pps; iris halving cuts DAP/AK exactly 4.0×; alarm fires at 300 s and clears on reset |
-| **C — animation** | build_anim.py, tracer warps, lung µ modulation; breathing + heartbeat (chest/CAP), swallow (H&N), peristalsis (CAP); breath-hold | visible motion at 15 pps; HR slider changes the beat; breath-hold freezes the dome |
+| **C — animation** ✅ | tracer warps, lung µ modulation; breathing + heartbeat (chest/CAP), swallow, stomach peristalsis; breath-hold; the real OEC mesh in the room | **passed**: with a fixed noise seed, breath-hold gives bit-identical frames (Δ = 0.00) while breathing/heartbeat/swallow each produce strong frame-to-frame differences; animated chest delivers 58/61 pulses at 15 pps and 115/122 at 30 |
 | **D — barium** | BARIUM panel docked in fluoro; Swallow button = bolus + wall wave together | a swallow screened at 15 pps, LIH spot of the filled stomach |
 | **E — vascular** | DSA mask/subtract/pixel-shift/remask, roadmap overlay, per-site contrast | femoral-injection iliac DSA on CAP; breathing ruins it; breath-hold fixes it |
 | **F — Artis Zee** | second rig, table float/height, rectangular FD, SID travel | same exam on the table machine |

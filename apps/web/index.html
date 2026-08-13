@@ -1001,6 +1001,22 @@
             patient does not. Mag trades field for sharpness and pays in dose rate.</div>
         </div>
       </div>
+      <div class="grp fl-only">
+        <div class="lab">Motion</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Heart rate</div>
+            <div class="valchip" id="flHrV">72 bpm</div></div>
+          <input type="range" id="flHr" min="40" max="140" value="72" step="2">
+          <div class="mini" style="margin-top:10px">
+            <button id="flHold">&#10074;&#10074; Breath hold</button>
+            <button id="flSwallow">&#10515; Swallow</button>
+          </div>
+          <div class="ctrst-note">The motion is derived from this subject's own segmentation
+            &mdash; the lungs give the diaphragm, the heart its beat, the oesophagus and
+            stomach their walls. Breath hold stops the dome mid-cycle (and will one day
+            rescue your DSA); everything else keeps its own clock.</div>
+        </div>
+      </div>
       <div class="expose fl-only" id="flPedalRow">
         <button class="flpedal" id="flPedal">&#9679; FLUORO &mdash; hold</button>
         <div class="note" style="margin-top:8px; text-align:center">Press and hold (or hold

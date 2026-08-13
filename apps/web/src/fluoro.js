@@ -17,7 +17,7 @@ let F = null;            // ctx.S.fluoro
 // volume copy costs more memory than 7.5 pps is worth.
 let workers = [], busy = [], readyCount = 0, workerSub = null;
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
-let rig = null, stretcher = null;
+let rig = null, stretcher = null, oecBody = null;
 
 // GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°.
 const OEC = { SID: 99, SRC_ISO: 60, FIELD: 23 };
@@ -26,7 +26,21 @@ const OEC = { SID: 99, SRC_ISO: 60, FIELD: 23 };
 // last third comes from sampling: 160 px is 0.69x the rays, and both sizes upscale into
 // the same monitor, so 30 pps trades a little sharpness it was going to lose to per-pulse
 // mottle anyway. 3/7.5/15 keep the full 192.
-const nPx = () => (F.pps >= 30 ? 160 : 192);
+// Sampling adapts to the SUBJECT, not just the rate: a hand pulse costs ~54 ms at
+// 192 px, an animated chest ~140 — no single constant serves both. A tier controller
+// watches the drop rate: misses step the resolution down a notch, sustained headroom
+// steps it back up. Fluoro's per-pulse mottle hides what the tiers give up.
+const N_TIERS = [192, 160, 136, 112];
+let nTier = 0, tierPulses = 0, tierDrops = 0;
+const nPx = () => N_TIERS[nTier];
+function tierTick(dropped) {
+  tierPulses++; if (dropped) tierDrops++;
+  if (tierPulses < 24) return;
+  const r = tierDrops / tierPulses;
+  if (r > 0.12 && nTier < N_TIERS.length - 1) nTier++;
+  else if (r === 0 && nTier > 0 && F.msAvg * F.pps / 1000 < poolSize() * 0.55) nTier--;
+  tierPulses = 0; tierDrops = 0;
+}
 
 const $ = (id) => ctx.$(id);
 
@@ -65,7 +79,7 @@ function beamFrame() {
 }
 
 /* ---- the worker ---------------------------------------------------------- */
-function poolSize() { return document.body.classList.contains('mobile') ? 1 : 2; }
+function poolSize() { return document.body.classList.contains('mobile') ? 1 : 3; }
 function ensureWorker() {
   const S = ctx.S, vm = S.voxelModel;
   if (!vm || !vm.data) { setStatus('This subject renders on the GPU backend only — pick a browser subject.'); return false; }
@@ -80,7 +94,12 @@ function ensureWorker() {
       const m = e.data;
       if (m.type === 'ready') {
         readyCount++;
-        if (readyCount === workers.length) setStatus('Ready — hold the pedal (or Space) to screen.');
+        if (m.anim) F.motions = m.anim;      // what this subject can DO: br, heart, oeso, sto
+        if (readyCount === workers.length) {
+          const mo = (F.motions || []).length
+            ? ' Motion: ' + F.motions.join(', ') + '.' : ' This subject holds still.';
+          setStatus('Ready — hold the pedal (or Space) to screen.' + mo);
+        }
         return;
       }
       if (m.type === 'frame') {
@@ -96,8 +115,8 @@ function ensureWorker() {
     };
     // the volume is CLONED into each worker (no SharedArrayBuffer without COOP/COEP,
     // which GitHub Pages cannot set) — per subject, then pulses carry only geometry
-    w.postMessage({ type: 'init', dims: vm.dims, vs: vm.vs, data: vm.data,
-      center: pose.center, flip: pose.flip, rot: pose.rot });
+    w.postMessage({ type: 'init', dims: vm.dims, vs: vm.vs, vsMM: vm.spacingMM,
+      data: vm.data, center: pose.center, flip: pose.flip, rot: pose.rot });
     workers.push(w); busy.push(false);
   }
   setStatus('Loading the subject into the pulse workers…');
@@ -180,17 +199,36 @@ function doseAlarm(beamS) {
   } catch (err) { /* no audio context — the flash still shows */ }
 }
 
+/* Motion phases live HERE and the worker stays stateless — which is the whole trick of
+   breath-hold: the breathing clock simply stops advancing while every other rhythm keeps
+   its own time. Quiet breathing at 14/min; the heart at whatever HR says; a swallow is an
+   event with a timestamp, not a rhythm. */
+let lastPulseAt = 0;
+function animTick() {
+  const now = performance.now() / 1000;
+  const dt = Math.min(lastPulseAt ? now - lastPulseAt : 0, 0.5);
+  lastPulseAt = now;
+  if (!F.hold) F.brPhase = (F.brPhase + dt / 4.3) % 1;
+  F.cardPhase = (F.cardPhase + dt * F.hr / 60) % 1;
+  F.periT += dt;
+  const sw = F.swallowAt ? now - F.swallowAt : -1;
+  if (sw > 2) F.swallowAt = 0;
+  return { br: F.brPhase, card: F.cardPhase, peri: F.periT, sw };
+}
+
 function firePulse() {
   if (readyCount !== workers.length || !workers.length) { ensureWorker(); return; }
   const slot = busy.indexOf(false);
-  if (slot < 0) { F.dropped++; renderReadouts(); return; }
+  if (slot < 0) { F.dropped++; tierTick(true); renderReadouts(); return; }
+  tierTick(false);
   busy[slot] = true;
   F.pulses++;
   dosePulse();
   const g = beamFrame(), pose = ctx.phantomPose();
   workers[slot].postMessage({ type: 'pulse', id: ++pulseId, kv: F.kv, photons: photonsPerPulse(),
     src: g.src, detC: g.detC, detU: g.detU, detV: g.detV, half: fieldCm() / 2, iris: irisCm(),
-    n: nPx(), rot: pose.rot, center: pose.center, seed: (Math.random() * 1e9) | 0 });
+    n: nPx(), rot: pose.rot, center: pose.center, anim: animTick(),
+    seed: F.fixedSeed || (Math.random() * 1e9) | 0 });
 }
 
 /* ---- display ------------------------------------------------------------- */
@@ -237,6 +275,15 @@ function pedalDown() {
   firePulse();
   renderReadouts();
 }
+
+// dev probe: where is the rig?
+if (typeof window !== 'undefined') window.__flRigObj = () => ({ rig, oecBody, stretcher });
+if (typeof window !== 'undefined') window.__flRig = () => ({
+  rig: rig && rig.visible,
+  body: oecBody && { v: oecBody.visible, s: +oecBody.scale.x.toFixed(3),
+    p: oecBody.position.toArray().map((x) => +x.toFixed(1)),
+    box: new ctx.THREE.Box3().setFromObject(oecBody).getSize(new ctx.THREE.Vector3()).toArray().map((x) => +x.toFixed(1)) },
+});
 function pedalUp() {
   if (!F.pedal) return;
   F.pedal = false;
@@ -272,22 +319,38 @@ function setStatus(msg) { const el = $('flStatus'); if (el) el.textContent = msg
 function buildRig() {
   const { THREE, three } = ctx;
   rig = new THREE.Group();
-  const grey = new THREE.MeshStandardMaterial({ color: 0xd8dade, roughness: 0.6 });
-  const dark = new THREE.MeshStandardMaterial({ color: 0x2a2e34, roughness: 0.7 });
-  // the C: a torus arc in the orbital plane, beam along +y when unrotated
-  const c = new THREE.Mesh(new THREE.TorusGeometry(46, 3.4, 12, 48, Math.PI * 1.45), grey);
-  c.rotation.z = Math.PI * (0.5 - 0.725);           // centre the arc gap on -x (the throat)
+  // With ML's real OEC mesh standing in the room, the primitive C is demoted to a BEAM
+  // INDICATOR: a translucent cyan arc + source/detector markers that rotate with the
+  // orbital and tilt sliders — a HUD for where the beam is, not a second machine. (The
+  // photogrammetry mesh is one fused body — 821 fragments, no articulable C — so the
+  // indicator is what makes the joint angles legible.)
+  const glow = new THREE.MeshBasicMaterial({ color: 0x35c6d6, transparent: true, opacity: 0.3,
+    depthWrite: false });
+  const c = new THREE.Mesh(new THREE.TorusGeometry(46, 1.1, 8, 48, Math.PI * 1.45), glow);
+  c.rotation.z = Math.PI * (0.5 - 0.725);
   rig.add(c);
-  // tube housing at the bottom of the C, image intensifier tower at the top
-  const tube = new THREE.Mesh(new THREE.BoxGeometry(16, 12, 16), dark);
-  tube.position.set(0, -46, 0); rig.add(tube);
-  const ii = new THREE.Mesh(new THREE.CylinderGeometry(13, 11, 22, 24), grey);
-  ii.position.set(0, 46, 0); rig.add(ii);
-  const face = new THREE.Mesh(new THREE.CylinderGeometry(11.5, 11.5, 1.2, 24),
-    new THREE.MeshStandardMaterial({ color: 0x10161c, roughness: 0.3 }));
-  face.position.set(0, 34.6, 0); rig.add(face);
+  const tube = new THREE.Mesh(new THREE.ConeGeometry(6, 12, 18), glow);
+  tube.position.set(0, -42, 0); rig.add(tube);
+  const ii = new THREE.Mesh(new THREE.CylinderGeometry(11.5, 11.5, 2, 24), glow);
+  ii.position.set(0, 40, 0); rig.add(ii);
   rig.visible = false;
   three.handGroup.parent.add(rig);
+  // The real machine: ML's photogrammetry model of the OEC (public/models/rigs/oec.glb,
+  // 50k triangles, one fused mesh). It stands as the machine BODY; the primitive C above
+  // stays as the ARTICULATING part, because the scan mesh cannot split its C from its
+  // cart (821 disconnected fragments). Loaded async; the primitives alone are a complete
+  // fallback if the fetch fails.
+  ctx.loadModelUrl?.(ctx.baseUrl + 'models/rigs/oec.glb').then((g) => {
+    oecBody = g;
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+    const box = new THREE.Box3().setFromObject(g);
+    const size = box.getSize(new THREE.Vector3());
+    const sc = 180 / Math.max(size.x, size.y, size.z);   // tallest dimension -> ~1.8 m
+    g.scale.setScalar(sc);
+    g.visible = false;
+    three.handGroup.parent.add(g);
+    fluoroSyncScene();
+  }).catch(() => { /* primitives remain */ });
   // the stretcher the subject lies on (the x-ray placement already lies flat at y≈0)
   stretcher = new THREE.Mesh(new THREE.BoxGeometry(55, 2.4, 210),
     new THREE.MeshStandardMaterial({ color: 0x3c4650, roughness: 0.85 }));
@@ -301,6 +364,16 @@ export function fluoroSyncScene() {
   const { THREE, S, three } = ctx;
   const on = S.mode === 'fluoro';
   rig.visible = on; stretcher.visible = on;
+  if (oecBody) {
+    oecBody.visible = on;
+    // Stand the machine so its own C wraps the isocentre. From orthographic projections
+    // of the mesh: the beam axis is VERTICAL at local x ~ 0.72 — tube housing centred at
+    // y ~ -0.45, II at y ~ +0.6, i.e. ~96 cm apart at this scale, which is the OEC's real
+    // SID to within 3 cm. The throat midpoint (0.72, 0.07, 0) goes to the isocentre; no
+    // rotation needed, the scanned machine already holds its beam upright.
+    const iso = isoPoint(), sc = oecBody.scale.x;
+    oecBody.position.set(iso[0] - 0.72 * sc, iso[1] - 0.07 * sc, iso[2]);
+  }
   // The x-ray rig belongs to the other room. Hiding is enough: ctSyncScene restores the
   // tube on every sync once the mode is no longer fluoro, so there is nothing to undo.
   if (on) {
@@ -321,8 +394,9 @@ export function fluoroApplyMode(on) {
   if (on) {
     ensureWorker();
     renderReadouts();
-    setStatus(workerReady ? 'Ready — hold the pedal (or Space) to screen.'
-                          : 'Loading the subject into the pulse worker…');
+    setStatus(readyCount === workers.length && workers.length
+      ? 'Ready — hold the pedal (or Space) to screen.'
+      : 'Loading the subject into the pulse workers…');
   } else {
     pedalUp();
     $('lihBadge')?.classList.remove('show');
@@ -382,6 +456,15 @@ export function initFluoro(context) {
       renderReadouts();
     });
   });
+  $('flHold')?.addEventListener('click', () => {
+    F.hold = !F.hold;
+    $('flHold').classList.toggle('on', F.hold);
+  });
+  $('flSwallow')?.addEventListener('click', () => { F.swallowAt = performance.now() / 1000; });
+  $('flHr')?.addEventListener('input', (e) => {
+    F.hr = +e.target.value;
+    const el = $('flHrV'); if (el) el.textContent = F.hr + ' bpm';
+  });
   $('flDoseReset')?.addEventListener('click', () => {
     F.akMGy = 0; F.dapUGym2 = 0; F.beamS = 0; alarmAt = 300;
     $('flBeamV')?.classList.remove('alarm');
@@ -392,8 +475,20 @@ export function initFluoro(context) {
   if (kvEl) kvEl.disabled = true;
   if (maEl) maEl.disabled = true;
   abcApply();
-  // a subject change invalidates the worker's copy of the volume
+  // A subject change invalidates the workers' copy of the volume. Rebuild once the new
+  // volume has actually LOADED (the change event fires before the fetch finishes) so the
+  // motion scan runs and the status tells the truth without waiting for a pedal press.
   const sel = $('subjectSel');
-  sel?.addEventListener('change', () => { workerSub = null; });
+  sel?.addEventListener('change', () => {
+    workerSub = null;
+    const want = sel.value;
+    const poll = setInterval(() => {
+      if (ctx.S.mode !== 'fluoro') { clearInterval(poll); return; }
+      if (ctx.S.subject === want && ctx.S.voxelModel && !ctx.S.subjectLoading) {
+        clearInterval(poll); F.motions = []; ensureWorker();
+      }
+    }, 300);
+    setTimeout(() => clearInterval(poll), 30000);
+  });
   renderReadouts();
 }

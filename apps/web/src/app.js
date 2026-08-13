@@ -527,7 +527,10 @@ const S = {
   fluoro:{ machine:'oec', pps:15, kv:70, ma:2.0, pedal:false, lih:false,
            beamS:0, pulses:0, dropped:0, msAvg:0, orbital:0, tilt:0,
            // Phase B: ABC curve parameter, collimator iris (fraction), mag mode, dose
-           abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0 },
+           abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0,
+           // Phase C: motion clocks (phases accumulated here; the worker is stateless)
+           hold:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
+           motions:[], fixedSeed:null },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -3175,7 +3178,7 @@ window.addEventListener('load',()=>{
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
   initMobile({ S });                            // pager + dock; inert above the breakpoint
-  initFluoro({ THREE, S, $, three,
+  initFluoro({ THREE, S, $, three, loadModelUrl, baseUrl: import.meta.env.BASE_URL,
     // the worker rebuilds the exact phantom the x-ray path traces: same centre, same
     // flips, same rotation — one geometry, two consumers
     phantomPose: () => ({
