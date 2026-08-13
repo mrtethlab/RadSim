@@ -147,17 +147,25 @@ function ensureBreastMesh() {
   }).catch(() => { meshLoading = false; });
 }
 
-/* Compression drive: the paddle and the breast animate toward the target each tick. */
-let driveTimer = null;
+/* Compression drive: the paddle and the breast animate toward the target. TIME-based
+   (exponential toward the target with a fixed time constant), not per-tick — a
+   background tab throttles setInterval to ~1 Hz, and a drive that crawls when the tab
+   loses focus would leave an exposure firing mid-descent. */
+let driveTimer = null, driveAt = 0;
+const DRIVE_TAU = 0.28;                 // seconds to ~63 % of the remaining travel
 function driveTick() {
+  const now = performance.now() / 1000;
+  const dt = Math.min(now - driveAt, 2);
+  driveAt = now;
   const target = M.comp;
-  const d = target - compCur;
-  if (Math.abs(d) < 0.004) { compCur = target; clearInterval(driveTimer); driveTimer = null; }
-  else compCur += d * 0.18;
+  if (Math.abs(target - compCur) < 0.003) { compCur = target; clearInterval(driveTimer); driveTimer = null; }
+  else compCur = target + (compCur - target) * Math.exp(-dt / DRIVE_TAU);
   applyCompression();
   renderReadouts();
 }
-function startDrive() { if (!driveTimer) driveTimer = setInterval(driveTick, 40); }
+function startDrive() {
+  if (!driveTimer) { driveAt = performance.now() / 1000; driveTimer = setInterval(driveTick, 40); }
+}
 function applyCompression() {
   const c = compCur, lat = 1 / Math.sqrt(c);
   if (paddle) paddle.position.y = -H0 / 2 + H0 * c + 0.4;
@@ -212,9 +220,11 @@ function expose() {
     return [x + Ca[0], y + Ca[1], z + Ca[2]];
   };
 
-  // detector grid: chest wall along the top row, nipple toward the bottom
+  // detector grid: chest wall along the top row, nipple toward the bottom. The field is
+  // the RECEPTOR's, fixed — compression visibly spreads the breast across it, which is
+  // half of what the image has to show
   const NX = 470, NY = 300;
-  const fovX = ex * lat * 1.06, fovY = ey * lat * 1.12;
+  const fovX = 23.0, fovY = 14.6;
   const img = new Float32Array(NX * NY);
   const src = [0, 0.5, SID];                            // over the chest-wall edge, as built
   let seed = (M.fixedSeed || (Math.random() * 1e9)) | 0;
@@ -361,7 +371,7 @@ export function initMammo(context) {
   ctx = context;
   M = ctx.S.mammo;
   buildRig();
-  if (typeof window !== 'undefined') window.__mammoProbe = () => breastMesh;
+  if (typeof window !== 'undefined') window.__mammoProbe = () => ({ mesh: breastMesh, compCur });
   document.querySelectorAll('#mmTfSeg button').forEach((b) => {
     b.addEventListener('click', () => {
       M.tf = b.dataset.tf;
