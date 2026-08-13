@@ -1243,6 +1243,15 @@ body.mode-home .home{display:block}
   height:26px; margin-left:-22px; border-radius:5px; background:rgba(235,245,250,.8);
   box-shadow:0 32px 0 rgba(235,245,250,.66), 0 64px 0 rgba(235,245,250,.5),
              0 96px 0 rgba(235,245,250,.36)}
+/* ultrasound: the sector fan, depth arcs ringing out from the probe at the top */
+.hc-us .hc-art{background:linear-gradient(160deg,#1c2226,#39444c 55%,#6d7f8b)}
+.hc-us .hc-art::before{content:''; position:absolute; left:14%; right:14%; top:14px; bottom:14px;
+  clip-path:polygon(50% 0, 100% 100%, 0 100%);
+  background:repeating-radial-gradient(circle at 50% 0,
+    rgba(228,236,240,.55) 0 2px, rgba(228,236,240,.08) 2px 26px)}
+.hc-us .hc-art::after{content:''; position:absolute; left:50%; top:6px; width:26px; height:12px;
+  margin-left:-13px; border-radius:4px 4px 8px 8px; background:rgba(235,243,247,.85);
+  box-shadow:0 0 14px rgba(228,240,248,.4)}
 .hc-body{padding:16px 18px 20px}
 .hc-name{font-family:var(--disp); font-weight:700; font-size:25px; letter-spacing:.5px;
   color:#eef3f8}
