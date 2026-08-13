@@ -142,6 +142,9 @@ function initScene(){
 
   three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
          amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD,aecGroup,aecCellMeshes};
+  // Observability: a same-stack render + readback for headless verification (the
+  // Browser pane cannot screenshot when hidden; WebGL backbuffers do not persist).
+  window.__snap3d = () => { renderer.render(scene, cam); return renderer.domElement.toDataURL('image/png'); };
 
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
@@ -3252,7 +3255,8 @@ window.addEventListener('load',()=>{
       return lut && S.contrast.sVol
         ? { iod: lut, sVol: S.contrast.sVol, ns: CONTRAST_NS } : null;
     } });
-  initMammo({ THREE, S, three, setSubject: (s) => setSubject(s) });
+  initMammo({ THREE, S, three, setSubject: (s) => setSubject(s),
+    loadModelUrl, baseUrl: import.meta.env.BASE_URL });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

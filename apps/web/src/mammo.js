@@ -104,36 +104,47 @@ function buildRig() {
     paddle.material);
   lip.position.set(0, H0 / 2 + 2.0, -4.6);
   gantry.add(lip);
+  // the room's exam lamp is off in this mode; the unit carries its own soft light so
+  // the machine and the clamped breast read as more than ambient silhouettes
+  const lamp = new THREE.PointLight(0xfff1e0, 2800, 400, 1.8);
+  lamp.position.set(26, 46, 50);
+  rig.add(lamp);
+  const fill = new THREE.DirectionalLight(0xcfdbe4, 0.55);
+  fill.position.set(-30, 20, 30);
+  rig.add(fill);
   rig.visible = false;
   three.handGroup.parent.add(rig);
 }
 
-/* Adopt the subject's display mesh into the gantry so compression and the view
-   angle move it. The mesh is restored to its normal parent on mode exit. */
-let meshHome = null;
-function adoptBreastMesh() {
-  const { three } = ctx;
-  const grp = three.voxelMeshes && three.voxelMeshes.breast;
-  if (!grp || breastMesh === grp) return;
-  if (!meshHome) meshHome = { parent: grp.parent };
-  breastMesh = grp;
-  gantry.add(grp);
-  // model axes: x lateral, y chest-wall->nipple, z inferior->superior. In the rig the
-  // compression axis is vertical: stand the volume's z up (rotate about x), chest wall
-  // toward the column (-z of the rig).
-  grp.rotation.set(-Math.PI / 2, 0, 0);
-  breastBase = { y: 0, z: 2 };
-  grp.position.set(0, breastBase.y, breastBase.z);
-  grp.visible = true;
-}
-function releaseBreastMesh() {
-  if (breastMesh && meshHome) {
-    meshHome.parent.add(breastMesh);
-    breastMesh.rotation.set(0, 0, 0);
-    breastMesh.scale.set(1, 1, 1);
-    breastMesh.position.set(0, 0, 0);
-  }
-  breastMesh = null;
+/* The rig owns a PRIVATE copy of the breast mesh (the OEC pattern): the x-ray room
+   re-poses its shared subject meshes on every sync, and adopting one meant fighting a
+   per-frame placement (which was applying a scale of -0.1 — a point inversion — over
+   anything set here). A 2.4 MB GLB loaded once is far cheaper than that fight. */
+let meshLoading = false;
+function ensureBreastMesh() {
+  if (breastMesh || meshLoading || !ctx.loadModelUrl) return;
+  meshLoading = true;
+  ctx.loadModelUrl(ctx.baseUrl + 'models/breast/breast.glb').then((g) => {
+    g.traverse((o) => {
+      if (o.isMesh) {
+        o.castShadow = false; o.receiveShadow = false;
+        if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+        const ms = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of ms) if (m) {
+          m.color.setHex(0xd8a07a); m.metalness = 0; m.roughness = 0.75; m.needsUpdate = true;
+        }
+      }
+    });
+    // model axes: x lateral, y chest-wall->nipple, z inferior->superior (GLB vertices in
+    // mm about the volume centre). Stand z up, spin the nipple toward the viewer, chest
+    // wall to the column; mm -> cm is the base scale compression multiplies.
+    g.rotation.set(-Math.PI / 2, 0, Math.PI);
+    breastBase = { s: 0.1, z: 2 };
+    g.position.set(0, 0, breastBase.z);
+    breastMesh = g;
+    gantry.add(g);
+    applyCompression();
+  }).catch(() => { meshLoading = false; });
 }
 
 /* Compression drive: the paddle and the breast animate toward the target each tick. */
@@ -150,11 +161,11 @@ function startDrive() { if (!driveTimer) driveTimer = setInterval(driveTick, 40)
 function applyCompression() {
   const c = compCur, lat = 1 / Math.sqrt(c);
   if (paddle) paddle.position.y = -H0 / 2 + H0 * c + 0.4;
-  if (breastMesh) {
-    // model z (superior) is the rig's vertical after the stand-up rotation; the mesh
-    // scales about its own centre, so re-seat the bottom on the plate
-    breastMesh.scale.set(lat, lat, c);
-    breastMesh.position.y = breastBase.y - (H0 / 2) * (1 - c) + 0;
+  if (breastMesh && breastBase) {
+    // scale in LOCAL axes (model z is the compression axis), on top of the pipeline's
+    // mm->cm factor; the mesh pivots at its own centre, so re-seat the bottom on the plate
+    const s = breastBase.s;
+    breastMesh.scale.set(s * lat, s * lat, s * c);
     breastMesh.position.y = -(H0 / 2) + (H0 * c) / 2;
   }
 }
@@ -322,7 +333,11 @@ export function mammoSyncScene() {
     if (three.detArrow) three.detArrow.visible = false;
     if (three.aecGroup) three.aecGroup.visible = false;
     rig.position.set(0, 30, 0);
-    adoptBreastMesh();
+    ensureBreastMesh();
+    // the x-ray room's shared subject mesh stays out of this room entirely
+    const shared = three.voxelMeshes && three.voxelMeshes.breast;
+    if (shared) shared.visible = false;
+    if (three.chestGroup) three.chestGroup.visible = false;
     gantry.rotation.z = M.view === 'mlo' ? -Math.PI / 4 : 0;
     applyCompression();
   }
@@ -335,7 +350,9 @@ export function mammoApplyMode(on) {
     renderReadouts();
     setStatus('Drive the compression, then EXPOSE.');
   } else {
-    releaseBreastMesh();
+    // hand the shared subject mesh back to the other rooms
+    const shared = ctx.three.voxelMeshes && ctx.three.voxelMeshes.breast;
+    if (shared && ctx.S.subject === 'breast') shared.visible = true;
   }
   mammoSyncScene();
 }
@@ -344,6 +361,7 @@ export function initMammo(context) {
   ctx = context;
   M = ctx.S.mammo;
   buildRig();
+  if (typeof window !== 'undefined') window.__mammoProbe = () => breastMesh;
   document.querySelectorAll('#mmTfSeg button').forEach((b) => {
     b.addEventListener('click', () => {
       M.tf = b.dataset.tf;
