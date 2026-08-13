@@ -6,7 +6,8 @@ makes screening work. The whole mode is one lesson taught four ways: at these en
 photoelectric effect still cares about tiny differences in Z and density, and everything —
 target, filter, kV, compression — exists to protect that contrast.
 
-Status: **planning — awaiting review**. Nothing below is implemented.
+Status: **phases A–C built and measured** on branch feature/mammography; D is part-done
+(CC/MLO shipped; mag stand, ACR phantom and blinded case seeds outstanding), E pending.
 
 ## 1. What exists to build on
 
@@ -56,9 +57,9 @@ over a small volume (the hi-res shoulder precedent).
 
 | Phase | Scope | Exit test |
 | --- | --- | --- |
-| **A — beam** | mammo spectra (Mo/Mo, Mo/Rh, W/Rh) in the spectrum model; µ tables verified < 20 keV; fixed phantom slab imaged | glandular-vs-fat contrast measurably collapses as kV rises 24→34; filter switch shifts the curve as the K-edges say it must |
-| **B — machine + phantom** | upright rig, receptor, paddle, breast phantoms at 4 densities | thicker/denser phantom at fixed technique → underexposed; AEC brings it back with the mAs the density chart predicts |
-| **C — compression** | paddle drive, force readout, z-scale warp, scatter/dose coupling | halving thickness at fixed technique measurably raises contrast-to-noise and cuts dose; the image sharpens as structures separate |
+| **A — beam** ✅ | 3-bin mammo spectra per target/filter; the projector carries its OWN low-energy µ table (the house HU-model clamps at 20 keV and gives fat/gland a constant ratio — it would have erased the mode's central lesson) | **passed**: tissue contrast SD falls 20.3 → 15.9 as kV rises 24 → 34; W/Rh at 28 kV keeps 13.0 where Mo/Mo keeps 19.7 |
+| **B — machine + phantom** ✅ | upright rig, receptor, paddle; ONE phantom shipped (0.4 mm, 15.3 M voxels, BI-RADS c at 30 % glandular, seeded findings); density variants deferred to D | **passed**: AEC meters the gland and lands 60.6 mAs / AGD 1.72 mGy at 28 kV / 40 mm — textbook screening numbers; exposure 280 ms |
+| **C — compression** ✅ | motorised paddle drive with force readout; compression is a volume-conserving affine (c axially, 1/√c laterally) driving the 3D mesh AND the raycast from one mechanism — rays pull through the inverse, one chord-ratio per ray corrects the path lengths | **passed**: 40 mm at 126 N; under AEC, releasing to 72 mm rails the generator (400 mAs, AGD 6.25 mGy) while compressed runs 60.6 mAs / 1.72 — the paddle cuts the dose 3.6× as the image improves |
 | **D — views + findings** | CC/MLO presets, mag stand, seeded cases, ACR phantom | a speck cluster invisible at BI-RADS d + poor technique becomes visible with proper compression + AEC; ACR phantom scores reproducibly |
 | **E — polish** | tutorial, home card graduation, mobile pass | tutorial goals all achievable |
 

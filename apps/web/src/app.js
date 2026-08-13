@@ -22,6 +22,7 @@ import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRende
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
+import { initMammo, mammoApplyMode, mammoSyncScene } from './mammo.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -256,6 +257,10 @@ const VOXEL_MODELS = {
   // resolution in lp/mm. Shot at low kV / high mAs like real resolution QC, so the
   // lead-to-air contrast is maximal and the bars are not lost in mottle.
   linepair:        { title:'Line-pair test pattern', scoutKv:80, scoutMa:100, xrayKv:60 },
+  // The mammography subject (docs/mammography.md): a 0.4 mm procedural phantom with a
+  // BI-RADS c fibroglandular mix and seeded findings. Listed here so the other rooms
+  // can image it too; the mammography mode force-loads it.
+  breast:          { title:'Breast · 0.4 mm',        scoutKv:80,  scoutMa:40,  xrayKv:28  },
 };
 
 /* Prepare a freshly loaded display mesh so it lights + shadows like the hand: the
@@ -537,6 +542,10 @@ const S = {
            // and the pending rotation being dialled in for the NEXT run (the triangle)
            dispRot:0, flipH:false, flipV:false, pendRot:0,
            motions:[], fixedSeed:null },
+  // ---- mammography (docs/mammography.md): technique, compression, view ----
+  mammo:{ tf:'momo', kv:28, mas:60, aec:true,
+          comp:1.0,            // compression factor: paddle height / uncompressed height
+          view:'cc', agdMGy:0, fixedSeed:null },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -1271,6 +1280,7 @@ function syncScene(){
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
   editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
   fluoroSyncScene();                            // fluoro hides the x-ray head and shows the C-arm
+  mammoSyncScene();                             // mammo swaps in the upright unit + clamped breast
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
@@ -3215,7 +3225,8 @@ window.addEventListener('load',()=>{
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on),
-           fluoroMode: (on) => fluoroApplyMode(on) });
+           fluoroMode: (on) => fluoroApplyMode(on),
+           mammoMode: (on) => mammoApplyMode(on) });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
   initMobile({ S });                            // pager + dock; inert above the breakpoint
@@ -3233,6 +3244,7 @@ window.addEventListener('load',()=>{
         ? { ba: lut, gas: S.barium.gasLut, giVol: S.barium.giVol, ns: GI_NS } : null;
     },
     bariumSwallow: () => giSip(),
+    setSubject: (s) => setSubject(s),
     // Phase E: the injector timeline rides the pulses the same way — while the run clock
     // is live, scanTime tracks it, so the fluoro image washes in and out in real time.
     contrastPulse: () => {
@@ -3240,6 +3252,7 @@ window.addEventListener('load',()=>{
       return lut && S.contrast.sVol
         ? { iod: lut, sVol: S.contrast.sVol, ns: CONTRAST_NS } : null;
     } });
+  initMammo({ THREE, S, three, setSubject: (s) => setSubject(s) });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

@@ -139,14 +139,17 @@
           </div>
         </div>
       </div>
-      <div class="home-card hc-dev hc-mammo" aria-disabled="true">
-        <div class="hc-art"><span class="hc-badge">In development</span></div>
+      <div class="home-card hc-mammo" data-mode="mammo">
+        <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Mammography</div>
           <div class="hc-tag">Soft-tissue contrast at 26&ndash;32 kV</div>
-          <div class="hc-desc">Target/filter combinations, compression, an AEC tuned for a beam
-            an order of magnitude softer than radiography's, and the CC / MLO positioning that
-            makes screening work.</div>
+          <div class="hc-desc">Target/filter combinations, compression that visibly earns its
+            contrast and dose, an AEC tuned for a beam an order of magnitude softer than
+            radiography's, and CC / MLO views of a high-resolution breast phantom.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="mammo">Open</button>
+          </div>
         </div>
       </div>
       <div class="home-card hc-dev hc-bmd" aria-disabled="true">
@@ -588,6 +591,7 @@
             <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
             <option value="metalphantom">Metal Test Phantom</option>
             <option value="linepair">Line-pair test pattern (QC)</option>
+            <option value="breast">Breast &middot; 0.4 mm</option>
           </select>
           <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:5px; letter-spacing:.3px"></div>
         </div>
@@ -1090,6 +1094,65 @@
             stomach their walls. Breath hold stops the dome mid-cycle (and will one day
             rescue your DSA); everything else keeps its own clock.</div>
         </div>
+      </div>
+      <!-- ============ MAMMOGRAPHY console (mm-only) ============ -->
+      <div class="grp mm-only">
+        <div class="lab">Mammography · technique</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Target / filter</div></div>
+          <div class="seg" id="mmTfSeg">
+            <button data-tf="momo" class="on">Mo/Mo</button>
+            <button data-tf="morh">Mo/Rh</button>
+            <button data-tf="wrh">W/Rh</button>
+          </div>
+          <div class="row" style="margin-top:9px"><div class="rl">kV</div>
+            <div class="valchip" id="mmKvV">28 kV</div></div>
+          <input type="range" id="mmKv" min="24" max="34" value="28" step="1">
+          <div class="row" style="margin-top:9px"><div class="rl">Exposure control</div></div>
+          <div class="seg" id="mmAecSeg">
+            <button data-aec="1" class="on">AEC</button>
+            <button data-aec="0">Manual</button>
+          </div>
+          <div class="row" style="margin-top:6px"><div class="rl">mAs</div>
+            <div class="valchip" id="mmMasV">60 mAs</div></div>
+          <input type="range" id="mmMas" min="4" max="400" value="60" step="1">
+          <div class="ctrst-note">The mammographic beam lives at 24&ndash;34 kV, where the
+            photoelectric effect still tells glandular tissue from fat. Raise the kV and watch
+            that contrast collapse; switch the target/filter and the whole curve shifts with
+            the K-edges. The AEC meters behind the receptor and picks the mAs.</div>
+        </div>
+      </div>
+      <div class="grp mm-only">
+        <div class="lab">Compression</div>
+        <div class="bod">
+          <div class="flro">
+            <div><div class="k">Thickness</div><div class="v" id="mmThkV">72 mm</div></div>
+            <div><div class="k">Force</div><div class="v" id="mmForceV">0 N</div></div>
+            <div><div class="k">AGD</div><div class="v" id="mmAgdV">0.00 mGy</div></div>
+            <div><div class="k">&nbsp;</div><button class="fldose-rst" id="mmRelease">release</button></div>
+          </div>
+          <div class="row" style="margin-top:9px"><div class="rl">Paddle drive</div></div>
+          <input type="range" id="mmComp" min="45" max="100" value="100" step="1">
+          <div class="ctrst-note">Compression is not optional: thinner tissue means less
+            scatter, less dose, less motion and less overlap &mdash; the image gets better as
+            the paddle gets lower. The force readout is the number the technologist watches.</div>
+        </div>
+      </div>
+      <div class="grp mm-only">
+        <div class="lab">View</div>
+        <div class="bod">
+          <div class="seg" id="mmViewSeg">
+            <button data-view="cc" class="on">CC</button>
+            <button data-view="mlo">MLO</button>
+          </div>
+          <div class="ctrst-note">Craniocaudal compresses top-down; the mediolateral oblique
+            turns the gantry 45&deg; so the pectoral margin comes into the field &mdash; the
+            two views that make a screening pair.</div>
+        </div>
+      </div>
+      <div class="expose mm-only" id="mmExposeRow">
+        <button class="flpedal" id="mmExpose">&#9679; EXPOSE</button>
+        <div class="note" id="mmStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
       <div class="expose fl-only" id="flPedalRow">
         <button class="flpedal" id="flPedal">&#9679; FLUORO &mdash; hold</button>

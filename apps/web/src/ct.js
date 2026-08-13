@@ -939,8 +939,9 @@ function applyMode(mode) {
   document.body.classList.toggle('mode-home', mode === 'home');
   if (mode === 'home') {
     ctx.S.mode = 'home';
-    ['mode-ct', 'mode-xray', 'mode-editor', 'mode-fluoro'].forEach(c => document.body.classList.remove(c));
+    ['mode-ct', 'mode-xray', 'mode-editor', 'mode-fluoro', 'mode-mammo'].forEach(c => document.body.classList.remove(c));
     ctx.fluoroMode?.(false);
+    ctx.mammoMode?.(false);
     resetCTSession();
     ctx.editorMode?.(false);
     return;
@@ -950,14 +951,16 @@ function applyMode(mode) {
   document.body.classList.toggle('mode-xray', mode === 'xray');
   document.body.classList.toggle('mode-editor', mode === 'editor');
   document.body.classList.toggle('mode-fluoro', mode === 'fluoro');
+  document.body.classList.toggle('mode-mammo', mode === 'mammo');
   const cur = ctx.$('modeCur');
   if (cur) cur.textContent = mode === 'ct' ? 'CT' : mode === 'editor' ? 'MODEL EDITOR'
-    : mode === 'fluoro' ? 'FLUOROSCOPY' : 'X-RAY';
+    : mode === 'fluoro' ? 'FLUOROSCOPY' : mode === 'mammo' ? 'MAMMOGRAPHY' : 'X-RAY';
   ctApplyColorTheme();                            // x-ray drops any vendor theme; CT re-applies it
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition'
     : mode === 'editor' ? 'Model editor · voxel builder'
-    : mode === 'fluoro' ? 'Fluoroscopy · GE OEC C-arm' : 'Digit · Hand phantom';
+    : mode === 'fluoro' ? 'Fluoroscopy · GE OEC C-arm'
+    : mode === 'mammo' ? 'Mammography · upright unit' : 'Digit · Hand phantom';
   const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Planning window in CT
   if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Planning' : 'Image';
   const consoleLbl = ctx.$('consoleLbl');    // x-ray generator vs CT console vs fluoro
@@ -977,6 +980,7 @@ function applyMode(mode) {
   ctx.setBay3DEnabled(true);
   ctx.refreshFilmViewer();        // isolate the two modes' images (clear x-ray in CT)
   ctx.fluoroMode?.(mode === 'fluoro');
+  ctx.mammoMode?.(mode === 'mammo');
   greyHelical(mode === 'ct');     // helical params don't apply to a scout
   if (mode === 'ct') renderStorage();   // reflect any scans still held from before
   setHint(mode === 'ct' ? 'Set the isocentre, then acquire scouts to plan the scan.' : '');
