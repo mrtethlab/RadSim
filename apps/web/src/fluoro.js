@@ -19,6 +19,7 @@ let workers = [], busy = [], readyCount = 0, workerSub = null;
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
 let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null, oecCol = null;
 let pendShown = false;   // the orientation pad's triangle: pending rotation being dialled in
+let viewerHome = null;   // where IMAGE/VIEWER lives outside fluoro (desktop moves it left)
 
 // GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°.
 // LARM: boom pivot (the column axis) to the beam axis, cm — wig-wag's arc radius.
@@ -278,11 +279,19 @@ function drawFrame(img, n) {
    marks where the top of the next run will be; pedal-down folds it into the display. */
 function blitFilm() {
   const film = $('film'); if (!film || !frameCanvas) return;
-  const g2 = film.getContext('2d');
   if (film.width !== 330) { film.width = 330; film.height = 440; }
-  g2.fillStyle = '#000'; g2.fillRect(0, 0, film.width, film.height);
-  const s = Math.min(film.width, film.height) - 10;
-  const cx = film.width / 2, cy = film.height / 2;
+  renderTo(film);
+  $('noexp')?.style.setProperty('display', 'none');
+  // the bay's Image view mirrors the fluoro monitor live (instead of the last x-ray)
+  if (ctx.S.bayContent === 'image' && ctx.S.mode === 'fluoro') fluoroImageToBay();
+}
+/* Render the current frame (with orientation) into any canvas — the monitor and the
+   bay's big Image view share this one pipeline. */
+function renderTo(cv) {
+  const g2 = cv.getContext('2d');
+  g2.fillStyle = '#000'; g2.fillRect(0, 0, cv.width, cv.height);
+  const s = Math.min(cv.width, cv.height) - 10;
+  const cx = cv.width / 2, cy = cv.height / 2;
   g2.imageSmoothingEnabled = true;
   g2.save();
   g2.translate(cx, cy);
@@ -303,7 +312,18 @@ function blitFilm() {
     g2.fill();
     g2.restore();
   }
-  $('noexp')?.style.setProperty('display', 'none');
+}
+
+/* The bay's Image view (View Options) shows the FLUORO frame while in fluoro mode.
+   Returns whether a frame exists — app.js uses that to pick bigFilm vs the no-image note. */
+export function fluoroImageToBay() {
+  const bf = $('bigFilm');
+  if (!bf || !frameCanvas || !frameCanvas.width) return false;
+  const w = bf.clientWidth || bf.parentElement?.clientWidth || 640;
+  const h = bf.clientHeight || 480;
+  if (bf.width !== w || bf.height !== h) { bf.width = w; bf.height = h; }
+  renderTo(bf);
+  return true;
 }
 
 /* ---- pedal + pulse clock ------------------------------------------------- */
@@ -494,6 +514,18 @@ export function fluoroSyncScene() {
 /* ---- mode + wiring ------------------------------------------------------- */
 export function fluoroApplyMode(on) {
   if (!ctx) return;
+  // Desktop layout: fluoro pulls the IMAGE/VIEWER one pane left, to the top of the
+  // POSITION/SETUP column — the operator watches the monitor next to the room, not at
+  // the far edge. (Mobile keeps it where the pager expects a page.)
+  const conView = $('conView'), setupPad = $('setupPad');
+  if (conView && setupPad && !document.body.classList.contains('mobile')) {
+    if (on && conView.parentElement !== setupPad) {
+      viewerHome = viewerHome || { parent: conView.parentElement, next: conView.nextElementSibling };
+      setupPad.insertBefore(conView, setupPad.firstChild);
+    } else if (!on && viewerHome && conView.parentElement === setupPad) {
+      viewerHome.parent.insertBefore(conView, viewerHome.next);
+    }
+  }
   if (on) {
     ensureWorker();
     renderReadouts();

@@ -21,7 +21,7 @@ import { initTutorial } from './tutorial.js';
 import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
-import { initFluoro, fluoroApplyMode, fluoroSyncScene } from './fluoro.js';
+import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -1541,9 +1541,14 @@ function setContent(c){
   const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
   const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
   const rcv=$('ctRecons'); if(rcv) rcv.classList.toggle('show', recons);
-  const xrayImg=(img && S.hasImage && !scouts);
-  $('bigFilm').style.display=xrayImg?'block':'none';
-  $('bignote').style.display=(img && !S.hasImage && !scouts)?'flex':'none';
+  // In fluoro, the Image view IS the fluoro monitor (live + LIH) — never the x-ray archive.
+  const fluoroImg=(img && S.mode==='fluoro');
+  const xrayImg=(img && S.hasImage && !scouts && !fluoroImg);
+  let fluoroShown=false;
+  if(fluoroImg){ $('bigFilm').style.display='block'; fluoroShown=fluoroImageToBay();
+    if(!fluoroShown) $('bigFilm').style.display='none'; }
+  else $('bigFilm').style.display=xrayImg?'block':'none';
+  $('bignote').style.display=(img && !scouts && (fluoroImg ? !fluoroShown : !S.hasImage))?'flex':'none';
   $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
   const ui=$('imgViewUI'); if(ui) ui.classList.toggle('show', xrayImg);   // meta + history strip (image view only)
   if(xrayImg){ renderRadiograph($('bigFilm')); updateImageMeta(); renderImageStrip(); }
@@ -2090,6 +2095,7 @@ function renderRadiograph(target,entry){
   tctx.restore();
 }
 function drawFilm(){
+  if(S.mode==='fluoro') return;   // the fluoro chain owns both monitors in its room
   renderRadiograph($('film'));
   if(S.bayContent==='image' && S.hasImage) renderRadiograph($('bigFilm'));
   updateXrayHistogram();

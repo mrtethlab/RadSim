@@ -57,7 +57,12 @@ for p in parts:
     # end (down to -0.16, in front of the column) slides with the boom.
     bar  = -0.95 < x < 0.13 and -0.05 < y < 0.32 and abs(z) < 0.35
     brkt = -0.24 < x < 0.13 and -0.16 < y <= -0.05 and abs(z) < 0.35
-    if bar or brkt:
+    # the boom's SIDE WALLS: photogrammetry shells spanning nearly the whole arm
+    # (x-span > 0.7, reaching past the column to the front) whose centroids dip just
+    # below the bar floor — without this they stay behind when the boom extends
+    bx = p.bounds
+    wall = (bx[1][0] - bx[0][0]) > 0.7 and bx[1][0] > 0.0 and -0.12 < y < 0.32 and abs(z) < 0.35
+    if bar or brkt or wall:
         boom.append(p); continue
     column = -0.55 < x < -0.24 and -0.50 < y < -0.045 and abs(z) < 0.35
     (col if column else body).append(p)
