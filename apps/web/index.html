@@ -125,14 +125,17 @@
 
       <!-- Modes on the roadmap but not yet in the build: parked in plain sight, not clickable.
            No data-mode, so the card wiring skips them entirely. -->
-      <div class="home-card hc-dev hc-fluoro" aria-disabled="true">
-        <div class="hc-art"><span class="hc-badge">In development</span></div>
+      <div class="home-card hc-fluoro" data-mode="fluoro">
+        <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Fluoroscopy</div>
           <div class="hc-tag">Live screening &mdash; a beam you drive with your foot</div>
-          <div class="hc-desc">Pulsed screening, last-image hold, and dose that accumulates for
-            as long as the pedal is down. The barium engine already runs live under X-ray mode;
-            this gives it a room of its own.</div>
+          <div class="hc-desc">Pulsed screening on a GE OEC C-arm: hold the pedal, pick a pulse
+            rate, and trade dose for noise in real time. Last-image hold, beam-on timer, and a
+            C-arm you orbit around the patient.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="fluoro">Open</button>
+          </div>
         </div>
       </div>
       <div class="home-card hc-dev hc-mammo" aria-disabled="true">
@@ -591,7 +594,7 @@
           <div class="row" style="margin-top:8px"><div class="rl">Roll <small>long axis</small></div>
             <div class="valchip" id="objRotZv">0°</div></div>
           <input type="range" id="objRotZ" min="-180" max="180" value="0" step="1">
-          <div class="xray-only">
+          <div class="xray-only flkeep">
             <div class="row" style="margin-top:8px"><div class="rl">Offset <small>long axis</small></div>
               <div class="valchip" id="objOffZv">0 cm</div></div>
             <input type="range" id="objOffZ" min="-45" max="45" value="0" step="0.5">
@@ -929,6 +932,51 @@
         </div>
       </div>
 
+      <!-- ============ FLUORO CONSOLE (Phase A: pulse loop — docs/fluoroscopy.md) ============ -->
+      <div class="grp fl-only">
+        <div class="lab">Fluoroscopy · GE OEC</div>
+        <div class="bod">
+          <div class="flro">
+            <div><div class="k">kV</div><div class="v" id="flKvV">70 kV</div></div>
+            <div><div class="k">mA</div><div class="v" id="flMaV">2.0 mA</div></div>
+            <div><div class="k">Beam-on</div><div class="v green" id="flBeamV">00:00</div></div>
+            <div><div class="k">ms/pulse</div><div class="v" id="flPerfV">&mdash;</div></div>
+          </div>
+          <div class="row" style="margin-top:10px"><div class="rl">Pulse rate <small>pps</small></div></div>
+          <div class="seg" id="flPpsSeg">
+            <button data-pps="3">3</button>
+            <button data-pps="7.5">7.5</button>
+            <button data-pps="15" class="on">15</button>
+            <button data-pps="30">30</button>
+          </div>
+          <div class="row" style="margin-top:10px"><div class="rl">kV</div></div>
+          <input type="range" id="flKv" min="50" max="120" value="70" step="1">
+          <div class="row" style="margin-top:6px"><div class="rl">mA</div></div>
+          <input type="range" id="flMa" min="0.5" max="10" value="2" step="0.5">
+          <div class="ctrst-note">Manual technique for now &mdash; the ABC loop that drives
+            these for you is Phase B. Watch the noise change as you trade mA for kV.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">C-arm</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Orbital <small>LAO / RAO</small></div>
+            <div class="valchip" id="flOrbV">0&deg;</div></div>
+          <input type="range" id="flOrb" min="-115" max="115" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Tilt <small>cran / caud</small></div>
+            <div class="valchip" id="flTiltV">0&deg;</div></div>
+          <input type="range" id="flTilt" min="-45" max="45" value="0" step="1">
+          <div class="ctrst-note">SID is fixed at 99 cm on the OEC &mdash; the C moves, the
+            patient does not. Slide the subject with the offset sliders opposite.</div>
+        </div>
+      </div>
+      <div class="expose fl-only" id="flPedalRow">
+        <button class="flpedal" id="flPedal">&#9679; FLUORO &mdash; hold</button>
+        <div class="note" style="margin-top:8px; text-align:center">Press and hold (or hold
+          <b>Space</b>). Release for Last Image Hold.</div>
+        <div class="note" id="flStatus" style="margin-top:6px; text-align:center">&mdash;</div>
+      </div>
+
       <div class="expose xray-only">
         <div class="warn" id="warn"><div class="lamp"></div><div class="wt" id="warnT">SYSTEM STANDBY</div></div>
         <div class="btns2">
@@ -968,6 +1016,7 @@
       <div class="filmnote" id="fnBL"></div>
       <div class="filmnote r" id="fnBR"></div>
       <div class="preview-badge" id="previewBadge">PREVIEW</div>
+      <div class="lih-badge" id="lihBadge">LIH</div>
       <div class="prog" id="prog"></div>
     </div>
 

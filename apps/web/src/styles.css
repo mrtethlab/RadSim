@@ -1484,3 +1484,27 @@ body.mobile .baydrop{top:8px}
 /* the full DR matrices are a ~30 s raycast on a phone CPU — parked, not pretended */
 body.mobile #resSeg [data-res="std"], body.mobile #resSeg [data-res="high"]{
   opacity:.35; pointer-events:none}
+
+/* ============================================================================
+   FLUOROSCOPY MODE (docs/fluoroscopy.md) — Phase A
+   ============================================================================ */
+.fl-only{display:none}
+body.mode-fluoro .fl-only{display:block}
+body.mode-fluoro .xray-only{display:none}
+body.mode-fluoro .flkeep{display:block}   /* subject offsets are positioning, not x-ray */
+.flro{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
+.flro .k{font-family:var(--seg); font-size:8.5px; letter-spacing:1.5px; color:var(--muted2);
+  text-transform:uppercase}
+.flro .v{font-family:var(--seg); font-size:14px; color:var(--txt); margin-top:2px}
+.flro .v.green{color:var(--green)}
+.flpedal{width:100%; min-height:52px; border-radius:9px; cursor:pointer; user-select:none;
+  touch-action:none; font-family:var(--disp); font-weight:700; font-size:16px;
+  letter-spacing:2px; text-transform:uppercase; color:#ffd9b0;
+  background:linear-gradient(180deg,#4a2e14,#33200e); border:1px solid #7a5518;
+  transition:.12s}
+.flpedal.on{background:linear-gradient(180deg,#b57612,#8a5a0c); color:#fff7ea;
+  box-shadow:0 0 22px rgba(255,178,62,.55); border-color:#ffb23e}
+.lih-badge{position:absolute; top:8px; right:10px; z-index:3; display:none;
+  font-family:var(--seg); font-size:10px; letter-spacing:2px; color:#7fe3a4;
+  border:1px solid #2c7a44; padding:2px 7px; border-radius:4px; background:rgba(5,16,9,.7)}
+.lih-badge.show{display:block}

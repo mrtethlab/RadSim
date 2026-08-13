@@ -21,6 +21,7 @@ import { initTutorial } from './tutorial.js';
 import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
+import { initFluoro, fluoroApplyMode, fluoroSyncScene } from './fluoro.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -522,6 +523,9 @@ const S = {
            route:'oral', volumeMl:150, concPct:100, erect:false,
            // double contrast: gas volume in mL (0 = single contrast) and its own LUT
            gasMl:0, gasLut:null },
+  // ---- fluoroscopy (docs/fluoroscopy.md): the OEC C-arm and its pulse loop ----
+  fluoro:{ machine:'oec', pps:15, kv:70, ma:2.0, pedal:false, lih:false,
+           beamS:0, pulses:0, dropped:0, msAvg:0, orbital:0, tilt:0 },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -1230,6 +1234,7 @@ function syncScene(){
   }
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
   editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
+  fluoroSyncScene();                            // fluoro hides the x-ray head and shows the C-arm
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
@@ -3163,10 +3168,17 @@ window.addEventListener('load',()=>{
            contrastReset: ()=>ctrstReset(),
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
-           editorMode: (on) => editorApplyMode(on) });
+           editorMode: (on) => editorApplyMode(on),
+           fluoroMode: (on) => fluoroApplyMode(on) });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
   initMobile({ S });                            // pager + dock; inert above the breakpoint
+  initFluoro({ THREE, S, $, three,
+    // the worker rebuilds the exact phantom the x-ray path traces: same centre, same
+    // flips, same rotation — one geometry, two consumers
+    phantomPose: () => ({
+      center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
+      flip: voxelFlips(), rot: objMat() }) });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

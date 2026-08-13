@@ -140,13 +140,29 @@ audits, x-ray and CT modes, the preset pipeline, the mobile pager architecture, 
 
 | Phase | Scope | Exit test |
 | --- | --- | --- |
-| **A — pulse loop** | fluoro mode shell, OEC scene, pedal, 4 pulse rates, worker raycaster, **budget measurements** | screen the hand at all four rates; measured ms/pulse table in this doc |
+| **A — pulse loop** ✅ | fluoro mode shell, OEC scene, pedal, 4 pulse rates, worker raycaster, **budget measurements** | screen the hand at all four rates; measured ms/pulse table in this doc |
 | **B — image chain** | ABC loop + manual override, LIH, per-pulse noise, collimation, dose/timer/5-min alarm; mag modes if budget allows | pan chest→abdomen and watch kV/mA track; dose rate visibly scales with pulse rate |
 | **C — animation** | build_anim.py, tracer warps, lung µ modulation; breathing + heartbeat (chest/CAP), swallow (H&N), peristalsis (CAP); breath-hold | visible motion at 15 pps; HR slider changes the beat; breath-hold freezes the dome |
 | **D — barium** | BARIUM panel docked in fluoro; Swallow button = bolus + wall wave together | a swallow screened at 15 pps, LIH spot of the filled stomach |
 | **E — vascular** | DSA mask/subtract/pixel-shift/remask, roadmap overlay, per-site contrast | femoral-injection iliac DSA on CAP; breathing ruins it; breath-hold fixes it |
 | **F — Artis Zee** | second rig, table float/height, rectangular FD, SID travel | same exam on the table machine |
 | **G — polish** | recording + cine loops, tutorial, mobile pass, home card graduation | tutorial goals all achievable; loops download |
+
+## 7.1 Phase A measurements (hand, desktop, 4 s holds)
+
+| pps | sampling | workers | fired | dropped | ms/pulse |
+| --- | --- | --- | --- | --- | --- |
+| 3 | 192 px | 2 | 13 | 0 | 60 |
+| 7.5 | 192 px | 2 | 31 | 0 | 56 |
+| 15 | 192 px | 2 | 61 | 0 | 56 |
+| 30 | 160 px | 2 | **122** | **0** | 42 |
+
+The path there: one worker at 192 px measured 54 ms/pulse (≈18 pps ceiling — 30 pps dropped
+exactly half). The pool of two lifted 30 pps to ~23 effective under contention (67 ms/pulse).
+Adaptive sampling closed the rest: 30 pps renders at 160 px (0.69× the rays), which upscales
+into the same monitor and loses sharpness the per-pulse mottle had already taken. All four
+rates now run at true frequency with zero drops. Frames carry pulse ids; a slow old frame is
+discarded, never drawn over a newer one. Mobile keeps a pool of one.
 
 ## 8. Open questions (small, non-blocking)
 
