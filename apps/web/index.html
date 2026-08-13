@@ -984,6 +984,27 @@
         </div>
       </div>
       <div class="grp fl-only">
+        <div class="lab">DSA / Roadmap</div>
+        <div class="bod">
+          <div class="seg" id="flDsaSeg">
+            <button id="flDsa">DSA</button>
+            <button id="flRemask">Remask</button>
+            <button id="flRoad" disabled>Roadmap</button>
+          </div>
+          <div class="row" style="margin-top:8px"><div class="rl">Pixel shift <small>mask registration</small></div></div>
+          <div class="orpad"><div class="orpill" id="flPxPad">
+            <button class="orbtn" data-px="-1,0" title="Shift the mask left">&#8592;</button>
+            <button class="orbtn" data-px="0,-1" title="Shift the mask up">&#8593;</button>
+            <button class="orbtn" data-px="0,1" title="Shift the mask down">&#8595;</button>
+            <button class="orbtn" data-px="1,0" title="Shift the mask right">&#8594;</button>
+          </div></div>
+          <div class="ctrst-note">Arm DSA, inject (CONTRAST panel), and screen: the first frame
+            is the mask, and everything that has not changed vanishes &mdash; only the iodine
+            draws. Breathing wrecks the subtraction; BREATH HOLD is the rescue. The run's peak
+            opacification becomes the ROADMAP, held under live fluoro for navigation.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
         <div class="lab">Dose</div>
         <div class="bod">
           <div class="flro">
@@ -1038,6 +1059,7 @@
           <div class="mini" style="margin-top:10px">
             <button id="flHold">&#10074;&#10074; Breath hold</button>
             <button id="flSwallow">&#10515; Swallow</button>
+            <button id="flStill" title="Freeze every motion — heart, gut and all. A verification pose for judging a DSA subtraction against pure noise.">&#9724; Motion off</button>
           </div>
           <div class="ctrst-note">The motion is derived from this subject's own segmentation
             &mdash; the lungs give the diaphragm, the heart its beat, the oesophagus and

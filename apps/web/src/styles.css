@@ -1533,3 +1533,4 @@ body.mode-fluoro .fl-hide{display:none}   /* x-ray/CT display options with no fl
 .flro .v.alarm{color:var(--red); animation:flalarm .7s ease-in-out infinite}
 @keyframes flalarm{0%,100%{opacity:1}50%{opacity:.35}}
 body.mode-fluoro .mini #flHold.on{background:#3a2a0e; border-color:#ffb23e; color:#ffd9b0}
+body.mode-fluoro .mini #flStill.on{background:#0e2a3a; border-color:#3ec6ff; color:#b0e2ff}

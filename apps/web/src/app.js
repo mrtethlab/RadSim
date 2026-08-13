@@ -532,7 +532,7 @@ const S = {
            // Phase B: ABC curve parameter, collimator iris (fraction), mag mode, dose
            abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0,
            // Phase C: motion clocks (phases accumulated here; the worker is stateless)
-           hold:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
+           hold:false, still:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
            // electronic image orientation (display-space): accumulated rotation, flips,
            // and the pending rotation being dialled in for the NEXT run (the triangle)
            dispRot:0, flipH:false, flipV:false, pendRot:0,
@@ -1533,6 +1533,8 @@ function setCTPov(p){
    reconstruction viewer comes later), so the monitor is cleared — the two modes'
    images stay isolated, never bleeding a stale x-ray into CT. */
 function refreshFilmViewer(){
+  if(S.mode==='fluoro') return;   // the pulse chain owns the monitor — a barium tick calling
+                                  // this mid-run was flashing NO IMAGE over live fluoro
   const f=$('film'), noexp=$('noexp');
   if(S.mode!=='ct' && S.hasImage){
     drawFilm();
@@ -3230,7 +3232,14 @@ window.addEventListener('load',()=>{
       return lut && S.barium.giVol
         ? { ba: lut, gas: S.barium.gasLut, giVol: S.barium.giVol, ns: GI_NS } : null;
     },
-    bariumSwallow: () => giSip() });
+    bariumSwallow: () => giSip(),
+    // Phase E: the injector timeline rides the pulses the same way — while the run clock
+    // is live, scanTime tracks it, so the fluoro image washes in and out in real time.
+    contrastPulse: () => {
+      const lut = contrastLUT();
+      return lut && S.contrast.sVol
+        ? { iod: lut, sVol: S.contrast.sVol, ns: CONTRAST_NS } : null;
+    } });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

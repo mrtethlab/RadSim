@@ -17,6 +17,17 @@ let F = null;            // ctx.S.fluoro
 // volume copy costs more memory than 7.5 pps is worth.
 let workers = [], busy = [], readyCount = 0, workerSub = null;
 let giVolSent = false;   // whether this pool has the barium arclength map
+let sVolSent = false;    // whether this pool has the vessel arclength map
+/* ---- DSA state (docs/fluoroscopy.md Phase E) ------------------------------
+   The mask lives at the native pulse resolution, in log-transmission. While DSA is on the
+   sampling tier and the technique are FROZEN — subtraction only means anything against a
+   mask taken with identical geometry and beam. */
+let dsaOn = false, dsaMask = null, dsaN = 0, remaskNext = false;
+let dsaAcc = null, dsaAccCnt = 0;      // the mask is an AVERAGE of the first frames
+const MASK_FRAMES = 4;
+let dsaSX = 0, dsaSY = 0;              // pixel shift applied to the mask lookup
+let lastRaw = null, lastN = 0;         // last raw frame, for re-render on shift changes
+let roadAcc = null, roadmap = null, roadN = 0, roadOn = false;
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
 let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null, oecCol = null;
 let pendShown = false;   // the orientation pad's triangle: pending rotation being dialled in
@@ -105,7 +116,7 @@ function ensureWorker() {
   if (workers.length && workerSub === S.subject) return readyCount === workers.length;
   workers.forEach((w) => w.terminate());
   workers = []; busy = []; readyCount = 0; workerSub = S.subject; lastDrawn = 0;
-  giVolSent = false;                         // the fresh pool has no arclength map yet
+  giVolSent = false; sVolSent = false;       // the fresh pool has no arclength maps yet
   const pose = ctx.phantomPose();
   for (let i = 0; i < poolSize(); i++) {
     const w = new Worker(new URL('./fluoro-worker.js', import.meta.url), { type: 'module' });
@@ -172,6 +183,8 @@ function abcApply() {
   F.ma = Math.round((0.5 + 9.5 * q * q) * 10) / 10;
 }
 function abcStep(roi, photons) {
+  if (dsaOn) return;              // DSA locks the technique from arming: subtraction against
+                                  // a mask taken at a different beam would be pure artefact
   if (!F.abc || !F.pedal) return;
   const meas = photons * roi;               // what the detector actually collected
   if (meas <= 0) return;
@@ -188,9 +201,13 @@ function abcStep(roi, photons) {
    area at the patient, which is what the iris exists to shrink. */
 function fieldCm() { return [23, 15, 11][F.mag] || 23; }
 function irisCm() { return (fieldCm() / 2) * F.iris; }
+// DSA acquisition runs at far higher detector dose per frame than screening fluoro —
+// that is what makes subtraction quiet enough to read (sd(lnT) drops from ~0.21 between
+// two fluoro frames to ~0.05), and it is why a DSA run costs what it costs on the meter.
+const DSA_BOOST = 60;
 function akPerPulseMGy() {
   const mag = Math.pow(OEC.FIELD / fieldCm(), 2);
-  return (12 / (60 * 15)) * (F.ma / 2) * Math.pow(F.kv / 70, 2.5) * mag;
+  return (12 / (60 * 15)) * (F.ma / 2) * Math.pow(F.kv / 70, 2.5) * mag * (dsaOn ? DSA_BOOST : 1);
 }
 function dosePulse() {
   const ak = akPerPulseMGy();
@@ -228,6 +245,9 @@ function animTick() {
   const now = performance.now() / 1000;
   const dt = Math.min(lastPulseAt ? now - lastPulseAt : 0, 0.5);
   lastPulseAt = now;
+  // MOTION OFF: a verification pose, not a physiology — every clock stands still and the
+  // worker drops every warp, so a DSA subtraction can be judged against pure noise
+  if (F.still) return { off: true };
   if (!F.hold) F.brPhase = (F.brPhase + dt / 4.3) % 1;
   F.cardPhase = (F.cardPhase + dt * F.hr / 60) % 1;
   F.periT += dt;
@@ -252,10 +272,17 @@ function firePulse() {
     workers.forEach((w) => w.postMessage({ type: 'givol', giVol: bp.giVol, ns: bp.ns }));
     giVolSent = true;
   }
-  workers[slot].postMessage({ type: 'pulse', id: ++pulseId, kv: F.kv, photons: photonsPerPulse(),
+  const cp = ctx.contrastPulse?.();
+  if (cp && !sVolSent) {
+    workers.forEach((w) => w.postMessage({ type: 'svol', sVol: cp.sVol, ns: cp.ns }));
+    sVolSent = true;
+  }
+  workers[slot].postMessage({ type: 'pulse', id: ++pulseId, kv: F.kv,
+    photons: photonsPerPulse() * (dsaOn ? DSA_BOOST : 1),
     src: g.src, detC: g.detC, detU: g.detU, detV: g.detV, half: fieldCm() / 2, iris: irisCm(),
-    n: nPx(), rot: pose.rot, center: pose.center, anim: animTick(),
+    n: dsaOn ? dsaN : nPx(), rot: pose.rot, center: pose.center, anim: animTick(),
     ba: bp ? bp.ba : null, gas: bp ? bp.gas : null, giNS: bp ? bp.ns : 0,
+    iod: cp ? cp.iod : null, svNS: cp ? cp.ns : 0,
     seed: F.fixedSeed || (Math.random() * 1e9) | 0 });
 }
 
@@ -263,23 +290,81 @@ function firePulse() {
 let frameCanvas = null;
 function drawFrame(img, n) {
   const film = $('film'); if (!film) return;
+  lastRaw = img; lastN = n;
   if (!frameCanvas) frameCanvas = document.createElement('canvas');
   if (frameCanvas.width !== n) { frameCanvas.width = n; frameCanvas.height = n; }
-  // primitive display ABC (the technique loop is Phase B): gain the central-disc mean to
-  // mid-grey so panning stays watchable, then a gamma lift for the II look
-  let sum = 0, cnt = 0;
-  const c0 = n * 0.35 | 0, c1 = n * 0.65 | 0;
-  for (let j = c0; j < c1; j++) for (let i = c0; i < c1; i++) {
-    const t = img[j * n + i]; if (t >= 0) { sum += t; cnt++; }
-  }
-  const gain = cnt && sum > 0 ? 0.45 / (sum / cnt) : 1;
   const id = frameCanvas.getContext('2d').createImageData(n, n);
-  for (let k = 0; k < n * n; k++) {
-    const t = img[k];
-    let g = 0;
-    if (t >= 0) g = Math.min(1, Math.sqrt(Math.min(1.6, t * gain))) * 255;
-    id.data[k * 4] = id.data[k * 4 + 1] = id.data[k * 4 + 2] = g;
-    id.data[k * 4 + 3] = 255;
+  if (dsaOn) {
+    // ---- digital subtraction: everything that has not changed since the mask vanishes.
+    // The mask is the AVERAGE log-transmission of the first frames of the run (mask noise
+    // divides away); iodine arriving makes the diff negative and draws dark on the flat
+    // grey. Motion draws too — which is the lesson, and what the breath-hold button is for.
+    if (remaskNext || dsaN !== n || (!dsaMask && !dsaAcc)) {
+      dsaAcc = new Float32Array(n * n); dsaAccCnt = 0; dsaMask = null;
+      dsaN = n; remaskNext = false; dsaSX = 0; dsaSY = 0;
+      roadAcc = new Float32Array(n * n);
+    }
+    if (!dsaMask) {
+      for (let k = 0; k < n * n; k++) {
+        if (img[k] >= 0) { if (dsaAcc[k] < 1e8) dsaAcc[k] += Math.log(Math.max(img[k], 1e-6)); }
+        else dsaAcc[k] = 1e9;
+      }
+      if (++dsaAccCnt >= MASK_FRAMES) {
+        dsaMask = dsaAcc; dsaAcc = null;
+        for (let k = 0; k < dsaMask.length; k++) if (dsaMask[k] < 1e8) dsaMask[k] /= MASK_FRAMES;
+      }
+      for (let k = 0; k < n * n; k++) {
+        const g = img[k] >= 0 ? 0.55 * 255 : 0;     // masking: the screen holds flat grey
+        id.data[k * 4] = id.data[k * 4 + 1] = id.data[k * 4 + 2] = g;
+        id.data[k * 4 + 3] = 255;
+      }
+    } else {
+      for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+        const k = j * n + i, t = img[k];
+        let g = 0;
+        if (t >= 0) {
+          const mi = Math.min(n - 1, Math.max(0, i + dsaSX));
+          const mj = Math.min(n - 1, Math.max(0, j + dsaSY));
+          const mv = dsaMask[mj * n + mi];
+          if (mv < 1e8) {
+            const diff = Math.log(Math.max(t, 1e-6)) - mv;
+            g = Math.min(1, Math.max(0, 0.55 + 2.0 * diff)) * 255;
+            // peak-opacification accumulator, gated above what the boosted quantum
+            // mottle can reach — a max over frames would otherwise collect speckle
+            if (F.pedal && roadAcc) { const io = -diff; if (io > 0.3 && io > roadAcc[k]) roadAcc[k] = io; }
+          } else g = 0.55 * 255;
+        }
+        id.data[k * 4] = id.data[k * 4 + 1] = id.data[k * 4 + 2] = g;
+        id.data[k * 4 + 3] = 255;
+      }
+    }
+  } else {
+    // primitive display ABC (the technique loop is Phase B): gain the central-disc mean to
+    // mid-grey so panning stays watchable, then a gamma lift for the II look
+    let sum = 0, cnt = 0;
+    const c0 = n * 0.35 | 0, c1 = n * 0.65 | 0;
+    for (let j = c0; j < c1; j++) for (let i = c0; i < c1; i++) {
+      const t = img[j * n + i]; if (t >= 0) { sum += t; cnt++; }
+    }
+    const gain = cnt && sum > 0 ? 0.45 / (sum / cnt) : 1;
+    const road = roadOn && roadmap ? roadmap : null;
+    const rs = road ? roadN / n : 0;
+    for (let k = 0; k < n * n; k++) {
+      const t = img[k];
+      let g = 0;
+      if (t >= 0) {
+        g = Math.min(1, Math.sqrt(Math.min(1.6, t * gain))) * 255;
+        if (road) {
+          // the stored peak-opacification map rides under live fluoro — the navigation mode.
+          // Only strong columns draw; the slope saturates a well-opacified vessel to black.
+          const i = k % n, j = (k / n) | 0;
+          const rd = road[((j * rs) | 0) * roadN + ((i * rs) | 0)];
+          if (rd > 0.35) g *= Math.max(0, 1 - (rd - 0.35) * 2.2);
+        }
+      }
+      id.data[k * 4] = id.data[k * 4 + 1] = id.data[k * 4 + 2] = g;
+      id.data[k * 4 + 3] = 255;
+    }
   }
   frameCanvas.getContext('2d').putImageData(id, 0, 0);
   blitFilm();
@@ -369,6 +454,18 @@ function pedalUp() {
   $('flPedal')?.classList.remove('on');
   F.lih = true;
   $('lihBadge')?.classList.add('show');   // the frame persists on the monitor: Last Image Hold
+  // end of a DSA run: its peak-opacification map becomes the roadmap
+  if (dsaOn && roadAcc) {
+    let peak = 0;
+    for (let k = 0; k < roadAcc.length; k++) if (roadAcc[k] > peak) peak = roadAcc[k];
+    if (peak > 0.5) {
+      // RAW peak opacification, not normalised — the overlay draws only where the iodine
+      // column was strong, so organ blush and mild motion stay off the map
+      roadmap = roadAcc.slice();
+      roadN = dsaN;
+      const rb = $('flRoad'); if (rb) rb.disabled = false;
+    }
+  }
   renderReadouts();
 }
 
@@ -636,9 +733,58 @@ export function initFluoro(context) {
   $('flFlipV')?.addEventListener('click', () => {
     F.flipV = !F.flipV; $('flFlipV').classList.toggle('on', F.flipV); blitFilm();
   });
+  // ---- DSA / roadmap ----
+  $('flDsa')?.addEventListener('click', () => {
+    dsaOn = !dsaOn;
+    $('flDsa').classList.toggle('on', dsaOn);
+    if (dsaOn) {
+      dsaN = nPx();                          // freeze the sampling tier for the whole run
+      dsaMask = null; dsaAcc = null; roadOn = false;
+      $('flRoad')?.classList.remove('on');
+      setStatus('DSA armed — the start of the next run takes the mask.');
+    } else {
+      dsaMask = null; dsaAcc = null;
+      if (lastRaw) drawFrame(lastRaw, lastN);  // back to plain fluoro on the held image
+    }
+  });
+  $('flRemask')?.addEventListener('click', () => {
+    if (!dsaOn) return;
+    remaskNext = true;
+    setStatus('Remask — the next frame becomes the new mask.');
+  });
+  $('flRoad')?.addEventListener('click', () => {
+    if (!roadmap) return;
+    roadOn = !roadOn;
+    $('flRoad').classList.toggle('on', roadOn);
+    if (roadOn && dsaOn) { dsaOn = false; dsaMask = null; $('flDsa').classList.remove('on'); }
+    if (lastRaw) drawFrame(lastRaw, lastN);
+  });
+  // pixel shift: nudge the mask under the live frame (the real button for a patient who
+  // moved a little). Hold repeats, like every other positioning control here.
+  document.querySelectorAll('#flPxPad button').forEach((b) => {
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const [dx, dy] = b.dataset.px.split(',').map(Number);
+      const step = () => {
+        if (!dsaOn || !dsaMask) return;
+        dsaSX += dx; dsaSY += dy;
+        if (lastRaw) drawFrame(lastRaw, lastN);
+      };
+      step();
+      let iv = null;
+      const to = setTimeout(() => { iv = setInterval(step, 90); }, 340);
+      const stop = () => { clearTimeout(to); if (iv) clearInterval(iv); };
+      b.addEventListener('pointerup', stop, { once: true });
+      b.addEventListener('pointercancel', stop, { once: true });
+    });
+  });
   $('flHold')?.addEventListener('click', () => {
     F.hold = !F.hold;
     $('flHold').classList.toggle('on', F.hold);
+  });
+  $('flStill')?.addEventListener('click', () => {
+    F.still = !F.still;
+    $('flStill').classList.toggle('on', F.still);
   });
   $('flSwallow')?.addEventListener('click', () => {
     F.swallowAt = performance.now() / 1000;      // the wall wave
