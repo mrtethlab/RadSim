@@ -20,6 +20,7 @@ let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
 let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null, oecCol = null;
 let pendShown = false;   // the orientation pad's triangle: pending rotation being dialled in
 let viewerHome = null;   // where IMAGE/VIEWER lives outside fluoro (desktop moves it left)
+let pedalHome = null;    // where the pedal row lives outside fluoro (it follows the monitor)
 
 // GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°.
 // LARM: boom pivot (the column axis) to the beam axis, cm — wig-wag's arc radius.
@@ -517,12 +518,18 @@ export function fluoroApplyMode(on) {
   // Desktop layout: fluoro pulls the IMAGE/VIEWER one pane left, to the top of the
   // POSITION/SETUP column — the operator watches the monitor next to the room, not at
   // the far edge. (Mobile keeps it where the pager expects a page.)
-  const conView = $('conView'), setupPad = $('setupPad');
+  const conView = $('conView'), setupPad = $('setupPad'), pedalRow = $('flPedalRow');
   if (conView && setupPad && !document.body.classList.contains('mobile')) {
     if (on && conView.parentElement !== setupPad) {
       viewerHome = viewerHome || { parent: conView.parentElement, next: conView.nextElementSibling };
       setupPad.insertBefore(conView, setupPad.firstChild);
+      // the pedal follows the monitor: exposure control directly under the image
+      if (pedalRow) {
+        pedalHome = pedalHome || { parent: pedalRow.parentElement, next: pedalRow.nextElementSibling };
+        setupPad.insertBefore(pedalRow, conView.nextElementSibling);
+      }
     } else if (!on && viewerHome && conView.parentElement === setupPad) {
+      if (pedalHome && pedalRow?.parentElement === setupPad) pedalHome.parent.insertBefore(pedalRow, pedalHome.next);
       viewerHome.parent.insertBefore(conView, viewerHome.next);
     }
   }
