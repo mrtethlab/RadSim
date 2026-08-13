@@ -7,8 +7,10 @@
 #     x ~ 0.72 m, and their faces sit ~96 cm apart — the OEC's real SID to within 3 cm;
 #   - the C's shell plates all fall on an annulus about the throat centre (0.72, 0.07),
 #     radius 0.30–0.78 m, in the z ~ 0 plane;
-#   - the workstation box (x > 0.55, y < -0.47) and the cart column (x < 0) fail both
-#     fences and stay with the body.
+#   - the whole box hanging below the arc (x > 0.33, y -0.90..-0.35) is the x-ray tube
+#     extension — ML confirmed there is no separate cart there; it floats above the
+#     floor (min y -0.85 vs floor -0.97), consistent with hanging from the C;
+#   - the cart column (x < 0) fails every fence and stays with the body.
 # The C group is exported with its pivot pre-shifted to the throat centre, so the app
 # articulates it with nothing but position = isocentre, quaternion = beam rotation.
 #
@@ -30,11 +32,11 @@ cgrp, body = [], []
 for p in parts:
     x, y, z = p.centroid
     r = np.hypot(x - CX, y - CY)
-    is_ws = x > 0.55 and y < -0.47                            # workstation box
     ii    = x > 0.40 and y > 0.33                             # image intensifier + covers
     tube  = abs(x - CX) < 0.25 and -0.47 < y < 0 and abs(z) < 0.30
-    arc   = 0.30 < r < 0.78 and y > -0.62 and x > 0.03 and not is_ws
-    (cgrp if (ii or tube or arc) else body).append(p)
+    tube_ext = x > 0.33 and -0.90 < y < -0.35                 # the tank hanging below the arc
+    arc   = 0.30 < r < 0.78 and y > -0.62 and x > 0.03
+    (cgrp if (ii or tube or tube_ext or arc) else body).append(p)
 
 cm = trimesh.util.concatenate(cgrp)
 bm = trimesh.util.concatenate(body)
