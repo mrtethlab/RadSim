@@ -21,6 +21,7 @@ import { initTutorial } from './tutorial.js';
 import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
+import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -522,6 +523,20 @@ const S = {
            route:'oral', volumeMl:150, concPct:100, erect:false,
            // double contrast: gas volume in mL (0 = single contrast) and its own LUT
            gasMl:0, gasLut:null },
+  // ---- fluoroscopy (docs/fluoroscopy.md): the OEC C-arm and its pulse loop ----
+  fluoro:{ machine:'oec', pps:15, kv:70, ma:2.0, pedal:false, lih:false,
+           beamS:0, pulses:0, dropped:0, msAvg:0, orbital:0, tilt:0,
+           // column motions: lift raises the C (cm), extend slides the boom (cm),
+           // wig-wag swivels it about the column axis (deg) — all move the isocentre
+           lift:0, ext:0, wig:0,
+           // Phase B: ABC curve parameter, collimator iris (fraction), mag mode, dose
+           abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0,
+           // Phase C: motion clocks (phases accumulated here; the worker is stateless)
+           hold:false, still:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
+           // electronic image orientation (display-space): accumulated rotation, flips,
+           // and the pending rotation being dialled in for the NEXT run (the triangle)
+           dispRot:0, flipH:false, flipV:false, pendRot:0,
+           motions:[], fixedSeed:null },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -801,6 +816,31 @@ function giTick(){
   B.lut = null; B.lutT = null;
   giRender();
   refreshFilmViewer?.();
+}
+
+/* A sip on command — fluoro's Swallow button (docs/fluoroscopy.md Phase D). Pours a small
+   bolus into the top of the oesophagus of the LIVE study, exactly as the staged
+   administration would: node by node, respecting the gas ceiling. The x-ray panel's own
+   administration is untouched; this is the extra mouthful the operator asks for while
+   screening ("another swallow, please"). */
+function giSip(ml = 15){
+  const B = S.barium;
+  if(!B.on || B.route === 'rectal') return;             // a swallow needs a mouth
+  if(!B.study && !giBegin()) return;
+  const st = B.study, v = 48, tube = st.tubes[v];
+  if(!tube) return;
+  B.running = true; B.lastTick = performance.now();     // a swallow starts the clock
+  const ceil = st.ceil[v], vn = st.volNode[v], cmax = st.concMgBaMl;
+  let left = ml;
+  for(let j = 0; j < tube.c.length && left > 1e-6; j++){
+    const room = Math.max(0, ceil[j] - tube.c[j]) / cmax * vn;
+    const take = Math.min(room, left);
+    tube.c[j] += take / vn * cmax;
+    left -= take;
+  }
+  st.given += ml - left;                                // the audit counts what went in
+  B.timeline = st.sample(); B.lut = null; B.lutT = null;
+  giRender();
 }
 
 function giSetPose(){
@@ -1230,6 +1270,7 @@ function syncScene(){
   }
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
   editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
+  fluoroSyncScene();                            // fluoro hides the x-ray head and shows the C-arm
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
@@ -1492,6 +1533,8 @@ function setCTPov(p){
    reconstruction viewer comes later), so the monitor is cleared — the two modes'
    images stay isolated, never bleeding a stale x-ray into CT. */
 function refreshFilmViewer(){
+  if(S.mode==='fluoro') return;   // the pulse chain owns the monitor — a barium tick calling
+                                  // this mid-run was flashing NO IMAGE over live fluoro
   const f=$('film'), noexp=$('noexp');
   if(S.mode!=='ct' && S.hasImage){
     drawFilm();
@@ -1525,9 +1568,14 @@ function setContent(c){
   const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
   const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
   const rcv=$('ctRecons'); if(rcv) rcv.classList.toggle('show', recons);
-  const xrayImg=(img && S.hasImage && !scouts);
-  $('bigFilm').style.display=xrayImg?'block':'none';
-  $('bignote').style.display=(img && !S.hasImage && !scouts)?'flex':'none';
+  // In fluoro, the Image view IS the fluoro monitor (live + LIH) — never the x-ray archive.
+  const fluoroImg=(img && S.mode==='fluoro');
+  const xrayImg=(img && S.hasImage && !scouts && !fluoroImg);
+  let fluoroShown=false;
+  if(fluoroImg){ $('bigFilm').style.display='block'; fluoroShown=fluoroImageToBay();
+    if(!fluoroShown) $('bigFilm').style.display='none'; }
+  else $('bigFilm').style.display=xrayImg?'block':'none';
+  $('bignote').style.display=(img && !scouts && (fluoroImg ? !fluoroShown : !S.hasImage))?'flex':'none';
   $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
   const ui=$('imgViewUI'); if(ui) ui.classList.toggle('show', xrayImg);   // meta + history strip (image view only)
   if(xrayImg){ renderRadiograph($('bigFilm')); updateImageMeta(); renderImageStrip(); }
@@ -1609,7 +1657,9 @@ function bind(){
   fire.addEventListener('lostpointercapture',()=>releaseExposure());
   // keyboard: space engages rotor, then hold space to expose
   let spaceDown=false;
-  document.addEventListener('keydown',e=>{ if(e.code!=='Space')return; e.preventDefault();
+  document.addEventListener('keydown',e=>{ if(e.code!=='Space')return;
+    if(S.mode==='fluoro')return;             // fluoro owns Space: it is the pedal, never the rotor
+    e.preventDefault();
     if(spaceDown)return; spaceDown=true;
     if(!S.prepped && !S.exposing) setRotor(true);
     else if(S.prepped && !S.exposing) startExposure(); });
@@ -2072,6 +2122,7 @@ function renderRadiograph(target,entry){
   tctx.restore();
 }
 function drawFilm(){
+  if(S.mode==='fluoro') return;   // the fluoro chain owns both monitors in its room
   renderRadiograph($('film'));
   if(S.bayContent==='image' && S.hasImage) renderRadiograph($('bigFilm'));
   updateXrayHistogram();
@@ -3163,10 +3214,32 @@ window.addEventListener('load',()=>{
            contrastReset: ()=>ctrstReset(),
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
-           editorMode: (on) => editorApplyMode(on) });
+           editorMode: (on) => editorApplyMode(on),
+           fluoroMode: (on) => fluoroApplyMode(on) });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
   initMobile({ S });                            // pager + dock; inert above the breakpoint
+  initFluoro({ THREE, S, $, three, loadModelUrl, baseUrl: import.meta.env.BASE_URL,
+    // the worker rebuilds the exact phantom the x-ray path traces: same centre, same
+    // flips, same rotation — one geometry, two consumers
+    phantomPose: () => ({
+      center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
+      flip: voxelFlips(), rot: objMat() }),
+    // Phase D: the LIVE barium study rides the pulses. bariumLUT() rebuilds only when the
+    // study clock moved; null while the panel is off or the subject has no gut.
+    bariumPulse: () => {
+      const lut = bariumLUT();
+      return lut && S.barium.giVol
+        ? { ba: lut, gas: S.barium.gasLut, giVol: S.barium.giVol, ns: GI_NS } : null;
+    },
+    bariumSwallow: () => giSip(),
+    // Phase E: the injector timeline rides the pulses the same way — while the run clock
+    // is live, scanTime tracks it, so the fluoro image washes in and out in real time.
+    contrastPulse: () => {
+      const lut = contrastLUT();
+      return lut && S.contrast.sVol
+        ? { iod: lut, sVol: S.contrast.sVol, ns: CONTRAST_NS } : null;
+    } });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

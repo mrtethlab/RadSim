@@ -125,14 +125,18 @@
 
       <!-- Modes on the roadmap but not yet in the build: parked in plain sight, not clickable.
            No data-mode, so the card wiring skips them entirely. -->
-      <div class="home-card hc-dev hc-fluoro" aria-disabled="true">
-        <div class="hc-art"><span class="hc-badge">In development</span></div>
+      <div class="home-card hc-fluoro" data-mode="fluoro">
+        <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Fluoroscopy</div>
           <div class="hc-tag">Live screening &mdash; a beam you drive with your foot</div>
-          <div class="hc-desc">Pulsed screening, last-image hold, and dose that accumulates for
-            as long as the pedal is down. The barium engine already runs live under X-ray mode;
-            this gives it a room of its own.</div>
+          <div class="hc-desc">Pulsed screening on a GE OEC C-arm: hold the pedal, pick a pulse
+            rate, and trade dose for noise in real time. Last-image hold, beam-on timer, and a
+            C-arm you orbit around the patient.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="fluoro">Open</button>
+            <button class="hc-tut" data-tut="fluoro" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
         </div>
       </div>
       <div class="home-card hc-dev hc-mammo" aria-disabled="true">
@@ -195,8 +199,8 @@
     </div>
 
 
-    <!-- ============ BARIUM / FLUOROSCOPY (pull-out, left edge, x-ray only) ============ -->
-    <div class="ctrst gi xray-only" id="giPanel">
+    <!-- ============ BARIUM / FLUOROSCOPY (pull-out, left edge, x-ray + fluoro) ============ -->
+    <div class="ctrst gi xray-only flkeep" id="giPanel">
       <button class="ctrst-tab" id="giTab" title="Barium studies"><span>BARIUM</span></button>
       <div class="ctrst-body">
         <div class="ctrst-hdr">
@@ -556,7 +560,7 @@
   <!-- ============ POSITIONING CONTROLS ============ -->
   <div class="col">
     <div class="hdr"><div class="t"><b>POSITION</b> / SETUP</div></div>
-    <div class="pad">
+    <div class="pad" id="setupPad">
 
       <div class="grp" id="subjectGrp">
         <div class="lab">Object · model</div>
@@ -591,7 +595,7 @@
           <div class="row" style="margin-top:8px"><div class="rl">Roll <small>long axis</small></div>
             <div class="valchip" id="objRotZv">0°</div></div>
           <input type="range" id="objRotZ" min="-180" max="180" value="0" step="1">
-          <div class="xray-only">
+          <div class="xray-only flkeep">
             <div class="row" style="margin-top:8px"><div class="rl">Offset <small>long axis</small></div>
               <div class="valchip" id="objOffZv">0 cm</div></div>
             <input type="range" id="objOffZ" min="-45" max="45" value="0" step="0.5">
@@ -814,8 +818,8 @@
         </div>
       </div>
 
-      <!-- SIMULATION: compute engine + display options (both modes) -->
-      <div class="grp" id="simGrp">
+      <!-- SIMULATION: compute engine + display options (x-ray + CT; fluoro has its own chain) -->
+      <div class="grp fl-hide" id="simGrp">
         <div class="lab">Simulation</div>
         <div class="bod">
           <div class="xray-only">
@@ -929,6 +933,161 @@
         </div>
       </div>
 
+      <!-- ============ FLUORO CONSOLE (Phase A: pulse loop — docs/fluoroscopy.md) ============ -->
+      <div class="grp fl-only">
+        <div class="lab">Fluoroscopy · GE OEC</div>
+        <div class="bod">
+          <div class="flro">
+            <div><div class="k">kV</div><div class="v" id="flKvV">70 kV</div></div>
+            <div><div class="k">mA</div><div class="v" id="flMaV">2.0 mA</div></div>
+            <div><div class="k">Beam-on</div><div class="v green" id="flBeamV">00:00</div></div>
+            <div><div class="k">ms/pulse</div><div class="v" id="flPerfV">&mdash;</div></div>
+          </div>
+          <div class="row" style="margin-top:10px"><div class="rl">Pulse rate <small>pps</small></div></div>
+          <div class="seg" id="flPpsSeg">
+            <button data-pps="3">3</button>
+            <button data-pps="7.5">7.5</button>
+            <button data-pps="15" class="on">15</button>
+            <button data-pps="30">30</button>
+          </div>
+          <div class="row" style="margin-top:10px"><div class="rl">Brightness control</div></div>
+          <div class="seg" id="flAbcSeg">
+            <button data-abc="1" class="on">ABC</button>
+            <button data-abc="0">Manual</button>
+          </div>
+          <div class="row" style="margin-top:10px"><div class="rl">kV</div></div>
+          <input type="range" id="flKv" min="50" max="120" value="70" step="1">
+          <div class="row" style="margin-top:6px"><div class="rl">mA</div></div>
+          <input type="range" id="flMa" min="0.5" max="10" value="2" step="0.5">
+          <div class="ctrst-note">ABC is the fluoroscopic AEC: a closed loop on the detector
+            that drives kV and mA along the machine's fluoro curve, every pulse. Pan from lung
+            to abdomen and watch the readouts climb &mdash; and the contrast fall as the kV
+            takes it. Manual hands you the sliders and the consequences.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Orientation</div>
+        <div class="bod">
+          <div class="orpad">
+            <div class="orpill">
+              <button class="orbtn" id="flRotCCW" title="Rotate image counter-clockwise — tap to nudge, hold for large adjustment">&#8634;</button>
+              <span class="oricon">&#9681;</span>
+              <button class="orbtn" id="flRotCW" title="Rotate image clockwise — tap to nudge, hold for large adjustment">&#8635;</button>
+            </div>
+            <div class="orflips">
+              <button class="orbtn orround" id="flFlipH" title="Mirror the image left / right"><span class="orR orRh">R</span></button>
+              <button class="orbtn orround" id="flFlipV" title="Flip the image top / bottom"><span class="orR orRv">R</span></button>
+            </div>
+          </div>
+          <div class="ctrst-note">Electronic image orientation, as on the real pad: the display
+            turns, the beam does not. The marker on the last image shows where the TOP of the
+            next run will be.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">DSA / Roadmap</div>
+        <div class="bod">
+          <div class="seg" id="flDsaSeg">
+            <button id="flDsaOff" class="on">Off</button>
+            <button id="flDsa">DSA</button>
+            <button id="flRemask">Remask</button>
+            <button id="flRoad" disabled>Roadmap</button>
+          </div>
+          <div class="row" style="margin-top:8px"><div class="rl">Pixel shift <small>mask registration</small></div></div>
+          <div class="orpad"><div class="orpill" id="flPxPad">
+            <button class="orbtn" data-px="-1,0" title="Shift the mask left">&#8592;</button>
+            <button class="orbtn" data-px="0,-1" title="Shift the mask up">&#8593;</button>
+            <button class="orbtn" data-px="0,1" title="Shift the mask down">&#8595;</button>
+            <button class="orbtn" data-px="1,0" title="Shift the mask right">&#8594;</button>
+          </div></div>
+          <div class="ctrst-note">Arm DSA, inject (CONTRAST panel), and screen: the first frame
+            is the mask, and everything that has not changed vanishes &mdash; only the iodine
+            draws. Breathing wrecks the subtraction; BREATH HOLD is the rescue. The run's peak
+            opacification becomes the ROADMAP, held under live fluoro for navigation.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Cine</div>
+        <div class="bod">
+          <div class="seg" id="flRecSeg">
+            <button id="flRec">&#9679; Record runs</button>
+          </div>
+          <div class="cinelist" id="flCineList"></div>
+          <div class="ctrst-note">Armed, every pedal run is captured; DSA runs record
+            themselves, as the real suite does. Play a loop on the monitor, download it
+            as .webm.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Dose</div>
+        <div class="bod">
+          <div class="flro">
+            <div><div class="k">Air kerma</div><div class="v" id="flAkV">0.00 mGy</div></div>
+            <div><div class="k">Rate</div><div class="v" id="flAkRateV">&mdash;</div></div>
+            <div><div class="k">DAP</div><div class="v" id="flDapV">0.0 uGy&middot;m&sup2;</div></div>
+            <div><div class="k">&nbsp;</div><button class="fldose-rst" id="flDoseReset">reset</button></div>
+          </div>
+          <div class="ctrst-note">Beam-on time alarms at every five minutes, as the real
+            machine must. The iris shrinks DAP without touching air kerma &mdash; collimation
+            protects everything the beam no longer crosses.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">C-arm</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Orbital <small>LAO / RAO</small></div>
+            <div class="valchip" id="flOrbV">0&deg;</div></div>
+          <input type="range" id="flOrb" min="-115" max="115" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Tilt <small>cran / caud</small></div>
+            <div class="valchip" id="flTiltV">0&deg;</div></div>
+          <input type="range" id="flTilt" min="-45" max="45" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Lift <small>column up / down</small></div>
+            <div class="valchip" id="flLiftV">0 cm</div></div>
+          <input type="range" id="flLift" min="0" max="30" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Extend <small>boom in / out</small></div>
+            <div class="valchip" id="flExtV">0 cm</div></div>
+          <input type="range" id="flExt" min="-10" max="10" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Wig-wag <small>boom swivel</small></div>
+            <div class="valchip" id="flWigV">0&deg;</div></div>
+          <input type="range" id="flWig" min="-10" max="10" value="0" step="1">
+          <div class="row" style="margin-top:10px"><div class="rl">Iris <small>collimation</small></div>
+            <div class="valchip" id="flIrisV">100 %</div></div>
+          <input type="range" id="flIris" min="0.3" max="1" value="1" step="0.05">
+          <div class="row" style="margin-top:8px"><div class="rl">Mag <small>II field</small></div>
+            <div class="valchip" id="flMagV">9&Prime;</div></div>
+          <div class="seg" id="flMagSeg">
+            <button data-mag="0" class="on">9&Prime;</button>
+            <button data-mag="1">6&Prime;</button>
+            <button data-mag="2">4.5&Prime;</button>
+          </div>
+          <div class="ctrst-note">SID is fixed at 99 cm on the OEC &mdash; the C moves, the
+            patient does not. Mag trades field for sharpness and pays in dose rate.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Motion</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Heart rate</div>
+            <div class="valchip" id="flHrV">72 bpm</div></div>
+          <input type="range" id="flHr" min="40" max="140" value="72" step="2">
+          <div class="mini" style="margin-top:10px">
+            <button id="flHold">&#10074;&#10074; Breath hold</button>
+            <button id="flSwallow">&#10515; Swallow</button>
+            <button id="flStill" title="Freeze every motion — heart, gut and all. A verification pose for judging a DSA subtraction against pure noise.">&#9724; Motion off</button>
+          </div>
+          <div class="ctrst-note">The motion is derived from this subject's own segmentation
+            &mdash; the lungs give the diaphragm, the heart its beat, the oesophagus and
+            stomach their walls. Breath hold stops the dome mid-cycle (and will one day
+            rescue your DSA); everything else keeps its own clock.</div>
+        </div>
+      </div>
+      <div class="expose fl-only" id="flPedalRow">
+        <button class="flpedal" id="flPedal">&#9679; FLUORO &mdash; hold</button>
+        <div class="note" style="margin-top:8px; text-align:center">Press and hold (or hold
+          <b>Space</b>). Release for Last Image Hold.</div>
+        <div class="note" id="flStatus" style="margin-top:6px; text-align:center">&mdash;</div>
+      </div>
+
       <div class="expose xray-only">
         <div class="warn" id="warn"><div class="lamp"></div><div class="wt" id="warnT">SYSTEM STANDBY</div></div>
         <div class="btns2">
@@ -968,10 +1127,14 @@
       <div class="filmnote" id="fnBL"></div>
       <div class="filmnote r" id="fnBR"></div>
       <div class="preview-badge" id="previewBadge">PREVIEW</div>
+      <div class="lih-badge" id="lihBadge">LIH</div>
+      <div class="rec-badge" id="recBadge">&#9679; REC</div>
+      <video class="cineview" id="flCineView" loop muted playsinline></video>
+      <button class="cineclose" id="flCineClose" type="button">&#10005; close loop</button>
       <div class="prog" id="prog"></div>
     </div>
 
-    <div class="imgtools">
+    <div class="imgtools fl-hide">
       <span class="tlabel">Orient</span>
       <button id="rotL" title="Rotate left">⟲</button>
       <button id="rotR" title="Rotate right">⟳</button>
@@ -980,7 +1143,7 @@
       <button id="imgReset" class="txt" title="Reset orientation">reset</button>
     </div>
 
-    <div class="di">
+    <div class="di fl-hide">
       <div class="dib"><div class="k">EI</div><div class="v" id="eiV">—</div></div>
       <div class="dib"><div class="k">EI-TARGET</div><div class="v cyanlit" id="eitV">—</div></div>
       <div class="dib"><div class="k">DI (dev)</div><div class="v" id="diV">—</div></div>
@@ -996,7 +1159,7 @@
           <button class="ctstoreclear" id="ctStorageClear" type="button">Clear all stored scans</button>
         </div>
       </div>
-      <div class="grp">
+      <div class="grp fl-hide">
         <div class="lab">Display · window / level</div>
         <div class="bod">
           <canvas id="xrayHist" class="histcanvas xray-only" width="256" height="96" title="Pixel histogram + brightness/contrast response curve"></canvas>

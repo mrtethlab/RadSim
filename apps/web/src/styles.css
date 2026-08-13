@@ -1484,3 +1484,77 @@ body.mobile .baydrop{top:8px}
 /* the full DR matrices are a ~30 s raycast on a phone CPU — parked, not pretended */
 body.mobile #resSeg [data-res="std"], body.mobile #resSeg [data-res="high"]{
   opacity:.35; pointer-events:none}
+
+/* ============================================================================
+   FLUOROSCOPY MODE (docs/fluoroscopy.md) — Phase A
+   ============================================================================ */
+.fl-only{display:none}
+body.mode-fluoro .fl-only{display:block}
+body.mode-fluoro .xray-only{display:none}
+body.mode-fluoro .flkeep{display:block}   /* subject offsets are positioning, not x-ray */
+body.mode-fluoro .fl-hide{display:none}   /* x-ray/CT display options with no fluoro meaning */
+/* ---- the OEC orientation pad: rotate CCW/CW pill + two flip buttons ---- */
+.orpad{display:flex; flex-direction:column; gap:9px; align-items:center}
+.orpill{display:flex; align-items:center; gap:2px; background:#233036; border:1px solid #35464e;
+  border-radius:999px; padding:3px 6px}
+.orbtn{cursor:pointer; user-select:none; touch-action:none; border:1px solid #3f5d54;
+  background:linear-gradient(180deg,#9fd8c0,#7fbfa4); color:#12302a;
+  font-size:15px; font-weight:700; line-height:1}
+.orpill .orbtn{border-radius:999px; width:44px; height:26px}
+.orbtn:active,.orbtn.on{background:linear-gradient(180deg,#c8f2de,#9fd8c0);
+  box-shadow:0 0 10px rgba(127,227,164,.45)}
+.oricon{color:var(--dmuted); font-size:14px; padding:0 4px}
+.orflips{display:flex; gap:14px}
+.orround{border-radius:50%; width:34px; height:34px; display:flex; align-items:center;
+  justify-content:center}
+.orR{font-family:var(--disp); font-size:15px; font-weight:800; display:inline-block}
+.orRh{transform:scaleX(-1)}
+.orRv{transform:scaleY(-1)}
+.flro{display:grid; grid-template-columns:repeat(4,1fr); gap:7px}
+.flro .k{font-family:var(--seg); font-size:8.5px; letter-spacing:1.5px; color:var(--muted2);
+  text-transform:uppercase}
+.flro .v{font-family:var(--seg); font-size:14px; color:var(--txt); margin-top:2px}
+.flro .v.green{color:var(--green)}
+.flpedal{width:100%; min-height:52px; border-radius:9px; cursor:pointer; user-select:none;
+  touch-action:none; font-family:var(--disp); font-weight:700; font-size:16px;
+  letter-spacing:2px; text-transform:uppercase; color:#ffd9b0;
+  background:linear-gradient(180deg,#4a2e14,#33200e); border:1px solid #7a5518;
+  transition:.12s}
+.flpedal.on{background:linear-gradient(180deg,#b57612,#8a5a0c); color:#fff7ea;
+  box-shadow:0 0 22px rgba(255,178,62,.55); border-color:#ffb23e}
+.lih-badge{position:absolute; top:8px; right:10px; z-index:3; display:none;
+  font-family:var(--seg); font-size:10px; letter-spacing:2px; color:#7fe3a4;
+  border:1px solid #2c7a44; padding:2px 7px; border-radius:4px; background:rgba(5,16,9,.7)}
+.lih-badge.show{display:block}
+.fldose-rst{font-family:var(--seg); font-size:10px; letter-spacing:1px; padding:4px 10px;
+  background:#1a222b; color:var(--muted); border:1px solid var(--edge2); border-radius:5px;
+  cursor:pointer; text-transform:uppercase}
+.fldose-rst:hover{color:var(--txt); border-color:#6b8aa4}
+.flro .v.alarm{color:var(--red); animation:flalarm .7s ease-in-out infinite}
+@keyframes flalarm{0%,100%{opacity:1}50%{opacity:.35}}
+body.mode-fluoro .mini #flHold.on{background:#3a2a0e; border-color:#ffb23e; color:#ffd9b0}
+body.mode-fluoro .mini #flStill.on{background:#0e2a3a; border-color:#3ec6ff; color:#b0e2ff}
+/* ---- cine: record badge, loop playback over the monitor, clip list ---- */
+.rec-badge{position:absolute; top:8px; left:10px; z-index:3; display:none;
+  font-family:var(--seg); font-size:10px; letter-spacing:2px; color:#ff6d6d;
+  animation:recblink 1.2s step-end infinite}
+.rec-badge.show{display:block}
+@keyframes recblink{50%{opacity:.25}}
+.cineview{position:absolute; inset:0; width:100%; height:100%; object-fit:contain;
+  background:#000; z-index:4; display:none}
+.cineview.show{display:block}
+.cineclose{position:absolute; top:8px; right:10px; z-index:5; display:none; cursor:pointer;
+  font-family:var(--seg); font-size:9px; letter-spacing:1.5px; color:var(--dtxt);
+  background:#1a2229cc; border:1px solid #35464e; border-radius:6px; padding:4px 8px}
+.cineclose.show{display:block}
+#flRec.on{color:#ff6d6d; border-color:#a03636}
+.cinelist{display:flex; flex-direction:column; gap:5px; margin-top:8px}
+.cinelist:empty{display:none}
+.cinerow{display:flex; align-items:center; gap:7px; font-family:var(--seg); font-size:10px;
+  letter-spacing:1px; color:var(--dmuted); background:#141b21; border:1px solid #26313a;
+  border-radius:7px; padding:5px 8px}
+.cinerow .t{flex:1; color:var(--dtxt)}
+.cinerow button{cursor:pointer; background:#20303a; color:var(--dcyan); border:1px solid #35464e;
+  border-radius:5px; font-size:10px; padding:3px 8px}
+.cinerow button:hover{background:#28404e}
+.cinerow.playing{border-color:var(--dcyan)}
