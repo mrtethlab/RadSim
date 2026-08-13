@@ -533,6 +533,9 @@ const S = {
            abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0,
            // Phase C: motion clocks (phases accumulated here; the worker is stateless)
            hold:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
+           // electronic image orientation (display-space): accumulated rotation, flips,
+           // and the pending rotation being dialled in for the NEXT run (the triangle)
+           dispRot:0, flipH:false, flipV:false, pendRot:0,
            motions:[], fixedSeed:null },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
@@ -1622,7 +1625,9 @@ function bind(){
   fire.addEventListener('lostpointercapture',()=>releaseExposure());
   // keyboard: space engages rotor, then hold space to expose
   let spaceDown=false;
-  document.addEventListener('keydown',e=>{ if(e.code!=='Space')return; e.preventDefault();
+  document.addEventListener('keydown',e=>{ if(e.code!=='Space')return;
+    if(S.mode==='fluoro')return;             // fluoro owns Space: it is the pedal, never the rotor
+    e.preventDefault();
     if(spaceDown)return; spaceDown=true;
     if(!S.prepped && !S.exposing) setRotor(true);
     else if(S.prepped && !S.exposing) startExposure(); });

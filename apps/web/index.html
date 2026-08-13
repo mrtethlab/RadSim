@@ -817,8 +817,8 @@
         </div>
       </div>
 
-      <!-- SIMULATION: compute engine + display options (both modes) -->
-      <div class="grp" id="simGrp">
+      <!-- SIMULATION: compute engine + display options (x-ray + CT; fluoro has its own chain) -->
+      <div class="grp fl-hide" id="simGrp">
         <div class="lab">Simulation</div>
         <div class="bod">
           <div class="xray-only">
@@ -965,6 +965,25 @@
         </div>
       </div>
       <div class="grp fl-only">
+        <div class="lab">Orientation</div>
+        <div class="bod">
+          <div class="orpad">
+            <div class="orpill">
+              <button class="orbtn" id="flRotCCW" title="Rotate image counter-clockwise — tap to nudge, hold for large adjustment">&#8634;</button>
+              <span class="oricon">&#9681;</span>
+              <button class="orbtn" id="flRotCW" title="Rotate image clockwise — tap to nudge, hold for large adjustment">&#8635;</button>
+            </div>
+            <div class="orflips">
+              <button class="orbtn orround" id="flFlipH" title="Mirror the image left / right"><span class="orR orRh">R</span></button>
+              <button class="orbtn orround" id="flFlipV" title="Flip the image top / bottom"><span class="orR orRv">R</span></button>
+            </div>
+          </div>
+          <div class="ctrst-note">Electronic image orientation, as on the real pad: the display
+            turns, the beam does not. The marker on the last image shows where the TOP of the
+            next run will be.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
         <div class="lab">Dose</div>
         <div class="bod">
           <div class="flro">
@@ -1101,7 +1120,7 @@
           <button class="ctstoreclear" id="ctStorageClear" type="button">Clear all stored scans</button>
         </div>
       </div>
-      <div class="grp">
+      <div class="grp fl-hide">
         <div class="lab">Display · window / level</div>
         <div class="bod">
           <canvas id="xrayHist" class="histcanvas xray-only" width="256" height="96" title="Pixel histogram + brightness/contrast response curve"></canvas>

@@ -17,7 +17,8 @@ let F = null;            // ctx.S.fluoro
 // volume copy costs more memory than 7.5 pps is worth.
 let workers = [], busy = [], readyCount = 0, workerSub = null;
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
-let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null;
+let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null, oecCol = null;
+let pendShown = false;   // the orientation pad's triangle: pending rotation being dialled in
 
 // GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°.
 // LARM: boom pivot (the column axis) to the beam axis, cm — wig-wag's arc radius.
@@ -269,12 +270,39 @@ function drawFrame(img, n) {
     id.data[k * 4 + 3] = 255;
   }
   frameCanvas.getContext('2d').putImageData(id, 0, 0);
+  blitFilm();
+}
+
+/* Electronic image orientation: the display turns, the beam does not — exactly the pad on
+   the real machine. Rotation dialled on the pad is PENDING: a triangle on the last image
+   marks where the top of the next run will be; pedal-down folds it into the display. */
+function blitFilm() {
+  const film = $('film'); if (!film || !frameCanvas) return;
   const g2 = film.getContext('2d');
   if (film.width !== 330) { film.width = 330; film.height = 440; }
   g2.fillStyle = '#000'; g2.fillRect(0, 0, film.width, film.height);
   const s = Math.min(film.width, film.height) - 10;
+  const cx = film.width / 2, cy = film.height / 2;
   g2.imageSmoothingEnabled = true;
-  g2.drawImage(frameCanvas, (film.width - s) / 2, (film.height - s) / 2, s, s);
+  g2.save();
+  g2.translate(cx, cy);
+  g2.rotate(F.dispRot * Math.PI / 180);
+  g2.scale(F.flipH ? -1 : 1, F.flipV ? -1 : 1);
+  g2.drawImage(frameCanvas, -s / 2, -s / 2, s, s);
+  g2.restore();
+  if (pendShown) {
+    // the content that will land at 12 o'clock after a CW rotation by pendRot currently
+    // sits pendRot COUNTER-clockwise of top — mark it inside the exposure circle
+    const b = -F.pendRot * Math.PI / 180, r = s / 2 - 9;
+    const px = cx + Math.sin(b) * r, py = cy - Math.cos(b) * r;
+    g2.save();
+    g2.translate(px, py);
+    g2.rotate(b);                          // point the triangle inward, toward the centre
+    g2.fillStyle = '#7fe3a4';
+    g2.beginPath(); g2.moveTo(0, 7); g2.lineTo(-6, -4); g2.lineTo(6, -4); g2.closePath();
+    g2.fill();
+    g2.restore();
+  }
   $('noexp')?.style.setProperty('display', 'none');
 }
 
@@ -283,6 +311,9 @@ function pedalDown() {
   if (F.pedal || ctx.S.mode !== 'fluoro') return;
   if (!ensureWorker()) { /* first press warms the worker; screening starts when ready */ }
   F.pedal = true; F.lih = false; pedalDownAt = performance.now();
+  // fold the pending orientation into the display: the marked direction becomes top,
+  // and the first frame of this run erases the triangle
+  if (pendShown) { F.dispRot = (F.dispRot + F.pendRot) % 360; F.pendRot = 0; pendShown = false; }
   $('flPedal')?.classList.add('on');
   $('lihBadge')?.classList.remove('show');
   clearInterval(timer);
@@ -356,15 +387,17 @@ function buildRig() {
   // is the fallback if the fetch fails.
   ctx.loadModelUrl?.(ctx.baseUrl + 'models/rigs/oec_rig.glb').then((g) => {
     g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
-    let carmNode = null, boomNode = null;
+    let carmNode = null, boomNode = null, colNode = null;
     g.traverse((o) => {
       const n = (o.name || '').toLowerCase();
       if (!carmNode && n.includes('carm')) carmNode = o;
       else if (!boomNode && n.includes('boom')) boomNode = o;
+      else if (!colNode && n.includes('column')) colNode = o;
     });
     // scale from the BODY alone — the movable nodes' pivot shifts would skew a combined box
     if (carmNode) carmNode.removeFromParent();
     if (boomNode) boomNode.removeFromParent();
+    if (colNode) colNode.removeFromParent();
     const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3());
     const sc = 180 / Math.max(size.x, size.y, size.z);   // tallest dimension -> ~1.8 m
     g.scale.setScalar(sc);
@@ -381,6 +414,7 @@ function buildRig() {
     };
     if (carmNode) oecCarm = wrap(carmNode);
     if (boomNode) oecBoom = wrap(boomNode);
+    if (colNode) oecCol = wrap(colNode);
     fluoroSyncScene();
   }).catch(() => { /* the beam line remains */ });
   // the stretcher the subject lies on (the x-ray placement already lies flat at y≈0)
@@ -408,12 +442,19 @@ export function fluoroSyncScene() {
   }
   if (oecCarm) oecCarm.visible = on;
   if (oecBoom) oecBoom.visible = on;
+  if (oecCol) oecCol.visible = on;
   // The x-ray rig belongs to the other room. Hiding is enough: ctSyncScene restores the
   // tube on every sync once the mode is no longer fluoro, so there is nothing to undo.
   if (on) {
     if (three.tube) three.tube.visible = false;
     if (three.lamp) three.lamp.intensity = 0;
     if (three.cr) three.cr.visible = false;
+    // the x-ray receptor belongs to the other room too: ctSyncScene re-shows it on every
+    // sync for any non-CT mode, so fluoro overrides it here (this runs after ctSyncScene)
+    if (three.det) three.det.visible = false;
+    if (three.detMarks) three.detMarks.visible = false;
+    if (three.detArrow) three.detArrow.visible = false;
+    if (three.aecGroup) three.aecGroup.visible = false;
     const iso = isoPoint(), b = isoBase();
     rig.position.set(iso[0], iso[1], iso[2]);
     // Compose the joint chain explicitly so the C keeps its roll: wig-wag yaw about the
@@ -432,15 +473,20 @@ export function fluoroSyncScene() {
     // visually leaving its holder at large orbital angles.)
     if (oecCarm) { oecCarm.position.set(iso[0], iso[1], iso[2]); oecCarm.quaternion.copy(q); }
     // The boom pivots at the column axis (its local origin, LARM behind the beam):
-    // wig-wag yaws it, lift raises it, extend slides it along its own yawed axis, and
-    // tilt ROLLS it about its own long axis — the flip-flop pivot line runs along the
-    // boom through both the holder hub and the C's centre, so the roll is in place.
+    // wig-wag yaws it, lift raises it, extend slides it along its own yawed axis. It
+    // does NOT tilt: the flip-flop pivot at its far end lets the C roll while the arm
+    // holds still — the tilt axis (the horizontal line through hub and arc centre) is
+    // exactly the line the C already rotates about.
     if (oecBoom) {
       oecBoom.position.set(b[0] - OEC.LARM + Math.cos(w) * F.ext, b[1] + F.lift,
         b[2] - Math.sin(w) * F.ext);
-      const qt = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0),
-        F.tilt * Math.PI / 180);
-      oecBoom.quaternion.copy(qw).multiply(qt);
+      oecBoom.quaternion.copy(qw);
+    }
+    // The column telescopes out of its base collar: it rises with lift and nothing else —
+    // extend and wig-wag happen above it, at the boom.
+    if (oecCol && oecBody) {
+      const sc = oecBody.scale.x;
+      oecCol.position.set(b[0] - 0.72 * sc, b[1] - 0.07 * sc + F.lift, b[2]);
     }
   }
 }
@@ -513,6 +559,33 @@ export function initFluoro(context) {
       document.querySelectorAll('#flMagSeg button').forEach((x) => x.classList.toggle('on', x === b));
       renderReadouts();
     });
+  });
+  // ---- the orientation pad: tap = 2° nudge, hold = continuous large adjustment (the
+  // CT table-button behaviour). Rotation is PENDING until the next run; flips are live.
+  const rotStep = (d) => {
+    F.pendRot = (F.pendRot + d) % 360;
+    pendShown = true;
+    blitFilm();                            // triangle over the last image (if there is one)
+  };
+  const wireRot = (id, sign) => {
+    const btn = $(id); if (!btn) return;
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      rotStep(sign * 2);
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+      let iv = null;
+      const to = setTimeout(() => { iv = setInterval(() => rotStep(sign * 3), 55); }, 340);
+      const stop = () => { clearTimeout(to); if (iv) clearInterval(iv); };
+      btn.addEventListener('pointerup', stop, { once: true });
+      btn.addEventListener('pointercancel', stop, { once: true });
+    });
+  };
+  wireRot('flRotCW', 1); wireRot('flRotCCW', -1);
+  $('flFlipH')?.addEventListener('click', () => {
+    F.flipH = !F.flipH; $('flFlipH').classList.toggle('on', F.flipH); blitFilm();
+  });
+  $('flFlipV')?.addEventListener('click', () => {
+    F.flipV = !F.flipV; $('flFlipV').classList.toggle('on', F.flipV); blitFilm();
   });
   $('flHold')?.addEventListener('click', () => {
     F.hold = !F.hold;
