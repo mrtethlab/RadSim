@@ -28,6 +28,74 @@ const MASK_FRAMES = 4;
 let dsaSX = 0, dsaSY = 0;              // pixel shift applied to the mask lookup
 let lastRaw = null, lastN = 0;         // last raw frame, for re-render on shift changes
 let roadAcc = null, roadmap = null, roadN = 0, roadOn = false;
+/* ---- cine (Phase G): MediaRecorder on the monitor canvas -----------------
+   Armed, every pedal run is captured; DSA runs record themselves, as the real suite
+   does. Clips live as blob URLs, capped, oldest evicted. */
+let recArm = false, recorder = null, recChunks = [], recT0 = 0, recMeta = null;
+let clips = [];                        // {url, durS, label, id}
+let clipSeq = 0;
+const CLIP_MAX = 6;
+function recStart() {
+  const film = $('film');
+  if (!film || recorder || typeof MediaRecorder === 'undefined') return;
+  const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']
+    .find((m) => MediaRecorder.isTypeSupported?.(m));
+  if (!mime) return;
+  try {
+    recorder = new MediaRecorder(film.captureStream(30), { mimeType: mime });
+  } catch (_) { recorder = null; return; }
+  recChunks = [];
+  recT0 = performance.now();
+  recMeta = `${F.pps} pps · ${F.kv} kV` + (dsaOn ? ' · DSA' : '');
+  recorder.ondataavailable = (e) => { if (e.data.size) recChunks.push(e.data); };
+  recorder.onstop = () => {
+    const durS = (performance.now() - recT0) / 1000;
+    if (recChunks.length && durS > 0.4) {
+      const url = URL.createObjectURL(new Blob(recChunks, { type: recorder.mimeType }));
+      clips.unshift({ url, durS, label: recMeta, id: ++clipSeq });
+      while (clips.length > CLIP_MAX) URL.revokeObjectURL(clips.pop().url);
+      renderCine();
+    }
+    recorder = null; recChunks = [];
+  };
+  recorder.start(120);
+  $('recBadge')?.classList.add('show');
+}
+function recStop() {
+  $('recBadge')?.classList.remove('show');
+  if (recorder && recorder.state !== 'inactive') recorder.stop();
+  else recorder = null;
+}
+function renderCine() {
+  const list = $('flCineList'); if (!list) return;
+  list.innerHTML = '';
+  for (const c of clips) {
+    const row = document.createElement('div');
+    row.className = 'cinerow';
+    row.innerHTML = `<span class="t">Loop ${c.id} · ${c.durS.toFixed(1)} s · ${c.label}</span>`
+      + `<button data-act="play">&#9654;</button><button data-act="dl">&#8595; webm</button>`;
+    row.querySelector('[data-act="play"]').addEventListener('click', () => cinePlay(c, row));
+    row.querySelector('[data-act="dl"]').addEventListener('click', () => {
+      const a = document.createElement('a');
+      a.href = c.url; a.download = `fluoro-loop-${c.id}.webm`; a.click();
+    });
+    list.appendChild(row);
+  }
+}
+function cinePlay(c, row) {
+  const v = $('flCineView'); if (!v) return;
+  document.querySelectorAll('.cinerow.playing').forEach((r) => r.classList.remove('playing'));
+  row?.classList.add('playing');
+  v.src = c.url; v.classList.add('show');
+  $('flCineClose')?.classList.add('show');
+  v.play?.();
+}
+function cineStop() {
+  const v = $('flCineView');
+  if (v) { v.pause?.(); v.classList.remove('show'); v.removeAttribute('src'); }
+  $('flCineClose')?.classList.remove('show');
+  document.querySelectorAll('.cinerow.playing').forEach((r) => r.classList.remove('playing'));
+}
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
 let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null, oecCol = null;
 let pendShown = false;   // the orientation pad's triangle: pending rotation being dialled in
@@ -432,20 +500,14 @@ function pedalDown() {
   if (pendShown) { F.dispRot = (F.dispRot + F.pendRot) % 360; F.pendRot = 0; pendShown = false; }
   $('flPedal')?.classList.add('on');
   $('lihBadge')?.classList.remove('show');
+  cineStop();                                  // live screening takes the monitor back
+  if (recArm || dsaOn) recStart();
   clearInterval(timer);
   timer = setInterval(firePulse, 1000 / F.pps);
   firePulse();
   renderReadouts();
 }
 
-// dev probe: where is the rig?
-if (typeof window !== 'undefined') window.__flRigObj = () => ({ rig, oecBody, stretcher });
-if (typeof window !== 'undefined') window.__flRig = () => ({
-  rig: rig && rig.visible,
-  body: oecBody && { v: oecBody.visible, s: +oecBody.scale.x.toFixed(3),
-    p: oecBody.position.toArray().map((x) => +x.toFixed(1)),
-    box: new ctx.THREE.Box3().setFromObject(oecBody).getSize(new ctx.THREE.Vector3()).toArray().map((x) => +x.toFixed(1)) },
-});
 function pedalUp() {
   if (!F.pedal) return;
   F.pedal = false;
@@ -454,6 +516,7 @@ function pedalUp() {
   $('flPedal')?.classList.remove('on');
   F.lih = true;
   $('lihBadge')?.classList.add('show');   // the frame persists on the monitor: Last Image Hold
+  recStop();
   // end of a DSA run: its peak-opacification map becomes the roadmap
   if (dsaOn && roadAcc) {
     let peak = 0;
@@ -648,6 +711,7 @@ export function fluoroApplyMode(on) {
       : 'Loading the subject into the pulse workers…');
   } else {
     pedalUp();
+    cineStop();
     $('lihBadge')?.classList.remove('show');
   }
   fluoroSyncScene();
@@ -659,7 +723,11 @@ export function initFluoro(context) {
   buildRig();
   const ped = $('flPedal');
   if (ped) {
-    ped.addEventListener('pointerdown', (e) => { e.preventDefault(); ped.setPointerCapture(e.pointerId); pedalDown(); });
+    ped.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { ped.setPointerCapture(e.pointerId); } catch (_) { /* capture is a nicety, the pedal is not */ }
+      pedalDown();
+    });
     ped.addEventListener('pointerup', pedalUp);
     ped.addEventListener('pointercancel', pedalUp);
   }
@@ -793,6 +861,11 @@ export function initFluoro(context) {
     F.still = !F.still;
     $('flStill').classList.toggle('on', F.still);
   });
+  $('flRec')?.addEventListener('click', () => {
+    recArm = !recArm;
+    $('flRec').classList.toggle('on', recArm);
+  });
+  $('flCineClose')?.addEventListener('click', cineStop);
   $('flSwallow')?.addEventListener('click', () => {
     F.swallowAt = performance.now() / 1000;      // the wall wave
     ctx.bariumSwallow?.();                       // and, when a study is on, the bolus in it

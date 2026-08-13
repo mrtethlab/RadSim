@@ -6,7 +6,9 @@ promising, and it is where three existing engines meet: the x-ray raycaster (the
 contrast solver (DSA and roadmapping), and the barium study (which finally gets its real
 home — a pulsed image on a clock is what a barium study *is*).
 
-Status: **planning — awaiting review**. Nothing below is implemented.
+Status: **shipped** — phases A–E and G built, measured and merged; F dropped (see the
+phase table). The plan below is kept as written, with per-phase exit results recorded
+in §7; deviations from plan are noted where they happened, with reasons.
 
 Decisions taken (2026-08-12, with ML):
 - Barium studies **move to fluoroscopy**; the x-ray BARIUM panel stays unchanged for now.
@@ -163,8 +165,8 @@ audits, x-ray and CT modes, the preset pipeline, the mobile pager architecture, 
 | **C — animation** ✅ | tracer warps, lung µ modulation; breathing + heartbeat (chest/CAP), swallow, stomach peristalsis; breath-hold; the real OEC mesh in the room | **passed**: with a fixed noise seed, breath-hold gives bit-identical frames (Δ = 0.00) while breathing/heartbeat/swallow each produce strong frame-to-frame differences; animated chest delivers 58/61 pulses at 15 pps and 115/122 at 30 |
 | **D — barium** ✅ | BARIUM panel docked in fluoro (the same live-study flyout x-ray uses); Swallow button = bolus + wall wave together | **passed**: on CAP at fixed manual technique, a 12-minute study changes the live frames by 110 grey levels mean-abs (breathing alone moves 4–15), zero drops at 145 ms/pulse; a Swallow press pours a 15 mL sip into an oesophagus 11 minutes empty and the wave rides the same warped index, so the bolus follows the wall |
 | **E — vascular** ✅ | DSA (4-frame averaged mask, 60× acquisition dose on the meter, technique + tier locked), pixel-shift, remask, raw-peak roadmap overlay, per-site contrast in the pulses, MOTION OFF verification pose | **passed**, the whole gradient measured on CAP: motion off → subtraction flat at 6.7 grey mean-dev (the chain is exact); breath-hold → ~52 (the heart and gut keep moving — real abdominal DSA artifact); free breathing → ~80 (ruined); femoral iodine → 9 % of pixels saturate as vessels and the roadmap arms; the overlay darkens 12.8 % of the live field |
-| **F — Artis Zee** | second rig, table float/height, rectangular FD, SID travel | same exam on the table machine |
-| **G — polish** | recording + cine loops, tutorial, mobile pass, home card graduation | tutorial goals all achievable; loops download |
+| **F — Artis Zee** ✂ | second rig, table float/height, rectangular FD, SID travel | **dropped** (2026-08-13, ML): the OEC covers the teaching brief; the beam plumbing stays rig-agnostic if a table machine ever earns its way back |
+| **G — polish** ✅ | recording + cine loops, tutorial, mobile pass, home card graduation | **passed**: armed, every pedal run captures (DSA runs record themselves) — loops play on the monitor and download as .webm; 13-step fluoro tutorial walks pedal → pulse rate → ABC → C-arm → iris → orientation → motion → DSA → cine → dose, every goal achievable; mobile pool-of-1 renders all console groups and pulses at 59 ms |
 
 ## 7.1 Phase A measurements (hand, desktop, 4 s holds)
 

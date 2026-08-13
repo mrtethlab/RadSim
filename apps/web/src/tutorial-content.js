@@ -777,3 +777,166 @@ export const BARIUM_STEPS = [
     },
   },
 ];
+
+// ---------------------------------------------------------------- FLUOROSCOPY
+export const FLUORO_STEPS = [
+  {
+    sel: '.bay',
+    title: 'The screening room',
+    text: 'A GE OEC C-arm stands over the stretcher: tube under the patient, image '
+      + 'intensifier above, and the machine is a real photogrammetry scan articulated at its '
+      + 'true joints. Fluoroscopy is not a photograph — it is a chain of tiny exposures on a '
+      + 'clock, and everything in this mode follows from that. Drag to orbit, scroll to zoom.',
+  },
+  {
+    sel: '#subjectGrp',
+    title: 'A subject that moves',
+    text: 'Fluoroscopy earns its dose by showing MOTION, so pick anatomy that has some. '
+      + 'Chest / abdo / pelvis carries the full set: breathing, a beating heart, an '
+      + 'oesophagus that can swallow, a stomach with peristalsis — plus the gut for barium '
+      + 'and the vessels for angiography. All of it is derived from this subject&rsquo;s own '
+      + 'segmentation.',
+    goal: {
+      label: 'Load Chest / abdo / pelvis',
+      done: () => S().subject === 'chestabdopelvis',
+    },
+  },
+  {
+    sel: '#flPedalRow',
+    title: 'The pedal',
+    text: 'Hold the button — or hold <b>Space</b> — and the beam is on: the image lives only '
+      + 'while your foot is down. Release, and the last frame stays on the monitor, tagged '
+      + '<b>LIH</b>. Last-image hold is the first habit of fluoroscopy: look at the held '
+      + 'image, not at live radiation.',
+    goal: {
+      label: 'Screen for a moment, then release',
+      arm: () => S().fluoro.pulses,
+      done: (a) => !S().fluoro.pedal && S().fluoro.pulses > a,
+    },
+  },
+  {
+    sel: '.grp:has(#flPpsSeg)',
+    title: 'Pulse rate — the dose you choose',
+    text: 'The screen genuinely updates at the rate you pick: 30 pps is smooth, 3 pps is a '
+      + 'slideshow — and one quarter the dose rate at the same technique. Watch the beam-on '
+      + 'clock and the dose rate as you switch. Dropping from 30 to 7.5 pps is the single '
+      + 'highest-yield habit this machine can teach.',
+    goal: {
+      label: 'Change the pulse rate',
+      arm: () => S().fluoro.pps,
+      done: (a) => S().fluoro.pps !== a,
+    },
+  },
+  {
+    sel: '.grp:has(#flAbcSeg)',
+    title: 'Automatic brightness control',
+    text: 'The ABC is fluoroscopy&rsquo;s AEC: a closed loop that re-meters kV and mA on '
+      + 'every pulse. Pan from lung to abdomen while screening and watch the readouts climb '
+      + 'the machine&rsquo;s fluoro curve — and the image contrast fall as the kV takes it. '
+      + '<b>Manual</b> hands you the sliders and the consequences.',
+    goal: {
+      label: 'Switch to Manual (and back, if you like)',
+      arm: () => S().fluoro.abc,
+      done: (a) => S().fluoro.abc !== a,
+    },
+  },
+  {
+    sel: '.grp:has(#flOrb)',
+    title: 'The C-arm is the projection',
+    text: 'In the x-ray room you turn the patient; here the MACHINE moves. Orbital swings '
+      + 'the C through LAO/RAO, tilt runs cranial/caudal, and the column motions move the '
+      + 'beam itself: lift raises the whole C (magnification), extend and wig-wag slide and '
+      + 'swivel the boom — pan the field across the patient and the ABC re-meters on '
+      + 'whatever it crosses.',
+    goal: {
+      label: 'Swing the orbital',
+      arm: () => S().fluoro.orbital,
+      done: (a) => S().fluoro.orbital !== a,
+    },
+  },
+  {
+    sel: '.grp:has(#flIris)',
+    title: 'Iris and magnification',
+    text: 'The iris is a circular collimator: close it and the DAP falls with the AREA — '
+      + 'the air kerma at the centre does not move, which is exactly the difference between '
+      + 'the two numbers on the dose meter. Mag modes trade field size for sharpness and '
+      + 'pay for it in dose rate, like every II ever built.',
+    goal: {
+      label: 'Close the iris below 100 %',
+      done: () => S().fluoro.iris < 1.0,
+    },
+  },
+  {
+    sel: '.grp:has(#flRotCW)',
+    title: 'Electronic orientation',
+    text: 'The pad turns the DISPLAY, not the beam — rotate with a tap (hold for a large '
+      + 'adjustment) and a triangle appears inside the exposure circle of the held image, '
+      + 'marking where the top of the NEXT run will be. The flips mirror the image live. '
+      + 'This is how a real suite matches the monitor to the operator&rsquo;s view of the '
+      + 'patient.',
+    goal: {
+      label: 'Dial a rotation — watch the triangle',
+      done: () => S().fluoro.pendRot !== 0 || S().fluoro.dispRot !== 0,
+    },
+  },
+  {
+    sel: '.grp:has(#flHold)',
+    title: 'Motion, and holding it',
+    text: 'The heart beats at whatever the HR slider says, the diaphragm runs its cycle, '
+      + 'the stomach crawls. <b>Breath hold</b> stops the breathing clock alone — every '
+      + 'other rhythm keeps its own time, which is exactly what a patient does when you '
+      + 'ask. <b>Swallow</b> sends a wall wave down the oesophagus (and a mouthful of '
+      + 'barium with it, if a study is on). <b>Motion off</b> freezes everything: a '
+      + 'verification pose, not a physiology.',
+    goal: {
+      label: 'Hold the breath',
+      arm: () => S().fluoro.hold,
+      done: (a) => S().fluoro.hold !== a,
+    },
+  },
+  {
+    sel: '.grp:has(#flDsaSeg)',
+    title: 'DSA — everything unchanged vanishes',
+    text: 'Arm DSA and screen: the start of the run takes a mask, and every following frame '
+      + 'shows only what CHANGED — which should be nothing but iodine. Open the CONTRAST '
+      + 'panel on the left edge, start an injection, and the vessels draw themselves. '
+      + 'Breathing wrecks the subtraction (that is the lesson); breath-hold rescues it; '
+      + 'pixel-shift nudges the mask; the run&rsquo;s peak opacification becomes a ROADMAP '
+      + 'held under live fluoro.',
+    goal: {
+      label: 'Arm DSA',
+      done: () => $('flDsa')?.classList.contains('on'),
+    },
+  },
+  {
+    sel: '.grp:has(#flRecSeg)',
+    title: 'Cine',
+    text: 'Arm the recorder and every pedal run is captured as a loop — DSA runs record '
+      + 'themselves, as the real suite does. Play a loop back on the monitor, download it '
+      + 'as .webm. A stored run you can study at leisure is worth more than screening the '
+      + 'patient a second time.',
+    goal: {
+      label: 'Record a run and play it back',
+      arm: () => document.querySelectorAll('.cinerow').length,
+      done: (a) => document.querySelectorAll('.cinerow').length > a,
+    },
+  },
+  {
+    sel: '.grp:has(#flAkV)',
+    title: 'The dose meter',
+    text: 'Cumulative air kerma at the reference point, DAP, and the beam-on clock with the '
+      + 'mandated five-minute alarm. Air kerma follows technique and time; DAP follows '
+      + 'kerma times AREA, which is why collimation moves one number and not the other. '
+      + 'These are the figures an operator is examined on — and the reset is the '
+      + 'between-patient button.',
+  },
+  {
+    sel: '#giTab',
+    title: 'Where barium lives now',
+    text: 'The BARIUM panel on the left edge runs the live GI study — swallow or enema, '
+      + 'gravity steered by the positioning sliders, single or double contrast — and in '
+      + 'this mode it finally has the pulsed image it always described. There is a '
+      + 'dedicated barium tutorial on the X-ray card that walks the whole study; '
+      + 'everything it teaches works here, on a clock.',
+  },
+];

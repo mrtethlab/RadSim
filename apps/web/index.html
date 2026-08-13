@@ -135,6 +135,7 @@
             C-arm you orbit around the patient.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="fluoro">Open</button>
+            <button class="hc-tut" data-tut="fluoro" title="Walk through this mode control by control">&#9654; Tutorial</button>
           </div>
         </div>
       </div>
@@ -1006,6 +1007,18 @@
         </div>
       </div>
       <div class="grp fl-only">
+        <div class="lab">Cine</div>
+        <div class="bod">
+          <div class="seg" id="flRecSeg">
+            <button id="flRec">&#9679; Record runs</button>
+          </div>
+          <div class="cinelist" id="flCineList"></div>
+          <div class="ctrst-note">Armed, every pedal run is captured; DSA runs record
+            themselves, as the real suite does. Play a loop on the monitor, download it
+            as .webm.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
         <div class="lab">Dose</div>
         <div class="bod">
           <div class="flro">
@@ -1115,6 +1128,9 @@
       <div class="filmnote r" id="fnBR"></div>
       <div class="preview-badge" id="previewBadge">PREVIEW</div>
       <div class="lih-badge" id="lihBadge">LIH</div>
+      <div class="rec-badge" id="recBadge">&#9679; REC</div>
+      <video class="cineview" id="flCineView" loop muted playsinline></video>
+      <button class="cineclose" id="flCineClose" type="button">&#10005; close loop</button>
       <div class="prog" id="prog"></div>
     </div>
 
