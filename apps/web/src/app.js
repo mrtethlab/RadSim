@@ -494,7 +494,7 @@ const S = {
   // oid is DERIVED, not set: it is the air gap under the object, i.e. the height offset.
   // It used to be a stepper that changed only this number — the geometry never moved, so
   // magnification never changed, which is what "OID is broken" meant.
-  pose:'PA', spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
+  spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
@@ -770,22 +770,53 @@ function poseRot(){ return 0; }   // retained for compatibility; object rotation
    angles (degrees). Applied to BOTH the traced phantom + the 3D display so the two agree. */
 function objMat(){ const r=S.objRot, d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); }
 function isObjRotated(){ const r=S.objRot; return r.x||r.y||r.z; }
+/* Projection designation, from the roll about the long axis rather than hard-coded.
+   After voxelFlips() every body subject lies supine with the anterior surface up toward
+   the tube, so an unrolled subject is AP; rolling 180° turns the patient over and the
+   beam enters posteriorly, which is PA. The hand is the exception: its volume stores the
+   palm as +y (bone sits just under the dorsal skin, vy 65.3, below the soft-tissue bulk
+   at 67.8), so the same flips put the DORSUM up and the palm on the plate — a PA hand,
+   which is also the standard projection, so it reads PA at rest.
+   A roll of ±90° turns a side to the tube; a lateral is named for the side nearest the
+   receptor, and +90° lifts the patient's right (world +x) upward, leaving the LEFT down. */
+const PRONE_AT_REST = new Set(['hand','hand_hires']);
+function poseLabel(){
+  const rest = PRONE_AT_REST.has(S.subject) ? 180 : 0;      // roll that means "anterior up"
+  const r = (((S.objRot.z + rest) % 360) + 360) % 360;
+  if(r < 45 || r >= 315) return 'AP';
+  if(r >= 135 && r < 225) return 'PA';
+  return r < 180 ? 'LAT L' : 'LAT R';
+}
 function applyMat3(R,p){ return [R[0]*p[0]+R[1]*p[1]+R[2]*p[2], R[3]*p[0]+R[4]*p[1]+R[5]*p[2], R[6]*p[0]+R[7]*p[1]+R[8]*p[2]]; }
 function setGroupRot(grp,R){ const m=new THREE.Matrix4();
   m.set(R[0],R[1],R[2],0, R[3],R[4],R[5],0, R[6],R[7],R[8],0, 0,0,0,1); grp.setRotationFromMatrix(m); }
 
 /* Build the world-space physics phantom: the selected voxel model, placed at the CT
    patient offset / x-ray object offset so the traced volume and the 3D scene agree. */
-// Anatomical axis flips for the voxel chest (volume axes: x=Left, y=Posterior,
-// z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first (anterior
-// up, head toward −z into the bore). X-ray = AP supine (anterior up toward the tube,
-// posterior on the detector): flipping x AND y is a 180° roll about the long axis —
-// a true rotation (chirality preserved), the patient turned over on the plate.
+/* Models stored rolled 180° about the long axis relative to the house convention.
+   The house convention (chest, wholebody, upper/lower extremity, THR) is volume
+   x=Left, y=Posterior, z=Superior. These models came out of their build with x=Right,
+   y=Anterior instead — the patient lying the other way up — because the per-model
+   --flip in build_model.py was set by eye and the source NIfTIs did not agree.
+   Measured from the volumes themselves, not guessed:
+     chestabdopelvis  iliac artery R vx 129.4 vs L 78.3, subclavian R 128.2 vs L 82.6,
+                      liver 143.1 vs spleen 51.6  -> +x = patient RIGHT;
+                      vertebral body vy 48.2 < thorax centroid 76.5 < heart 95.7
+                      -> +y = ANTERIOR.
+     headneck         nasal/sinus airway vy 206.7 vs head centroid 179.0 -> +y = ANTERIOR.
+   Flipping x AND y rolls them back: a true rotation (chirality preserved), the patient
+   turned over, never a mirror — a mirror would swap the patient's left and right.
+   Left uncorrected this shows up as a mirrored image: with chestabdopelvis the heart
+   landed on the viewer's LEFT, where a radiograph hung as if facing the patient must
+   put it on the viewer's right. New models should be checked the same way. */
+const ROLLED_180 = new Set(['chestabdopelvis','headneck']);
+// Anatomical axis flips for the voxel subjects (house convention: volume x=Left,
+// y=Posterior, z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first
+// (anterior up, head toward −z into the bore). X-ray = AP supine (anterior up toward the
+// tube, posterior on the detector).
 function voxelFlips(){
   const f = S.mode==='ct' ? [false,true,true] : [true,true,false];
-  // the head & neck volume is stored rolled 180° vs the other models (it came out prone
-  // where the rest are supine) — roll it back: flip x AND y = 180° about the long axis
-  if(S.subject==='headneck'){ f[0]=!f[0]; f[1]=!f[1]; }
+  if(ROLLED_180.has(S.subject)){ f[0]=!f[0]; f[1]=!f[1]; }
   return f;
 }
 function buildPhantom(){
@@ -2187,8 +2218,12 @@ function renderRadiograph(target,entry){
   // orient (rotate + flip) into the target, sizing target to the exposed crop.
   // Hanging default for every voxel subject, applied before the user's adjustments:
   // the superior end (fingertips on the hand) is world +z, which the raw detector
-  // mapping lands at the image BOTTOM, so flip vertically to hang it superior-up;
-  // mirror horizontally too because a PA projection is displayed as if facing the patient.
+  // mapping lands at the image BOTTOM, so flip vertically to hang it superior-up.
+  // Mirror horizontally too: voxelFlips() leaves world +x as the patient's RIGHT, and
+  // detV/detU put world −x (the patient's LEFT) in array column 0, so without the mirror
+  // the patient's left would hang on the viewer's left. Radiographs are read as if facing
+  // the patient — right on the viewer's left — for both AP and PA. This is a DISPLAY
+  // mirror only; it never touches the traced geometry.
   const baseRot = 0, baseFlipH = true, baseFlipV = true;
   const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
@@ -2536,7 +2571,7 @@ function updateDI(EI){
 function buildMeta(spec){
   const subjName=(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase();
   return {
-    tl: subjName+' · '+S.pose,
+    tl: subjName+' · '+poseLabel(),
     tr: S.aecResult
       ? S.kv+' kVp  '+S.ma+' mA  AEC '+S.aecResult.mas.toFixed(S.aecResult.mas<10?1:0)+' mAs'
         +' ['+['l','c','r'].filter(k=>S.aecCells[k]).join('').toUpperCase()+']'
