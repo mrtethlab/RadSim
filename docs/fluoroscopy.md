@@ -189,3 +189,54 @@ discarded, never drawn over a newer one. Mobile keeps a pool of one.
 1. Pulse beep / alarm audio — use the existing Sound options pattern?
 2. Grid on the OEC (real ones have removable grids) — worth a toggle, or noise enough?
 3. Dose display units — air kerma mGy + DAP µGy·m², or simplify to one number for v1?
+
+## Breathing, refined against a real chest fluoroscopy run
+
+ML flagged the breathing as artificial: a low-density strip sliding inferiorly and then
+resetting, and an exaggerated travelling indent in the skin. Both were real, and both had
+the same cause — the diaphragm "slab" was derived from the MIN and MAX z of every voxel
+labelled lung, so a handful of stray mislabelled voxels stretched it to the entire volume
+(measured on chest/abdo/pelvis: a lung spanning z = 4 to 355 of 356). Its lower edge
+clamped to z = 0 with weight 1, so the whole pelvis-to-chest block slid together and was
+sheared over 39 cm, and because the weight was flat across most of it the entire region
+snapped in 2 mm steps and appeared to reset at end-expiration.
+
+A frame-by-frame analysis of a real PA chest fluoroscopy clip (25 fps, 18 s) gave the
+targets to build against:
+
+| | reference | before | after |
+| --- | --- | --- | --- |
+| moving band | diaphragm and lung fields only | 0–39 cm (whole lower body) | 29–57 cm, centred on the dome |
+| pelvis | still | full 2 cm shift | **0.0 mm** |
+| lateral chest wall | **29 %** of the dome | 100 % | **30 %** |
+| below the domes | dark in the variance map | slid as a block | 0 % motion energy in the lowest rows |
+
+What changed:
+
+- **The dome is located robustly** — per-slice lung counts against a fraction-of-peak
+  threshold, not min/max — and WHICH end is the diaphragm is settled by the liver, since
+  the liver sits under it. That also settles the z orientation, which differs between
+  models and must not be assumed: get it backwards and the dome rises on inspiration.
+- **The profile is a bump, not a slab**: a plateau at the dome (the liver goes with it
+  nearly as a unit), a cosine taper to zero ~9 cm below and over the lung height above,
+  and zero slope where it meets still tissue — which is what removes the seam.
+- **The body wall does not move like the viscera.** An elliptical taper about the trunk's
+  own axis carries the full shift through the core and a third of it at the surface,
+  which is what the 29 % measurement asked for.
+- **Quiet breathing is not a sine.** 40 % inspiring, 45 % expiring, 15 % paused on empty,
+  flat at every junction — measured wrap discontinuity **0.000 mm**, where the symmetric
+  sin² it replaced had no pause at all and read as a machine ticking.
+
+Fluoro pulse cost is unchanged (121–141 ms on chest/abdo/pelvis, 0 dropped) even though
+breathing now joins the heart on the recompute path, because the band it touches went
+from most of the volume to 28 cm of it.
+
+## Collimation shutters as wires
+
+The shutter pair now draws itself: two dashed leaf edges brought in from the sides and
+rotated as a pair, inside the orientation transform so they turn with the anatomy they
+are cutting. It is the graphic a real machine paints over the last image so you can
+collimate WITHOUT screening to do it — and it is honest, not decorative: with the leaves
+at 45 % the wires land within **1 pixel** of where the beam actually stops (beam 148–291,
+wires 147–292). Open, close and rotate are tap-for-a-nudge, hold-to-run, the same feel as
+the orientation pad, because collimating is the same kind of job.

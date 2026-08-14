@@ -112,6 +112,7 @@ function cineStop() {
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
 let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null, oecCol = null;
 let pendShown = false;   // the orientation pad's triangle: pending rotation being dialled in
+let shutTouched = 0;     // when collimation was last moved — the leaf wires linger after
 
 // GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°.
 // LARM: boom pivot (the column axis) to the beam axis, cm — wig-wag's arc radius.
@@ -515,6 +516,33 @@ function renderTo(cv) {
   g2.scale(F.flipH ? -1 : 1, F.flipV ? -1 : 1);
   g2.drawImage(frameCanvas, -s / 2, -s / 2, s, s);
   g2.restore();
+  /* THE SHUTTER LEAVES, DRAWN AS WIRES. Two parallel edges brought in from the sides and
+     rotated as a pair — the graphic a real machine paints over the last image so you can
+     collimate onto the anatomy WITHOUT screening to do it. They sit inside the orientation
+     transform because the leaves are in the BEAM: turn the image and they turn with the
+     anatomy they are cutting, which is the whole reason to draw them at all. */
+  if (F.shut < 0.999 || performance.now() - shutTouched < 2600) {
+    const hp = F.shut * (s / 2);                    // half-separation, display px
+    const th = F.shutRot * Math.PI / 180;
+    const ux = Math.cos(th), uy = Math.sin(th);     // along the leaf
+    const ax = -uy, ay = ux;                        // across it
+    g2.save();
+    g2.translate(cx, cy);
+    g2.rotate(F.dispRot * Math.PI / 180);
+    g2.scale(F.flipH ? -1 : 1, F.flipV ? -1 : 1);
+    g2.lineWidth = 1.5;
+    g2.strokeStyle = 'rgba(150,235,170,0.9)';
+    g2.setLineDash([7, 5]);
+    for (const sg of [1, -1]) {
+      const ox = ax * hp * sg, oy = ay * hp * sg;
+      g2.beginPath();
+      g2.moveTo(ox - ux * s, oy - uy * s);
+      g2.lineTo(ox + ux * s, oy + uy * s);
+      g2.stroke();
+    }
+    g2.setLineDash([]);
+    g2.restore();
+  }
   if (pendShown) {
     // the content that will land at 12 o'clock after a CW rotation by pendRot currently
     // sits pendRot COUNTER-clockwise of top — mark it inside the exposure circle
@@ -930,13 +958,33 @@ export function initFluoro(context) {
   });
   // ---- COLLIMATION: an iris and a rotatable pair of shutters, both in the beam ----
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
-  const coll = (fn) => () => { fn(); panelSync(); };
-  $('flIrisOpen')?.addEventListener('click', coll(() => { F.iris = clamp(F.iris + 0.05, 0.3, 1); }));
-  $('flIrisClose')?.addEventListener('click', coll(() => { F.iris = clamp(F.iris - 0.05, 0.3, 1); }));
-  $('flShutOpen')?.addEventListener('click', coll(() => { F.shut = clamp(F.shut + 0.06, 0.12, 1); }));
-  $('flShutClose')?.addEventListener('click', coll(() => { F.shut = clamp(F.shut - 0.06, 0.12, 1); }));
-  $('flShutCW')?.addEventListener('click', coll(() => { F.shutRot = (F.shutRot + 15) % 180; }));
-  $('flShutCCW')?.addEventListener('click', coll(() => { F.shutRot = (F.shutRot + 165) % 180; }));
+  // Tap for a nudge, hold to run — the orientation pad's behaviour, because collimating is
+  // the same kind of job: you sweep a leaf in until it touches the anatomy and stop there.
+  const wireHold = (id, tap, rep) => {
+    const btn = $(id); if (!btn) return;
+    const fire = (f) => { f(); shutTouched = performance.now(); panelSync(); redrawLast(); };
+    btn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      fire(tap);
+      try { btn.setPointerCapture(e.pointerId); } catch (_) { /* a nicety, not the control */ }
+      let iv = null;
+      const to = setTimeout(() => { iv = setInterval(() => fire(rep), 55); }, 340);
+      const stop = () => { clearTimeout(to); if (iv) clearInterval(iv); };
+      btn.addEventListener('pointerup', stop, { once: true });
+      btn.addEventListener('pointercancel', stop, { once: true });
+    });
+  };
+  const iris = (d) => () => { F.iris = clamp(F.iris + d, 0.3, 1); };
+  const shut = (d) => () => { F.shut = clamp(F.shut + d, 0.10, 1); };
+  const srot = (d) => () => { F.shutRot = (F.shutRot + d + 180) % 180; };
+  // the repeat step is larger than it looks it should be because each one repaints the
+  // frame to move the wires, which throttles the interval to ~10 Hz — measured, not guessed
+  wireHold('flIrisOpen', iris(0.03), iris(0.035));
+  wireHold('flIrisClose', iris(-0.03), iris(-0.035));
+  wireHold('flShutOpen', shut(0.03), shut(0.035));
+  wireHold('flShutClose', shut(-0.03), shut(-0.035));
+  wireHold('flShutCW', srot(2), srot(3));
+  wireHold('flShutCCW', srot(-2), srot(-3));
   // ---- CONTRAST: display windowing. The echo underneath never moves. ----
   const win = (fn) => () => { fn(); panelSync(); redrawLast(); };
   $('flBrightUp')?.addEventListener('click', win(() => { F.bright = clamp(F.bright + 0.06, -0.6, 0.6); }));
