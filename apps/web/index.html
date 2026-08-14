@@ -162,6 +162,20 @@
             basis-material decomposition, and a T-score at the end of it.</div>
         </div>
       </div>
+      <div class="home-card hc-dxa" data-mode="dxa">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">Bone densitometry</div>
+          <div class="hc-tag">DXA &mdash; two energies, one number</div>
+          <div class="hc-desc">The smallest physics here and the most report-shaped output.
+            One exposure cannot tell a thin bone under fat from a dense one under none;
+            two energies can, because bone's attenuation falls away far faster than soft
+            tissue's. The soft tissue cancels, and what is left is areal density.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="dxa">Open</button>
+          </div>
+        </div>
+      </div>
       <div class="home-card hc-us" data-mode="us">
         <div class="hc-art"></div>
         <div class="hc-body">
@@ -1293,6 +1307,24 @@
       <div class="expose us-only" id="usScanRow">
         <button class="flpedal" id="usFreeze">&#10074;&#10074; FREEZE</button>
         <div class="note" id="usStatus" style="margin-top:6px; text-align:center">&mdash;</div>
+      </div>
+      <!-- ============ DENSITOMETRY console (dx-only) ============ -->
+      <div class="grp dx-only">
+        <div class="lab">Region</div>
+        <div class="bod">
+          <div class="seg" id="dxRegionSeg">
+            <button data-region="spine" class="on">AP spine</button>
+            <button data-region="hipL">Left hip</button>
+            <button data-region="hipR">Right hip</button>
+          </div>
+          <div class="ctrst-note">The AP lumbar field covers L1&ndash;L4; the hip fields sit over
+            the proximal femur. A densitometer scans a WINDOW, not a whole patient &mdash; the
+            arm sweeps it line by line, which is why the image builds down the screen.</div>
+        </div>
+      </div>
+      <div class="expose dx-only" id="dxScanRow">
+        <button class="flpedal" id="dxScan">&#9655; SCAN</button>
+        <div class="note" id="dxStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
       <!-- ============ MAMMOGRAPHY console (mm-only) ============ -->
       <div class="grp mm-only">

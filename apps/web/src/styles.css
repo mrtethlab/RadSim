@@ -1508,6 +1508,10 @@ body.mode-fluoro .fl-hide{display:none}   /* x-ray/CT display options with no fl
   width:26px; text-align:right; flex:none}
 .tgcrow .tgcs{flex:1; margin:0}
 /* ---- ultrasound mode gating ---- */
+.dx-only{display:none}
+body.mode-dxa .dx-only{display:block}
+body.mode-dxa .xray-only{display:none}
+body.mode-dxa .fl-hide{display:none}
 .us-only{display:none}
 body.mode-us .us-only{display:block}
 body.mode-us .xray-only{display:none}
