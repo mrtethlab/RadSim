@@ -240,3 +240,23 @@ collimate WITHOUT screening to do it — and it is honest, not decorative: with 
 at 45 % the wires land within **1 pixel** of where the beam actually stops (beam 148–291,
 wires 147–292). Open, close and rotate are tap-for-a-nudge, hold-to-run, the same feel as
 the orientation pad, because collimating is the same kind of job.
+
+### The band that was actually the stomach
+
+ML reported a white band still starting at the diaphragm, travelling inferiorly over a
+couple of seconds and jumping back. It was not breathing at all — it was gastric
+peristalsis. The wave position was `(t · L / 7) % L`, a sawtooth: it swept the length of
+the stomach and then TELEPORTED back to the top at full amplitude, so a 35 % dilation
+marched down the film and snapped back, forever.
+
+A real wave does not teleport. It starts in the mid-body, deepens as it travels and dies
+at the pylorus, so it needs an envelope that is zero at both ends of the traverse — and
+then the wrap has nothing left to show. Measured across the wrap: dilation fades
+1.72 → 1.11 → 0.63 → 0.28 → **0 %**, holds at zero for ~1.2 s while the position resets
+unseen, then fades back in at the top. Worst frame-to-frame change anywhere in the cycle
+is **0.18 percentage points** against an 18 % peak. Rate is now 3 per minute rather than
+one every 7 s, and the amplitude is halved.
+
+The swallow wave had the same defect from the other end — it ran to the cardia and simply
+STOPPED at full 90 % depth, which pops off the image exactly like a teleport — so it takes
+the same envelope.

@@ -169,8 +169,8 @@ export function motionState(anim, p, vzCm, nz) {
     brCx: 0, brCy: 0, brIrx: 0, brIry: 0,
     heOn: false, hx0: 0, hx1: 0, hy0: 0, hy1: 0, hz0: 0, hz1: 0,
     hcx: 0, hcy: 0, hcz: 0, hrx: 1, hry: 1, hrz: 1, hs: 1,
-    swOn: false, swZ: 0, oeL: null, pinchW: 8,
-    stOn: false, stZ: 0, stL: null, pinchWst: 12 };
+    swOn: false, swZ: 0, oeL: null, pinchW: 8, swAmp: 0,
+    stOn: false, stZ: 0, stL: null, pinchWst: 12, stAmp: 0 };
   if (p && p.off) p = null;        // motion disabled: a verification pose, not a physiology
   st.insp = anim && anim.br && p ? breathAmp(p.br || 0) : 0;
   if (!anim || !p) return st;
@@ -227,14 +227,32 @@ export function motionState(anim, p, vzCm, nz) {
   if (st.swOn) {
     st.swZ = oe.z1 - (oe.z1 - oe.z0) * (Math.min(p.sw, 1.2) / 1.2);
     st.oeL = oe;
+    // the same envelope the stomach needed: a constriction that simply STOPS while still
+    // at full depth pops off the image exactly like one that teleports back to the top
+    st.swAmp = 0.5 - 0.5 * Math.cos(2 * Math.PI * Math.min(1, p.sw / 1.6));
     band(st.swZ - st.pinchW, st.swZ + st.pinchW);
   }
-  // stomach peristalsis: slow waves crawling aborally, one every ~7 s
+  /* GASTRIC PERISTALSIS, AND THE BAND IT USED TO DRAW.
+     The wave position was `(t · L / 7) % L` — a sawtooth. It swept the length of the
+     stomach in 7 s and then TELEPORTED back to the top at full amplitude, so a 35 %
+     dilation marched inferiorly and snapped back, over and over: a white band with a
+     reset, which is what ML kept seeing.
+
+     A real wave does not teleport. It begins in the mid-body, deepens as it travels, and
+     dies at the pylorus — so it needs an ENVELOPE that is zero at both ends of the
+     traverse, and then the wrap has nothing to show. Three per minute is the physiological
+     rate, and the amplitude is halved: a plain fluoro of the stomach shows a gentle
+     ripple in the gas shadow, not a bar sliding down the film. */
+  const PERI_S = 20;                                    // one wave every 20 s: 3 per minute
   st.stOn = !!sto;
   if (st.stOn) {
-    st.stZ = sto.z1 - ((p.peri || 0) * (sto.z1 - sto.z0) / 7) % (sto.z1 - sto.z0);
+    const u = (((p.peri || 0) / PERI_S) % 1 + 1) % 1;    // 0..1 along the traverse
+    // in over the first third, out over the last third, zero at both ends AND at the wrap
+    st.stAmp = 0.5 - 0.5 * Math.cos(2 * Math.PI * Math.min(1, Math.max(0, u)));
+    st.stZ = sto.z1 - u * (sto.z1 - sto.z0);
     st.stL = sto;
-    band(st.stZ - st.pinchWst, st.stZ + st.pinchWst);
+    if (st.stAmp > 0.01) band(st.stZ - st.pinchWst, st.stZ + st.pinchWst);
+    else st.stOn = false;
   }
   if (lo <= hi) { st.on = true; st.lo = lo; st.hi = hi; }
   return st;
@@ -275,14 +293,14 @@ export function warpPoint(st, x, y, z, out) {
   const zi = z | 0;
   if (st.swOn && z > st.swZ - st.pinchW && z < st.swZ + st.pinchW && zi >= st.oeL.z0 && zi <= st.oeL.z1) {
     const g = Math.cos(Math.PI / 2 * (z - st.swZ) / st.pinchW) ** 2;
-    const f = 1 + 0.9 * g;
+    const f = 1 + 0.9 * g * st.swAmp;       // fade in and out, or it pops at both ends
     x = st.oeL.lx[zi] + (x - st.oeL.lx[zi]) * f;
     y = st.oeL.ly[zi] + (y - st.oeL.ly[zi]) * f;
     re = 1;
   }
   if (st.stOn && z > st.stZ - st.pinchWst && z < st.stZ + st.pinchWst && zi >= st.stL.z0 && zi <= st.stL.z1) {
     const g = Math.cos(Math.PI / 2 * (z - st.stZ) / st.pinchWst) ** 2;
-    const f = 1 + 0.35 * g;
+    const f = 1 + 0.18 * g * st.stAmp;      // the envelope: zero at both ends of the traverse
     x = st.stL.lx[zi] + (x - st.stL.lx[zi]) * f;
     y = st.stL.ly[zi] + (y - st.stL.ly[zi]) * f;
     re = 1;

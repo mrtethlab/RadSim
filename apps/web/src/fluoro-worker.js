@@ -75,8 +75,8 @@ let wOn = false, wLo = 0, wHi = 0;
 let brShift = null, brZ0 = 0, brZ1 = 0, WST = null;
 let heOn = false, hx0 = 0, hx1 = 0, hy0 = 0, hy1 = 0, hz0 = 0, hz1 = 0;
 let hcx = 0, hcy = 0, hcz = 0, hrx = 1, hry = 1, hrz = 1, hs = 1;
-let swOn = false, swZ = 0, oeL = null;
-let stOn = false, stZ = 0, stL = null;
+let swOn = false, swZ = 0, oeL = null, swAmp = 0;
+let stOn = false, stZ = 0, stL = null, stAmp = 0;
 let pinchW = 8, pinchWst = 12;
 
 function applyAnimPulse(p) {
@@ -95,8 +95,8 @@ function applyAnimPulse(p) {
   hz0 = st.hz0; hz1 = st.hz1;
   hcx = st.hcx; hcy = st.hcy; hcz = st.hcz;
   hrx = st.hrx; hry = st.hry; hrz = st.hrz; hs = st.hs;
-  swOn = st.swOn; swZ = st.swZ; oeL = st.oeL; pinchW = st.pinchW;
-  stOn = st.stOn; stZ = st.stZ; stL = st.stL; pinchWst = st.pinchWst;
+  swOn = st.swOn; swZ = st.swZ; oeL = st.oeL; pinchW = st.pinchW; swAmp = st.swAmp;
+  stOn = st.stOn; stZ = st.stZ; stL = st.stL; pinchWst = st.pinchWst; stAmp = st.stAmp;
 }
 
 /* ---- the specialised marcher ----------------------------------------------
@@ -172,13 +172,13 @@ function traceMu(ox, oy, oz, dx, dy, dz) {
         const zi0 = z | 0;
         if (swOn && z > swZ - pinchW && z < swZ + pinchW && zi0 >= oeL.z0 && zi0 <= oeL.z1) {
           const g = Math.cos(Math.PI / 2 * (z - swZ) / pinchW) ** 2;
-          const f = 1 + 0.9 * g;
+          const f = 1 + 0.9 * g * swAmp;    // fade in and out, or it pops at both ends
           x = oeL.lx[zi0] + (x - oeL.lx[zi0]) * f; y = oeL.ly[zi0] + (y - oeL.ly[zi0]) * f;
           re = 1;
         }
         if (stOn && z > stZ - pinchWst && z < stZ + pinchWst && zi0 >= stL.z0 && zi0 <= stL.z1) {
           const g = Math.cos(Math.PI / 2 * (z - stZ) / pinchWst) ** 2;
-          const f = 1 + 0.35 * g;
+          const f = 1 + 0.18 * g * stAmp;   // the envelope: zero at both ends of the traverse
           x = stL.lx[zi0] + (x - stL.lx[zi0]) * f; y = stL.ly[zi0] + (y - stL.ly[zi0]) * f;
           re = 1;
         }
