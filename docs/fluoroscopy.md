@@ -189,3 +189,74 @@ discarded, never drawn over a newer one. Mobile keeps a pool of one.
 1. Pulse beep / alarm audio — use the existing Sound options pattern?
 2. Grid on the OEC (real ones have removable grids) — worth a toggle, or noise enough?
 3. Dose display units — air kerma mGy + DAP µGy·m², or simplify to one number for v1?
+
+## Breathing, refined against a real chest fluoroscopy run
+
+ML flagged the breathing as artificial: a low-density strip sliding inferiorly and then
+resetting, and an exaggerated travelling indent in the skin. Both were real, and both had
+the same cause — the diaphragm "slab" was derived from the MIN and MAX z of every voxel
+labelled lung, so a handful of stray mislabelled voxels stretched it to the entire volume
+(measured on chest/abdo/pelvis: a lung spanning z = 4 to 355 of 356). Its lower edge
+clamped to z = 0 with weight 1, so the whole pelvis-to-chest block slid together and was
+sheared over 39 cm, and because the weight was flat across most of it the entire region
+snapped in 2 mm steps and appeared to reset at end-expiration.
+
+A frame-by-frame analysis of a real PA chest fluoroscopy clip (25 fps, 18 s) gave the
+targets to build against:
+
+| | reference | before | after |
+| --- | --- | --- | --- |
+| moving band | diaphragm and lung fields only | 0–39 cm (whole lower body) | 29–57 cm, centred on the dome |
+| pelvis | still | full 2 cm shift | **0.0 mm** |
+| lateral chest wall | **29 %** of the dome | 100 % | **30 %** |
+| below the domes | dark in the variance map | slid as a block | 0 % motion energy in the lowest rows |
+
+What changed:
+
+- **The dome is located robustly** — per-slice lung counts against a fraction-of-peak
+  threshold, not min/max — and WHICH end is the diaphragm is settled by the liver, since
+  the liver sits under it. That also settles the z orientation, which differs between
+  models and must not be assumed: get it backwards and the dome rises on inspiration.
+- **The profile is a bump, not a slab**: a plateau at the dome (the liver goes with it
+  nearly as a unit), a cosine taper to zero ~9 cm below and over the lung height above,
+  and zero slope where it meets still tissue — which is what removes the seam.
+- **The body wall does not move like the viscera.** An elliptical taper about the trunk's
+  own axis carries the full shift through the core and a third of it at the surface,
+  which is what the 29 % measurement asked for.
+- **Quiet breathing is not a sine.** 40 % inspiring, 45 % expiring, 15 % paused on empty,
+  flat at every junction — measured wrap discontinuity **0.000 mm**, where the symmetric
+  sin² it replaced had no pause at all and read as a machine ticking.
+
+Fluoro pulse cost is unchanged (121–141 ms on chest/abdo/pelvis, 0 dropped) even though
+breathing now joins the heart on the recompute path, because the band it touches went
+from most of the volume to 28 cm of it.
+
+## Collimation shutters as wires
+
+The shutter pair now draws itself: two dashed leaf edges brought in from the sides and
+rotated as a pair, inside the orientation transform so they turn with the anatomy they
+are cutting. It is the graphic a real machine paints over the last image so you can
+collimate WITHOUT screening to do it — and it is honest, not decorative: with the leaves
+at 45 % the wires land within **1 pixel** of where the beam actually stops (beam 148–291,
+wires 147–292). Open, close and rotate are tap-for-a-nudge, hold-to-run, the same feel as
+the orientation pad, because collimating is the same kind of job.
+
+### The band that was actually the stomach
+
+ML reported a white band still starting at the diaphragm, travelling inferiorly over a
+couple of seconds and jumping back. It was not breathing at all — it was gastric
+peristalsis. The wave position was `(t · L / 7) % L`, a sawtooth: it swept the length of
+the stomach and then TELEPORTED back to the top at full amplitude, so a 35 % dilation
+marched down the film and snapped back, forever.
+
+A real wave does not teleport. It starts in the mid-body, deepens as it travels and dies
+at the pylorus, so it needs an envelope that is zero at both ends of the traverse — and
+then the wrap has nothing left to show. Measured across the wrap: dilation fades
+1.72 → 1.11 → 0.63 → 0.28 → **0 %**, holds at zero for ~1.2 s while the position resets
+unseen, then fades back in at the top. Worst frame-to-frame change anywhere in the cycle
+is **0.18 percentage points** against an 18 % peak. Rate is now 3 per minute rather than
+one every 7 s, and the amplitude is halved.
+
+The swallow wave had the same defect from the other end — it ran to the cardia and simply
+STOPPED at full 90 % depth, which pops off the image exactly like a teleport — so it takes
+the same envelope.

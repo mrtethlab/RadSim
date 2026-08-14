@@ -21,7 +21,7 @@
    ============================================================================ */
 import { VoxelPhantom, muOverBins } from './core/voxelPhantom.js';
 import { BodyMaterials } from './core/materials.js';
-import { deriveMotion, motionState } from './core/anatomyMotion.js';
+import { deriveMotion, motionState, brWall } from './core/anatomyMotion.js';
 
 let ph = null;
 let anim = null;
@@ -72,11 +72,11 @@ function poisson(lam) {
    the flattening into module-level scalars, so the marcher's inner loop reads locals
    instead of walking an object per cell. */
 let wOn = false, wLo = 0, wHi = 0;
-let brShift = null, brZ0 = 0, brZ1 = 0;
+let brShift = null, brZ0 = 0, brZ1 = 0, WST = null;
 let heOn = false, hx0 = 0, hx1 = 0, hy0 = 0, hy1 = 0, hz0 = 0, hz1 = 0;
 let hcx = 0, hcy = 0, hcz = 0, hrx = 1, hry = 1, hrz = 1, hs = 1;
-let swOn = false, swZ = 0, oeL = null;
-let stOn = false, stZ = 0, stL = null;
+let swOn = false, swZ = 0, oeL = null, swAmp = 0;
+let stOn = false, stZ = 0, stL = null, stAmp = 0;
 let pinchW = 8, pinchWst = 12;
 
 function applyAnimPulse(p) {
@@ -89,13 +89,14 @@ function applyAnimPulse(p) {
     mu0[1] = muLung[0] * f; mu1[1] = muLung[1] * f; mu2[1] = muLung[2] * f;
   }
   wOn = st.on; wLo = st.lo; wHi = st.hi;
+  WST = st;                          // the radial taper needs the state, not just scalars
   brShift = st.brShift; brZ0 = st.brZ0; brZ1 = st.brZ1;
   heOn = st.heOn; hx0 = st.hx0; hx1 = st.hx1; hy0 = st.hy0; hy1 = st.hy1;
   hz0 = st.hz0; hz1 = st.hz1;
   hcx = st.hcx; hcy = st.hcy; hcz = st.hcz;
   hrx = st.hrx; hry = st.hry; hrz = st.hrz; hs = st.hs;
-  swOn = st.swOn; swZ = st.swZ; oeL = st.oeL; pinchW = st.pinchW;
-  stOn = st.stOn; stZ = st.stZ; stL = st.stL; pinchWst = st.pinchWst;
+  swOn = st.swOn; swZ = st.swZ; oeL = st.oeL; pinchW = st.pinchW; swAmp = st.swAmp;
+  stOn = st.stOn; stZ = st.stZ; stL = st.stL; pinchWst = st.pinchWst; stAmp = st.stAmp;
 }
 
 /* ---- the specialised marcher ----------------------------------------------
@@ -155,8 +156,11 @@ function traceMu(ox, oy, oz, dx, dy, dz) {
         // ---- animation warp, inlined ----
         let x = rx, y = ry, z = rz, re = 0;
         if (brShift && z >= brZ0 && z <= brZ1) {
-          const s = brShift[z];
-          if (s) { z += s; di += s * nxy; }
+          // the body wall does not travel with the viscera, so the shift is scaled by how
+          // far out of the trunk's core this cell sits — which makes it a float, and puts
+          // breathing on the same recompute path as the heart
+          const s = brShift[z] * brWall(WST, x, y);
+          if (s >= 1 || s <= -1) { z += s; re = 1; }
         }
         if (heOn && x > hx0 && x < hx1 && y > hy0 && y < hy1 && z > hz0 && z < hz1) {
           const ex = (x - hcx) / hrx, ey = (y - hcy) / hry, ez = (z - hcz) / hrz;
@@ -168,13 +172,13 @@ function traceMu(ox, oy, oz, dx, dy, dz) {
         const zi0 = z | 0;
         if (swOn && z > swZ - pinchW && z < swZ + pinchW && zi0 >= oeL.z0 && zi0 <= oeL.z1) {
           const g = Math.cos(Math.PI / 2 * (z - swZ) / pinchW) ** 2;
-          const f = 1 + 0.9 * g;
+          const f = 1 + 0.9 * g * swAmp;    // fade in and out, or it pops at both ends
           x = oeL.lx[zi0] + (x - oeL.lx[zi0]) * f; y = oeL.ly[zi0] + (y - oeL.ly[zi0]) * f;
           re = 1;
         }
         if (stOn && z > stZ - pinchWst && z < stZ + pinchWst && zi0 >= stL.z0 && zi0 <= stL.z1) {
           const g = Math.cos(Math.PI / 2 * (z - stZ) / pinchWst) ** 2;
-          const f = 1 + 0.35 * g;
+          const f = 1 + 0.18 * g * stAmp;   // the envelope: zero at both ends of the traverse
           x = stL.lx[zi0] + (x - stL.lx[zi0]) * f; y = stL.ly[zi0] + (y - stL.ly[zi0]) * f;
           re = 1;
         }

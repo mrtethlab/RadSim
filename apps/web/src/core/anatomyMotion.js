@@ -21,19 +21,43 @@
    two, which is where all the anatomy knowledge lives.
    ============================================================================ */
 
+/* The trunk's own axis and half-extents through the breathing band, from the body
+   outline itself — the ellipse the radial taper is measured against. */
+function coreOf(data, dims, zDia, down, up) {
+  const [nx, ny, nz] = dims;
+  const z0 = Math.max(0, zDia - down), z1 = Math.min(nz - 1, zDia + up);
+  let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0;
+  for (let z = z0; z <= z1; z += 3) {
+    for (let y = 0; y < ny; y += 2) {
+      const row = (z * ny + y) * nx;
+      for (let x = 0; x < nx; x += 2) {
+        if (data[row + x] === 0) continue;              // air is not the patient
+        n++; sx += x; sy += y; sxx += x * x; syy += y * y;
+      }
+    }
+  }
+  if (n < 200) return null;
+  const cx = sx / n, cy = sy / n;
+  // 2 sigma reaches the surface for a roughly elliptical cross-section
+  return { cx, cy, rx: 2 * Math.sqrt(Math.max(1, sxx / n - cx * cx)),
+           ry: 2 * Math.sqrt(Math.max(1, syy / n - cy * cy)) };
+}
+
 /* ---- once per subject ------------------------------------------------------ */
 export function deriveMotion(data, dims, vsMM) {
   const [nx, ny, nz] = dims;
   const cOes = new Float64Array(nz), cOesY = new Float64Array(nz), nOes = new Int32Array(nz);
   const cSto = new Float64Array(nz), cStoY = new Float64Array(nz), nSto = new Int32Array(nz);
-  let lungLo = 1e9, lungHi = -1e9, nLung = 0;
+  let nLung = 0, nLiver = 0, sLiverZ = 0;
+  const lungZ = new Int32Array(nz);              // lung voxels per slice — a robust profile
   const h = { n: 0, sx: 0, sy: 0, sz: 0, x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 };
   for (let z = 0; z < nz; z += 2) {
     for (let y = 0; y < ny; y += 2) {
       const row = (z * ny + y) * nx;
       for (let x = 0; x < nx; x += 2) {
         const id = data[row + x];
-        if (id === 1) { nLung++; if (z < lungLo) lungLo = z; if (z > lungHi) lungHi = z; }
+        if (id === 1) { nLung++; lungZ[z]++; }
+        else if (id === 11) { nLiver++; sLiverZ += z; }
         else if (id === 15) {
           h.n++; h.sx += x; h.sy += y; h.sz += z;
           if (x < h.x0) h.x0 = x; if (x > h.x1) h.x1 = x;
@@ -47,13 +71,54 @@ export function deriveMotion(data, dims, vsMM) {
   const a = { any: false };
   const vz = vsMM[2] / 10;
   if (nLung > 200) {
-    // The diaphragm slab: from just below the lung base up through the lower half of the
-    // lungs, weight 1 at the base tapering to 0 at the top. The shift samples superiorly,
-    // which moves every boundary in the slab inferiorly — the dome descends on
-    // inspiration. ~2 cm of quiet breathing.
-    a.br = { z0: Math.max(0, Math.round(lungLo - 3 / vz)),
-             z1: Math.round(lungLo + 0.55 * (lungHi - lungLo)),
-             amp: 2.0 / vz };
+    /* BREATHING IS A BUMP CENTRED ON THE DIAPHRAGM, NOT A SLAB.
+       The first version ran a linear ramp from the bottom of the VOLUME (the lower edge
+       clamped to z = 0, weight 1) up to mid-chest, so the whole pelvis-to-chest block slid
+       inferiorly together and was sheared over 39 cm. That is what put a low-density strip
+       across the abdomen and a travelling indent in the skin, and — because the weight was
+       flat over most of it — what made the entire region snap in 2 mm steps and appear to
+       reset at end-expiration.
+
+       What actually moves: the dome moves most; the liver directly under it goes with it
+       almost as a unit for a few centimetres and then progressively less, reaching nothing
+       by the mid-abdomen; above it the lung base follows the dome while the apex stays put,
+       because the lung stretches rather than translating. So: a plateau at the dome, a
+       cosine taper to zero at both ends, and nothing at all outside. Zero slope where it
+       meets still tissue, which is what removes the seam. */
+    /* WHERE THE DOME IS, ROBUSTLY. The first version took the min and max z of every
+       voxel labelled lung, so a handful of stray mislabelled voxels at the ends of the
+       volume set the whole region: on this subject that returned a lung spanning z = 4 to
+       355 of 356 — the entire scan — which is how the band came to cover the pelvis. Per
+       slice counts and a fraction-of-peak threshold ignore the strays. */
+    let peak = 0;
+    for (let z = 0; z < nz; z++) if (lungZ[z] > peak) peak = lungZ[z];
+    const thr = peak * 0.08;
+    let zA = -1, zB = -1;
+    for (let z = 0; z < nz; z++) if (lungZ[z] >= thr) { if (zA < 0) zA = z; zB = z; }
+    // WHICH END IS THE DIAPHRAGM: the one nearer the liver, since the liver sits under it.
+    // That also settles the z orientation, which differs between models and must not be
+    // assumed — get it backwards and the dome RISES on inspiration.
+    const zLiver = nLiver > 50 ? sLiverZ / nLiver : (zA + zB) / 2;
+    const dome = Math.abs(zA - zLiver) < Math.abs(zB - zLiver) ? zA : zB;
+    const apexEnd = dome === zA ? zB : zA;
+    const dirApex = Math.sign(apexEnd - dome) || 1;
+    const lungH = Math.abs(apexEnd - dome) * vz;
+    a.br = {
+      zDia: Math.round(dome),
+      dirApex,                                           // +1 or -1: toward the lung apex
+      down: Math.max(4, Math.round(9 / vz)),             // liver and gut fade out over ~9 cm
+      up: Math.max(4, Math.round(Math.max(7, 0.7 * lungH) / vz)),  // base moves, apex does not
+      plat: 0.34,                                        // fraction of `down` that moves as a unit
+      amp: 1.8 / vz,                                     // quiet-breathing dome excursion, cm
+    };
+    /* THE BODY WALL DOES NOT MOVE LIKE THE VISCERA. Measured off a real chest
+       fluoroscopy run, the lateral chest wall travels 29 % of what the dome does (23 px
+       against 80). A warp that is a pure function of z cannot tell wall from liver, so
+       everything moved together and the skin got a travelling indent nobody has. An
+       elliptical taper about the trunk's own axis fixes it: full shift through the core,
+       falling to a third of it at the surface. */
+    const c = coreOf(data, dims, Math.round(dome), a.br.down, a.br.up);
+    if (c) { a.br.cx = c.cx; a.br.cy = c.cy; a.br.irx = 1 / c.rx; a.br.iry = 1 / c.ry; a.br.wall = 0.3; }
     a.any = true;
   }
   if (h.n > 50) {
@@ -79,6 +144,19 @@ export function deriveMotion(data, dims, vsMM) {
   return a.any ? a : null;
 }
 
+/* QUIET BREATHING IS NOT A SINE. Inspiration is active and quick, expiration is passive
+   and slower, and there is a pause on empty before the next breath — which is precisely
+   what a symmetric sin² does not have, and why the old one read as a machine ticking
+   rather than someone lying on a table. 40 % in, 45 % out, 15 % waiting. The curve is
+   flat at every junction and at the wrap, so nothing steps as the cycle comes round. */
+export function breathAmp(ph) {
+  const p = ((ph % 1) + 1) % 1;
+  const TI = 0.40, TE = 0.45;
+  if (p < TI) return 0.5 - 0.5 * Math.cos(Math.PI * p / TI);
+  if (p < TI + TE) return 0.5 + 0.5 * Math.cos(Math.PI * (p - TI) / TE);
+  return 0;                                    // the end-expiratory pause
+}
+
 /* ---- once per frame --------------------------------------------------------
    The clocks live in the UI (which is what makes breath-hold a one-line trick:
    stop advancing one phase and every other rhythm keeps its own time). This
@@ -87,29 +165,46 @@ export function deriveMotion(data, dims, vsMM) {
    an x-ray engine wants that, an acoustic one does not care. */
 export function motionState(anim, p, vzCm, nz) {
   const st = { insp: 0, on: false, lo: 0, hi: 0,
-    brShift: null, brZ0: 0, brZ1: 0,
+    brShift: null, brZ0: 0, brZ1: 0, brCore: false, brWall: 1,
+    brCx: 0, brCy: 0, brIrx: 0, brIry: 0,
     heOn: false, hx0: 0, hx1: 0, hy0: 0, hy1: 0, hz0: 0, hz1: 0,
     hcx: 0, hcy: 0, hcz: 0, hrx: 1, hry: 1, hrz: 1, hs: 1,
-    swOn: false, swZ: 0, oeL: null, pinchW: 8,
-    stOn: false, stZ: 0, stL: null, pinchWst: 12 };
+    swOn: false, swZ: 0, oeL: null, pinchW: 8, swAmp: 0,
+    stOn: false, stZ: 0, stL: null, pinchWst: 12, stAmp: 0 };
   if (p && p.off) p = null;        // motion disabled: a verification pose, not a physiology
-  st.insp = anim && anim.br && p ? Math.sin(Math.PI * (p.br || 0)) ** 2 : 0;
+  st.insp = anim && anim.br && p ? breathAmp(p.br || 0) : 0;
   if (!anim || !p) return st;
   let lo = 1e9, hi = -1e9;
   const band = (a2, b2) => { if (a2 < lo) lo = a2; if (b2 > hi) hi = b2; };
   const br = anim.br, he = anim.heart, oe = anim.oeso, sto = anim.sto;
   if (br) {
     const dz = br.amp * st.insp;
-    if (dz > 0.3) {
-      st.brZ0 = br.z0; st.brZ1 = br.z1;
-      st.brShift = new Int16Array(nz);
-      // clamped here, once, so a consumer that only breathes can add the shift straight
-      // to a volume index without a bounds test in its inner loop
-      for (let z = br.z0; z <= br.z1 && z < nz; z++) {
-        const w = z <= br.z0 + 3 ? 1 : 1 - (z - br.z0) / (br.z1 - br.z0);
-        st.brShift[z] = Math.min(nz - 1 - z, Math.round(dz * w));
+    if (dz > 0.02) {
+      const eApex = br.zDia + br.dirApex * br.up, eAbd = br.zDia - br.dirApex * br.down;
+      const z0 = Math.max(0, Math.min(eApex, eAbd)), z1 = Math.min(nz - 1, Math.max(eApex, eAbd));
+      st.brZ0 = z0; st.brZ1 = z1;
+      st.brCx = br.cx; st.brCy = br.cy; st.brIrx = br.irx; st.brIry = br.iry;
+      st.brWall = br.wall == null ? 1 : br.wall;
+      st.brCore = br.irx != null;
+      // A FLOAT table, because the shift is scaled per sample by the radial taper below
+      // and lands on a real position either way. Clamped once here so neither consumer
+      // needs a bounds test inside its loop.
+      st.brShift = new Float32Array(nz);
+      for (let z = z0; z <= z1; z++) {
+        const d = (z - br.zDia) * br.dirApex;        // + toward the apex, - toward the gut
+        let w;
+        if (d >= 0) {
+          w = 0.5 + 0.5 * Math.cos(Math.PI * Math.min(1, d / br.up));
+        } else {
+          const t = -d / br.down;                    // below: a plateau, then a taper
+          w = t < br.plat ? 1
+            : 0.5 + 0.5 * Math.cos(Math.PI * Math.min(1, (t - br.plat) / (1 - br.plat)));
+        }
+        // sampling TOWARD the apex is what makes the dome descend
+        const s = Math.max(-z, Math.min(nz - 1 - z, br.dirApex * dz * w));
+        st.brShift[z] = s;
       }
-      band(br.z0, br.z1);
+      band(z0, z1);
     }
   }
   // cardiac contraction: a sin^2 systolic pulse over the first 40 % of the cycle
@@ -132,17 +227,48 @@ export function motionState(anim, p, vzCm, nz) {
   if (st.swOn) {
     st.swZ = oe.z1 - (oe.z1 - oe.z0) * (Math.min(p.sw, 1.2) / 1.2);
     st.oeL = oe;
+    // the same envelope the stomach needed: a constriction that simply STOPS while still
+    // at full depth pops off the image exactly like one that teleports back to the top
+    st.swAmp = 0.5 - 0.5 * Math.cos(2 * Math.PI * Math.min(1, p.sw / 1.6));
     band(st.swZ - st.pinchW, st.swZ + st.pinchW);
   }
-  // stomach peristalsis: slow waves crawling aborally, one every ~7 s
+  /* GASTRIC PERISTALSIS, AND THE BAND IT USED TO DRAW.
+     The wave position was `(t · L / 7) % L` — a sawtooth. It swept the length of the
+     stomach in 7 s and then TELEPORTED back to the top at full amplitude, so a 35 %
+     dilation marched inferiorly and snapped back, over and over: a white band with a
+     reset, which is what ML kept seeing.
+
+     A real wave does not teleport. It begins in the mid-body, deepens as it travels, and
+     dies at the pylorus — so it needs an ENVELOPE that is zero at both ends of the
+     traverse, and then the wrap has nothing to show. Three per minute is the physiological
+     rate, and the amplitude is halved: a plain fluoro of the stomach shows a gentle
+     ripple in the gas shadow, not a bar sliding down the film. */
+  const PERI_S = 20;                                    // one wave every 20 s: 3 per minute
   st.stOn = !!sto;
   if (st.stOn) {
-    st.stZ = sto.z1 - ((p.peri || 0) * (sto.z1 - sto.z0) / 7) % (sto.z1 - sto.z0);
+    const u = (((p.peri || 0) / PERI_S) % 1 + 1) % 1;    // 0..1 along the traverse
+    // in over the first third, out over the last third, zero at both ends AND at the wrap
+    st.stAmp = 0.5 - 0.5 * Math.cos(2 * Math.PI * Math.min(1, Math.max(0, u)));
+    st.stZ = sto.z1 - u * (sto.z1 - sto.z0);
     st.stL = sto;
-    band(st.stZ - st.pinchWst, st.stZ + st.pinchWst);
+    if (st.stAmp > 0.01) band(st.stZ - st.pinchWst, st.stZ + st.pinchWst);
+    else st.stOn = false;
   }
   if (lo <= hi) { st.on = true; st.lo = lo; st.hi = hi; }
   return st;
+}
+
+/* The radial part of the breathing profile: 1 through the trunk's core, tapering to
+   `wall` at the surface. Kept branchy on purpose — nearly every sample is either well
+   inside or well outside, and only the annulus between pays for the square root. */
+export function brWall(st, x, y) {
+  if (!st.brCore) return 1;
+  const ex = (x - st.brCx) * st.brIrx, ey = (y - st.brCy) * st.brIry;
+  const t2 = ex * ex + ey * ey;
+  if (t2 <= 0.3025) return 1;                     // core (t <= 0.55)
+  if (t2 >= 1) return st.brWall;                  // at or beyond the surface
+  const t = Math.sqrt(t2);
+  return st.brWall + (1 - st.brWall) * (0.5 + 0.5 * Math.cos(Math.PI * (t - 0.55) / 0.45));
 }
 
 /* ---- per sample ------------------------------------------------------------
@@ -152,8 +278,8 @@ export function motionState(anim, p, vzCm, nz) {
 export function warpPoint(st, x, y, z, out) {
   let re = 0;
   if (st.brShift && z >= st.brZ0 && z <= st.brZ1) {
-    const s = st.brShift[z | 0];
-    if (s) { z += s; re = 1; }
+    let s = st.brShift[z | 0];
+    if (s) { s *= brWall(st, x, y); z += s; re = 1; }
   }
   if (st.heOn && x > st.hx0 && x < st.hx1 && y > st.hy0 && y < st.hy1 && z > st.hz0 && z < st.hz1) {
     const ex = (x - st.hcx) / st.hrx, ey = (y - st.hcy) / st.hry, ez = (z - st.hcz) / st.hrz;
@@ -167,14 +293,14 @@ export function warpPoint(st, x, y, z, out) {
   const zi = z | 0;
   if (st.swOn && z > st.swZ - st.pinchW && z < st.swZ + st.pinchW && zi >= st.oeL.z0 && zi <= st.oeL.z1) {
     const g = Math.cos(Math.PI / 2 * (z - st.swZ) / st.pinchW) ** 2;
-    const f = 1 + 0.9 * g;
+    const f = 1 + 0.9 * g * st.swAmp;       // fade in and out, or it pops at both ends
     x = st.oeL.lx[zi] + (x - st.oeL.lx[zi]) * f;
     y = st.oeL.ly[zi] + (y - st.oeL.ly[zi]) * f;
     re = 1;
   }
   if (st.stOn && z > st.stZ - st.pinchWst && z < st.stZ + st.pinchWst && zi >= st.stL.z0 && zi <= st.stL.z1) {
     const g = Math.cos(Math.PI / 2 * (z - st.stZ) / st.pinchWst) ** 2;
-    const f = 1 + 0.35 * g;
+    const f = 1 + 0.18 * g * st.stAmp;      // the envelope: zero at both ends of the traverse
     x = st.stL.lx[zi] + (x - st.stL.lx[zi]) * f;
     y = st.stL.ly[zi] + (y - st.stL.ly[zi]) * f;
     re = 1;
