@@ -428,6 +428,45 @@ export function report(sc) {
     + `<div class="dxdx dx-${dx.toLowerCase()}">${dx} &middot; T ${s.T.toFixed(1)} &middot; Z ${s.Z.toFixed(1)}`
     + `<small>WHO: normal &ge; &minus;1.0 &middot; osteopenia &minus;1.0 to &minus;2.5 &middot; osteoporosis &le; &minus;2.5</small></div>`;
   sc.mean = mean; sc.T = s.T; sc.Z = s.Z; sc.dx = dx;
+  renderSerial();
+}
+
+/* ---- serial scans -----------------------------------------------------------
+   The follow-up question is never "what is the density" but "has it changed", and the
+   honest answer has to clear the machine's own reproducibility before it means anything.
+   A real service quotes ~1 % least-significant-change at the spine; a change smaller
+   than that is the machine, not the patient. So the table prints the % change AND says
+   whether it clears that bar. */
+export const LSC_PCT = 1.5;             // least significant change, % — the bar to clear
+export function keepScan(sc) {
+  if (!sc || !sc.rois) return;
+  D.scans.unshift({ region: sc.region, mean: sc.mean, T: sc.T, Z: sc.Z, dx: sc.dx,
+                    loss: sc.loss, when: D.scans.length });
+  if (D.scans.length > 6) D.scans.length = 6;
+  renderSerial();
+}
+export function renderSerial() {
+  const el = $('dxSerial'); if (!el) return;
+  const list = D.scans || [];
+  if (!list.length) { el.innerHTML = '<div class="note">No stored scans. KEEP files the current one.</div>'; return; }
+  const rows = list.map((s, i) => {
+    const prev = list[i + 1];
+    let chg = '—', cls = '';
+    if (prev && prev.region === s.region) {
+      const pc = 100 * (s.mean / prev.mean - 1);
+      const sig = Math.abs(pc) >= LSC_PCT;
+      chg = `${pc > 0 ? '+' : ''}${pc.toFixed(1)} %`;
+      cls = sig ? (pc < 0 ? 'dxdown' : 'dxup') : 'dxflat';
+      if (!sig) chg += ' *';
+    }
+    return `<tr><td>${REGIONS[s.region]?.label.split(' ').pop() || s.region}</td>`
+      + `<td>${(100 * s.loss).toFixed(0)} %</td><td><b>${s.mean.toFixed(3)}</b></td>`
+      + `<td>${s.T.toFixed(1)}</td><td class="${cls}">${chg}</td></tr>`;
+  }).join('');
+  el.innerHTML = '<table class="dxtab"><tr><th>Site</th><th>Loss</th><th>BMD</th><th>T</th>'
+    + '<th>Change</th></tr>' + rows + '</table>'
+    + `<div class="note" style="margin-top:6px">* below the ${LSC_PCT} % least significant `
+    + 'change &mdash; that is the machine, not the patient.</div>';
 }
 
 /* ---- mode + wiring --------------------------------------------------------- */
@@ -492,6 +531,14 @@ export function initDXA(context) {
         setStatus(`Done — ${REGIONS[sc.region].label}.`);
       });
   });
+  $('dxLoss')?.addEventListener('input', (e) => {
+    D.loss = (+e.target.value) / 100;
+    const el = $('dxLossV'); if (el) el.textContent = `${Math.round(D.loss * 100)} %`;
+    setStatus(D.loss ? `Skeleton at ${(100 * (1 - D.loss)).toFixed(0)} % mineral — rescan to see it.`
+                     : 'Skeleton at full mineral.');
+  });
+  $('dxKeep')?.addEventListener('click', () => { keepScan(scan); setStatus('Scan filed to the series.'); });
+  $('dxClear')?.addEventListener('click', () => { D.scans.length = 0; renderSerial(); });
   document.querySelectorAll('#dxSexSeg button').forEach((b) => {
     b.addEventListener('click', () => {
       D.sex = b.dataset.sex;

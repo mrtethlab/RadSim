@@ -1339,6 +1339,27 @@
         </div>
       </div>
       <div class="grp dx-only">
+        <div class="lab">Skeleton</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Mineral loss</div>
+            <div class="valchip" id="dxLossV">0 %</div></div>
+          <input type="range" id="dxLoss" min="0" max="40" value="0" step="1">
+          <div class="mini" style="margin-top:9px">
+            <button id="dxKeep">&#10515; Keep scan</button>
+            <button id="dxClear">&#10005; Clear series</button>
+          </div>
+          <div class="ctrst-note">This thins the mineral itself, so the attenuation AND the
+            truth move together &mdash; scaling only the picture would be a lie the report
+            could not catch. Scan, drop the slider, scan again: the same skeleton walks from
+            normal through osteopenia and into osteoporosis, and the series below shows what
+            a follow-up study would actually report.</div>
+        </div>
+      </div>
+      <div class="grp dx-only">
+        <div class="lab">Serial comparison</div>
+        <div class="bod"><div id="dxSerial"><div class="note">No stored scans.</div></div></div>
+      </div>
+      <div class="grp dx-only">
         <div class="lab">Report</div>
         <div class="bod"><div id="dxTable"><div class="note">No scan yet.</div></div></div>
       </div>

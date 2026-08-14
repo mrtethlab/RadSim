@@ -1679,3 +1679,6 @@ body.mode-fluoro .scr2{display:block}
 .dx-normal{background:#12301e; color:#8fe3a8; border:1px solid #2c7a44}
 .dx-osteopenia{background:#332a10; color:#ffd98a; border:1px solid #8a6a1c}
 .dx-osteoporosis{background:#331414; color:#ff9c9c; border:1px solid #8a2f2f}
+.dxtab .dxdown{color:#ff9c9c}
+.dxtab .dxup{color:#8fe3a8}
+.dxtab .dxflat{color:var(--muted2)}
