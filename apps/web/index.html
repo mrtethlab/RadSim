@@ -162,6 +162,21 @@
             basis-material decomposition, and a T-score at the end of it.</div>
         </div>
       </div>
+      <div class="home-card hc-dxa" data-mode="dxa">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">Bone densitometry</div>
+          <div class="hc-tag">DXA &mdash; two energies, one number</div>
+          <div class="hc-desc">The smallest physics here and the most report-shaped output.
+            One exposure cannot tell a thin bone under fat from a dense one under none;
+            two energies can, because bone's attenuation falls away far faster than soft
+            tissue's. The soft tissue cancels, and what is left is areal density.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="dxa">Open</button>
+            <button class="hc-tut" data-tut="dxa" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
+        </div>
+      </div>
       <div class="home-card hc-us" data-mode="us">
         <div class="hc-art"></div>
         <div class="hc-body">
@@ -1293,6 +1308,65 @@
       <div class="expose us-only" id="usScanRow">
         <button class="flpedal" id="usFreeze">&#10074;&#10074; FREEZE</button>
         <div class="note" id="usStatus" style="margin-top:6px; text-align:center">&mdash;</div>
+      </div>
+      <!-- ============ DENSITOMETRY console (dx-only) ============ -->
+      <div class="grp dx-only">
+        <div class="lab">Region</div>
+        <div class="bod">
+          <div class="seg" id="dxRegionSeg">
+            <button data-region="spine" class="on">AP spine</button>
+            <button data-region="hipL">Left hip</button>
+            <button data-region="hipR">Right hip</button>
+          </div>
+          <div class="ctrst-note">The AP lumbar field covers L1&ndash;L4; the hip fields sit over
+            the proximal femur. A densitometer scans a WINDOW, not a whole patient &mdash; the
+            arm sweeps it line by line, which is why the image builds down the screen.</div>
+        </div>
+      </div>
+      <div class="grp dx-only">
+        <div class="lab">Patient</div>
+        <div class="bod">
+          <div class="seg" id="dxSexSeg">
+            <button data-sex="f" class="on">Female</button>
+            <button data-sex="m">Male</button>
+          </div>
+          <div class="row" style="margin-top:9px"><div class="rl">Age</div>
+            <div class="valchip" id="dxAgeV">62</div></div>
+          <input type="range" id="dxAge" min="20" max="90" value="62" step="1">
+          <div class="ctrst-note">The T-score compares this patient with a <b>young adult of
+            the same sex</b>; the Z-score compares them with someone their own age. That is why
+            an 80-year-old can be osteoporotic by T and entirely unremarkable by Z &mdash; and
+            why a low Z is the one that says something else is going on.</div>
+        </div>
+      </div>
+      <div class="grp dx-only">
+        <div class="lab">Skeleton</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Mineral loss</div>
+            <div class="valchip" id="dxLossV">0 %</div></div>
+          <input type="range" id="dxLoss" min="0" max="40" value="0" step="1">
+          <div class="mini" style="margin-top:9px">
+            <button id="dxKeep">&#10515; Keep scan</button>
+            <button id="dxClear">&#10005; Clear series</button>
+          </div>
+          <div class="ctrst-note">This thins the mineral itself, so the attenuation AND the
+            truth move together &mdash; scaling only the picture would be a lie the report
+            could not catch. Scan, drop the slider, scan again: the same skeleton walks from
+            normal through osteopenia and into osteoporosis, and the series below shows what
+            a follow-up study would actually report.</div>
+        </div>
+      </div>
+      <div class="grp dx-only">
+        <div class="lab">Serial comparison</div>
+        <div class="bod"><div id="dxSerial"><div class="note">No stored scans.</div></div></div>
+      </div>
+      <div class="grp dx-only">
+        <div class="lab">Report</div>
+        <div class="bod"><div id="dxTable"><div class="note">No scan yet.</div></div></div>
+      </div>
+      <div class="expose dx-only" id="dxScanRow">
+        <button class="flpedal" id="dxScan">&#9655; SCAN</button>
+        <div class="note" id="dxStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
       <!-- ============ MAMMOGRAPHY console (mm-only) ============ -->
       <div class="grp mm-only">

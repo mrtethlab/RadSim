@@ -24,6 +24,7 @@ import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
+import { initDXA, dxaApplyMode, dxaSyncScene } from './dxa.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -568,6 +569,13 @@ const S = {
           phantom:'breast',    // 'breast' (c) | 'breastdense' (d) | 'acrphantom' (QC)
           mag:false,           // magnification stand: subject raised, x1.8 spot view
           caseId:'demo' },     // reading case: findings are injected, not baked
+  // ---- bone densitometry (docs/bmd.md): two energies, one areal density ----
+  dxa:{ region:'spine',      // 'spine' | 'hipL' | 'hipR'
+        loss:0,              // fractional mineral loss applied to the skeleton, 0..0.4
+        // T compares against a young adult of the same SEX, which is why the reference
+        // has to be chosen rather than averaged; Z compares against the patient's own age
+        sex:'f', age:62,
+        scans:[] },          // serial acquisitions, for the % change comparison
   // ---- ultrasound (docs/ultrasound.md): the probe, the beam and the display ----
   us:{ probe:'curvi',        // 'curvi' (3-5 MHz sector) | 'linear' (7-12 MHz)
        freq:3.5, depth:16, focus:8, gain:0, tgc:1.0, range:55,
@@ -3290,7 +3298,8 @@ window.addEventListener('load',()=>{
            editorMode: (on) => editorApplyMode(on),
            fluoroMode: (on) => fluoroApplyMode(on),
            mammoMode: (on) => mammoApplyMode(on),
-           usMode: (on) => usApplyMode(on) });
+           usMode: (on) => usApplyMode(on),
+           dxaMode: (on) => dxaApplyMode(on) });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
   initMobile({ S });                            // pager + dock; inert above the breakpoint
@@ -3320,6 +3329,8 @@ window.addEventListener('load',()=>{
     loadModelUrl, baseUrl: import.meta.env.BASE_URL });
   // phantomPose is what lets ultrasound turn the patient under the probe — without it the
   // roll slider moved the body in the room and nothing on the monitor
+  initDXA({ THREE, S, three, setSubject: (s) => setSubject(s),
+            buildPhantom: () => buildPhantom() });
   initUS({ THREE, S, three, setSubject: (s) => setSubject(s),
            phantomPose: () => ({ center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1] / 2) / 10 : 5) + S.objOff.y, S.objOff.z],
                                  flip: voxelFlips(), rot: objMat() }) });
