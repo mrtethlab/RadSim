@@ -1267,6 +1267,27 @@
             gridlines between beats and you have measured the rate off the image.</div>
         </div>
       </div>
+      <div class="grp us-only">
+        <div class="lab">Colour Doppler</div>
+        <div class="bod">
+          <div class="mini"><button id="usDop">&#9673; Colour box</button></div>
+          <div class="row" style="margin-top:9px"><div class="rl">Scale <small>PRF</small></div>
+            <div class="valchip" id="usPrfV">3.0 kHz</div></div>
+          <input type="range" id="usPrf" min="500" max="9000" value="3000" step="100">
+          <div class="row" style="margin-top:8px"><div class="rl">Box depth</div></div>
+          <input type="range" id="usDopY" min="0.12" max="0.85" value="0.42" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Box height</div></div>
+          <input type="range" id="usDopH" min="0.10" max="0.80" value="0.40" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Box width</div></div>
+          <input type="range" id="usDopW" min="0.15" max="1.00" value="0.50" step="0.01">
+          <div class="ctrst-note">Colour is the component of flow <b>along the beam</b>, so a
+            vessel crossed at 90&deg; shows nothing however fast it runs &mdash; rock the probe
+            and it appears. Red toward, blue away. Drop the scale and the fast middle of a
+            vessel wraps to the opposite colour: that is aliasing, and it is the same phase
+            wrap as anywhere else. The box costs frame rate because the machine fires an
+            ensemble of pulses inside it instead of one.</div>
+        </div>
+      </div>
       <div class="expose us-only" id="usScanRow">
         <button class="flpedal" id="usFreeze">&#10074;&#10074; FREEZE</button>
         <div class="note" id="usStatus" style="margin-top:6px; text-align:center">&mdash;</div>

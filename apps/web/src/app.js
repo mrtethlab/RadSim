@@ -585,6 +585,9 @@ const S = {
        // heart, gut) warps what the beam echoes off. M-mode is the display that measures
        // it — one line against time — and mLine is where that line cuts the fan.
        motion:true, hr:72, hold:false, disp:'b', mLine:0.5,
+       // Colour Doppler: the box, and the PRF that sets how fast a flow can be before
+       // the phase wraps and the jet comes back the wrong colour.
+       dop:false, prf:3000, dopY:0.42, dopH:0.4, dopW:0.5,
        live:true },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine

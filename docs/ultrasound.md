@@ -5,7 +5,7 @@ IMAGE is made of physics artifacts. Shadowing, enhancement, speckle and reverber
 not defects to simulate reluctantly: they are how sonographers read tissue, and the mode
 succeeds only if the artifacts are honest enough to diagnose with.
 
-Status: **Phases A–D built and measured** on branch feature/ultrasound; E–F remain.
+Status: **Phases A–E built and measured** on branch feature/ultrasound; F (polish + ship) remains.
 
 Decisions taken while building (the plan's own defaults, confirmed by measurement):
 RUQ abdomen is the exam tuned for; Doppler stays a later phase; the probe is a
@@ -67,7 +67,7 @@ The novel UI: no tube, no pedal — a **probe held against the skin**.
 | **B — the probe** ✅ | grab the probe in the room and slide it over the skin (the bay's orbit yields only when the grab lands on it); the scan plane belongs to the PROBE — rotate 0–90° turns transverse into sagittal, rock ±25° steers the fan without moving the hand; the room draws the true sector, through the patient | **passed**: a grab-and-drag moved the seat from (0.80, 0.44) to (0.51, 0.54) while a drag that missed the probe left it untouched and orbited instead; rotate and rock each change the image (field mean 65.8 transverse → 51.2 sagittal → 34.1 rocked); and one number trades resolution against penetration — speckle correlation length **0.077 cm at 3.5 MHz vs 0.031 cm at 10 MHz**, while useful depth falls **18.0 → 17.5 → 16.7 → 14.0 → 11.8 cm** across 2.5 / 3.5 / 5 / 8 / 12 MHz. 500+ fps |
 | **C — knobs** ✅ | the TGC column — six per-depth gains that ADD to the machine's own ramp — plus dynamic range, and depth/gain/focus/freeze from A–B; every one of them display-side | **passed**: alternating the column ±16 dB bands the image by **27.8 grey levels RMS**, in alternating sign, and it looks exactly like the mis-set screen it is; pressing *centre the TGC* returns the depth profile to the centred one **bit-identically (Δ = 0.0)**, which is the proof that none of it touched the echo underneath. Dynamic range behaves as the knob it is: at 35 dB the black point sits at 9 (crushed, hard contrast), at 80 dB it lifts to 49 (soft and grey) |
 | **D — motion** ✅ | the fluoro warps moved into `core/anatomyMotion.js` and driven from the marcher; a clock column (HR, breath hold, motion off); M-mode with a real time axis and a steerable cursor; a surveyed cardiac window | **passed, and the rate is read back off the IMAGE**: tracking an interface in the M trace and autocorrelating its depth returns **60.0 / 72.5 / 89.3 / 120.0 bpm** for slider settings of 60 / 72 / 90 / 120 — within 1 %, measured through the real clock, the real warp and the real display. The contraction is affine and provable: boundaries move **7.9 % of their distance from the heart's centre**, inward (near wall +9.6 mm, far wall −7.6 mm, converging), and **exactly 0.000 mm outside the ellipsoid**. Breath-hold, tested at the RUQ seat that has no cardiac motion in its plane (beat RMS 0.00 there — the control): breathing moves the image **61.5 grey RMS** between frames 1.6 s apart, holding the breath moves it **0.000** |
-| **E — Doppler** (stretch) | colour box over `sVol` vessels, pulsatile velocity from the HR, aliasing at low PRF | flow paints red/blue by direction; the aorta pulses; turning the box off restores frame rate — the real cost of Doppler |
+| **E — Doppler** ✅ | colour box over the vessel tree, direction from the arclength gradient, pulsatile velocity from the HR clock, aliasing at low PRF, and an acoustically-limited frame rate | **passed on all four counts.** Direction is derived, not authored: the aorta's flow gradient runs caudally down its whole length (z = −0.88 to −0.95) and the IVC's runs cranially (**z = +0.90**), so a vessel and its companion take opposite colours because the anatomy opposes, not because anything says so. The dot product is the model and it measures as one — on the central beams, measured **−32.4 / −34.5 / −38.1 / −40.0** cm/s against predicted **−31.8 / −35.0 / −37.8 / −40.8**. The aorta pulses with the waveform (mean −2.1 → −10.7 → −2.1 cm/s as the systolic term runs 0.25 → 0.96 → 0.25). Aliasing arrives on schedule: at v_nyq 99 cm/s **0 %** of the aorta reads the wrong colour, at 28 cm/s **25 %**, at 10 cm/s **35 %**. And colour costs what it costs: 20.1 fps in B-mode at 20 cm becomes **7.3 / 4.5 / 2.8 fps** for a 25 / 50 / 90 % box |
 | **F — polish** | tutorial, home card graduation, mobile pass | tutorial goals all achievable |
 
 ## 4.1 What Phase A changed about the plan
@@ -144,6 +144,34 @@ The novel UI: no tube, no pedal — a **probe held against the skin**.
 - **M-mode resolves 50 Hz, not the ~1 kHz a real machine gets.** A real M-mode fires its
   one line far faster than any B frame; ours appends a column per frame at a 20 ms sweep.
   Above wall motion, short of valve flutter.
+
+## 4.3 What Phase E changed about the plan
+
+- **The frame rate is ACOUSTIC, and it was fake until this phase.** The loop ran as fast
+  as the CPU allowed and reported that as fps — so when the flow-direction field turned
+  out to be cacheable, colour Doppler cost exactly **×1.00**, the precise opposite of the
+  lesson the phase exists to teach. Sound has a speed: a line cannot start until the last
+  echo of the previous one is back, so a frame costs `NLINE × 2 × depth / c`. That is now
+  the budget, and it pays for three things at once — B-mode runs **50.1 / 25.1 / 20.1 fps
+  at 8 / 16 / 20 cm** (deeper is slower, and now visibly so), the colour box is expensive
+  because its lines are fired ENS times each, and M-mode is fast because it fires *one*
+  line. One model, three consequences, none of them decorated.
+- **Flow direction is the arclength gradient — and veins needed no special case.** The
+  plan assumed the venous side would have to be flipped. Measured, it does not: the
+  contrast solver builds `s` by following the CIRCULATION from the injection site, up the
+  veins to the heart and out along the arteries, so ∇s is the flow direction throughout.
+  The IVC's gradient points cranially all by itself.
+- **grad-s has to be FITTED, not differenced.** Axis-wise central differences failed on
+  exactly the vessels that matter: an aorta is a few voxels across and long, so on the
+  thin axes both neighbours are missing, the one-sided fallback measures variation across
+  the lumen rather than along it, and the aorta came back with a flow direction of
+  (1,1,1)/√3 — a diagonal, from a vessel that runs straight down the body. A least-squares
+  plane fit over a small ball fixes it and is cached per voxel.
+- **A mean over the whole colour box measures nothing**, which cost three attempts to
+  learn. The box holds several vessels, and a sector fan crosses any one of them at a
+  different angle on every line — so the average of everything hides the very dot product
+  the phase is about. The frame now records WHICH vessel produced each colour sample, and
+  the comparison is made per vessel and per beam line, where the model is actually stated.
 
 ## 5. Open questions for ML
 

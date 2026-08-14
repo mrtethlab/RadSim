@@ -25,6 +25,7 @@
 import { acousticTables } from './core/acoustics.js';
 import { deriveMotion, motionState, warpPoint } from './core/anatomyMotion.js';
 import { dockConsole } from './core/paneDock.js';
+import { buildSVolume } from './core/contrast.js';
 
 let ctx = null, U = null;
 const $ = (id) => document.getElementById(id);
@@ -172,13 +173,151 @@ function animTick() {
   return { br: brPhase, card: cardPhase, peri: periT, sw: -1 };
 }
 
+/* ---- COLOUR DOPPLER (docs/ultrasound.md phase E) ----------------------------
+   The one thing colour Doppler actually measures is the component of velocity ALONG
+   THE BEAM. Everything a sonographer knows about angle follows from that dot product,
+   including the fact that a vessel crossed at 90 degrees shows NOTHING however fast
+   the blood is moving — which is why the box is steered and the probe is heeled.
+
+   The flow DIRECTION is not authored. The contrast solver already ships an arclength
+   field s over the vessel tree (one uint16 per vessel voxel, increasing downstream
+   from the injection site), and grad-s therefore points along the vessel. Colour
+   direction is that gradient dotted with the beam. Veins carry the same tree backwards,
+   so their sign is flipped — which is what puts an artery and its companion vein in
+   opposite colours, the classic picture.
+
+   ALIASING is a consequence too. A pulsed system samples the Doppler shift at the PRF,
+   so it can only represent velocities under c*PRF/(4*f0); past that the estimate WRAPS,
+   exactly like any other phase measurement, and the middle of the fast jet comes back
+   the wrong colour. Lower the PRF and watch it start.
+
+   And it COSTS: a colour frame fires an ensemble of pulses per line instead of one, so
+   the box really does run ENS times the work over its own area. The fps readout is not
+   decorated — it is measured, and it drops because the machine is doing more. */
+const ENS = 8;                   // pulses per line in the colour box: a real ensemble
+const F0_MHZ_REF = 1;            // v_nyq scales with 1/f0; f0 comes from the probe
+// Peak systolic speeds, cm/s — textbook, rounded. Veins are steady and slow; arteries
+// pulse, which is what makes the colour flash at the heart rate.
+const VPEAK = { 29: 100, 30: 75, 31: 45, 32: 20, 33: 18, 34: 22, 35: 90, 36: 85, 37: 85,
+  38: 80, 39: 80, 40: 18, 41: 18, 42: 25, 43: 85, 44: 85, 45: 16, 46: 16 };
+// Which of them run backwards along the tree the arclength was built on.
+const VENOUS = { 31: 1, 32: 1, 33: 1, 34: 1, 40: 1, 41: 1, 45: 1, 46: 1 };
+const isVesselId = (id) => id >= 29 && id <= 46;
+
+let sVol = null, sVolFor = null, sVolLoading = false;
+function ensureSVol() {
+  if (sVol || sVolLoading) return;
+  const vm = ctx.S.voxelModel;
+  if (!vm || !vm.loadArclen) return;
+  // reuse whatever the contrast panel already built for this subject
+  const C = ctx.S.contrast;
+  if (C && C.sVol && C.sVolFor === ctx.S.subject) { sVol = C.sVol; sVolFor = ctx.S.subject; return; }
+  sVolLoading = true;
+  vm.loadArclen().then((arclen) => {
+    sVol = buildSVolume(vm.data, arclen);
+    sVolFor = ctx.S.subject;
+    if (C) { C.sVol = sVol; C.sVolFor = ctx.S.subject; }   // share it back
+    sVolLoading = false;
+    setStatus('Colour box armed — flow directions from the vessel tree.');
+    if (!U.live) sweep();
+  }).catch(() => {
+    sVolLoading = false;
+    setStatus('This subject ships no vessel tree — colour Doppler needs one.');
+  });
+}
+
+/* THE FLOW DIRECTION IS grad-s, AND IT HAS TO BE FITTED, NOT DIFFERENCED.
+   The first version took central differences along each axis. It failed on exactly the
+   vessels that matter: an aorta is a couple of voxels across in one direction and long
+   in another, so on the thin axes both neighbours are missing, the one-sided fallback
+   measures variation ACROSS the lumen instead of along it, and a probe aimed at the
+   aorta came back with a flow direction of (1,1,1)/sqrt(3) — a diagonal, from a vessel
+   that runs straight down the body.
+
+   So: a least-squares plane fit of s over every same-vessel voxel within a small ball.
+   Voxels the vessel does not occupy simply do not enter the fit, thin axes contribute
+   what little they legitimately can, and the answer is the direction s climbs fastest —
+   which is downstream. Cached per voxel, because for a parked probe it is a constant and
+   the ensemble below is where the frame time should honestly go. */
+const GD = new Float64Array(3);
+let dirCache = new Map(), dirCacheFor = null;
+function flowDir(ix, iy, iz, id) {
+  if (dirCacheFor !== boundData) { dirCache = new Map(); dirCacheFor = boundData; }
+  const key = (ix + vnx * (iy + vny * iz)) * 1;
+  const hit = dirCache.get(key);
+  if (hit !== undefined) {
+    if (hit === null) return 0;
+    GD[0] = hit[0]; GD[1] = hit[1]; GD[2] = hit[2];
+    return 1;
+  }
+  const R = 4;
+  let sxx = 0, syy = 0, szz = 0, sxy = 0, sxz = 0, syz = 0;
+  let bx = 0, by = 0, bz = 0, n = 0, sMean = 0;
+  const pts = [];
+  for (let dz = -R; dz <= R; dz++) {
+    const z = iz + dz; if (z < 0 || z >= vnz) continue;
+    for (let dy = -R; dy <= R; dy++) {
+      const y = iy + dy; if (y < 0 || y >= vny) continue;
+      for (let dx = -R; dx <= R; dx++) {
+        const x = ix + dx; if (x < 0 || x >= vnx) continue;
+        const k = x + vnx * (y + vny * z);
+        if (vol[k] !== id) continue;
+        pts.push(dx * vsx, dy * vsy, dz * vsz, sVol[k]);
+        sMean += sVol[k]; n++;
+      }
+    }
+  }
+  if (n < 6) { dirCache.set(key, null); return 0; }
+  sMean /= n;
+  // centred normal equations for s ~ a.dx + b.dy + c.dz
+  let mx = 0, my = 0, mz = 0;
+  for (let i = 0; i < pts.length; i += 4) { mx += pts[i]; my += pts[i + 1]; mz += pts[i + 2]; }
+  mx /= n; my /= n; mz /= n;
+  for (let i = 0; i < pts.length; i += 4) {
+    const X = pts[i] - mx, Y = pts[i + 1] - my, Z = pts[i + 2] - mz, S = pts[i + 3] - sMean;
+    sxx += X * X; syy += Y * Y; szz += Z * Z; sxy += X * Y; sxz += X * Z; syz += Y * Z;
+    bx += X * S; by += Y * S; bz += Z * S;
+  }
+  // 3x3 symmetric solve, with a small ridge so a flat vessel cannot make it singular
+  const r = 1e-4 * (sxx + syy + szz + 1);
+  const a11 = sxx + r, a22 = syy + r, a33 = szz + r;
+  const det = a11 * (a22 * a33 - syz * syz) - sxy * (sxy * a33 - syz * sxz) + sxz * (sxy * syz - a22 * sxz);
+  if (!det || !isFinite(det)) { dirCache.set(key, null); return 0; }
+  const gx = (bx * (a22 * a33 - syz * syz) - sxy * (by * a33 - syz * bz) + sxz * (by * syz - a22 * bz)) / det;
+  const gy = (a11 * (by * a33 - bz * syz) - bx * (sxy * a33 - syz * sxz) + sxz * (sxy * bz - by * sxz)) / det;
+  const gz = (a11 * (a22 * bz - by * syz) - sxy * (sxy * bz - by * sxz) + bx * (sxy * syz - a22 * sxz)) / det;
+  const L = Math.hypot(gx, gy, gz);
+  if (!(L > 1e-6)) { dirCache.set(key, null); return 0; }
+  const d = [gx / L, gy / L, gz / L];
+  dirCache.set(key, d);
+  GD[0] = d[0]; GD[1] = d[1]; GD[2] = d[2];
+  return 1;
+}
+
 /* ---- one frame ------------------------------------------------------------- */
-let lastEcho = null, lastMs = 0;
+let lastEcho = null, lastMs = 0, lastAcqMs = 0;
 function scanFrame() {
   if (!vol && !bindVolume()) return null;
   const t0 = performance.now();
   if (!TBL) TBL = acousticTables(64);
-  WST = anim ? motionState(anim, animTick(), vsz, vnz) : null;
+  const ph = animTick();
+  WST = anim ? motionState(anim, ph, vsz, vnz) : null;
+  // ---- colour box: geometry, Nyquist velocity, and the pulsatile waveform ----
+  const dopOn = !!(U.dop && sVol);
+  if (U.dop) ensureSVol();
+  const dl0 = Math.round((0.5 - U.dopW / 2) * (NLINE - 1)), dl1 = Math.round((0.5 + U.dopW / 2) * (NLINE - 1));
+  const dk0 = Math.round((U.dopY - U.dopH / 2) * (NSAMP - 1)), dk1 = Math.round((U.dopY + U.dopH / 2) * (NSAMP - 1));
+  // v_nyq = c*PRF/(4*f0): the fastest a pulsed system can represent before the phase wraps
+  const vNyq = (C_SND * 1e6) * U.prf / (4 * U.freq * 1e6);
+  const cph = ph && !ph.off ? (ph.card || 0) : 0.5;
+  const sysWave = 0.25 + 0.75 * (cph < 0.35 ? Math.sin(Math.PI * cph / 0.35) ** 2 : 0);
+  const respWave = 1 + 0.25 * Math.sin(2 * Math.PI * (ph && !ph.off ? (ph.br || 0) : 0));
+  const vel = dopOn ? new Float32Array(NLINE * NSAMP) : null;
+  // which vessel each colour sample came from. Not used to draw anything — it is what
+  // lets a measurement ask "what did the AORTA do" instead of averaging every vessel in
+  // the box together, which is how the first angle test managed to say nothing.
+  const velId = dopOn ? new Uint8Array(NLINE * NSAMP) : null;
+  const fseed = (t0 * 13) | 0;
   const { z: Zt, att: At, bs: Bt } = TBL;
   const depth = U.depth, freq = U.freq;
   const R0 = U.probe === 'linear' ? 0 : 6.0;          // curvilinear: virtual apex 6 cm back
@@ -242,6 +381,35 @@ function scanFrame() {
         e += bs * (q - 0.5) * 2.0 * amp * SCAT;
       }
       echo[base + k] = e;
+      // ---- COLOUR: the axial component of flow, wrapped at the Nyquist velocity ----
+      if (dopOn && id >= 29 && id <= 46 && k >= dk0 && k <= dk1 && l >= dl0 && l <= dl1) {
+        const ix = (MP[0] / vsx) | 0, iy = (MP[1] / vsy) | 0, iz = (MP[2] / vsz) | 0;
+        if (flowDir(ix, iy, iz, id)) {
+          // THE dot product. A vessel crossed at 90 degrees returns zero however fast the
+          // blood moves, and no other line of code is needed to say so.
+          const cosT = GD[0] * dx + GD[1] * dy + GD[2] * dz;
+          // No sign flip for veins, and the measurement is why. The arclength field was
+          // built by following the CIRCULATION from the injection site — up the veins to
+          // the heart, then out along the arteries — so grad-s is the flow direction
+          // everywhere, not just on the arterial side. Measured: the aorta's gradient runs
+          // caudally (z = -0.88 to -0.95 down its length) and the IVC's runs cranially
+          // (z = +0.90). They oppose each other because the anatomy does, which is what
+          // puts a vessel and its companion in opposite colours without being told to.
+          const v0 = (VPEAK[id] || 30) * (VENOUS[id] ? respWave : sysWave) * cosT;
+          // the ENSEMBLE: N pulses down this line, averaged. Real work, and the estimator
+          // noise falls as 1/sqrt(N) because that is what averaging N of them does.
+          let acc = 0;
+          for (let e2 = 0; e2 < ENS; e2++) {
+            const q = hash3((MP[0] * 31) | 0, (MP[1] * 31) | 0, ((MP[2] * 31) | 0) ^ (fseed + e2 * 7919));
+            acc += v0 * (1 + (q - 0.5) * 0.7);
+          }
+          let w = acc / ENS;
+          while (w > vNyq) w -= 2 * vNyq;          // ALIASING: a phase, and phases wrap
+          while (w < -vNyq) w += 2 * vNyq;
+          vel[base + k] = w;
+          velId[base + k] = id;
+        }
+      }
       // attenuation over this step (one way; the echo pays it twice by construction)
       amp *= Math.exp(-At[id] * freq * ds / 8.686);
       if (amp < 1e-6) { prevId = id; break; }          // nothing is coming back from here
@@ -249,7 +417,21 @@ function scanFrame() {
     }
   }
   lastMs = performance.now() - t0;
-  lastEcho = { echo, depth, freq, ds, sector, R0, apert, lamCm };
+  /* THE FRAME RATE IS ACOUSTIC, NOT COMPUTATIONAL. A machine cannot start the next line
+     until the last echo of this one has come back, so a frame costs
+     NLINE x 2 x depth / c — which is why a deep scan is slower than a shallow one, why
+     M-mode (one line) can sweep at kilohertz, and why the colour box is expensive: its
+     lines are fired ENS times each for the ensemble the estimator needs.
+
+     This replaced a fake. The first version let the loop run as fast as the CPU could
+     manage and reported that as fps, so caching the flow directions made colour Doppler
+     cost exactly nothing — x1.00 — which is the opposite of the lesson. Sound has a
+     speed; that is the budget, and the box spends it. */
+  const tLineMs = 2 * depth / (C_SND * 1e6) * 1e3;          // round trip, ms
+  const nBoxLines = dopOn ? Math.max(0, dl1 - dl0 + 1) : 0;
+  lastAcqMs = (NLINE + nBoxLines * (ENS - 1)) * tLineMs;
+  lastEcho = { echo, depth, freq, ds, sector, R0, apert, lamCm, vel, velId, vNyq, acqMs: lastAcqMs,
+    box: dopOn ? { l0: dl0, l1: dl1, k0: dk0, k1: dk1 } : null };
   return lastEcho;
 }
 
@@ -322,7 +504,7 @@ function buildTgc(freq, ds) {
 /* The B fan, scan-converted. Returns the geometry so the M cursor can be drawn in the
    same frame the image was built in. */
 function drawFan(env, fr, tgcLut) {
-  const { depth, ds, sector, R0, apert } = fr;
+  const { depth, ds, sector, R0, apert, vel, vNyq } = fr;
   if (!bCanvas) { bCanvas = document.createElement('canvas'); bCanvas.width = 512; bCanvas.height = 512; }
   const W = bCanvas.width, H = bCanvas.height;
   const g = bCanvas.getContext('2d');
@@ -353,11 +535,52 @@ function drawFan(env, fr, tgcLut) {
       // assumption is what makes a cyst's far wall bright and a stone's shadow
       // black — the compensation is right for tissue and wrong for both.
       if (l >= 0 && l < NLINE && k >= 0 && k < NSAMP) v = greyOf(env[l * NSAMP + k], k, tgcLut, dr);
-      img.data[o] = img.data[o + 1] = img.data[o + 2] = v;
+      let R = v, G = v, B = v;
+      if (vel && l >= 0 && l < NLINE && k >= 0 && k < NSAMP) {
+        const w = vel[l * NSAMP + k];
+        if (w !== 0) {
+          // BART, the convention every machine ships with: Blue Away, Red Toward. The
+          // beam direction points INTO the patient, so a positive axial component is
+          // receding. Brightness is speed as a fraction of the Nyquist velocity — which
+          // is why an aliased jet comes back saturated in the OTHER colour.
+          const a = Math.min(1, Math.abs(w) / vNyq);
+          const mix = 0.15 + 0.85 * Math.min(1, a * 2.2);
+          const cr = w < 0 ? 130 + 125 * a : 20;
+          const cg = w < 0 ? 25 + 175 * a * a : 45 + 150 * a * a;
+          const cb = w < 0 ? 20 : 135 + 120 * a;
+          R = v * (1 - mix) + cr * mix; G = v * (1 - mix) + cg * mix; B = v * (1 - mix) + cb * mix;
+        }
+      }
+      img.data[o] = R; img.data[o + 1] = G; img.data[o + 2] = B;
       img.data[o + 3] = 255;
     }
   }
   g.putImageData(img, 0, 0);
+  // the colour box, drawn where the colour actually is: a wedge in the fan's own polar
+  // frame, not a rectangle pasted over it
+  if (fr.box) {
+    const b = fr.box;
+    g.strokeStyle = 'rgba(120,230,140,0.8)'; g.lineWidth = 1.5;
+    g.beginPath();
+    if (sector) {
+      const t0 = (b.l0 / (NLINE - 1) - 0.5) * sector, t1 = (b.l1 / (NLINE - 1) - 0.5) * sector;
+      const r0 = R0 + b.k0 * ds, r1 = R0 + b.k1 * ds;
+      const pt = (r, t) => [cx + Math.sin(t) * r * scale, cy + Math.cos(t) * r * scale];
+      g.moveTo(...pt(r0, t0));
+      g.arc(cx, cy, r0 * scale, Math.PI / 2 - t0, Math.PI / 2 - t1, true);
+      g.lineTo(...pt(r1, t1));
+      g.arc(cx, cy, r1 * scale, Math.PI / 2 - t1, Math.PI / 2 - t0, false);
+      g.closePath();
+    } else {
+      const x0 = (b.l0 / (NLINE - 1) - 0.5) * apert, x1 = (b.l1 / (NLINE - 1) - 0.5) * apert;
+      g.rect(cx + x0 * scale, cy + b.k0 * ds * scale, (x1 - x0) * scale, (b.k1 - b.k0) * ds * scale);
+    }
+    g.stroke();
+    // the velocity scale: what the colour bar tops out at before it wraps
+    g.fillStyle = 'rgba(160,240,180,0.9)'; g.font = '12px ui-monospace, monospace';
+    g.fillText(`+${vNyq.toFixed(0)}`, 8, 18);
+    g.fillText(`-${vNyq.toFixed(0)} cm/s`, 8, H - 8);
+  }
   return { W, H, cx, cy, scale };
 }
 
@@ -488,16 +711,21 @@ let liveTimer = null;
 function sweep() {
   const fr = scanFrame();
   if (fr) render(fr);
-  setStatus(`${lastMs.toFixed(0)} ms/frame · ${(1000 / Math.max(lastMs, 1)).toFixed(0)} fps`
+  // M-mode fires ONE line per column, so its budget is one round trip, not a whole frame
+  const acq = U.disp === 'm' ? lastAcqMs / NLINE : lastAcqMs;
+  const fps = 1000 / Math.max(acq, lastMs, 1);
+  setStatus(`${fps.toFixed(0)} fps · ${acq.toFixed(0)} ms acoustic · ${lastMs.toFixed(0)} ms compute`
     + (U.live ? ' · LIVE' : ' · FROZEN'));
+  if (U.live) {
+    clearTimeout(liveTimer);
+    // wait out whatever is left of the acoustic budget after the compute
+    liveTimer = setTimeout(sweep, Math.max(8, acq - lastMs));
+  }
 }
 function setLive(on) {
   U.live = on;
   $('usFreeze')?.classList.toggle('on', !on);
-  clearInterval(liveTimer); liveTimer = null;
-  // M-mode buys its time resolution by asking for frames faster — the sweep writes a
-  // column per frame, so the frame rate IS the temporal resolution of the trace.
-  if (on) liveTimer = setInterval(sweep, U.disp === 'm' ? 20 : 60);
+  clearTimeout(liveTimer); liveTimer = null;
   sweep();
 }
 function setStatus(t) { const el = $('usStatus'); if (el) el.textContent = t; }
@@ -511,6 +739,8 @@ function renderReadouts() {
   set('usTiltV', U.tilt + '°');
   set('usRangeV', U.range + ' dB');
   set('usHrV', U.hr + ' bpm');
+  set('usPrfV', (U.prf / 1000).toFixed(1) + ' kHz');
+  $('usDop')?.classList.toggle('on', U.dop);
   $('usHold')?.classList.toggle('on', U.hold);
   $('usMotion')?.classList.toggle('on', !U.motion);
 }
@@ -645,7 +875,7 @@ export function usApplyMode(on) {
     mReset(); lastTick = 0;
     setTimeout(() => { bindVolume(); setLive(true); }, 400);
   } else {
-    clearInterval(liveTimer); liveTimer = null;
+    clearTimeout(liveTimer); liveTimer = null; U.live = false;
   }
   usSyncScene();
 }
@@ -682,6 +912,15 @@ export function initUS(context) {
     setStatus('TGC centred.');
   });
   slide('usRange', 'range');
+  // ---- colour Doppler ----
+  $('usDop')?.addEventListener('click', () => {
+    U.dop = !U.dop;
+    $('usDop').classList.toggle('on', U.dop);
+    if (U.dop) ensureSVol();
+    if (!U.live) sweep();
+    setStatus(U.dop ? 'Colour box on — and it costs frame rate, as it should.' : 'Colour off.');
+  });
+  slide('usPrf', 'prf'); slide('usDopY', 'dopY'); slide('usDopH', 'dopH'); slide('usDopW', 'dopW');
   // ---- motion + M-mode ----
   slide('usMLine', 'mLine');
   $('usHr')?.addEventListener('input', (e) => {
@@ -736,6 +975,7 @@ export function initUS(context) {
     bind: bindVolume, vdims: () => ({ vnx, vny, vnz, vsx, vsy, vsz, vex, vey, vez }),
     idAt, buildTgc, greyOf, NLINE, NSAMP, mCanvas: () => mCanvas,
     contact: (x, z) => { cpKey = ''; return contactPoint(x, z); }, surfaceAt, GEL_PAD,
+    sVol: () => sVol, ensureSVol, flowDir, GD, VPEAK, VENOUS, ENS,
     setPhase: (c) => { cardPhase = c; },
     // where the probe is on screen — the hook the drag test aims at
     screenPos: () => {
