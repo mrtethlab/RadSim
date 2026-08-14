@@ -49,15 +49,26 @@ export const REGIONS = {
 let scan = null;          // { nx, nz, lo, hi, truth, x0, z0 }
 let scanning = false, rasterRow = 0, rasterTimer = null;
 
-/* WHICH MATERIALS ARE MINERAL, AND AT WHAT DENSITY. Stated here rather than read from
-   the materials table because it is a DXA modelling choice, not a property of the
-   volume: a densitometer's two-material basis calls everything either "bone mineral" or
-   "soft tissue", and these are the densities that turn a traced path length into the
-   areal density the report is written in. Cortical and trabecular bone differ by nearly
-   a factor of two, which is most of why a vertebral body and its cortex read so
-   differently. */
-const BONE_RHO = { 'Cortical bone': 1.92, 'Trabecular bone': 1.18, 'Tooth enamel': 2.10 };
-const SOFT_RHO = 1.05;
+/* EVERY MATERIAL AS A MIXTURE OF THE TWO BASIS MATERIALS.
+   Phase A assigned mineral densities by hand and they were wrong by an order of
+   magnitude — trabecular bone was weighed at the density of the trabeculae themselves
+   (1.18) when the compartment is mostly marrow. Hand-assigning was the mistake, not the
+   numbers. A two-material decomposition only means anything if every tissue in the ray
+   IS a combination of the two basis materials, so the honest move is to compute that
+   combination rather than guess it: solve, per material, the same 2x2 the image solve
+   uses, from that material's own mu at the two energies:
+
+     mu_m(E_lo) = a_m · (mu/rho)_bone(E_lo) + b_m · (mu/rho)_soft(E_lo)
+     mu_m(E_hi) = a_m · (mu/rho)_bone(E_hi) + b_m · (mu/rho)_soft(E_hi)
+
+   a_m then IS that material's bone-equivalent density in g/cm3, by construction and at
+   both energies at once. Trabecular bone comes out small because its attenuation says
+   so, not because anyone decided it should. */
+const SOFT_RHO = 1.05, CORT_RHO = 1.92;
+/* DXA reports areal density of hydroxyapatite, not of whole cortical bone — mineral is
+   about 65 % of cortical bone by mass, the rest collagen and water. One constant, applied
+   at the end, so the g/cm2 on the report is the quantity a clinician reads. */
+const HA_FRACTION = 0.65;
 
 /* Mass attenuation of the two BASIS materials, cm2/g. The solve is stated in areal
    density (g/cm2), so these must be mass coefficients, not linear ones. */
@@ -65,20 +76,23 @@ function basis() {
   const M = BodyMaterials;
   const bone = M.idByName['Cortical bone'] ?? 18;
   const soft = M.idByName['Soft tissue'] ?? 10;
-  const rhoB = BONE_RHO['Cortical bone'], rhoS = SOFT_RHO;
   return {
-    bLo: M.muById(bone, E_LO) / rhoB, bHi: M.muById(bone, E_HI) / rhoB,
-    sLo: M.muById(soft, E_LO) / rhoS, sHi: M.muById(soft, E_HI) / rhoS,
-    boneId: bone, softId: soft, rhoB, rhoS,
+    bLo: M.muById(bone, E_LO) / CORT_RHO, bHi: M.muById(bone, E_HI) / CORT_RHO,
+    sLo: M.muById(soft, E_LO) / SOFT_RHO, sHi: M.muById(soft, E_HI) / SOFT_RHO,
+    boneId: bone, softId: soft, rhoB: CORT_RHO, rhoS: SOFT_RHO,
   };
 }
 
-/* id -> mineral density, for every material that carries mineral. */
-function boneRhoById() {
-  const M = BodyMaterials, out = {};
-  for (const [nm, rho] of Object.entries(BONE_RHO)) {
-    const id = M.idByName[nm];
-    if (id != null) out[id] = rho;
+/* Per-material bone-equivalent density a_m (g/cm3), from the 2x2 above. Everything the
+   ray can cross gets one, including air (0) and metal (large) — no membership list to
+   keep in step with the materials table, which is one fewer thing to get wrong. */
+export function boneEquivById() {
+  const M = BodyMaterials, b = basis();
+  const det = b.bLo * b.sHi - b.bHi * b.sLo;
+  const out = new Float64Array(M.count);
+  for (let id = 0; id < M.count; id++) {
+    const lo = M.muById(id, E_LO), hi = M.muById(id, E_HI);
+    out[id] = Math.max(0, (lo * b.sHi - hi * b.sLo) / det);
   }
   return out;
 }
@@ -92,7 +106,10 @@ export function acquire(onRow, onDone) {
   const lo = new Float32Array(nx * nz), hi = new Float32Array(nx * nz);
   const truth = new Float32Array(nx * nz);
   const mLo = muAtEnergy(E_LO), mHi = muAtEnergy(E_HI);
-  const rhoOf = boneRhoById();     // mineral density per bone material, g/cm3
+  const aOf = boneEquivById();     // bone-equivalent density per material, g/cm3
+  // "mineral" for the loss slider means the bone materials specifically — thinning the
+  // skeleton must not thin the liver, even though the liver has a small a_m
+  const MIN_A = 0.35;              // g/cm3 of bone-equivalent below which it is not bone
   // BONE LOSS lives here: it scales the MINERAL, so both the attenuation and the truth
   // move together. Scaling only the image would be a lie the report could not detect.
   const keep = 1 - (D.loss || 0);
@@ -118,11 +135,11 @@ export function acquire(onRow, onDone) {
         for (let m = 0; m < L.length; m++) {
           const l = L[m];
           if (!l) continue;
-          const isBone = rhoOf[m] !== undefined;
+          const isBone = m < aOf.length && aOf[m] >= MIN_A;
           const f = isBone ? keep : 1;
           aLo += l * mLo[m] * f;
           aHi += l * mHi[m] * f;
-          if (isBone) mineral += l * rhoOf[m] * keep;
+          if (isBone) mineral += l * aOf[m] * keep;
         }
         const k = rasterRow * nx + i;
         lo[k] = aLo; hi[k] = aHi; truth[k] = mineral;
@@ -152,7 +169,9 @@ export function decompose(sc) {
   const n = sc.nx * sc.nz;
   const bmd = new Float32Array(n);
   for (let k = 0; k < n; k++) {
-    bmd[k] = Math.max(0, (sc.lo[k] * b.sHi - sc.hi[k] * b.sLo) / det);
+    // M_s falls out of the same solve and is DISCARDED — that discarding is the whole
+    // trick, and why a pad of fat over the spine does not change the answer
+    bmd[k] = Math.max(0, (sc.lo[k] * b.sHi - sc.hi[k] * b.sLo) / det) * HA_FRACTION;
   }
   return { bmd, det, basis: b };
 }
