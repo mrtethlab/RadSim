@@ -486,12 +486,17 @@ export function dxaSyncScene() {
   const on = ctx.S.mode === 'dxa';
   rig.visible = on;
   const three = ctx.three;
-  if (on) {
-    if (three.tube) three.tube.visible = false;
-    if (three.det) three.det.visible = false;
-    if (three.cr) three.cr.visible = false;
-    if (three.lamp) three.lamp.intensity = 0;
-  }
+  if (!on) return;
+  // A densitometer carries its own source and detector inside the scanning arm, so none of
+  // the radiographic room belongs in this scene. syncScene() re-shows that hardware every
+  // frame, which is why this runs from there rather than only on the mode switch.
+  if (three.tube) three.tube.visible = false;
+  if (three.det) three.det.visible = false;
+  if (three.detMarks) three.detMarks.visible = false;
+  if (three.detArrow) three.detArrow.visible = false;
+  if (three.aecGroup) three.aecGroup.visible = false;
+  if (three.cr) three.cr.visible = false;
+  if (three.lamp) three.lamp.intensity = 0;
 }
 
 function buildRig() {
