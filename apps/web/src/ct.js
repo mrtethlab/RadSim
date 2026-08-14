@@ -969,8 +969,12 @@ function applyMode(mode) {
   const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Planning window in CT
   if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Planning' : 'Image';
   const consoleLbl = ctx.$('consoleLbl');    // x-ray generator vs CT console vs fluoro
+  // there is no generator in ultrasound and no tube in mammography's sense of one —
+  // the header names the machine in front of you, not the x-ray room's
   if (consoleLbl) consoleLbl.textContent = mode === 'ct' ? 'CONSOLE'
-    : mode === 'fluoro' ? 'FLUORO' : 'GENERATOR';
+    : mode === 'fluoro' ? 'FLUORO'
+    : mode === 'us' ? 'ULTRASOUND'
+    : mode === 'mammo' ? 'MAMMO' : 'GENERATOR';
   // A mode switch is a clean slate: tear down the CT scout workflow and any carried
   // view state so nothing from the other mode lingers (stale image, scout overlay,
   // tube-POV camera, Image view). Acquisition params + technique are user setup and

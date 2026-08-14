@@ -1040,3 +1040,143 @@ export const MAMMO_STEPS = [
       + 'than that on the monitor.',
   },
 ];
+
+// ---------------------------------------------------------------- ULTRASOUND
+export const US_STEPS = [
+  {
+    sel: '.bay',
+    title: 'No tube, no pedal — a probe on the skin',
+    text: 'Nothing here is ionising. A probe sends a pulse and listens for what comes back, '
+      + 'and everything on the monitor is an echo: a boundary returns a fraction of the beam '
+      + 'set by the IMPEDANCE MISMATCH across it, and tissue returns a haze of scatter from '
+      + 'structure too fine to resolve. <b>Grab the probe in the room and slide it</b> — it '
+      + 'rides the skin, wherever the patient’s skin happens to be.',
+  },
+  {
+    sel: '.grp:has(#usPx)',
+    title: 'The scan plane belongs to the probe',
+    text: 'Rotate turns the plane from transverse to sagittal without moving your hand; rock '
+      + 'angles the beam without moving it either — which is how you see under a rib instead '
+      + 'of into it. The translucent fan drawn through the patient is the SAME sector the '
+      + 'scan marches, so what hovers in the room is literally the picture on the monitor, '
+      + 'stood up in space.',
+    goal: {
+      label: 'Turn the plane toward sagittal',
+      done: () => S().us.rot >= 45,
+    },
+  },
+  {
+    sel: '.grp:has(#usFreq)',
+    title: 'One number buys resolution and costs depth',
+    text: 'Frequency is the trade the whole modality turns on. The pulse is about two '
+      + 'wavelengths long, so raising the frequency shortens it and the speckle gets finer — '
+      + 'but attenuation is dB per centimetre <i>per megahertz</i>, so the far field goes '
+      + 'under the receiver’s own noise and turns to grey mush. Measured here: <b>18.0 cm of '
+      + 'useful depth at 2.5 MHz against 11.8 cm at 12 MHz.</b> The linear probe runs high '
+      + 'and shallow for exactly this reason.',
+    goal: {
+      label: 'Push the frequency to 8 MHz or more',
+      done: () => S().us.freq >= 8,
+    },
+  },
+  {
+    sel: '.grp:has(#usDepth)',
+    title: 'Depth, focus, gain — and why depth costs frame rate',
+    text: 'Focus is where the beam is narrowest: put it at the level of interest and '
+      + 'everything else blurs sideways. Gain brightens the whole display and adds no '
+      + 'information whatsoever. Depth does something the others do not — a line cannot '
+      + 'start until the last echo of the one before it is home, so the frame rate is set by '
+      + 'the speed of sound: <b>50 fps at 8 cm, 20 fps at 20 cm</b>. Watch the readout as you '
+      + 'drag it.',
+    goal: {
+      label: 'Take the depth past 18 cm and watch the fps',
+      done: () => S().us.depth >= 18,
+    },
+  },
+  {
+    sel: '.grp:has(#usTgc0)',
+    title: 'The knob row you can visibly get wrong',
+    text: 'Six gains stacked by depth, added to the machine’s own ramp. Slide them apart and '
+      + 'the image bands — <b>27.8 grey levels of it</b> — which is the classic mis-set screen, '
+      + 'and the first thing anyone looks at when a trainee’s image is ugly. Press <i>centre '
+      + 'the TGC</i> and the profile comes back <b>bit-identically</b>: none of this ever '
+      + 'touched the echo underneath. That is what "display-side" means.',
+    goal: {
+      // the goal carries its own memory: it has to SEE the column mis-set before a
+      // centred one counts. Watching for the "TGC centred" status instead does not work —
+      // the live sweep overwrites that line with the frame rate a few milliseconds later.
+      label: 'Mis-set the column, then centre it again',
+      arm: () => ({ mis: false }),
+      done: (a) => {
+        if (S().us.tgcBands.some((b) => b !== 0)) { a.mis = true; return false; }
+        return !!a.mis;
+      },
+    },
+  },
+  {
+    sel: '.grp:has(#usDispSeg)',
+    title: 'The patient is not a still life',
+    text: 'The diaphragm, the heart and the gut all move, and all three come from this '
+      + 'subject’s own segmentation rather than from an animator. The hand holds its seat and '
+      + 'the anatomy moves underneath it — which is why the speckle travels with the tissue '
+      + 'instead of sitting still in the screen. <b>Seat the probe on the heart</b> with the '
+      + 'button, then switch to M-mode: one line against time, six seconds a screen, a '
+      + 'gridline a second. Count the gridlines between beats and you have measured the rate '
+      + 'off the image.',
+    goal: {
+      label: 'Put the probe on the heart and switch to M-mode',
+      done: () => S().us.disp === 'm' && S().us.rot >= 80 && S().us.tilt >= 15,
+    },
+  },
+  {
+    sel: '.grp:has(#usHr)',
+    title: 'Breath hold stops one clock and no others',
+    text: 'Every rhythm keeps its own time, so holding the breath stills the diaphragm while '
+      + 'the heart carries on — which is exactly why you ask for it before a cardiac window. '
+      + 'At the RUQ seat, where no heart falls in the plane, breathing moves the image by '
+      + '<b>61.5 grey levels</b> between frames 1.6 s apart and holding it moves the image by '
+      + '<b>0.000</b>. Change the heart rate and the M-mode trace changes period with it.',
+    goal: {
+      label: 'Take the heart rate somewhere else',
+      arm: () => S().us.hr,
+      done: (a) => Math.abs(S().us.hr - a) >= 20,
+    },
+  },
+  {
+    sel: '.grp:has(#usDop)',
+    title: 'Colour is one dot product',
+    text: 'Doppler measures the component of flow <b>along the beam</b>, and everything a '
+      + 'sonographer knows about angle follows from that: a vessel crossed at 90° shows '
+      + 'nothing however fast it runs, so you rock the probe until it does. Red toward, blue '
+      + 'away — and an artery and its companion vein come out opposite because they genuinely '
+      + 'run opposite ways. Then drop the scale: past <b>c·PRF/4f₀</b> the estimate wraps and '
+      + 'the fast middle of the vessel comes back the wrong colour. That is aliasing, and it '
+      + 'is the same phase wrap as anywhere else.',
+    goal: {
+      label: 'Turn the colour box on',
+      done: () => S().us.dop === true,
+    },
+  },
+  {
+    sel: '.grp:has(#usPrf)',
+    title: 'Make it alias, then make the frame rate pay',
+    text: 'Wind the scale down and watch the aliasing arrive: at a Nyquist velocity of 99 cm/s '
+      + 'none of the aorta reads wrong, at 28 cm/s <b>a quarter of it does</b>. And look at the '
+      + 'fps: the box fires an ensemble of pulses on every line inside it, so a half-width box '
+      + 'takes 20 fps down to <b>4.5</b>. That is the real reason a sonographer keeps the box '
+      + 'small and puts it only where the question is.',
+    goal: {
+      label: 'Drop the scale below 2.5 kHz',
+      done: () => S().us.prf <= 2500,
+    },
+  },
+  {
+    sel: '#usScanRow',
+    title: 'Freeze, and read',
+    text: 'Freeze holds the last frame so you can study it — there is no dose clock here and '
+      + 'nothing to spend, which is the one genuine luxury of this modality. Send the image to '
+      + 'the bay’s Image view to read it at full size. What you are reading is interference: '
+      + 'the speckle is not noise on top of the anatomy, it IS the anatomy, and telling '
+      + 'texture from artefact is the whole skill.',
+  },
+];
