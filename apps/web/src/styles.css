@@ -1546,6 +1546,51 @@ body.mode-mammo .fl-hide{display:none}
   transition:.12s}
 .flpedal.on{background:linear-gradient(180deg,#b57612,#8a5a0c); color:#fff7ea;
   box-shadow:0 0 22px rgba(255,178,62,.55); border-color:#ffb23e}
+/* ---- the exposure switch, as it is on the machine: a yellow square carrying the tube
+   and its trefoil. Nothing else on the console is that colour, which is the point. ---- */
+.flpedal.xexp{display:flex; align-items:center; justify-content:center; gap:12px;
+  min-height:62px; color:#241d00; letter-spacing:2.5px;
+  background:linear-gradient(180deg,#f2d21c,#c9ac09); border:2px solid #6d5c05;
+  box-shadow:inset 0 2px 0 #fff8b0, 0 3px 7px #0008}
+.flpedal.xexp .xsym{width:34px; height:34px; flex:0 0 auto; display:block}
+.flpedal.xexp:hover{background:linear-gradient(180deg,#ffe436,#d8ba0c)}
+.flpedal.xexp.on{background:linear-gradient(180deg,#fff06a,#f0cf10); color:#1a1500;
+  border-color:#fff6a8; box-shadow:0 0 26px rgba(255,224,60,.75), inset 0 2px 0 #fffce0}
+/* ---- OEC control panel: the button clusters, in the machine's own colours ---- */
+.oecpanel{display:grid; grid-template-columns:1fr 1fr; gap:8px; align-items:stretch}
+.oecg{position:relative; background:#2c353b; border:1px solid #3d4a52; border-radius:7px;
+  padding:8px 7px 16px; display:flex; flex-direction:column; gap:6px; align-items:center;
+  justify-content:flex-start}
+.oecg.span2{grid-column:1 / -1}
+.oecl{position:absolute; bottom:2px; left:0; right:0; text-align:center; font-family:var(--seg);
+  font-size:7.5px; letter-spacing:1.4px; color:#8fa0ac; text-transform:uppercase}
+.oecrow{display:flex; gap:5px; width:100%; justify-content:center; flex-wrap:wrap}
+.oecb{cursor:pointer; user-select:none; touch-action:none; border:1px solid #3f5d54;
+  font-family:var(--disp); font-weight:700; font-size:11px; line-height:1.05; color:#12302a;
+  background:linear-gradient(180deg,#9fd8c0,#7fbfa4); border-radius:7px; padding:5px 4px;
+  text-align:center; transition:.1s}
+.oecb.wide{flex:1 1 0; min-width:42px}
+.oecb.rnd{border-radius:50%; width:40px; height:40px; display:flex; align-items:center;
+  justify-content:center; font-size:9px; padding:0}
+.oecb.rnd.big{width:48px; height:48px; font-size:9px}
+.oecb.pur{background:linear-gradient(180deg,#cdc0ea,#ab9bd2); border-color:#6a5b8d; color:#241a3a}
+.oecb.blu{background:linear-gradient(180deg,#a9d8ee,#84bcd8); border-color:#456f86; color:#0d2836}
+.oecb.red{background:linear-gradient(180deg,#e9bdb6,#cf9a92); border-color:#8a5b54; color:#3a1710}
+.oecb:hover{filter:brightness(1.12)}
+.oecb:active,.oecb.on{filter:brightness(1.3); box-shadow:0 0 12px rgba(180,255,220,.5)}
+.oecb.pur.on{box-shadow:0 0 12px rgba(200,180,255,.55)}
+.oecb.blu.on{box-shadow:0 0 12px rgba(150,215,245,.55)}
+.oecb.red.armed{animation:oecalarm .7s ease-in-out infinite}
+@keyframes oecalarm{0%,100%{filter:brightness(1)}50%{filter:brightness(1.7); box-shadow:0 0 16px #ff6d6d}}
+.oeclamps{display:flex; flex-direction:column; gap:3px; width:100%}
+.oeclamp{display:flex; align-items:center; justify-content:space-between; gap:6px;
+  font-family:var(--seg); font-size:8px; letter-spacing:1px; color:#93a3af}
+.oeclamp i{width:7px; height:7px; border-radius:50%; background:#2a3238; border:1px solid #46535c}
+.oeclamp.on{color:#dff0da}
+.oeclamp.on i{background:#c8e04a; border-color:#e7f57e; box-shadow:0 0 7px #c8e04a}
+.oecval{flex:1 1 0; min-width:42px; text-align:center; font-family:var(--seg); font-size:8px;
+  letter-spacing:.5px; color:#8fa0ac; align-self:center}
+.oecval span{color:var(--dtxt); font-size:10px}
 .lih-badge{position:absolute; top:8px; right:10px; z-index:3; display:none;
   font-family:var(--seg); font-size:10px; letter-spacing:2px; color:#7fe3a4;
   border:1px solid #2c7a44; padding:2px 7px; border-radius:4px; background:rgba(5,16,9,.7)}
@@ -1572,6 +1617,37 @@ body.mode-fluoro .mini #flStill.on{background:#0e2a3a; border-color:#3ec6ff; col
   background:#1a2229cc; border:1px solid #35464e; border-radius:6px; padding:4px 8px}
 .cineclose.show{display:block}
 #flRec.on{color:#ff6d6d; border-color:#a03636}
+/* ---- the second screen + the image directory ---- */
+.scr2{display:none; margin-top:10px}
+body.mode-fluoro .scr2{display:block}
+.scr2hdr{display:flex; align-items:center; justify-content:space-between; gap:8px;
+  font-family:var(--seg); font-size:9px; letter-spacing:1.6px; color:var(--dmuted);
+  padding:0 2px 5px}
+.scr2hdr .scr2hint{color:var(--muted2); letter-spacing:1px; font-size:8px}
+.scr2mon{position:relative; background:#000; border:1px solid var(--edge); border-radius:6px;
+  overflow:hidden; display:flex; align-items:center; justify-content:center; min-height:150px}
+.scr2mon canvas{max-width:100%; height:auto; display:block}
+.scr2empty{position:absolute; font-family:var(--seg); font-size:10px; letter-spacing:2px;
+  color:#3e4a55}
+.scr2empty.hide{display:none}
+.imgdir{position:absolute; inset:0; z-index:6; display:none; flex-direction:column;
+  background:#0b1116f2; padding:8px}
+.imgdir.show{display:flex}
+.imgdirhdr{display:flex; align-items:center; justify-content:space-between;
+  font-family:var(--seg); font-size:10px; letter-spacing:2px; color:var(--dcyan); padding-bottom:6px}
+.imgdirgrid{flex:1 1 auto; overflow:auto; display:grid; grid-template-columns:repeat(3,1fr);
+  gap:6px; align-content:start}
+.imgdirit{position:relative; cursor:pointer; border:1px solid var(--edge2); border-radius:4px;
+  overflow:hidden; background:#000}
+.imgdirit img{width:100%; display:block}
+.imgdirit .cap{position:absolute; left:0; right:0; bottom:0; font-family:var(--seg); font-size:7px;
+  letter-spacing:.5px; color:#cfe3ef; background:#000a; padding:2px 3px; text-align:center}
+.imgdirit:hover{border-color:var(--cyan); box-shadow:0 0 10px #35c6d655}
+.imgdirit.sel{border-color:var(--cyan)}
+.imgdirit .kind{position:absolute; top:2px; left:3px; font-family:var(--seg); font-size:7px;
+  color:#ffd9b0; letter-spacing:1px}
+.imgdirnote{font-family:var(--seg); font-size:8px; letter-spacing:.6px; color:var(--muted2);
+  padding-top:6px; line-height:1.5}
 .cinelist{display:flex; flex-direction:column; gap:5px; margin-top:8px}
 .cinelist:empty{display:none}
 .cinerow{display:flex; align-items:center; gap:7px; font-family:var(--seg); font-size:10px;

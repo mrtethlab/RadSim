@@ -24,6 +24,7 @@
    ============================================================================ */
 import { acousticTables } from './core/acoustics.js';
 import { deriveMotion, motionState, warpPoint } from './core/anatomyMotion.js';
+import { dockConsole } from './core/paneDock.js';
 
 let ctx = null, U = null;
 const $ = (id) => document.getElementById(id);
@@ -65,7 +66,7 @@ function bindVolume() {
   [vnx, vny, vnz] = vm.dims;
   [vsx, vsy, vsz] = vm.vs;
   vex = vnx * vsx; vey = vny * vsy; vez = vnz * vsz;
-  anim = boundData === vol ? anim : deriveMotion(vol, vm.dims, vm.vs.map((v) => v * 10));
+  if (boundData !== vol) { anim = deriveMotion(vol, vm.dims, vm.vs.map((v) => v * 10)); cpKey = ''; }
   boundData = vol;
   return true;
 }
@@ -104,16 +105,51 @@ function hash3(a, b, c) {
 /* Find the skin: march in from outside along the probe's axis until something that
    is not air. The probe then sits ON the patient, wherever the patient's surface
    happens to be — which is all "riding the surface" has ever meant. */
+/* Gel. A real probe never touches skin: there is a millimetre or so of coupling gel
+   under it, and for superficial work a standoff pad of a centimetre. Without any, the
+   face sits exactly ON the skin and the skin line lands at depth zero, where the fan's
+   apex clips it — the one layer you can always see on a real machine is the one this
+   was throwing away. The pad also gives the near field somewhere to be. */
+const GEL_PAD = 0.6;                   // cm of coupling between the face and the skin
+
+/* One surface column: coarse at the voxel pitch (finer buys nothing — the data has no
+   more), then refined so the answer is continuous rather than quantised to the grid. */
+function surfaceAt(px, pz) {
+  for (let y = vey - 0.01; y > 0; y -= vsy) {
+    if (idAt(px, y, pz) !== 0) {
+      for (let t = y + vsy; t > y - 1e-9; t -= 0.01) if (idAt(px, t, pz) !== 0) return t;
+      return y;
+    }
+  }
+  return -1;
+}
+/* THE FACE IS 5 cm WIDE AND THE PATIENT IS NOT FLAT. Seating the probe on a single
+   voxel column made a drag step a whole voxel at a time — 2 mm hops of the entire
+   image, which reads as a shaking hand. A real face rests on the AVERAGE contour
+   beneath it, so that is what this returns: the mean surface over the footprint,
+   which is both smoother and more nearly true.
+
+   Deliberately UNWARPED: the hand holds a position and the anatomy moves under it.
+   Seating on the breathing surface would slide the whole image every frame, which is a
+   moving hand, not a moving patient. Cached, because for a fixed seat it is a constant. */
+let cpKey = '', cpVal = 0;
 function contactPoint(px, pz) {
-  // deliberately UNWARPED: the hand holds a position, and the anatomy moves under it.
-  // Seating the probe on the breathing surface instead would slide the whole image every
-  // frame, which is a moving hand, not a moving patient.
+  const key = px.toFixed(3) + ',' + pz.toFixed(3) + ',' + U.rot;
+  if (key === cpKey) return cpVal;
   const save = WST; WST = null;
   try {
-    for (let y = vey - 0.01; y > 0; y -= 0.05) {
-      if (idAt(px, y, pz) !== 0) return y;
+    const rot = U.rot * Math.PI / 180, ux = Math.cos(rot), uz = Math.sin(rot);
+    let s = 0, n = 0;
+    for (let i = -2; i <= 2; i++) {
+      for (let j = -1; j <= 1; j++) {
+        const f = i * 0.9, g = j * 0.6;            // cm along the face, cm across elevation
+        const y = surfaceAt(px + ux * f - uz * g, pz + uz * f + ux * g);
+        if (y > 0) { s += y; n++; }
+      }
     }
-    return vey * 0.5;
+    cpVal = (n ? s / n : vey * 0.5) + GEL_PAD;
+    cpKey = key;
+    return cpVal;
   } finally { WST = save; }
 }
 
@@ -565,7 +601,7 @@ export function usSyncScene() {
    Returns true when the gesture belongs to the probe, so the bay's orbit stays out
    of the way. Dragging moves it across the skin in x/z; the surface march re-seats
    it in depth every frame, so it follows the body's own contour. */
-let dragging = false, ray = null, plane = null, hit = null;
+let dragging = false, ray = null, plane = null, hit = null, dragY = 0;
 export function usPointer(e, phase, cam, canvas) {
   if (!ctx || !rig || !rig.visible) return false;
   const { THREE } = ctx;
@@ -576,12 +612,16 @@ export function usPointer(e, phase, cam, canvas) {
   ray.setFromCamera(ndc, cam);
   if (phase === 'down') {
     dragging = ray.intersectObject(probeGrab, false).length > 0;
+    dragY = rig.position.y;      // pinned for the whole gesture, see below
     return dragging;
   }
   if (phase === 'up') { const was = dragging; dragging = false; return was; }
   if (!dragging) return false;
-  // slide in the horizontal plane through the current contact point
-  plane.set(new THREE.Vector3(0, 1, 0), -rig.position.y);
+  // Slide in a horizontal plane pinned at the height the grab STARTED at. Re-deriving it
+  // from the current contact each frame fed the probe's own descent back into the
+  // pointer mapping, so climbing onto the ribs would pull the seat out from under the
+  // cursor. One plane per gesture, and the hand goes where you put it.
+  plane.set(new THREE.Vector3(0, 1, 0), -dragY);
   if (!ray.ray.intersectPlane(plane, hit)) return true;
   U.px = Math.max(0.12, Math.min(0.88, (hit.x + vex / 2) / vex));
   U.pz = Math.max(0.10, Math.min(0.90, (hit.z + vez / 2) / vez));
@@ -595,6 +635,9 @@ export function usPointer(e, phase, cam, canvas) {
 /* ---- mode + wiring --------------------------------------------------------- */
 export function usApplyMode(on) {
   if (!ctx) return;
+  // the monitor and the freeze move one pane left, as in fluoro — a live mode is watched,
+  // not reviewed (core/paneDock.js)
+  dockConsole(on, $('usScanRow'));
   if (on) {
     if (ctx.S.subject !== 'chestabdopelvis') ctx.setSubject?.('chestabdopelvis');
     renderReadouts();
@@ -692,6 +735,7 @@ export function initUS(context) {
     U, lastMs, lastEcho, scanFrame, envelope, anim, WST, mReset,
     bind: bindVolume, vdims: () => ({ vnx, vny, vnz, vsx, vsy, vsz, vex, vey, vez }),
     idAt, buildTgc, greyOf, NLINE, NSAMP, mCanvas: () => mCanvas,
+    contact: (x, z) => { cpKey = ''; return contactPoint(x, z); }, surfaceAt, GEL_PAD,
     setPhase: (c) => { cardPhase = c; },
     // where the probe is on screen — the hook the drag test aims at
     screenPos: () => {

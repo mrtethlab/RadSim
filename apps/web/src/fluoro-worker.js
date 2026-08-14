@@ -255,6 +255,10 @@ onmessage = (e) => {
 
   const { src, detC, detU, detV, half, n, photons } = m;
   const iris = m.iris || half;
+  // the shutter pair: half-separation and the angle of its leaves. Wide open means no
+  // band at all, and the compare below is skipped entirely.
+  const shutHalf = (m.shut == null || m.shut >= half) ? 1e9 : m.shut;
+  const shutC = Math.cos(m.shutRot || 0), shutS = Math.sin(m.shutRot || 0);
   seed = m.seed || seed;
   const img = new Float32Array(n * n);
   const w0 = binW[0], w1 = binW[1], w2 = binW[2];
@@ -272,6 +276,11 @@ onmessage = (e) => {
       // one that saves the patient dose
       const r2 = u * u + v * v;
       if (r2 > cutR * cutR) { img[j * n + i] = -1; continue; }
+      // ...and the SHUTTERS: a rotatable pair of parallel leaves, so the collimated field
+      // is a band across the circle rather than a smaller circle. Closing them onto the
+      // anatomy of interest is the cheapest dose saving on the machine, and the only one
+      // that costs nothing you wanted to see.
+      if (shutHalf < 1e8 && Math.abs(v * shutC - u * shutS) > shutHalf) { img[j * n + i] = -1; continue; }
       const px = detC[0] + u * detU[0] + v * detV[0];
       const py = detC[1] + u * detU[1] + v * detV[1];
       const pz = detC[2] + u * detU[2] + v * detV[2];
@@ -283,6 +292,6 @@ onmessage = (e) => {
       img[j * n + i] = photons > 0 ? poisson(photons * T) / photons : T;
     }
   }
-  postMessage({ type: 'frame', img, ms: performance.now() - t0, id: m.id,
+  postMessage({ type: 'frame', img, ms: performance.now() - t0, id: m.id, film: !!m.film,
     roi: roiCnt ? roiSum / roiCnt : 0, photons }, [img.buffer]);
 };

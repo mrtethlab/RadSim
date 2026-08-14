@@ -551,7 +551,15 @@ const S = {
            hold:false, still:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
            // electronic image orientation (display-space): accumulated rotation, flips,
            // and the pending rotation being dialled in for the NEXT run (the triangle)
-           dispRot:0, flipH:false, flipV:false, pendRot:0,
+           dispRot:0, flipH:false, flipV:false, pendRot:0, invert:false,
+           // The OEC control panel (docs/fluoroscopy.md §Console). Collimation is two
+           // devices, not one: a circular IRIS and a rotatable pair of parallel SHUTTERS,
+           // both in the beam and both saving dose. Brightness/contrast are display-side.
+           shut:1.0, shutRot:0, bright:0, cont:1.0,
+           lowDose:false,        // half the dose rate, and it looks like it
+           alarm:false, alarmS:300,   // the five-minute beam-on alarm every fluoro has
+           saved:[], dirOpen:false,   // the Image Directory: saved frames and loops
+           ws:false, ws2:'ref',       // second screen: WORKSTATION swaps live/reference
            motions:[], fixedSeed:null },
   // ---- mammography (docs/mammography.md): technique, compression, view ----
   mammo:{ tf:'momo', kv:28, mas:60, aec:true,
