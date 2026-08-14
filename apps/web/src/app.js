@@ -1941,7 +1941,18 @@ async function computeRadiograph(){
   // quanta per pixel scale with pixel AREA: finer matrices collect fewer photons
   // per element -> more quantum mottle (the resolution/noise trade-off).
   const STD_PX=0.048*0.048;                     // reference detector pixel area (~0.48 mm) for the noise model
-  const photonScale = 340 * (pxU*pxV)/STD_PX;   // higher quanta -> lower mottle (clean DR look)
+  /* QUANTA PER PIXEL, and the reason this number moved. It was 340 for an unattenuated
+     unit exposure, which sounds generous until it meets a patient: lung transmits ~30 %
+     (≈100 quanta, 10 % mottle) and the mediastinum ~5 % (≈17 quanta, 24 %). That is
+     fluoroscopic noise on a radiograph, and it was burying the anatomy — measured 9.1 %
+     in a chest region where a real DR image sits at 1-2 %.
+     A radiograph is three orders of magnitude more exposure than a fluoro pulse, so the
+     budget is now 6000: the same lung region lands near 1 %, the mediastinum near 3 %,
+     and detail stops competing with grain.
+     Note this constant sets NOISE ONLY. Detector.capture divides the noisy count back by
+     photonScale, so the mean signal, the EI and the displayed brightness are untouched —
+     which is why it can be recalibrated without disturbing the AEC or the APR chart. */
+  const photonScale = 6000 * (pxU*pxV)/STD_PX;  // higher quanta -> lower mottle (clean DR look)
 
   // collimation mask: which detector cells fall inside the beam cone.
   // Tested in the tube frame so the exposed field keystones with CR angle,
