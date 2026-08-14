@@ -1137,6 +1137,31 @@
         </div>
       </div>
       <div class="grp us-only">
+        <div class="lab">TGC &middot; time-gain compensation</div>
+        <div class="bod">
+          <div class="tgcrow"><span class="tgclab">near</span>
+            <input type="range" class="tgcs" id="usTgc0" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">&nbsp;</span>
+            <input type="range" class="tgcs" id="usTgc1" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">&nbsp;</span>
+            <input type="range" class="tgcs" id="usTgc2" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">&nbsp;</span>
+            <input type="range" class="tgcs" id="usTgc3" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">&nbsp;</span>
+            <input type="range" class="tgcs" id="usTgc4" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">far</span>
+            <input type="range" class="tgcs" id="usTgc5" min="-20" max="20" value="0" step="1"></div>
+          <div class="row" style="margin-top:8px"><div class="rl">Dynamic range</div>
+            <div class="valchip" id="usRangeV">55 dB</div></div>
+          <input type="range" id="usRange" min="30" max="80" value="55" step="1">
+          <button class="fldose-rst" id="usTgcReset" style="width:100%; margin-top:8px">centre the TGC</button>
+          <div class="ctrst-note">Six gains stacked by depth, added to the machine's own ramp.
+            Slide them apart and the image bands &mdash; the classic mis-set screen. Centre them
+            and it comes back uniform, without a single number of the physics changing. Push the
+            far ones hard and you amplify the receiver's noise instead of an echo.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
         <div class="lab">Probe position</div>
         <div class="bod">
           <div class="row"><div class="rl">Across <small>patient left / right</small></div></div>

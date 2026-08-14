@@ -1502,6 +1502,11 @@ body.mode-fluoro .fl-only{display:block}
 body.mode-fluoro .xray-only{display:none}
 body.mode-fluoro .flkeep{display:block}   /* subject offsets are positioning, not x-ray */
 body.mode-fluoro .fl-hide{display:none}   /* x-ray/CT display options with no fluoro meaning */
+/* ---- ultrasound: the TGC knob column ---- */
+.tgcrow{display:flex; align-items:center; gap:8px; margin-bottom:3px}
+.tgclab{font-family:var(--seg); font-size:8.5px; letter-spacing:1.2px; color:var(--dmuted2);
+  width:26px; text-align:right; flex:none}
+.tgcrow .tgcs{flex:1; margin:0}
 /* ---- ultrasound mode gating ---- */
 .us-only{display:none}
 body.mode-us .us-only{display:block}

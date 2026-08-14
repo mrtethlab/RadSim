@@ -569,6 +569,10 @@ const S = {
        // both in frame — which is the view that teaches enhancement.
        px:0.80, pz:0.44,     // probe seat, as a fraction of the volume's x and z
        rot:0, tilt:0,        // scan plane: 0 = transverse, 90 = sagittal; tilt rocks it
+       // TGC: six per-depth gain offsets in dB, near (0) to far (5). They ADD to the
+       // machine's baseline ramp, so centred is a uniform image and pushing them apart
+       // is the banded one every sonographer has seen on a colleague's screen.
+       tgcBands:[0,0,0,0,0,0],
        live:true },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine

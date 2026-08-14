@@ -219,6 +219,16 @@ function render(fr) {
   const g = usCanvas.getContext('2d');
   const img = g.createImageData(W, H);
   const dr = U.range;                                   // displayed dynamic range, dB
+  // TGC as a depth lookup: the machine's own ramp (which assumes uniform tissue —
+  // see the note in the header) PLUS the operator's six band offsets, interpolated.
+  // Every bit of this is display-side; the echo underneath never changes.
+  const B = U.tgcBands || [0, 0, 0, 0, 0, 0], nb = B.length;
+  const tgcLut = new Float64Array(NSAMP);
+  for (let k = 0; k < NSAMP; k++) {
+    const t = k / (NSAMP - 1) * (nb - 1);
+    const i0 = Math.min(nb - 1, t | 0), i1 = Math.min(nb - 1, i0 + 1), fr2 = t - i0;
+    tgcLut[k] = 2 * TGC_ASSUME * freq * (k * ds) + (B[i0] * (1 - fr2) + B[i1] * fr2);
+  }
   // The fan, sized so the sector just fills the frame.
   const halfW = sector ? (R0 + depth) * Math.sin(sector / 2) : apert / 2;
   const totalH = sector ? (R0 + depth) - R0 * Math.cos(sector / 2) : depth;
@@ -241,12 +251,10 @@ function render(fr) {
       const o = (j * W + i) * 4;
       let v = 0;
       if (l >= 0 && l < NLINE && k >= 0 && k < NSAMP) {
-        const r = R0 + k * ds;
         // TGC: every machine compensates for an ASSUMED uniform tissue. That
         // assumption is what makes a cyst's far wall bright and a stone's shadow
         // black — the compensation is right for tissue and wrong for both.
-        const tgcDb = 2 * TGC_ASSUME * freq * (k * ds) * U.tgc;
-        const db = 20 * Math.log10(env[l * NSAMP + k] + 1e-7) + SYS_DB + tgcDb + U.gain;
+        const db = 20 * Math.log10(env[l * NSAMP + k] + 1e-7) + SYS_DB + tgcLut[k] + U.gain;
         v = Math.max(0, Math.min(1, (db + dr) / dr));
         v = Math.pow(v, 0.85) * 255;
       }
@@ -304,6 +312,7 @@ function renderReadouts() {
   set('usFocusV', U.focus.toFixed(0) + ' cm');
   set('usRotV', U.rot + '°');
   set('usTiltV', U.tilt + '°');
+  set('usRangeV', U.range + ' dB');
 }
 
 /* ---- the rig: a probe on the skin + the plane it images ---------------------
@@ -451,6 +460,20 @@ export function initUS(context) {
   slide('usPx', 'px'); slide('usPz', 'pz');
   slide('usRot', 'rot'); slide('usTilt', 'tilt');
   $('usFreeze')?.addEventListener('click', () => setLive(!U.live));
+  // the TGC column: six display-side gains, and the button that undoes a bad set
+  for (let i = 0; i < 6; i++) {
+    $('usTgc' + i)?.addEventListener('input', (e) => {
+      U.tgcBands[i] = +e.target.value;
+      if (!U.live) sweep();
+    });
+  }
+  $('usTgcReset')?.addEventListener('click', () => {
+    U.tgcBands = [0, 0, 0, 0, 0, 0];
+    for (let i = 0; i < 6; i++) { const el = $('usTgc' + i); if (el) el.value = 0; }
+    if (!U.live) sweep();
+    setStatus('TGC centred.');
+  });
+  slide('usRange', 'range');
   document.querySelectorAll('#usProbeSeg button').forEach((b) => {
     b.addEventListener('click', () => {
       U.probe = b.dataset.probe;
