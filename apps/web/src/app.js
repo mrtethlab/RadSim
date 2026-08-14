@@ -3307,7 +3307,11 @@ window.addEventListener('load',()=>{
     } });
   initMammo({ THREE, S, three, setSubject: (s) => setSubject(s),
     loadModelUrl, baseUrl: import.meta.env.BASE_URL });
-  initUS({ THREE, S, three, setSubject: (s) => setSubject(s) });
+  // phantomPose is what lets ultrasound turn the patient under the probe — without it the
+  // roll slider moved the body in the room and nothing on the monitor
+  initUS({ THREE, S, three, setSubject: (s) => setSubject(s),
+           phantomPose: () => ({ center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1] / 2) / 10 : 5) + S.objOff.y, S.objOff.z],
+                                 flip: voxelFlips(), rot: objMat() }) });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

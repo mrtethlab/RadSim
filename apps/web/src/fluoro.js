@@ -184,7 +184,14 @@ function beamFrame() {
   let u = cross(dir, [0, 0, 1]);
   if (Math.hypot(u[0], u[1], u[2]) < 1e-6) u = [1, 0, 0];
   u = norm(u);
-  const v = norm(cross(u, dir));
+  /* SUPERIOR GOES AT THE TOP. The worker fills row j = 0 at v = -half, so the top of the
+     image is the -detV direction; with v = cross(u, dir) that came out as world -z, and
+     world +z is the patient's head in every non-CT mode (voxelFlips leaves z alone). The
+     result was a chest rendered feet-up. Taking the cross the other way flips only the
+     detector's vertical sense — the same rays, re-ordered — so left and right are
+     untouched and the display controls stay at neutral, which is what "reset orientation"
+     should hand you. */
+  const v = norm(cross(dir, u));
   return { src, detC, detU: u, detV: v, half: OEC.FIELD / 2 };
 }
 

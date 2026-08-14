@@ -83,7 +83,42 @@ const WP = new Float64Array(3);
    is the coordinate speckle must be hashed on, or the texture would sit still in
    space while the anatomy slid through it. Speckle belongs to the tissue. */
 const MP = new Float64Array(3);
+/* THE PATIENT CAN BE ROLLED, AND THE BEAM HAS TO KNOW. Ultrasound sampled the volume in
+   its own frame and ignored the object's rotation entirely, so rolling someone from
+   supine to prone changed the body in the room and nothing on the monitor. The probe is
+   held by an operator ABOVE the patient, so the honest model is the one the other engines
+   already use: leave the hand where it is and turn the anatomy underneath it, by mapping
+   each world sample back through the inverse rotation (the transpose) about the volume's
+   centre. Roll someone prone and the probe is on their back, which is exactly right. */
+let RM = null, rcx = 0, rcy = 0, rcz = 0, poseKey = '';
+function syncPose() {
+  const r = ctx.S.objRot;
+  const key = `${r.x},${r.y},${r.z}`;
+  if (key === poseKey) return;                     // unchanged: keep the contact cache warm
+  poseKey = key;
+  const R = ctx.phantomPose?.().rot;
+  const idn = !R || (!r.x && !r.y && !r.z);
+  RM = idn ? null : [R[0], R[3], R[6], R[1], R[4], R[7], R[2], R[5], R[8]];  // transpose
+  rcx = vex / 2; rcy = vey / 2; rcz = vez / 2;
+  cpKey = '';                       // the surface moved, so the seat has to be found again
+  dirCache = new Map(); dirCacheFor = null;        // flow directions are in the old frame
+}
+/* Rotate a DIRECTION into the volume's frame — no centre, no translation. Doppler needs
+   it because the flow direction comes out of the volume while the beam is in the room. */
+function dirToVol(d, out) {
+  if (!RM) { out[0] = d[0]; out[1] = d[1]; out[2] = d[2]; return out; }
+  out[0] = RM[0] * d[0] + RM[1] * d[1] + RM[2] * d[2];
+  out[1] = RM[3] * d[0] + RM[4] * d[1] + RM[5] * d[2];
+  out[2] = RM[6] * d[0] + RM[7] * d[1] + RM[8] * d[2];
+  return out;
+}
 function idAt(x, y, z) {
+  if (RM) {
+    const ax = x - rcx, ay = y - rcy, az = z - rcz;
+    x = rcx + RM[0] * ax + RM[1] * ay + RM[2] * az;
+    y = rcy + RM[3] * ax + RM[4] * ay + RM[5] * az;
+    z = rcz + RM[6] * ax + RM[7] * ay + RM[8] * az;
+  }
   let fx = x / vsx, fy = y / vsy, fz = z / vsz;
   if (WST && WST.on && fz >= WST.lo && fz <= WST.hi) {
     warpPoint(WST, fx, fy, fz, WP);
@@ -240,6 +275,7 @@ function ensureSVol() {
    which is downstream. Cached per voxel, because for a parked probe it is a constant and
    the ensemble below is where the frame time should honestly go. */
 const GD = new Float64Array(3);
+const BW = new Float64Array(3), BV = new Float64Array(3);   // beam dir: world, then volume
 let dirCache = new Map(), dirCacheFor = null;
 function flowDir(ix, iy, iz, id) {
   if (dirCacheFor !== boundData) { dirCache = new Map(); dirCacheFor = boundData; }
@@ -299,6 +335,7 @@ let lastEcho = null, lastMs = 0, lastAcqMs = 0;
 function scanFrame() {
   if (!vol && !bindVolume()) return null;
   const t0 = performance.now();
+  syncPose();                       // the patient may have been rolled since the last frame
   if (!TBL) TBL = acousticTables(64);
   const ph = animTick();
   WST = anim ? motionState(anim, ph, vsz, vnz) : null;
@@ -349,6 +386,10 @@ function scanFrame() {
       dx = ux * Math.sin(th); dy = -Math.cos(th); dz = uz * Math.sin(th);
       startX = px + dx * R0; startY = (py + R0) + dy * R0; startZ = pz + dz * R0;
     }
+    // the beam direction in the VOLUME's frame — constant down a line, and what the flow
+    // gradient has to be dotted against once the patient is rolled
+    BW[0] = dx; BW[1] = dy; BW[2] = dz;
+    dirToVol(BW, BV);
     let amp = 1;                                       // one-way amplitude remaining
     let prevId = -1;
     let coupled = false;      // has this line reached the patient yet?
@@ -387,7 +428,7 @@ function scanFrame() {
         if (flowDir(ix, iy, iz, id)) {
           // THE dot product. A vessel crossed at 90 degrees returns zero however fast the
           // blood moves, and no other line of code is needed to say so.
-          const cosT = GD[0] * dx + GD[1] * dy + GD[2] * dz;
+          const cosT = GD[0] * BV[0] + GD[1] * BV[1] + GD[2] * BV[2];
           // No sign flip for veins, and the measurement is why. The arclength field was
           // built by following the CIRCULATION from the injection site — up the veins to
           // the heart, then out along the arteries — so grad-s is the flow direction
