@@ -1143,9 +1143,16 @@
           <input type="range" id="usPx" min="0.20" max="0.86" value="0.80" step="0.01">
           <div class="row" style="margin-top:8px"><div class="rl">Along <small>up / down the trunk</small></div></div>
           <input type="range" id="usPz" min="0.15" max="0.85" value="0.44" step="0.01">
-          <div class="ctrst-note">The probe rides the skin: it finds the surface wherever the
-            patient's surface is. Slide it across the right upper quadrant and the liver,
-            kidney, ribs and bowel gas each announce themselves differently.</div>
+          <div class="row" style="margin-top:8px"><div class="rl">Rotate <small>transverse / sagittal</small></div>
+            <div class="valchip" id="usRotV">0&deg;</div></div>
+          <input type="range" id="usRot" min="0" max="90" value="0" step="5">
+          <div class="row" style="margin-top:8px"><div class="rl">Rock <small>angle the beam</small></div>
+            <div class="valchip" id="usTiltV">0&deg;</div></div>
+          <input type="range" id="usTilt" min="-25" max="25" value="0" step="1">
+          <div class="ctrst-note"><b>Grab the probe in the room and slide it</b> &mdash; it rides
+            the skin, finding the surface wherever the patient's surface is. Rotate turns the
+            scan plane from transverse to sagittal; rock angles the beam without moving the
+            probe, which is how you see under a rib instead of into it.</div>
         </div>
       </div>
       <div class="expose us-only" id="usScanRow">

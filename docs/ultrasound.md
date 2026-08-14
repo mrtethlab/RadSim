@@ -5,7 +5,7 @@ IMAGE is made of physics artifacts. Shadowing, enhancement, speckle and reverber
 not defects to simulate reluctantly: they are how sonographers read tissue, and the mode
 succeeds only if the artifacts are honest enough to diagnose with.
 
-Status: **Phase A built and measured** on branch feature/ultrasound; B–F remain.
+Status: **Phases A–B built and measured** on branch feature/ultrasound; C–F remain.
 
 Decisions taken while building (the plan's own defaults, confirmed by measurement):
 RUQ abdomen is the exam tuned for; Doppler stays a later phase; the probe is a
@@ -64,7 +64,7 @@ The novel UI: no tube, no pedal — a **probe held against the skin**.
 | Phase | Scope | Exit test |
 | --- | --- | --- |
 | **A — acoustics** ✅ | acoustic table (Z, attenuation, backscatter, speed) for every material id; pulse-echo scanline march; beam PSF; scan conversion; curvilinear + linear probes; live sweep | **passed, and all three artifacts are consequences — there is no shadow code and no enhancement code**: behind bone/gas the display reads **0.000** against a clear-path 0.295 (a total shadow); behind fluid it reads **0.575**, nearly 2× the clear path, purely because the TGC compensates for an assumed uniform 0.5 dB/cm/MHz that the fluid does not have; the gallbladder itself reads **0.119** against liver's 0.318. Frequency trades as it must: 2.5 MHz reaches 15.9 cm with 5.3-sample speckle, 8 MHz reaches 13.8 cm with 4.6-sample speckle |
-| **B — the probe** | surface-riding probe UI, plane indicator, both probes, live loop at ≥ 20 fps | drag from RUQ to flank and the image follows; 10 MHz linear resolves what 3.5 MHz cannot, and dies at depth where 3.5 MHz still sees |
+| **B — the probe** ✅ | grab the probe in the room and slide it over the skin (the bay's orbit yields only when the grab lands on it); the scan plane belongs to the PROBE — rotate 0–90° turns transverse into sagittal, rock ±25° steers the fan without moving the hand; the room draws the true sector, through the patient | **passed**: a grab-and-drag moved the seat from (0.80, 0.44) to (0.51, 0.54) while a drag that missed the probe left it untouched and orbited instead; rotate and rock each change the image (field mean 65.8 transverse → 51.2 sagittal → 34.1 rocked); and one number trades resolution against penetration — speckle correlation length **0.077 cm at 3.5 MHz vs 0.031 cm at 10 MHz**, while useful depth falls **18.0 → 17.5 → 16.7 → 14.0 → 11.8 cm** across 2.5 / 3.5 / 5 / 8 / 12 MHz. 500+ fps |
 | **C — knobs** | depth, gain, TGC rows, focus, freeze; display-side processing | mis-set TGC produces the classic banded image; correcting it recovers uniformity without touching physics |
 | **D — motion** | anim warps in the marcher (heart, breathing, gut), M-mode | the heart visibly beats at the HR slider's rate; M-mode through it shows wall excursion; breath-hold stills the diaphragm |
 | **E — Doppler** (stretch) | colour box over `sVol` vessels, pulsatile velocity from the HR, aliasing at low PRF | flow paints red/blue by direction; the aorta pulses; turning the box off restores frame rate — the real cost of Doppler |
@@ -87,6 +87,13 @@ The novel UI: no tube, no pedal — a **probe held against the skin**.
   interface. Surveying the volume showed the transverse RUQ plane carries liver and
   gallbladder but no kidney; the gallbladder is the better demonstration anyway, since
   it is anechoic AND casts enhancement.
+- **Penetration needed a NOISE FLOOR to cost anything (Phase B).** Real TGC scales its
+  compensation with frequency, and so does this one — which meant it perfectly cancelled
+  attenuation at *any* frequency, and 12 MHz saw exactly as deep as 2 MHz. That is wrong
+  for a reason worth stating: past the depth where the echo falls under the receiver's own
+  noise, gain amplifies noise instead of signal. Adding that floor is what turns the
+  frequency knob into a trade rather than a free lunch, and it is what makes the far field
+  of a high-frequency image go to grey mush instead of staying crisp.
 - **Speckle is hashed on POSITION, not time.** Scatterers sit where they sit, so a still
   probe gives a still image and moving the probe moves the speckle with the anatomy —
   which is how a sonographer tells texture from noise.

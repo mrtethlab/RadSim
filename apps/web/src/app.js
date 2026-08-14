@@ -23,7 +23,7 @@ import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
-import { initUS, usApplyMode, usSyncScene, usImageToBay } from './ultrasound.js';
+import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -186,13 +186,18 @@ function initScene(){
   // orbit is draggable when active: x-ray orbit, or CT with the Orbit perspective
   const orbitActive = () => S.mode==='ct' ? S.ct.pov==='orbit' : S.viewMode==='orbit';
   canvas.addEventListener('pointerdown',e=>{ if(S.bayContent!=='3d')return;
+    // Ultrasound: grabbing the probe drags it over the skin instead of orbiting the room.
+    // The probe is the only thing in that room you can pick up, so a hit on it wins.
+    if(S.mode==='us' && usPointer(e,'down',cam,canvas)){ canvas.setPointerCapture(e.pointerId); return; }
     if(S.mode==='ct'){ if(S.ct.pov!=='orbit') return; }   // CT: only the Orbit view drags (AP/Lat are fixed)
     else if(S.viewMode!=='orbit') setCameraView('orbit');
     drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
-  canvas.addEventListener('pointermove',e=>{ if(!drag)return;
+  canvas.addEventListener('pointermove',e=>{
+    if(S.mode==='us' && usPointer(e,'move',cam,canvas)) return;
+    if(!drag)return;
     az+=(e.clientX-lx)*0.008; el+=(e.clientY-ly)*0.006;
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
-  canvas.addEventListener('pointerup',()=>drag=false);
+  canvas.addEventListener('pointerup',e=>{ if(S.mode==='us') usPointer(e,'up',cam,canvas); drag=false;});
   canvas.addEventListener('wheel',e=>{ if(!orbitActive())return;
     e.preventDefault();rad=Math.max(40,Math.min(700,rad+e.deltaY*0.25));},{passive:false});
 
@@ -563,6 +568,7 @@ const S = {
        // ~580 of gallbladder, so the reference organ and a fluid-filled structure are
        // both in frame — which is the view that teaches enhancement.
        px:0.80, pz:0.44,     // probe seat, as a fraction of the volume's x and z
+       rot:0, tilt:0,        // scan plane: 0 = transverse, 90 = sagittal; tilt rocks it
        live:true },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine

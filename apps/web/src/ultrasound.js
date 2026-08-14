@@ -38,6 +38,12 @@ const SCAT = 0.09;
 // system's reference, chosen so ordinary tissue lands mid-grey. Calibrated here so liver
 // at working depth reads ~45 % of full scale with the gain knob centred.
 const SYS_DB = 2;
+// ELECTRONIC NOISE FLOOR. Without one, the TGC — which scales with frequency, as real
+// TGC does — would perfectly cancel attenuation at ANY frequency, and 12 MHz would see
+// as deep as 2 MHz. It cannot, because past the depth where the echo falls under the
+// receiver's own noise the gain amplifies noise instead of signal, and the far field
+// turns to grey mush. That floor is what makes penetration cost something.
+const NOISE = 2.2e-7;
 
 let TBL = null;               // flat acoustic tables
 
@@ -95,17 +101,25 @@ function scanFrame() {
   const echo = new Float32Array(NLINE * NSAMP);
   const lamCm = C_SND / freq;                          // wavelength, cm
 
+  // THE SCAN PLANE IS THE PROBE'S, NOT THE VOLUME'S. u is the in-plane lateral
+  // direction: rot = 0 lays the fan across the patient (transverse), rot = 90 lays it
+  // along them (sagittal), and anything between is the oblique a real hand produces.
+  // Rocking steers the whole fan by adding to every line's angle.
+  const rot = U.rot * Math.PI / 180, tilt = U.tilt * Math.PI / 180;
+  const ux = Math.cos(rot), uz = Math.sin(rot);
   for (let l = 0; l < NLINE; l++) {
     const f = l / (NLINE - 1) - 0.5;
     // curvilinear lines diverge from a virtual apex R0 behind the face; linear lines
-    // are parallel, offset across the aperture. Both scan the TRANSVERSE plane.
-    let dx, dy, startX, startY;
+    // are parallel, offset across the aperture.
+    let dx, dy, dz, startX, startY, startZ;
     if (apert) {
-      dx = 0; dy = -1; startX = px + apert * f; startY = py;
+      const th = tilt;
+      dx = ux * Math.sin(th); dy = -Math.cos(th); dz = uz * Math.sin(th);
+      startX = px + ux * apert * f; startY = py; startZ = pz + uz * apert * f;
     } else {
-      const th = sector * f;
-      dx = Math.sin(th); dy = -Math.cos(th);
-      startX = px + dx * R0; startY = (py + R0) + dy * R0;
+      const th = sector * f + tilt;
+      dx = ux * Math.sin(th); dy = -Math.cos(th); dz = uz * Math.sin(th);
+      startX = px + dx * R0; startY = (py + R0) + dy * R0; startZ = pz + dz * R0;
     }
     let amp = 1;                                       // one-way amplitude remaining
     let prevId = -1;
@@ -113,7 +127,7 @@ function scanFrame() {
     const base = l * NSAMP;
     for (let k = 0; k < NSAMP; k++) {
       const r = k * ds;
-      const x = startX + dx * r, y = startY + dy * r, zc = pz;
+      const x = startX + dx * r, y = startY + dy * r, zc = startZ + dz * r;
       let id = idAt(x, y, zc);
       // GEL. A convex face touches the skin at its centre and stands off it at the
       // edges, so every oblique line would cross an air gap and lose ~30 dB at the
@@ -186,7 +200,9 @@ function envelope(fr) {
         const g = Math.exp(-(d * d) / (wl * wl + 0.5));
         s += tmp[ll * NSAMP + k] * g; w += g;
       }
-      out[l * NSAMP + k] = Math.abs(s / (w || 1));
+      // receiver noise rides on every sample, uncorrelated and stable per frame
+      const nz = hash3(l * 7919, k * 104729, 17) - 0.5;
+      out[l * NSAMP + k] = Math.abs(s / (w || 1)) + NOISE * (0.5 + Math.abs(nz));
     }
   }
   return out;
@@ -286,22 +302,69 @@ function renderReadouts() {
   set('usDepthV', U.depth.toFixed(0) + ' cm');
   set('usGainV', U.gain + ' dB');
   set('usFocusV', U.focus.toFixed(0) + ' cm');
+  set('usRotV', U.rot + '°');
+  set('usTiltV', U.tilt + '°');
 }
 
-/* ---- the rig: a probe on the skin + the plane it images --------------------- */
-let rig = null, probeMesh = null, planeMesh = null;
+/* ---- the rig: a probe on the skin + the plane it images ---------------------
+   The fan drawn in the room is the SAME sector the scan marches, rebuilt from the
+   same numbers — so what the learner sees hovering in the patient is literally the
+   picture on the monitor, stood up in space. */
+let rig = null, probeMesh = null, fanMesh = null, probeGrab = null;
 function buildRig() {
   const { THREE, three } = ctx;
   rig = new THREE.Group();
-  probeMesh = new THREE.Mesh(new THREE.BoxGeometry(4.2, 9, 2.6),
-    new THREE.MeshStandardMaterial({ color: 0xdfe6ec, roughness: 0.5 }));
+  probeMesh = new THREE.Mesh(new THREE.BoxGeometry(5.0, 8, 2.4),
+    new THREE.MeshStandardMaterial({ color: 0xe6ecf2, roughness: 0.45 }));
+  probeMesh.position.y = 4;
   rig.add(probeMesh);
-  planeMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-    new THREE.MeshBasicMaterial({ color: 0x4fd1e0, transparent: true, opacity: 0.16,
-      side: THREE.DoubleSide, depthWrite: false }));
-  rig.add(planeMesh);
+  const cable = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 6, 8),
+    new THREE.MeshStandardMaterial({ color: 0x2a3138, roughness: 0.9 }));
+  cable.position.y = 10.5;
+  rig.add(cable);
+  // an invisible, generous grab volume — picking a thin probe with a mouse is a
+  // hit-test problem, not a teaching one
+  probeGrab = new THREE.Mesh(new THREE.SphereGeometry(7, 12, 10),
+    new THREE.MeshBasicMaterial({ visible: false }));
+  probeGrab.position.y = 4;
+  rig.add(probeGrab);
+  // the plane is drawn THROUGH the patient: the whole point of showing it is to say
+  // where the picture on the monitor comes from, and the skin is in the way
+  fanMesh = new THREE.Mesh(new THREE.BufferGeometry(),
+    new THREE.MeshBasicMaterial({ color: 0x4fd1e0, transparent: true, opacity: 0.22,
+      side: THREE.DoubleSide, depthWrite: false, depthTest: false }));
+  fanMesh.renderOrder = 3;
+  rig.add(fanMesh);
   rig.visible = false;
   three.handGroup.parent.add(rig);
+}
+/* Rebuild the fan outline in the probe's LOCAL frame (x lateral, y up, origin at the
+   contact point); the group's own rotation then carries it to the scan plane. */
+function buildFanGeometry() {
+  const { THREE } = ctx;
+  const lin = U.probe === 'linear';
+  const R0 = lin ? 0 : 6, sector = lin ? 0 : 1.05, apert = lin ? 4 : 0;
+  const tilt = U.tilt * Math.PI / 180, d = U.depth;
+  const pos = [];
+  if (lin) {
+    const a = apert / 2, sx = Math.sin(tilt), sy = -Math.cos(tilt);
+    const c = [[-a, 0], [a, 0]].map(([x, y]) => [x, y]);
+    const far = c.map(([x, y]) => [x + sx * d, y + sy * d]);
+    pos.push(...c[0], 0, ...c[1], 0, ...far[1], 0, ...c[0], 0, ...far[1], 0, ...far[0], 0);
+  } else {
+    const N = 24;
+    for (let i = 0; i < N; i++) {
+      const t0 = sector * (i / N - 0.5) + tilt, t1 = sector * ((i + 1) / N - 0.5) + tilt;
+      // the apex sits at local (0, R0); a point at angle th, radius r is apex + dir*r
+      const q = (th, r) => [Math.sin(th) * r, R0 - Math.cos(th) * r, 0];
+      const a0 = q(t0, R0), a1 = q(t1, R0), b0 = q(t0, R0 + d), b1 = q(t1, R0 + d);
+      pos.push(...a0, ...a1, ...b1, ...a0, ...b1, ...b0);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  fanMesh.geometry.dispose();
+  fanMesh.geometry = g;
 }
 export function usSyncScene() {
   if (!ctx || !rig) return;
@@ -317,15 +380,43 @@ export function usSyncScene() {
   if (three.detArrow) three.detArrow.visible = false;
   if (three.aecGroup) three.aecGroup.visible = false;
   if (!vol && !bindVolume()) return;
-  // the room places the volume centred on x/z with its base at y=0, so anatomy
-  // (x, y, z) maps to world (x - ex/2, y, z - ez/2)
+  // the room centres the volume on x/z with its base at y = 0, so anatomy (x, y, z)
+  // sits at world (x - ex/2, y, z - ez/2)
   const px = vex * U.px, pz = vez * U.pz, py = contactPoint(px, pz);
-  const wx = px - vex / 2, wz = pz - vez / 2;
-  probeMesh.position.set(wx, py + 4.5, wz);
-  const d = U.depth;
-  planeMesh.scale.set(2 * (6 + d) * Math.sin(0.525), d, 1);
-  planeMesh.position.set(wx, py - d / 2, wz);
-  planeMesh.rotation.set(0, 0, 0);
+  rig.position.set(px - vex / 2, py, pz - vez / 2);
+  rig.rotation.set(0, -U.rot * Math.PI / 180, 0);
+  buildFanGeometry();
+}
+
+/* ---- grab the probe and slide it over the patient ---------------------------
+   Returns true when the gesture belongs to the probe, so the bay's orbit stays out
+   of the way. Dragging moves it across the skin in x/z; the surface march re-seats
+   it in depth every frame, so it follows the body's own contour. */
+let dragging = false, ray = null, plane = null, hit = null;
+export function usPointer(e, phase, cam, canvas) {
+  if (!ctx || !rig || !rig.visible) return false;
+  const { THREE } = ctx;
+  if (!ray) { ray = new THREE.Raycaster(); plane = new THREE.Plane(); hit = new THREE.Vector3(); }
+  const r = canvas.getBoundingClientRect();
+  const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1,
+    -((e.clientY - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, cam);
+  if (phase === 'down') {
+    dragging = ray.intersectObject(probeGrab, false).length > 0;
+    return dragging;
+  }
+  if (phase === 'up') { const was = dragging; dragging = false; return was; }
+  if (!dragging) return false;
+  // slide in the horizontal plane through the current contact point
+  plane.set(new THREE.Vector3(0, 1, 0), -rig.position.y);
+  if (!ray.ray.intersectPlane(plane, hit)) return true;
+  U.px = Math.max(0.12, Math.min(0.88, (hit.x + vex / 2) / vex));
+  U.pz = Math.max(0.10, Math.min(0.90, (hit.z + vez / 2) / vez));
+  const sx = $('usPx'), sz = $('usPz');
+  if (sx) sx.value = U.px; if (sz) sz.value = U.pz;
+  usSyncScene();
+  if (!U.live) sweep();
+  return true;
 }
 
 /* ---- mode + wiring --------------------------------------------------------- */
@@ -358,6 +449,7 @@ export function initUS(context) {
   slide('usFreq', 'freq'); slide('usDepth', 'depth'); slide('usGain', 'gain');
   slide('usFocus', 'focus');
   slide('usPx', 'px'); slide('usPz', 'pz');
+  slide('usRot', 'rot'); slide('usTilt', 'tilt');
   $('usFreeze')?.addEventListener('click', () => setLive(!U.live));
   document.querySelectorAll('#usProbeSeg button').forEach((b) => {
     b.addEventListener('click', () => {
@@ -372,6 +464,17 @@ export function initUS(context) {
       renderReadouts(); sweep(); usSyncScene();
     });
   });
-  if (typeof window !== 'undefined') window.__usProbe = () => ({ U, lastMs, lastEcho, scanFrame, envelope });
+  if (typeof window !== 'undefined') window.__usProbe = () => ({
+    U, lastMs, lastEcho, scanFrame, envelope,
+    // where the probe is on screen — the hook the drag test aims at
+    screenPos: () => {
+      const { THREE, three } = ctx;
+      const cv = three.renderer.domElement, r = cv.getBoundingClientRect();
+      const v = new THREE.Vector3().copy(rig.position);
+      v.y += 4;
+      v.project(three.cam);
+      return { x: r.left + (v.x * 0.5 + 0.5) * r.width, y: r.top + (-v.y * 0.5 + 0.5) * r.height };
+    },
+  });
   renderReadouts();
 }
