@@ -62,12 +62,16 @@ function dockControls() {
   const want = [];
   const mode = document.body.classList.contains('mode-ct') ? 'ct'
     : document.body.classList.contains('mode-xray') ? 'xray'
-    : document.body.classList.contains('mode-fluoro') ? 'fluoro' : null;
+    : document.body.classList.contains('mode-fluoro') ? 'fluoro'
+    : document.body.classList.contains('mode-mammo') ? 'mammo' : null;
   if (mode === 'xray') {
     const b = q('#consoleCol .btns2');            // ROTOR + EXPOSE
     if (b) want.push(b);
   } else if (mode === 'fluoro') {
     const b = q('#flPedalRow');                   // the pedal lives under the thumb
+    if (b) want.push(b);
+  } else if (mode === 'mammo') {
+    const b = q('#mmExposeRow');                  // one press, one exposure
     if (b) want.push(b);
   } else if (mode === 'ct') {
     const b = q('#ctConsole .ctbtns');            // MOVE TO SCAN / START / STOP row
@@ -95,7 +99,8 @@ function dockControls() {
 function sync() {
   const inMode = document.body.classList.contains('mode-xray')
     || document.body.classList.contains('mode-ct')
-    || document.body.classList.contains('mode-fluoro');
+    || document.body.classList.contains('mode-fluoro')
+    || document.body.classList.contains('mode-mammo');
   const show = isMobile() && inMode;
   $('mtabs')?.classList.toggle('show', show);
   if (show) setPage(active === 'editor' ? 'bay' : active);

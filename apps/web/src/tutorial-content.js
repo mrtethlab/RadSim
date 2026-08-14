@@ -932,11 +932,111 @@ export const FLUORO_STEPS = [
   },
   {
     sel: '#giTab',
-    title: 'Where barium lives now',
+    title: 'Where barium lives now (fluoro)',
     text: 'The BARIUM panel on the left edge runs the live GI study — swallow or enema, '
       + 'gravity steered by the positioning sliders, single or double contrast — and in '
       + 'this mode it finally has the pulsed image it always described. There is a '
       + 'dedicated barium tutorial on the X-ray card that walks the whole study; '
       + 'everything it teaches works here, on a clock.',
+  },
+];
+
+// ---------------------------------------------------------------- MAMMOGRAPHY
+export const MAMMO_STEPS = [
+  {
+    sel: '.bay',
+    title: 'The upright unit',
+    text: 'Tube head above, receptor below, and the compression paddle between them. The '
+      + 'patient stands at the FRONT of the machine, so the chest wall lies along the '
+      + 'plate’s front edge and the nipple points into the gantry — that is how a '
+      + 'breast is placed, and the phantom sits exactly that way.',
+  },
+  {
+    sel: '.grp:has(#mmComp)',
+    title: 'Compression is not optional',
+    text: 'Drive the paddle down and watch three numbers move together: thickness falls, '
+      + 'force climbs, and the AGD — average glandular dose, the number mammography is '
+      + 'legally reported in — falls with it. Thinner tissue means less scatter, less '
+      + 'dose, less motion and less overlap. The image gets BETTER as the patient gets less '
+      + 'comfortable, which is the whole conversation at the machine.',
+    goal: {
+      label: 'Compress to about 40 mm',
+      done: () => S().mammo.comp < 0.75,
+    },
+  },
+  {
+    sel: '.grp:has(#mmTfSeg)',
+    title: 'A beam ten times softer than radiography’s',
+    text: 'Mammography lives at 24–34 kV, because only down there does the '
+      + 'photoelectric effect still tell glandular tissue from fat. Raise the kV and watch '
+      + 'that contrast collapse. The target/filter pair sets the SHAPE of the beam: '
+      + 'molybdenum’s characteristic lines at 17.5 and 19.6 keV are why the anode is '
+      + 'molybdenum at all, and W/Rh is the harder beam a thick or dense breast needs.',
+    goal: {
+      label: 'Try a different target / filter',
+      arm: () => S().mammo.tf,
+      done: (a) => S().mammo.tf !== a,
+    },
+  },
+  {
+    sel: '.grp:has(#mmAecSeg)',
+    title: 'The AEC, and the mAs it picks',
+    text: 'The chamber meters behind the receptor, under the densest part, and picks the '
+      + 'mAs. Leave it on and expose: you will land near 60 mAs and about 1.7 mGy on a '
+      + 'compressed scattered breast — the numbers a real screening view delivers. '
+      + 'Release the paddle and the same AEC rails the generator, because 72 mm of tissue '
+      + 'needs everything the tube has.',
+    goal: {
+      label: 'Take an exposure',
+      done: () => /^Exposed/.test($('mmStatus')?.textContent || ''),
+    },
+  },
+  {
+    sel: '.grp:has(#mmPhSeg)',
+    title: 'Density changes everything',
+    text: 'The same seeded findings sit in a scattered breast (c, 30 % glandular) and a '
+      + 'heterogeneously DENSE one (d, 50 %). Density is the single variable that moves '
+      + 'technique, dose and sensitivity at once: the AEC asks for more mAs, the dose goes '
+      + 'up, and the parenchyma you must see through gets louder. The QC slab is the '
+      + 'accreditation phantom — fibres, speck groups and masses, hardest first.',
+    goal: {
+      label: 'Load the dense breast',
+      done: () => S().mammo.phantom === 'breastdense',
+    },
+  },
+  {
+    sel: '.grp:has(#mmCaseSeg)',
+    title: 'Read a case you have not seen',
+    text: 'The findings are NOT in the phantom — each case plants its own, so A to E '
+      + 'are cases nobody has shown you and some of them are NORMAL. Expose, look at the '
+      + 'image in the bay’s Image view (the monitor is too small for a speck), decide '
+      + 'what you see, and only then press reveal. Being willing to call a case normal is '
+      + 'half the skill.',
+    goal: {
+      label: 'Pick a blinded case (A–E)',
+      done: () => S().mammo.caseId !== 'demo',
+    },
+  },
+  {
+    sel: '.grp:has(#mmViewSeg)',
+    title: 'CC, MLO, and the magnifier',
+    text: 'Craniocaudal compresses top-down; the mediolateral oblique swings the gantry '
+      + '45° so the pectoral margin comes into the field — the two views that make '
+      + 'a screening pair. The MAG stand raises the breast toward the tube for a '
+      + '×1.8 spot view: bigger, sharper on small detail, and it pays for that '
+      + 'magnification on the dose meter.',
+    goal: {
+      label: 'Turn the gantry to MLO',
+      done: () => S().mammo.view === 'mlo',
+    },
+  },
+  {
+    sel: '#mmExposeRow',
+    title: 'Expose, then read',
+    text: 'One press is one exposure — there is no pedal here and no live image; '
+      + 'mammography is a still, and every one of them costs the patient dose you can read '
+      + 'off the panel. Send the image to the bay’s Image view to read it at full '
+      + 'resolution: the detector runs 0.245 mm pixels, and a microcalcification is smaller '
+      + 'than that on the monitor.',
   },
 ];

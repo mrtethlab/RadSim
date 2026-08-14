@@ -22,6 +22,7 @@ import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRende
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
+import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -141,6 +142,9 @@ function initScene(){
 
   three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
          amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD,aecGroup,aecCellMeshes};
+  // Observability: a same-stack render + readback for headless verification (the
+  // Browser pane cannot screenshot when hidden; WebGL backbuffers do not persist).
+  window.__snap3d = () => { renderer.render(scene, cam); return renderer.domElement.toDataURL('image/png'); };
 
   // camera: free orbit OR tube's-eye bird's view
   let az=0.9, el=0.85, rad=115, tx=0,ty=6,tz=0;
@@ -256,6 +260,12 @@ const VOXEL_MODELS = {
   // resolution in lp/mm. Shot at low kV / high mAs like real resolution QC, so the
   // lead-to-air contrast is maximal and the bars are not lost in mottle.
   linepair:        { title:'Line-pair test pattern', scoutKv:80, scoutMa:100, xrayKv:60 },
+  // The mammography subject (docs/mammography.md): a 0.4 mm procedural phantom with a
+  // BI-RADS c fibroglandular mix and seeded findings. Listed here so the other rooms
+  // can image it too; the mammography mode force-loads it.
+  breast:          { title:'Breast · 0.4 mm',        scoutKv:80,  scoutMa:40,  xrayKv:28  },
+  breastdense:     { title:'Breast · dense (d)',     scoutKv:80,  scoutMa:40,  xrayKv:28  },
+  acrphantom:      { title:'Mammo QC Phantom',       scoutKv:80,  scoutMa:40,  xrayKv:28  },
 };
 
 /* Prepare a freshly loaded display mesh so it lights + shadows like the hand: the
@@ -537,6 +547,13 @@ const S = {
            // and the pending rotation being dialled in for the NEXT run (the triangle)
            dispRot:0, flipH:false, flipV:false, pendRot:0,
            motions:[], fixedSeed:null },
+  // ---- mammography (docs/mammography.md): technique, compression, view ----
+  mammo:{ tf:'momo', kv:28, mas:60, aec:true,
+          comp:1.0,            // compression factor: paddle height / uncompressed height
+          view:'cc', agdMGy:0, fixedSeed:null,
+          phantom:'breast',    // 'breast' (c) | 'breastdense' (d) | 'acrphantom' (QC)
+          mag:false,           // magnification stand: subject raised, x1.8 spot view
+          caseId:'demo' },     // reading case: findings are injected, not baked
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -1271,6 +1288,7 @@ function syncScene(){
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
   editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
   fluoroSyncScene();                            // fluoro hides the x-ray head and shows the C-arm
+  mammoSyncScene();                             // mammo swaps in the upright unit + clamped breast
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
@@ -1568,14 +1586,18 @@ function setContent(c){
   const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
   const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
   const rcv=$('ctRecons'); if(rcv) rcv.classList.toggle('show', recons);
-  // In fluoro, the Image view IS the fluoro monitor (live + LIH) — never the x-ray archive.
+  // In fluoro and mammo, the Image view IS that mode's own monitor — never the x-ray
+  // archive. Mammo especially: the 330 px monitor cannot score a QC phantom whose
+  // smallest specks are single detector pixels; the bay is the reading surface.
   const fluoroImg=(img && S.mode==='fluoro');
-  const xrayImg=(img && S.hasImage && !scouts && !fluoroImg);
-  let fluoroShown=false;
-  if(fluoroImg){ $('bigFilm').style.display='block'; fluoroShown=fluoroImageToBay();
-    if(!fluoroShown) $('bigFilm').style.display='none'; }
+  const mammoImg=(img && S.mode==='mammo');
+  const xrayImg=(img && S.hasImage && !scouts && !fluoroImg && !mammoImg);
+  let ownShown=false;
+  if(fluoroImg||mammoImg){ $('bigFilm').style.display='block';
+    ownShown=fluoroImg?fluoroImageToBay():mammoImageToBay();
+    if(!ownShown) $('bigFilm').style.display='none'; }
   else $('bigFilm').style.display=xrayImg?'block':'none';
-  $('bignote').style.display=(img && !scouts && (fluoroImg ? !fluoroShown : !S.hasImage))?'flex':'none';
+  $('bignote').style.display=(img && !scouts && ((fluoroImg||mammoImg) ? !ownShown : !S.hasImage))?'flex':'none';
   $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
   const ui=$('imgViewUI'); if(ui) ui.classList.toggle('show', xrayImg);   // meta + history strip (image view only)
   if(xrayImg){ renderRadiograph($('bigFilm')); updateImageMeta(); renderImageStrip(); }
@@ -1658,7 +1680,9 @@ function bind(){
   // keyboard: space engages rotor, then hold space to expose
   let spaceDown=false;
   document.addEventListener('keydown',e=>{ if(e.code!=='Space')return;
-    if(S.mode==='fluoro')return;             // fluoro owns Space: it is the pedal, never the rotor
+    if(S.mode!=='xray')return;               // the rotor key belongs to the x-ray room ONLY:
+                                             // fluoro's pedal owns Space, and mammo (or any
+                                             // future mode) must never fire a stray radiograph
     e.preventDefault();
     if(spaceDown)return; spaceDown=true;
     if(!S.prepped && !S.exposing) setRotor(true);
@@ -3215,7 +3239,8 @@ window.addEventListener('load',()=>{
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on),
-           fluoroMode: (on) => fluoroApplyMode(on) });
+           fluoroMode: (on) => fluoroApplyMode(on),
+           mammoMode: (on) => mammoApplyMode(on) });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
   initMobile({ S });                            // pager + dock; inert above the breakpoint
@@ -3233,6 +3258,7 @@ window.addEventListener('load',()=>{
         ? { ba: lut, gas: S.barium.gasLut, giVol: S.barium.giVol, ns: GI_NS } : null;
     },
     bariumSwallow: () => giSip(),
+    setSubject: (s) => setSubject(s),
     // Phase E: the injector timeline rides the pulses the same way — while the run clock
     // is live, scanTime tracks it, so the fluoro image washes in and out in real time.
     contrastPulse: () => {
@@ -3240,6 +3266,8 @@ window.addEventListener('load',()=>{
       return lut && S.contrast.sVol
         ? { iod: lut, sVol: S.contrast.sVol, ns: CONTRAST_NS } : null;
     } });
+  initMammo({ THREE, S, three, setSubject: (s) => setSubject(s),
+    loadModelUrl, baseUrl: import.meta.env.BASE_URL });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

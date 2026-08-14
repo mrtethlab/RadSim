@@ -39,3 +39,4 @@ apps/web/public/models/hand_hires/*.mat.bin
 
 # scratch space for probing remote endpoints
 .tmp/
+apps/web/.snap.jpg

@@ -202,6 +202,10 @@ export const BodyMaterials = (()=>{
     { id:50, name:'Duodenum lumen',   hu:15,    kind:'tissue',          color:0xc59a5e },
     { id:51, name:'Small bowel lumen',hu:15,    kind:'tissue',          color:0xd0a86a },
     { id:52, name:'Colon lumen',      hu:15,    kind:'tissue',          color:0xa8804e },
+    // Mammography (docs/mammography.md): fibroglandular tissue. Its HU barely differs
+    // from other soft tissue — the whole point of the mammographic beam is that at
+    // 26-32 kV the photoelectric term still separates it from fat.
+    { id:53, name:'Glandular',        hu:40,    kind:'tissue',          color:0xe4c9b0 },
   ];
   const idByName = {}; LIST.forEach(m=> idByName[m.name]=m.id);
 
