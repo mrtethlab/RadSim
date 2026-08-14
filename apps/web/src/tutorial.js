@@ -18,7 +18,7 @@
 // ============================================================================
 
 import { XRAY_STEPS, CT_STEPS, EDITOR_STEPS, BARIUM_STEPS, FLUORO_STEPS, MAMMO_STEPS,
-         US_STEPS } from './tutorial-content.js';
+         US_STEPS, DXA_STEPS } from './tutorial-content.js';
 
 let ctx = null;
 let T = null;            // the running tutorial, or null
@@ -67,7 +67,7 @@ export function initTutorial(context) {
 }
 
 const STEPS = { xray: XRAY_STEPS, ct: CT_STEPS, editor: EDITOR_STEPS, barium: BARIUM_STEPS,
-                fluoro: FLUORO_STEPS, mammo: MAMMO_STEPS, us: US_STEPS };
+                fluoro: FLUORO_STEPS, mammo: MAMMO_STEPS, us: US_STEPS, dxa: DXA_STEPS };
 // A tutorial does not have to be a mode of its own: the barium walkthrough is a set of
 // steps that happens to run inside x-ray mode, because fluoroscopy IS x-ray with a clock.
 const TUT_MODE = { barium: 'xray' };

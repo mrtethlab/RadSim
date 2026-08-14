@@ -1180,3 +1180,78 @@ export const US_STEPS = [
       + 'texture from artefact is the whole skill.',
   },
 ];
+
+// ---------------------------------------------------------------- DENSITOMETRY
+export const DXA_STEPS = [
+  {
+    sel: '.bay',
+    title: 'Two energies, and why one will not do',
+    text: 'A single projection gives one equation and two unknowns: how much bone mineral is '
+      + 'in the ray, and how much soft tissue lies over it. A thin bone under a lot of fat '
+      + 'reads exactly like a dense bone under none, and no amount of care with one exposure '
+      + 'separates them. Measure at TWO energies and the photoelectric effect does the '
+      + 'separating: bone’s attenuation falls away far faster with energy than soft '
+      + 'tissue’s, so the two equations are independent and the 2×2 solves.',
+  },
+  {
+    sel: '.grp:has(#dxRegionSeg)',
+    title: 'The arm sweeps a window',
+    text: 'A densitometer scans a REGION, not a patient: the AP lumbar field over L1–L4, '
+      + 'or the proximal femur. The window is placed off the anatomy rather than off the '
+      + 'table — the ribcage and the iliac wings both throw bone wide of the midline, '
+      + 'and the waist between them is the lumbar spine. Watch the image build line by line; '
+      + 'that slow raster is what the exam actually looks like.',
+    goal: {
+      label: 'Run a scan',
+      done: () => !!(window.__dxa && window.__dxa().scan && window.__dxa().scan.rois),
+    },
+  },
+  {
+    sel: '#dxTable',
+    title: 'BMC, area, and the ratio between them',
+    text: 'BMC is the mineral inside the box, in grams. AREA is the box’s projected area. '
+      + 'BMD is one divided by the other — and because it is a RATIO, a bigger box does '
+      + 'not mean a bigger number. Widen an ROI past the vertebral body and you pull in soft '
+      + 'tissue: measured here, that drops L1–L4 by <b>11.5 %</b>, which is wider than the '
+      + 'gap between normal and osteopenia in many patients. ROI placement is a skill.',
+  },
+  {
+    sel: '.grp:has(#dxAge)',
+    title: 'T against a young adult, Z against your peers',
+    text: 'The T-score compares this patient with a young adult of the same sex; the Z-score '
+      + 'compares them with someone their own age. Slide the age and watch: <b>T does not '
+      + 'move at all</b>, because there is no age in it — while Z climbs steadily, because '
+      + 'the same bones look better and better against older peers. That is why an '
+      + '80-year-old can be osteoporotic by T and unremarkable by Z, and why a low Z is the '
+      + 'one that says something else is going on.',
+    goal: {
+      label: 'Move the age and watch T stay put',
+      arm: () => S().dxa.age,
+      done: (a) => Math.abs(S().dxa.age - a) >= 15,
+    },
+  },
+  {
+    sel: '.grp:has(#dxLoss)',
+    title: 'Thin the skeleton',
+    text: 'This scales the mineral itself, so the attenuation and the truth move together '
+      + '— scaling only the picture would be a lie the report could not catch. Drop it '
+      + 'and rescan: the same skeleton walks from <b>T +0.5 normal</b>, through <b>−2.4 '
+      + 'osteopenia</b> at 30 % loss, to <b>−3.7 osteoporosis</b> at 40 %. Thirty per cent '
+      + 'of your mineral is one diagnosis; forty is another.',
+    goal: {
+      label: 'Take the loss past 25 % and rescan',
+      done: () => S().dxa.loss >= 0.25
+        && !!(window.__dxa && window.__dxa().scan && window.__dxa().scan.loss >= 0.25),
+    },
+  },
+  {
+    sel: '#dxSerial',
+    title: 'Has it actually changed?',
+    text: 'The follow-up question is never what the density is, but whether it has moved '
+      + 'more than the machine’s own noise. A service quotes a least significant change '
+      + 'of about 1.5 % at the spine; anything smaller is the machine, not the patient, and '
+      + 'the table marks it. <b>Be warned that this simulator flatters itself here</b>: its '
+      + 'acquisition carries no photon noise and the patient is never repositioned, so a '
+      + 'repeat scan reproduces to 0.003 %. The concept is honest; the number is free.',
+  },
+];
