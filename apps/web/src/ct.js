@@ -939,9 +939,11 @@ function applyMode(mode) {
   document.body.classList.toggle('mode-home', mode === 'home');
   if (mode === 'home') {
     ctx.S.mode = 'home';
-    ['mode-ct', 'mode-xray', 'mode-editor', 'mode-fluoro', 'mode-mammo'].forEach(c => document.body.classList.remove(c));
+    ['mode-ct', 'mode-xray', 'mode-editor', 'mode-fluoro', 'mode-mammo', 'mode-us']
+      .forEach(c => document.body.classList.remove(c));
     ctx.fluoroMode?.(false);
     ctx.mammoMode?.(false);
+    ctx.usMode?.(false);
     resetCTSession();
     ctx.editorMode?.(false);
     return;
@@ -952,20 +954,27 @@ function applyMode(mode) {
   document.body.classList.toggle('mode-editor', mode === 'editor');
   document.body.classList.toggle('mode-fluoro', mode === 'fluoro');
   document.body.classList.toggle('mode-mammo', mode === 'mammo');
+  document.body.classList.toggle('mode-us', mode === 'us');
   const cur = ctx.$('modeCur');
   if (cur) cur.textContent = mode === 'ct' ? 'CT' : mode === 'editor' ? 'MODEL EDITOR'
-    : mode === 'fluoro' ? 'FLUOROSCOPY' : mode === 'mammo' ? 'MAMMOGRAPHY' : 'X-RAY';
+    : mode === 'fluoro' ? 'FLUOROSCOPY' : mode === 'mammo' ? 'MAMMOGRAPHY'
+    : mode === 'us' ? 'ULTRASOUND' : 'X-RAY';
   ctApplyColorTheme();                            // x-ray drops any vendor theme; CT re-applies it
   const tag = document.querySelector('.baytag .s');
   if (tag) tag.textContent = mode === 'ct' ? 'CT · transverse acquisition'
     : mode === 'editor' ? 'Model editor · voxel builder'
     : mode === 'fluoro' ? 'Fluoroscopy · GE OEC C-arm'
-    : mode === 'mammo' ? 'Mammography · upright unit' : 'Digit · Hand phantom';
+    : mode === 'mammo' ? 'Mammography · upright unit'
+    : mode === 'us' ? 'Ultrasound · hand-held probe' : 'Digit · Hand phantom';
   const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Planning window in CT
   if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Planning' : 'Image';
   const consoleLbl = ctx.$('consoleLbl');    // x-ray generator vs CT console vs fluoro
+  // there is no generator in ultrasound and no tube in mammography's sense of one —
+  // the header names the machine in front of you, not the x-ray room's
   if (consoleLbl) consoleLbl.textContent = mode === 'ct' ? 'CONSOLE'
-    : mode === 'fluoro' ? 'FLUORO' : 'GENERATOR';
+    : mode === 'fluoro' ? 'FLUORO'
+    : mode === 'us' ? 'ULTRASOUND'
+    : mode === 'mammo' ? 'MAMMO' : 'GENERATOR';
   // A mode switch is a clean slate: tear down the CT scout workflow and any carried
   // view state so nothing from the other mode lingers (stale image, scout overlay,
   // tube-POV camera, Image view). Acquisition params + technique are user setup and
@@ -981,6 +990,7 @@ function applyMode(mode) {
   ctx.refreshFilmViewer();        // isolate the two modes' images (clear x-ray in CT)
   ctx.fluoroMode?.(mode === 'fluoro');
   ctx.mammoMode?.(mode === 'mammo');
+  ctx.usMode?.(mode === 'us');
   greyHelical(mode === 'ct');     // helical params don't apply to a scout
   if (mode === 'ct') renderStorage();   // reflect any scans still held from before
   setHint(mode === 'ct' ? 'Set the isocentre, then acquire scouts to plan the scan.' : '');

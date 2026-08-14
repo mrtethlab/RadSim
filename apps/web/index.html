@@ -162,14 +162,20 @@
             basis-material decomposition, and a T-score at the end of it.</div>
         </div>
       </div>
-      <div class="home-card hc-dev hc-us" aria-disabled="true">
-        <div class="hc-art"><span class="hc-badge">In development</span></div>
+      <div class="home-card hc-us" data-mode="us">
+        <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Ultrasound</div>
-          <div class="hc-tag">B-mode &mdash; anatomy drawn in echoes</div>
-          <div class="hc-desc">No ionising radiation at all: a probe you steer against the skin,
-            pulse-echo imaging through the same voxel anatomy, with speckle, shadowing and
-            enhancement &mdash; and depth, gain and TGC to trade against each other.</div>
+          <div class="hc-tag">B-mode, M-mode &amp; colour Doppler</div>
+          <div class="hc-desc">No ionising radiation at all: a probe on the skin and pulse-echo
+            imaging through the same voxel anatomy. Speckle, acoustic shadowing and
+            post-cystic enhancement are not drawn &mdash; they fall out of one scanline march,
+            the way they do in a real beam. The heart beats, M-mode measures it, and colour
+            is one dot product with the flow.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="us">Open</button>
+            <button class="hc-tut" data-tut="us" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
         </div>
       </div>
     </div>
@@ -967,11 +973,6 @@
             <button data-pps="15" class="on">15</button>
             <button data-pps="30">30</button>
           </div>
-          <div class="row" style="margin-top:10px"><div class="rl">Brightness control</div></div>
-          <div class="seg" id="flAbcSeg">
-            <button data-abc="1" class="on">ABC</button>
-            <button data-abc="0">Manual</button>
-          </div>
           <div class="row" style="margin-top:10px"><div class="rl">kV</div></div>
           <input type="range" id="flKv" min="50" max="120" value="70" step="1">
           <div class="row" style="margin-top:6px"><div class="rl">mA</div></div>
@@ -979,26 +980,97 @@
           <div class="ctrst-note">ABC is the fluoroscopic AEC: a closed loop on the detector
             that drives kV and mA along the machine's fluoro curve, every pulse. Pan from lung
             to abdomen and watch the readouts climb &mdash; and the contrast fall as the kV
-            takes it. Manual hands you the sliders and the consequences.</div>
+            takes it. <b>AUTO</b> on the control panel arms it; with it off these sliders and
+            their consequences are yours.</div>
         </div>
       </div>
+      <!-- ============ OEC CONTROL PANEL (fl-only) — the console, laid out as it is
+           on the machine: orientation, mag, collimation, contrast, generator. ============ -->
       <div class="grp fl-only">
-        <div class="lab">Orientation</div>
+        <div class="lab">Control panel</div>
         <div class="bod">
-          <div class="orpad">
-            <div class="orpill">
-              <button class="orbtn" id="flRotCCW" title="Rotate image counter-clockwise — tap to nudge, hold for large adjustment">&#8634;</button>
-              <span class="oricon">&#9681;</span>
-              <button class="orbtn" id="flRotCW" title="Rotate image clockwise — tap to nudge, hold for large adjustment">&#8635;</button>
+          <div class="oecpanel">
+            <div class="oecg">
+              <div class="oecrow">
+                <button class="oecb grn wide" id="flRotCCW" title="Rotate image counter-clockwise — tap to nudge, hold for large adjustment">&#8634;</button>
+                <button class="oecb grn wide" id="flInvert" title="Invert the grey scale — white bone or black bone">&#9681;</button>
+                <button class="oecb grn wide" id="flRotCW" title="Rotate image clockwise — tap to nudge, hold for large adjustment">&#8635;</button>
+              </div>
+              <div class="oecrow">
+                <button class="oecb grn rnd" id="flFlipH" title="Mirror the image left / right"><span class="orR orRh">R</span></button>
+                <button class="oecb grn rnd" id="flFlipV" title="Flip the image top / bottom"><span class="orR orRv">R</span></button>
+              </div>
+              <div class="oecl">Orientation</div>
             </div>
-            <div class="orflips">
-              <button class="orbtn orround" id="flFlipH" title="Mirror the image left / right"><span class="orR orRh">R</span></button>
-              <button class="orbtn orround" id="flFlipV" title="Flip the image top / bottom"><span class="orR orRv">R</span></button>
+            <div class="oecg">
+              <div class="oeclamps">
+                <div class="oeclamp on" data-mag="0"><span>NORM</span><i></i></div>
+                <div class="oeclamp" data-mag="1"><span>MAG 1</span><i></i></div>
+                <div class="oeclamp" data-mag="2"><span>MAG 2</span><i></i></div>
+              </div>
+              <button class="oecb grn rnd big" id="flMagCycle" title="Cycle the image intensifier field: 9&quot; / 6&quot; / 4.5&quot;. A smaller field is sharper and costs dose.">&#9186;</button>
+              <div class="oecl">Field</div>
+            </div>
+            <div class="oecg span2">
+              <div class="oecrow">
+                <button class="oecb pur wide" id="flShutCCW" title="Rotate the shutters counter-clockwise">&#8634;&#9647;</button>
+                <button class="oecb pur wide" id="flShutCW" title="Rotate the shutters clockwise">&#9647;&#8635;</button>
+                <button class="oecb pur wide" id="flIrisOpen" title="Open the iris">&#9711;&#9650;</button>
+                <button class="oecb pur wide" id="flIrisClose" title="Close the iris — less field, less dose">&#9679;&#9660;</button>
+              </div>
+              <div class="oecrow">
+                <button class="oecb pur wide" id="flShutOpen" title="Open the shutters">&#8597;&#9650;</button>
+                <button class="oecb pur wide" id="flShutClose" title="Close the shutters onto the anatomy of interest">&#8597;&#9660;</button>
+                <div class="oecval"><span id="flIrisV2">100%</span> iris</div>
+                <div class="oecval"><span id="flShutV">100%</span> shut</div>
+              </div>
+              <div class="oecl">Collimation</div>
+            </div>
+            <div class="oecg">
+              <div class="oecrow">
+                <button class="oecb grn wide" id="flBrightUp" title="Brighter display">&#9788;&#9650;</button>
+                <button class="oecb grn wide" id="flBrightDn" title="Darker display">&#9788;&#9660;</button>
+              </div>
+              <div class="oecrow">
+                <button class="oecb grn wide" id="flContUp" title="More display contrast">&#9681;&#9650;</button>
+                <button class="oecb grn wide" id="flContDn" title="Less display contrast">&#9681;&#9660;</button>
+              </div>
+              <button class="oecb grn rnd" id="flWinAuto" title="Re-window the display to the current image">AUTO</button>
+              <div class="oecl">Contrast</div>
+            </div>
+            <div class="oecg">
+              <button class="oecb red rnd big" id="flAlarmReset" title="Silence and reset the five-minute beam-on alarm">ALARM<br>RESET</button>
+              <div class="oecl">Alarm</div>
+            </div>
+            <div class="oecg span2">
+              <div class="oecrow">
+                <button class="oecb pur wide" id="flKvUp">kVp &#9650;</button>
+                <button class="oecb pur wide" id="flKvDn">kVp &#9660;</button>
+                <button class="oecb pur wide" id="flMaUp">mA &#9650;</button>
+                <button class="oecb pur wide" id="flMaDn">mA &#9660;</button>
+              </div>
+              <div class="oecrow">
+                <button class="oecb pur wide" id="flPulseBtn" title="Cycle the pulse rate: 30 / 15 / 8 / 3 pps">PULSE</button>
+                <button class="oecb pur wide" id="flFilm" title="Digital spot image — one high-dose frame, straight to the directory">FILM</button>
+                <button class="oecb pur wide" id="flLowDose" title="Half the dose rate. The noise is the price.">LOW<br>DOSE</button>
+                <button class="oecb pur wide" id="flAutoBtn" title="Automatic brightness control: the machine chooses kV and mA">AUTO</button>
+              </div>
+              <div class="oecl">Generator</div>
+            </div>
+            <div class="oecg span2 blue">
+              <div class="oecrow">
+                <button class="oecb blu wide" id="flSave" title="Save the image on the monitor to the directory">&#10515; SAVE</button>
+                <button class="oecb blu wide" id="flWorkstation" title="Swap the live image and the reference screen">&#8646; WORK&#8203;STATION</button>
+                <button class="oecb blu wide" id="flModeBtn" title="What the reference screen holds: the saved reference, or a second live view">&#8594;&#9646; MODE</button>
+                <button class="oecb blu wide" id="flImgDir" title="Image Directory — every saved image and loop">&#9638; IMAGE<br>DIRECTORY</button>
+              </div>
+              <div class="oecl">Workstation</div>
             </div>
           </div>
-          <div class="ctrst-note">Electronic image orientation, as on the real pad: the display
-            turns, the beam does not. The marker on the last image shows where the TOP of the
-            next run will be.</div>
+          <div class="ctrst-note">The console as it sits on the machine. Orientation and contrast
+            are ELECTRONIC &mdash; the display turns and brightens, the beam does nothing. Field and
+            collimation are in the BEAM, and both of them change the dose. The five-minute alarm is
+            not a nuisance: it is the regulation, and the reset is the acknowledgement.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1067,18 +1139,15 @@
           <div class="row" style="margin-top:8px"><div class="rl">Wig-wag <small>boom swivel</small></div>
             <div class="valchip" id="flWigV">0&deg;</div></div>
           <input type="range" id="flWig" min="-10" max="10" value="0" step="1">
-          <div class="row" style="margin-top:10px"><div class="rl">Iris <small>collimation</small></div>
-            <div class="valchip" id="flIrisV">100 %</div></div>
-          <input type="range" id="flIris" min="0.3" max="1" value="1" step="0.05">
-          <div class="row" style="margin-top:8px"><div class="rl">Mag <small>II field</small></div>
-            <div class="valchip" id="flMagV">9&Prime;</div></div>
-          <div class="seg" id="flMagSeg">
-            <button data-mag="0" class="on">9&Prime;</button>
-            <button data-mag="1">6&Prime;</button>
-            <button data-mag="2">4.5&Prime;</button>
+          <div class="flro" style="margin-top:10px">
+            <div><div class="k">Field</div><div class="v" id="flMagV">9&Prime;</div></div>
+            <div><div class="k">Iris</div><div class="v" id="flIrisV">100 %</div></div>
+            <div><div class="k">Shutters</div><div class="v" id="flShutV2">100 %</div></div>
+            <div><div class="k">Shut angle</div><div class="v" id="flShutRotV">0&deg;</div></div>
           </div>
           <div class="ctrst-note">SID is fixed at 99 cm on the OEC &mdash; the C moves, the
-            patient does not. Mag trades field for sharpness and pays in dose rate.</div>
+            patient does not. Field, iris and shutters are set on the CONTROL PANEL above;
+            mag trades field for sharpness and pays in dose rate.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1097,6 +1166,133 @@
             stomach their walls. Breath hold stops the dome mid-cycle (and will one day
             rescue your DSA); everything else keeps its own clock.</div>
         </div>
+      </div>
+      <!-- ============ ULTRASOUND console (us-only) ============ -->
+      <div class="grp us-only">
+        <div class="lab">Probe</div>
+        <div class="bod">
+          <div class="seg" id="usProbeSeg">
+            <button data-probe="curvi" class="on">Curvilinear</button>
+            <button data-probe="linear">Linear</button>
+          </div>
+          <div class="row" style="margin-top:9px"><div class="rl">Frequency</div>
+            <div class="valchip" id="usFreqV">3.5 MHz</div></div>
+          <input type="range" id="usFreq" min="2" max="12" value="3.5" step="0.5">
+          <div class="ctrst-note">One number buys resolution and costs penetration. The
+            curvilinear probe is the abdominal workhorse; the linear runs high and shallow.
+            Watch the speckle get finer as the frequency climbs &mdash; and the far field
+            go dark.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">Image</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Depth</div>
+            <div class="valchip" id="usDepthV">16 cm</div></div>
+          <input type="range" id="usDepth" min="4" max="24" value="16" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Focus</div>
+            <div class="valchip" id="usFocusV">8 cm</div></div>
+          <input type="range" id="usFocus" min="1" max="20" value="8" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Gain</div>
+            <div class="valchip" id="usGainV">0 dB</div></div>
+          <input type="range" id="usGain" min="-20" max="40" value="0" step="1">
+          <div class="ctrst-note">Focus is where the beam is narrowest: put it at the depth of
+            interest and everything else blurs laterally. Gain brightens the whole display
+            &mdash; it adds no information, and it is not a substitute for reaching the depth.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">TGC &middot; time-gain compensation</div>
+        <div class="bod">
+          <div class="tgcrow"><span class="tgclab">near</span>
+            <input type="range" class="tgcs" id="usTgc0" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">&nbsp;</span>
+            <input type="range" class="tgcs" id="usTgc1" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">&nbsp;</span>
+            <input type="range" class="tgcs" id="usTgc2" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">&nbsp;</span>
+            <input type="range" class="tgcs" id="usTgc3" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">&nbsp;</span>
+            <input type="range" class="tgcs" id="usTgc4" min="-20" max="20" value="0" step="1"></div>
+          <div class="tgcrow"><span class="tgclab">far</span>
+            <input type="range" class="tgcs" id="usTgc5" min="-20" max="20" value="0" step="1"></div>
+          <div class="row" style="margin-top:8px"><div class="rl">Dynamic range</div>
+            <div class="valchip" id="usRangeV">55 dB</div></div>
+          <input type="range" id="usRange" min="30" max="80" value="55" step="1">
+          <button class="fldose-rst" id="usTgcReset" style="width:100%; margin-top:8px">centre the TGC</button>
+          <div class="ctrst-note">Six gains stacked by depth, added to the machine's own ramp.
+            Slide them apart and the image bands &mdash; the classic mis-set screen. Centre them
+            and it comes back uniform, without a single number of the physics changing. Push the
+            far ones hard and you amplify the receiver's noise instead of an echo.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">Probe position</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Across <small>patient left / right</small></div></div>
+          <input type="range" id="usPx" min="0.20" max="0.86" value="0.80" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Along <small>up / down the trunk</small></div></div>
+          <input type="range" id="usPz" min="0.15" max="0.85" value="0.44" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Rotate <small>transverse / sagittal</small></div>
+            <div class="valchip" id="usRotV">0&deg;</div></div>
+          <input type="range" id="usRot" min="0" max="90" value="0" step="5">
+          <div class="row" style="margin-top:8px"><div class="rl">Rock <small>angle the beam</small></div>
+            <div class="valchip" id="usTiltV">0&deg;</div></div>
+          <input type="range" id="usTilt" min="-25" max="25" value="0" step="1">
+          <div class="ctrst-note"><b>Grab the probe in the room and slide it</b> &mdash; it rides
+            the skin, finding the surface wherever the patient's surface is. Rotate turns the
+            scan plane from transverse to sagittal; rock angles the beam without moving the
+            probe, which is how you see under a rib instead of into it.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">Motion &amp; M-mode</div>
+        <div class="bod">
+          <div class="seg" id="usDispSeg">
+            <button data-disp="b" class="on">B-mode</button>
+            <button data-disp="m">M-mode</button>
+          </div>
+          <div class="row" style="margin-top:9px"><div class="rl">M cursor <small>where the line cuts</small></div></div>
+          <input type="range" id="usMLine" min="0" max="1" value="0.5" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Heart rate</div>
+            <div class="valchip" id="usHrV">72 bpm</div></div>
+          <input type="range" id="usHr" min="40" max="140" value="72" step="2">
+          <div class="mini" style="margin-top:10px">
+            <button id="usHold">&#10074;&#10074; Breath hold</button>
+            <button id="usMotion" title="Freeze every rhythm — heart, diaphragm and gut. A still patient, for measuring against.">&#9724; Motion off</button>
+          </div>
+          <button class="fldose-rst" id="usCardiac" style="width:100%; margin-top:8px">seat the probe on the heart</button>
+          <div class="ctrst-note">The anatomy moves, not the hand: the probe holds its seat and
+            the patient breathes and beats underneath it &mdash; which is why the speckle rides
+            along with the tissue instead of sitting still in the screen. M-mode plots the one
+            cursor line against time, six seconds a screen, one gridline a second. Count the
+            gridlines between beats and you have measured the rate off the image.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">Colour Doppler</div>
+        <div class="bod">
+          <div class="mini"><button id="usDop">&#9673; Colour box</button></div>
+          <div class="row" style="margin-top:9px"><div class="rl">Scale <small>PRF</small></div>
+            <div class="valchip" id="usPrfV">3.0 kHz</div></div>
+          <input type="range" id="usPrf" min="500" max="9000" value="3000" step="100">
+          <div class="row" style="margin-top:8px"><div class="rl">Box depth</div></div>
+          <input type="range" id="usDopY" min="0.12" max="0.85" value="0.42" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Box height</div></div>
+          <input type="range" id="usDopH" min="0.10" max="0.80" value="0.40" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Box width</div></div>
+          <input type="range" id="usDopW" min="0.15" max="1.00" value="0.50" step="0.01">
+          <div class="ctrst-note">Colour is the component of flow <b>along the beam</b>, so a
+            vessel crossed at 90&deg; shows nothing however fast it runs &mdash; rock the probe
+            and it appears. Red toward, blue away. Drop the scale and the fast middle of a
+            vessel wraps to the opposite colour: that is aliasing, and it is the same phase
+            wrap as anywhere else. The box costs frame rate because the machine fires an
+            ensemble of pulses inside it instead of one.</div>
+        </div>
+      </div>
+      <div class="expose us-only" id="usScanRow">
+        <button class="flpedal" id="usFreeze">&#10074;&#10074; FREEZE</button>
+        <div class="note" id="usStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
       <!-- ============ MAMMOGRAPHY console (mm-only) ============ -->
       <div class="grp mm-only">
@@ -1196,7 +1392,8 @@
         <div class="note" id="mmStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
       <div class="expose fl-only" id="flPedalRow">
-        <button class="flpedal" id="flPedal">&#9679; FLUORO &mdash; hold</button>
+        <!-- the machine's own exposure switch: yellow, with the tube firing at a trefoil -->
+        <button class="flpedal xexp" id="flPedal"><svg class="xsym" viewBox="0 0 40 40" aria-hidden="true"><g fill="#1a1500"><path d="M2 8h9v24H2z"/><path d="M11 15l9-5v20l-9-5z"/><circle cx="30.5" cy="20" r="3"/><path id="xtre" d="M30.5 20 L38.6 20 A8.1 8.1 0 0 1 34.55 27.01 Z"/><use href="#xtre" transform="rotate(120 30.5 20)"/><use href="#xtre" transform="rotate(240 30.5 20)"/></g></svg>FLUORO &mdash; hold</button>
         <div class="note" style="margin-top:8px; text-align:center">Press and hold (or hold
           <b>Space</b>). Release for Last Image Hold.</div>
         <div class="note" id="flStatus" style="margin-top:6px; text-align:center">&mdash;</div>
@@ -1246,6 +1443,21 @@
       <video class="cineview" id="flCineView" loop muted playsinline></video>
       <button class="cineclose" id="flCineClose" type="button">&#10005; close loop</button>
       <div class="prog" id="prog"></div>
+      <!-- IMAGE DIRECTORY: everything SAVE and FILM have put away, over the monitor -->
+      <div class="imgdir" id="flImgDirPane">
+        <div class="imgdirhdr"><span>IMAGE DIRECTORY</span>
+          <button class="cineclose show" id="flDirClose" type="button">&#10005;</button></div>
+        <div class="imgdirgrid" id="flDirGrid"></div>
+        <div class="imgdirnote" id="flDirNote">Nothing saved yet. SAVE keeps what is on the
+          monitor; FILM takes a digital spot image and keeps that.</div>
+      </div>
+    </div>
+    <!-- the second screen: on a real cart it is the one you study while the live one waits -->
+    <div class="scr2 fl-only" id="flScreen2">
+      <div class="scr2hdr"><span id="flScr2Lab">REFERENCE</span>
+        <span class="scr2hint">WORKSTATION swaps &middot; MODE picks</span></div>
+      <div class="scr2mon"><canvas id="film2" width="264" height="264"></canvas>
+        <div class="scr2empty" id="flScr2Empty">NO REFERENCE</div></div>
     </div>
 
     <div class="imgtools fl-hide">

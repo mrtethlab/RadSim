@@ -23,6 +23,7 @@ import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
+import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -185,13 +186,18 @@ function initScene(){
   // orbit is draggable when active: x-ray orbit, or CT with the Orbit perspective
   const orbitActive = () => S.mode==='ct' ? S.ct.pov==='orbit' : S.viewMode==='orbit';
   canvas.addEventListener('pointerdown',e=>{ if(S.bayContent!=='3d')return;
+    // Ultrasound: grabbing the probe drags it over the skin instead of orbiting the room.
+    // The probe is the only thing in that room you can pick up, so a hit on it wins.
+    if(S.mode==='us' && usPointer(e,'down',cam,canvas)){ canvas.setPointerCapture(e.pointerId); return; }
     if(S.mode==='ct'){ if(S.ct.pov!=='orbit') return; }   // CT: only the Orbit view drags (AP/Lat are fixed)
     else if(S.viewMode!=='orbit') setCameraView('orbit');
     drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
-  canvas.addEventListener('pointermove',e=>{ if(!drag)return;
+  canvas.addEventListener('pointermove',e=>{
+    if(S.mode==='us' && usPointer(e,'move',cam,canvas)) return;
+    if(!drag)return;
     az+=(e.clientX-lx)*0.008; el+=(e.clientY-ly)*0.006;
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
-  canvas.addEventListener('pointerup',()=>drag=false);
+  canvas.addEventListener('pointerup',e=>{ if(S.mode==='us') usPointer(e,'up',cam,canvas); drag=false;});
   canvas.addEventListener('wheel',e=>{ if(!orbitActive())return;
     e.preventDefault();rad=Math.max(40,Math.min(700,rad+e.deltaY*0.25));},{passive:false});
 
@@ -545,7 +551,15 @@ const S = {
            hold:false, still:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
            // electronic image orientation (display-space): accumulated rotation, flips,
            // and the pending rotation being dialled in for the NEXT run (the triangle)
-           dispRot:0, flipH:false, flipV:false, pendRot:0,
+           dispRot:0, flipH:false, flipV:false, pendRot:0, invert:false,
+           // The OEC control panel (docs/fluoroscopy.md §Console). Collimation is two
+           // devices, not one: a circular IRIS and a rotatable pair of parallel SHUTTERS,
+           // both in the beam and both saving dose. Brightness/contrast are display-side.
+           shut:1.0, shutRot:0, bright:0, cont:1.0,
+           lowDose:false,        // half the dose rate, and it looks like it
+           alarm:false, alarmS:300,   // the five-minute beam-on alarm every fluoro has
+           saved:[], dirOpen:false,   // the Image Directory: saved frames and loops
+           ws:false, ws2:'ref',       // second screen: WORKSTATION swaps live/reference
            motions:[], fixedSeed:null },
   // ---- mammography (docs/mammography.md): technique, compression, view ----
   mammo:{ tf:'momo', kv:28, mas:60, aec:true,
@@ -554,6 +568,27 @@ const S = {
           phantom:'breast',    // 'breast' (c) | 'breastdense' (d) | 'acrphantom' (QC)
           mag:false,           // magnification stand: subject raised, x1.8 spot view
           caseId:'demo' },     // reading case: findings are injected, not baked
+  // ---- ultrasound (docs/ultrasound.md): the probe, the beam and the display ----
+  us:{ probe:'curvi',        // 'curvi' (3-5 MHz sector) | 'linear' (7-12 MHz)
+       freq:3.5, depth:16, focus:8, gain:0, tgc:1.0, range:55,
+       // The default seat is the right upper quadrant, and it was chosen by surveying
+       // the volume rather than by eye: this fan crosses ~1550 samples of liver and
+       // ~580 of gallbladder, so the reference organ and a fluid-filled structure are
+       // both in frame — which is the view that teaches enhancement.
+       px:0.80, pz:0.44,     // probe seat, as a fraction of the volume's x and z
+       rot:0, tilt:0,        // scan plane: 0 = transverse, 90 = sagittal; tilt rocks it
+       // TGC: six per-depth gain offsets in dB, near (0) to far (5). They ADD to the
+       // machine's baseline ramp, so centred is a uniform image and pushing them apart
+       // is the banded one every sonographer has seen on a colleague's screen.
+       tgcBands:[0,0,0,0,0,0],
+       // The patient is not a still life: the same derived motion fluoro uses (diaphragm,
+       // heart, gut) warps what the beam echoes off. M-mode is the display that measures
+       // it — one line against time — and mLine is where that line cuts the fan.
+       motion:true, hr:72, hold:false, disp:'b', mLine:0.5,
+       // Colour Doppler: the box, and the PRF that sets how fast a flow can be before
+       // the phase wraps and the jet comes back the wrong colour.
+       dop:false, prf:3000, dopY:0.42, dopH:0.4, dopW:0.5,
+       live:true },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -1289,6 +1324,7 @@ function syncScene(){
   editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
   fluoroSyncScene();                            // fluoro hides the x-ray head and shows the C-arm
   mammoSyncScene();                             // mammo swaps in the upright unit + clamped breast
+  usSyncScene();                                // ultrasound puts a probe on the skin
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
@@ -1591,13 +1627,15 @@ function setContent(c){
   // smallest specks are single detector pixels; the bay is the reading surface.
   const fluoroImg=(img && S.mode==='fluoro');
   const mammoImg=(img && S.mode==='mammo');
-  const xrayImg=(img && S.hasImage && !scouts && !fluoroImg && !mammoImg);
+  const usImg=(img && S.mode==='us');
+  const ownMode=(fluoroImg||mammoImg||usImg);
+  const xrayImg=(img && S.hasImage && !scouts && !ownMode);
   let ownShown=false;
-  if(fluoroImg||mammoImg){ $('bigFilm').style.display='block';
-    ownShown=fluoroImg?fluoroImageToBay():mammoImageToBay();
+  if(ownMode){ $('bigFilm').style.display='block';
+    ownShown=fluoroImg?fluoroImageToBay():mammoImg?mammoImageToBay():usImageToBay();
     if(!ownShown) $('bigFilm').style.display='none'; }
   else $('bigFilm').style.display=xrayImg?'block':'none';
-  $('bignote').style.display=(img && !scouts && ((fluoroImg||mammoImg) ? !ownShown : !S.hasImage))?'flex':'none';
+  $('bignote').style.display=(img && !scouts && (ownMode ? !ownShown : !S.hasImage))?'flex':'none';
   $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
   const ui=$('imgViewUI'); if(ui) ui.classList.toggle('show', xrayImg);   // meta + history strip (image view only)
   if(xrayImg){ renderRadiograph($('bigFilm')); updateImageMeta(); renderImageStrip(); }
@@ -2146,7 +2184,7 @@ function renderRadiograph(target,entry){
   tctx.restore();
 }
 function drawFilm(){
-  if(S.mode==='fluoro') return;   // the fluoro chain owns both monitors in its room
+  if(S.mode==='fluoro'||S.mode==='us') return;   // those rooms own both monitors
   renderRadiograph($('film'));
   if(S.bayContent==='image' && S.hasImage) renderRadiograph($('bigFilm'));
   updateXrayHistogram();
@@ -3240,7 +3278,8 @@ window.addEventListener('load',()=>{
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on),
            fluoroMode: (on) => fluoroApplyMode(on),
-           mammoMode: (on) => mammoApplyMode(on) });
+           mammoMode: (on) => mammoApplyMode(on),
+           usMode: (on) => usApplyMode(on) });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
   initMobile({ S });                            // pager + dock; inert above the breakpoint
@@ -3268,6 +3307,7 @@ window.addEventListener('load',()=>{
     } });
   initMammo({ THREE, S, three, setSubject: (s) => setSubject(s),
     loadModelUrl, baseUrl: import.meta.env.BASE_URL });
+  initUS({ THREE, S, three, setSubject: (s) => setSubject(s) });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

@@ -63,7 +63,8 @@ function dockControls() {
   const mode = document.body.classList.contains('mode-ct') ? 'ct'
     : document.body.classList.contains('mode-xray') ? 'xray'
     : document.body.classList.contains('mode-fluoro') ? 'fluoro'
-    : document.body.classList.contains('mode-mammo') ? 'mammo' : null;
+    : document.body.classList.contains('mode-mammo') ? 'mammo'
+    : document.body.classList.contains('mode-us') ? 'us' : null;
   if (mode === 'xray') {
     const b = q('#consoleCol .btns2');            // ROTOR + EXPOSE
     if (b) want.push(b);
@@ -76,6 +77,9 @@ function dockControls() {
   } else if (mode === 'ct') {
     const b = q('#ctConsole .ctbtns');            // MOVE TO SCAN / START / STOP row
     if (b) want.push(b);
+  } else if (mode === 'us') {
+    const b = q('#usScanRow');                    // freeze: the only button that must be
+    if (b) want.push(b);                          // reachable while the other hand scans
   }
   // put back anything docked that is no longer wanted (mode switch, or leaving mobile)
   for (let i = docked.length - 1; i >= 0; i--) {
@@ -100,7 +104,8 @@ function sync() {
   const inMode = document.body.classList.contains('mode-xray')
     || document.body.classList.contains('mode-ct')
     || document.body.classList.contains('mode-fluoro')
-    || document.body.classList.contains('mode-mammo');
+    || document.body.classList.contains('mode-mammo')
+    || document.body.classList.contains('mode-us');
   const show = isMobile() && inMode;
   $('mtabs')?.classList.toggle('show', show);
   if (show) setPage(active === 'editor' ? 'bay' : active);
