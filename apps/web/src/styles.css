@@ -1662,3 +1662,20 @@ body.mode-fluoro .scr2{display:block}
   border-radius:5px; font-size:10px; padding:3px 8px}
 .cinerow button:hover{background:#28404e}
 .cinerow.playing{border-color:var(--dcyan)}
+
+/* ---- DXA report: the table and the WHO banner ---- */
+.dxtab{width:100%; border-collapse:collapse; font-family:var(--seg); font-size:10px}
+.dxtab th{color:var(--muted2); font-weight:400; text-align:right; padding:2px 3px;
+  border-bottom:1px solid var(--edge)}
+.dxtab th:first-child,.dxtab td:first-child{text-align:left}
+.dxtab td{text-align:right; padding:3px; color:var(--txt); border-bottom:1px solid #ffffff10}
+.dxtab td b{color:var(--dtxt); font-size:11px}
+.dxtab .dxraw{color:var(--muted2)}
+.dxtab tr.dxsum td{border-top:1px solid var(--edge2); border-bottom:none; padding-top:5px}
+.dxdx{margin-top:9px; padding:7px 9px; border-radius:6px; font-family:var(--disp);
+  font-size:15px; letter-spacing:1px; text-transform:uppercase}
+.dxdx small{display:block; font-family:var(--seg); font-size:8px; letter-spacing:.4px;
+  text-transform:none; margin-top:4px; opacity:.75; line-height:1.5}
+.dx-normal{background:#12301e; color:#8fe3a8; border:1px solid #2c7a44}
+.dx-osteopenia{background:#332a10; color:#ffd98a; border:1px solid #8a6a1c}
+.dx-osteoporosis{background:#331414; color:#ff9c9c; border:1px solid #8a2f2f}

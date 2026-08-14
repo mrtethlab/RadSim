@@ -572,6 +572,9 @@ const S = {
   // ---- bone densitometry (docs/bmd.md): two energies, one areal density ----
   dxa:{ region:'spine',      // 'spine' | 'hipL' | 'hipR'
         loss:0,              // fractional mineral loss applied to the skeleton, 0..0.4
+        // T compares against a young adult of the same SEX, which is why the reference
+        // has to be chosen rather than averaged; Z compares against the patient's own age
+        sex:'f', age:62,
         scans:[] },          // serial acquisitions, for the % change comparison
   // ---- ultrasound (docs/ultrasound.md): the probe, the beam and the display ----
   us:{ probe:'curvi',        // 'curvi' (3-5 MHz sector) | 'linear' (7-12 MHz)
