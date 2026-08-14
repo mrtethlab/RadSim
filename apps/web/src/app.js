@@ -808,7 +808,20 @@ function setGroupRot(grp,R){ const m=new THREE.Matrix4();
    turned over, never a mirror — a mirror would swap the patient's left and right.
    Left uncorrected this shows up as a mirrored image: with chestabdopelvis the heart
    landed on the viewer's LEFT, where a radiograph hung as if facing the patient must
-   put it on the viewer's right. New models should be checked the same way. */
+   put it on the viewer's right. New models should be checked the same way.
+   Checked and NOT on this list, so do not add them without re-measuring:
+     hand / hand_hires  the metacarpal arch is convex toward -y and the thumb's metacarpal
+                      lies palmar of the other four, so -y = dorsal; the thumb is at low x
+                      (its digit falls 24 mm short of the fingers) and the radius and ulna
+                      sit at low z. That is a RIGHT hand, and the house flips put the
+                      dorsum toward the tube with the thumb to the image left — which is a
+                      pronated right hand seen from above, i.e. a correct PA hand.
+     hires_shoulder   scapula posterior at high y, heart (y 215) anterior of lung (y 260),
+                      medial bone band at high y: +y = POSTERIOR. Lung at low x, so the
+                      shoulder is at +x and is a LEFT shoulder — house convention on both
+                      axes. (A surface-flatness test disagrees here and is WRONG: the y=0
+                      face is 33.8% tissue, so that "flat surface" is the crop plane, not
+                      skin. It is backend-only, but the backend is sent the same flips.) */
 const ROLLED_180 = new Set(['chestabdopelvis','headneck']);
 // Anatomical axis flips for the voxel subjects (house convention: volume x=Left,
 // y=Posterior, z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first
@@ -1364,6 +1377,7 @@ function syncScene(){
   fluoroSyncScene();                            // fluoro hides the x-ray head and shows the C-arm
   mammoSyncScene();                             // mammo swaps in the upright unit + clamped breast
   usSyncScene();                                // ultrasound puts a probe on the skin
+  dxaSyncScene();                               // DXA shows its own scanning arm, not the x-ray head
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
