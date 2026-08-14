@@ -381,11 +381,22 @@ export function render(sc, bmd, upto) {
   let hiV = 0;
   for (let k = 0; k < rows * nx; k++) if (src[k] > hiV) hiV = src[k];
   hiV = hiV || 1;
-  for (let k = 0; k < nx * nz; k++) {
-    const on = k < rows * nx;
-    const v = on ? Math.min(1, src[k] / hiV) ** 0.7 * 255 : 0;
-    img.data[k * 4] = img.data[k * 4 + 1] = img.data[k * 4 + 2] = v;
-    img.data[k * 4 + 3] = 255;
+  // HANGING. The raster walks world +z, which is the patient's head, so scan row 0 is the
+  // most INFERIOR line and would land at the top of the canvas — the film upside down.
+  // Column 0 is the most negative world x, which voxelFlips() leaves as the patient's LEFT,
+  // and a DXA study is read like any AP film: the patient's right on the viewer's left.
+  // So both axes are reversed on the way to the pixels. The scan arrays are untouched —
+  // every measurement downstream still indexes them in acquisition order.
+  for (let dy = 0; dy < nz; dy++) {
+    const sy = nz - 1 - dy;                       // superior at the top
+    const scanned = sy < rows;                    // so the raster now fills upward
+    for (let dx = 0; dx < nx; dx++) {
+      const sx = nx - 1 - dx;                     // patient's right to the viewer's left
+      const v = scanned ? Math.min(1, src[sy * nx + sx] / hiV) ** 0.7 * 255 : 0;
+      const k = dy * nx + dx;
+      img.data[k * 4] = img.data[k * 4 + 1] = img.data[k * 4 + 2] = v;
+      img.data[k * 4 + 3] = 255;
+    }
   }
   g.putImageData(img, 0, 0);
   const f2 = film.getContext('2d');
