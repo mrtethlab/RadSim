@@ -162,14 +162,18 @@
             basis-material decomposition, and a T-score at the end of it.</div>
         </div>
       </div>
-      <div class="home-card hc-dev hc-us" aria-disabled="true">
-        <div class="hc-art"><span class="hc-badge">In development</span></div>
+      <div class="home-card hc-us" data-mode="us">
+        <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Ultrasound</div>
           <div class="hc-tag">B-mode &mdash; anatomy drawn in echoes</div>
-          <div class="hc-desc">No ionising radiation at all: a probe you steer against the skin,
-            pulse-echo imaging through the same voxel anatomy, with speckle, shadowing and
-            enhancement &mdash; and depth, gain and TGC to trade against each other.</div>
+          <div class="hc-desc">No ionising radiation at all: a probe on the skin and pulse-echo
+            imaging through the same voxel anatomy. Speckle, acoustic shadowing and
+            post-cystic enhancement are not drawn &mdash; they fall out of one scanline march,
+            the way they do in a real beam.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="us">Open</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1097,6 +1101,56 @@
             stomach their walls. Breath hold stops the dome mid-cycle (and will one day
             rescue your DSA); everything else keeps its own clock.</div>
         </div>
+      </div>
+      <!-- ============ ULTRASOUND console (us-only) ============ -->
+      <div class="grp us-only">
+        <div class="lab">Probe</div>
+        <div class="bod">
+          <div class="seg" id="usProbeSeg">
+            <button data-probe="curvi" class="on">Curvilinear</button>
+            <button data-probe="linear">Linear</button>
+          </div>
+          <div class="row" style="margin-top:9px"><div class="rl">Frequency</div>
+            <div class="valchip" id="usFreqV">3.5 MHz</div></div>
+          <input type="range" id="usFreq" min="2" max="12" value="3.5" step="0.5">
+          <div class="ctrst-note">One number buys resolution and costs penetration. The
+            curvilinear probe is the abdominal workhorse; the linear runs high and shallow.
+            Watch the speckle get finer as the frequency climbs &mdash; and the far field
+            go dark.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">Image</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Depth</div>
+            <div class="valchip" id="usDepthV">16 cm</div></div>
+          <input type="range" id="usDepth" min="4" max="24" value="16" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Focus</div>
+            <div class="valchip" id="usFocusV">8 cm</div></div>
+          <input type="range" id="usFocus" min="1" max="20" value="8" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Gain</div>
+            <div class="valchip" id="usGainV">0 dB</div></div>
+          <input type="range" id="usGain" min="-20" max="40" value="0" step="1">
+          <div class="ctrst-note">Focus is where the beam is narrowest: put it at the depth of
+            interest and everything else blurs laterally. Gain brightens the whole display
+            &mdash; it adds no information, and it is not a substitute for reaching the depth.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">Probe position</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Across <small>patient left / right</small></div></div>
+          <input type="range" id="usPx" min="0.20" max="0.86" value="0.80" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Along <small>up / down the trunk</small></div></div>
+          <input type="range" id="usPz" min="0.15" max="0.85" value="0.44" step="0.01">
+          <div class="ctrst-note">The probe rides the skin: it finds the surface wherever the
+            patient's surface is. Slide it across the right upper quadrant and the liver,
+            kidney, ribs and bowel gas each announce themselves differently.</div>
+        </div>
+      </div>
+      <div class="expose us-only" id="usScanRow">
+        <button class="flpedal" id="usFreeze">&#10074;&#10074; FREEZE</button>
+        <div class="note" id="usStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
       <!-- ============ MAMMOGRAPHY console (mm-only) ============ -->
       <div class="grp mm-only">

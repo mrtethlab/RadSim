@@ -1502,6 +1502,11 @@ body.mode-fluoro .fl-only{display:block}
 body.mode-fluoro .xray-only{display:none}
 body.mode-fluoro .flkeep{display:block}   /* subject offsets are positioning, not x-ray */
 body.mode-fluoro .fl-hide{display:none}   /* x-ray/CT display options with no fluoro meaning */
+/* ---- ultrasound mode gating ---- */
+.us-only{display:none}
+body.mode-us .us-only{display:block}
+body.mode-us .xray-only{display:none}
+body.mode-us .fl-hide{display:none}
 /* ---- mammography mode gating: same pattern as fluoro ---- */
 .mm-only{display:none}
 body.mode-mammo .mm-only{display:block}
