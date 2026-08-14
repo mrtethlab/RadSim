@@ -6,8 +6,8 @@ makes screening work. The whole mode is one lesson taught four ways: at these en
 photoelectric effect still cares about tiny differences in Z and density, and everything —
 target, filter, kV, compression — exists to protect that contrast.
 
-Status: **phases A–C built and measured** on branch feature/mammography; D is part-done
-(CC/MLO shipped; mag stand, ACR phantom and blinded case seeds outstanding), E pending.
+Status: **phases A–D built and measured** on branch feature/mammography; E (tutorial,
+mobile pass, card graduation, blinded case-seed selector) remains.
 
 ## 1. What exists to build on
 
@@ -60,7 +60,7 @@ over a small volume (the hi-res shoulder precedent).
 | **A — beam** ✅ | 3-bin mammo spectra per target/filter; the projector carries its OWN low-energy µ table (the house HU-model clamps at 20 keV and gives fat/gland a constant ratio — it would have erased the mode's central lesson) | **passed**: tissue contrast SD falls 20.3 → 15.9 as kV rises 24 → 34; W/Rh at 28 kV keeps 13.0 where Mo/Mo keeps 19.7 |
 | **B — machine + phantom** ✅ | upright rig, receptor, paddle; ONE phantom shipped (0.4 mm, 15.3 M voxels, BI-RADS c at 30 % glandular, seeded findings); density variants deferred to D | **passed**: AEC meters the gland and lands 60.6 mAs / AGD 1.72 mGy at 28 kV / 40 mm — textbook screening numbers; exposure 280 ms |
 | **C — compression** ✅ | motorised paddle drive with force readout; compression is a volume-conserving affine (c axially, 1/√c laterally) driving the 3D mesh AND the raycast from one mechanism — rays pull through the inverse, one chord-ratio per ray corrects the path lengths | **passed**: 40 mm at 126 N; under AEC, releasing to 72 mm rails the generator (400 mAs, AGD 6.25 mGy) while compressed runs 60.6 mAs / 1.72 — the paddle cuts the dose 3.6× as the image improves |
-| **D — views + findings** | CC/MLO presets, mag stand, seeded cases, ACR phantom | a speck cluster invisible at BI-RADS d + poor technique becomes visible with proper compression + AEC; ACR phantom scores reproducibly |
+| **D — views + findings** ✅ | CC/MLO; MAG ×1.8 stand (raised base plane — the cone does the rest); dense (d, 50 %) phantom; ACR-style QC slab (fibres/specks/masses, hardest-first); patient-correct orientation (chest wall at the front edge, nipple to the gantry); full-res bay reading surface; median/IQR display window; photon budget ×10 to mammographic SNR (AEC target scaled — mAs/AGD calibrations untouched) | **passed**: mag overfills the fixed receptor and pays ×3.25 on the meter; dense d meters 68 vs c's 56 mAs; the seeded speck cluster carries 1.1–1.8 lnT excess in the raw projection and its conspicuity climbs 2.1× (starved technique) → 2.7× (AEC) → 3.0× (compressed + AEC) over the p99.9 texture floor; the QC slab scores as it should — speck groups visible descending in difficulty, masses faint, fibres at the limit. Case-seed blinding selector → E. Honest note: affine compression buys dose/noise/spread, not de-superposition |
 | **E — polish** | tutorial, home card graduation, mobile pass | tutorial goals all achievable |
 
 ## 5. Open questions for ML

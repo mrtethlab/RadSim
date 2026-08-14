@@ -22,7 +22,7 @@ import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRende
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
-import { initMammo, mammoApplyMode, mammoSyncScene } from './mammo.js';
+import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -264,6 +264,8 @@ const VOXEL_MODELS = {
   // BI-RADS c fibroglandular mix and seeded findings. Listed here so the other rooms
   // can image it too; the mammography mode force-loads it.
   breast:          { title:'Breast · 0.4 mm',        scoutKv:80,  scoutMa:40,  xrayKv:28  },
+  breastdense:     { title:'Breast · dense (d)',     scoutKv:80,  scoutMa:40,  xrayKv:28  },
+  acrphantom:      { title:'Mammo QC Phantom',       scoutKv:80,  scoutMa:40,  xrayKv:28  },
 };
 
 /* Prepare a freshly loaded display mesh so it lights + shadows like the hand: the
@@ -548,7 +550,9 @@ const S = {
   // ---- mammography (docs/mammography.md): technique, compression, view ----
   mammo:{ tf:'momo', kv:28, mas:60, aec:true,
           comp:1.0,            // compression factor: paddle height / uncompressed height
-          view:'cc', agdMGy:0, fixedSeed:null },
+          view:'cc', agdMGy:0, fixedSeed:null,
+          phantom:'breast',    // 'breast' (c) | 'breastdense' (d) | 'acrphantom' (QC)
+          mag:false },         // magnification stand: subject raised, x1.8 spot view
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable
@@ -1581,14 +1585,18 @@ function setContent(c){
   const sc=$('ctScouts'); if(sc) sc.classList.toggle('show', scouts);
   const slv=$('ctSlices'); if(slv) slv.classList.toggle('show', slices);
   const rcv=$('ctRecons'); if(rcv) rcv.classList.toggle('show', recons);
-  // In fluoro, the Image view IS the fluoro monitor (live + LIH) — never the x-ray archive.
+  // In fluoro and mammo, the Image view IS that mode's own monitor — never the x-ray
+  // archive. Mammo especially: the 330 px monitor cannot score a QC phantom whose
+  // smallest specks are single detector pixels; the bay is the reading surface.
   const fluoroImg=(img && S.mode==='fluoro');
-  const xrayImg=(img && S.hasImage && !scouts && !fluoroImg);
-  let fluoroShown=false;
-  if(fluoroImg){ $('bigFilm').style.display='block'; fluoroShown=fluoroImageToBay();
-    if(!fluoroShown) $('bigFilm').style.display='none'; }
+  const mammoImg=(img && S.mode==='mammo');
+  const xrayImg=(img && S.hasImage && !scouts && !fluoroImg && !mammoImg);
+  let ownShown=false;
+  if(fluoroImg||mammoImg){ $('bigFilm').style.display='block';
+    ownShown=fluoroImg?fluoroImageToBay():mammoImageToBay();
+    if(!ownShown) $('bigFilm').style.display='none'; }
   else $('bigFilm').style.display=xrayImg?'block':'none';
-  $('bignote').style.display=(img && !scouts && (fluoroImg ? !fluoroShown : !S.hasImage))?'flex':'none';
+  $('bignote').style.display=(img && !scouts && ((fluoroImg||mammoImg) ? !ownShown : !S.hasImage))?'flex':'none';
   $('view').style.visibility=(img||slices||recons)?'hidden':'visible';
   const ui=$('imgViewUI'); if(ui) ui.classList.toggle('show', xrayImg);   // meta + history strip (image view only)
   if(xrayImg){ renderRadiograph($('bigFilm')); updateImageMeta(); renderImageStrip(); }
@@ -1671,7 +1679,9 @@ function bind(){
   // keyboard: space engages rotor, then hold space to expose
   let spaceDown=false;
   document.addEventListener('keydown',e=>{ if(e.code!=='Space')return;
-    if(S.mode==='fluoro')return;             // fluoro owns Space: it is the pedal, never the rotor
+    if(S.mode!=='xray')return;               // the rotor key belongs to the x-ray room ONLY:
+                                             // fluoro's pedal owns Space, and mammo (or any
+                                             // future mode) must never fire a stray radiograph
     e.preventDefault();
     if(spaceDown)return; spaceDown=true;
     if(!S.prepped && !S.exposing) setRotor(true);

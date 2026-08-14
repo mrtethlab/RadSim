@@ -36,7 +36,13 @@ from .build_model import AIR, FAT, MUSCLE, SOFT, CALCIF, SKIN, write_model
 GLAND = 53  # Glandular — new id, mirrored in apps/web/src/core/materials.js
 
 
-def build(out_dir, name="breast", title="Breast · 0.4 mm", spacing=0.4, seed=7, mesh=True):
+# BI-RADS density -> glandular-mix threshold (calibrated against the printed glandular
+# fraction: b ~ 18 %, c ~ 30 %, d ~ 50 % of the breast interior)
+DENSITY_THR = {"b": 1.45, "c": 0.88, "d": 0.30}
+
+
+def build(out_dir, name="breast", title="Breast · 0.4 mm", spacing=0.4, seed=7, mesh=True,
+          density="c"):
     rng = np.random.default_rng(seed)
 
     # grid: x 150 mm lateral, y 90 mm chest-wall->nipple, z 72 mm inferior->superior
@@ -75,7 +81,7 @@ def build(out_dir, name="breast", title="Breast · 0.4 mm", spacing=0.4, seed=7,
         n = ndi.gaussian_filter(n, sig / 4)
         n = np.repeat(np.repeat(np.repeat(n, 4, 0), 4, 1), 4, 2)[:nz, :ny, :nx]
         tex += amp * n / (n.std() + 1e-9)
-    gland = er & (tex + 2.2 * prob > 0.88)          # ~1/3 of the interior: BI-RADS c
+    gland = er & (tex + 2.2 * prob > DENSITY_THR.get(density, 0.88))
 
     # ductal strands: straight runs from mid-gland to the nipple
     for k in range(9):
@@ -152,16 +158,19 @@ def build(out_dir, name="breast", title="Breast · 0.4 mm", spacing=0.4, seed=7,
 
 
 def _build_mesh(mat, body, spacing, path, step=2):
-    """Display mesh: the skin surface, skin-toned — what compresses on screen."""
+    """Display mesh: the skin surface, skin-toned — what compresses on screen. Taubin
+    smoothing takes the marching-cube contour rings off without shrinking the mound."""
     import trimesh
     from skimage import measure
 
     nz, ny, nx = mat.shape
     centre = np.array([nx, ny, nz]) * spacing / 2.0
     vol = ndi.binary_closing(body, iterations=1).astype(np.float32)
+    vol = ndi.gaussian_filter(vol, 1.2)
     verts, faces, _, _ = measure.marching_cubes(vol, level=0.5, step_size=step)
     v = np.column_stack([verts[:, 2], verts[:, 1], verts[:, 0]]) * spacing - centre
-    m = trimesh.Trimesh(vertices=v, faces=faces, process=False)
+    m = trimesh.Trimesh(vertices=v, faces=faces, process=True)
+    trimesh.smoothing.filter_taubin(m, lamb=0.5, nu=-0.53, iterations=12)
     m.visual.vertex_colors = np.tile(np.array([0xd8, 0xa0, 0x7a, 255], np.uint8), (len(v), 1))
     scene = trimesh.Scene()
     scene.add_geometry(m, node_name="skin", geom_name="skin")
@@ -175,6 +184,9 @@ if __name__ == "__main__":
     ap.add_argument("--name", default="breast")
     ap.add_argument("--spacing", type=float, default=0.4)
     ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--density", choices=["b", "c", "d"], default="c")
+    ap.add_argument("--title", default=None)
     ap.add_argument("--no-mesh", action="store_true")
     a = ap.parse_args()
-    build(a.out, name=a.name, spacing=a.spacing, seed=a.seed, mesh=not a.no_mesh)
+    build(a.out, name=a.name, spacing=a.spacing, seed=a.seed, mesh=not a.no_mesh,
+          density=a.density, title=a.title or f"Breast · 0.4 mm ({a.density})")

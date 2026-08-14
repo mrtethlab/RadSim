@@ -592,6 +592,8 @@
             <option value="metalphantom">Metal Test Phantom</option>
             <option value="linepair">Line-pair test pattern (QC)</option>
             <option value="breast">Breast &middot; 0.4 mm</option>
+            <option value="breastdense">Breast &middot; dense (d)</option>
+            <option value="acrphantom">Mammo QC Phantom</option>
           </select>
           <div id="subjectHint" style="font-family:var(--seg); font-size:9px; color:var(--muted); margin-top:5px; letter-spacing:.3px"></div>
         </div>
@@ -1139,15 +1141,35 @@
         </div>
       </div>
       <div class="grp mm-only">
+        <div class="lab">Subject</div>
+        <div class="bod">
+          <div class="seg" id="mmPhSeg">
+            <button data-ph="breast" class="on">Breast c</button>
+            <button data-ph="breastdense">Breast d</button>
+            <button data-ph="acrphantom">QC</button>
+          </div>
+          <div class="ctrst-note">Scattered (BI-RADS c) and heterogeneously DENSE (d)
+            breasts carry the same seeded findings &mdash; density is what changes whether you
+            can see them. The QC slab is the accreditation phantom: score the fibres, speck
+            groups and masses you can count, hardest first.</div>
+        </div>
+      </div>
+      <div class="grp mm-only">
         <div class="lab">View</div>
         <div class="bod">
           <div class="seg" id="mmViewSeg">
             <button data-view="cc" class="on">CC</button>
             <button data-view="mlo">MLO</button>
           </div>
+          <div class="row" style="margin-top:9px"><div class="rl">Stand</div></div>
+          <div class="seg" id="mmMagSeg">
+            <button data-mag="0" class="on">Contact</button>
+            <button data-mag="1">Mag &times;1.8</button>
+          </div>
           <div class="ctrst-note">Craniocaudal compresses top-down; the mediolateral oblique
-            turns the gantry 45&deg; so the pectoral margin comes into the field &mdash; the
-            two views that make a screening pair.</div>
+            turns the gantry 45&deg; so the pectoral margin comes into the field. The MAG
+            stand raises the subject toward the tube: a &times;1.8 spot view that overfills
+            the receptor and pays the inverse-square price on the dose meter.</div>
         </div>
       </div>
       <div class="expose mm-only" id="mmExposeRow">
