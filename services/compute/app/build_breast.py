@@ -32,10 +32,7 @@ import os
 import numpy as np
 from scipy import ndimage as ndi
 
-from .build_model import AIR, FAT, MUSCLE, SKIN, write_model
-
-GLAND = 53  # Glandular — new id, mirrored in apps/web/src/core/materials.js
-
+from .build_model import AIR, FAT, GLAND, MUSCLE, SKIN, write_model
 
 # BI-RADS density -> glandular-mix threshold (calibrated against the printed glandular
 # fraction: b ~ 18 %, c ~ 30 %, d ~ 50 % of the breast interior)
@@ -116,11 +113,9 @@ def build(out_dir, name="breast", title="Breast · 0.4 mm", spacing=0.4, seed=7,
     write_model(out_dir, name, title, mat, hu_c, spacing, mesh=False,
                 source="Procedural breast phantom (skin/fat/glandular + seeded findings) "
                        "for the mammography mode — docs/mammography.md")
-    # write_model's legend stops at the base materials; this model carries id 53
     jpath = os.path.join(out_dir, f"{name}.model.json")
     with open(jpath) as f:
         hdr = json.load(f)
-    hdr["materials"].append(dict(id=GLAND, name="Glandular", hu=40, color="#e4c9b0"))
     if mesh:
         print("      building display mesh …")
         _build_mesh(mat, body, spacing, os.path.join(out_dir, f"{name}.glb"))

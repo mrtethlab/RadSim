@@ -38,6 +38,10 @@ function pyLegend() {
     const from = m[3] === undefined ? 0 : +m[2];
     names.forEach((n, i) => { consts[n] = from + i; });
   }
+  // a lone `NAME = 53` constant (ids past the range blocks are declared this way)
+  for (const m of src.matchAll(/^([A-Z][A-Za-z_]*)\s*=\s*(\d+)\s*(?:#.*)?$/gm)) {
+    consts[m[1]] = +m[2];
+  }
   // multi-line `A, B, \` continuations
   for (const m of src.matchAll(/^((?:[A-Z][A-Za-z_]*,\s*(?:\\\s*\n\s*)?)+[A-Z][A-Za-z_]*)\s*=\s*range\((\d+)(?:,\s*(\d+))?\)/gm)) {
     const names = m[1].replace(/\\\s*\n\s*/g, ' ').split(',').map(s => s.trim()).filter(Boolean);
@@ -61,6 +65,10 @@ function pyLegend() {
   }
   // The GI tail is a third named list, appended after the vessels (ids 47+).
   for (const m of grab('GI_LEGEND = [').matchAll(/\(\s*([A-Z][A-Za-z_]*)\s*,\s*"([^"]*)"/g)) {
+    out.push({ id: consts[m[1]], name: m[2], sym: m[1] });
+  }
+  // ...and the mammography tail after that (id 53+), in the same concat order.
+  for (const m of grab('MAMMO_LEGEND = [').matchAll(/\(\s*([A-Z][A-Za-z_]*)\s*,\s*"([^"]*)"/g)) {
     out.push({ id: consts[m[1]], name: m[2], sym: m[1] });
   }
   return out;

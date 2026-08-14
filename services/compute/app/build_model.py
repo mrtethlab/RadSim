@@ -99,6 +99,15 @@ VESSEL_BY_TS_NAME = {
     "iliac_vena_right": ILIAC_V_R, "iliac_vena_left": ILIAC_V_L,
 }
 
+GLAND = 53          # keep in step with apps/web/src/core/materials.js
+
+# Mammography (docs/mammography.md): fibroglandular tissue. Its HU barely differs from
+# other soft tissue — the whole point of the mammographic beam is that at 26-32 kV the
+# photoelectric term still separates it from fat.
+MAMMO_LEGEND = [
+    (GLAND, "Glandular", 40, 0xe4c9b0),
+]
+
 LEGEND = [
     (AIR, "Air", -1000, 0x000000), (LUNG, "Lung", -700, 0x3a4a63),
     (FAT, "Fat", -90, 0xf2e2b0), (WATER, "Water", 0, 0x2f6fb0),
@@ -115,7 +124,7 @@ LEGEND = [
     (ALUMINUM, "Aluminum", None, 0x9fb4c0), (TITANIUM, "Titanium", None, 0xb8c2cc),
     (STEEL, "Stainless steel", None, 0xd0d4d8), (LEAD, "Lead", None, 0x6a6f77),
     (PLASTIC, "Acrylic", 120, 0x9fb6a8),
-] + [(vid, nm, BLOOD_HU, 0xb23a3a) for vid, nm in VESSELS] + GI_LEGEND
+] + [(vid, nm, BLOOD_HU, 0xb23a3a) for vid, nm in VESSELS] + GI_LEGEND + MAMMO_LEGEND
 
 BONE_PREFIX = ("vertebrae", "rib", "sternum", "scapula", "clavicula", "humerus",
                "femur", "hip", "sacrum", "skull", "costal", "radius", "ulna",

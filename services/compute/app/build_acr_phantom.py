@@ -25,10 +25,7 @@ import os
 
 import numpy as np
 
-from .build_model import AIR, WATER, SOFT, CALCIF, PLASTIC, write_model
-
-GLAND = 53
-
+from .build_model import AIR, WATER, SOFT, CALCIF, PLASTIC, GLAND, write_model
 
 def build(out_dir, name="acrphantom", title="Mammo QC Phantom", spacing=0.4, mesh=True):
     # slab: x 100 mm, y 100 mm, z 42 mm (+ small air margins)
@@ -85,7 +82,6 @@ def build(out_dir, name="acrphantom", title="Mammo QC Phantom", spacing=0.4, mes
     jpath = os.path.join(out_dir, f"{name}.model.json")
     with open(jpath) as f:
         hdr = json.load(f)
-    hdr["materials"].append(dict(id=GLAND, name="Glandular", hu=40, color="#e4c9b0"))
     if mesh:
         _build_mesh(mat, spacing, os.path.join(out_dir, f"{name}.glb"))
         hdr["mesh"] = f"{name}.glb"
