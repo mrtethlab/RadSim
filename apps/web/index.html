@@ -1180,6 +1180,30 @@
             probe, which is how you see under a rib instead of into it.</div>
         </div>
       </div>
+      <div class="grp us-only">
+        <div class="lab">Motion &amp; M-mode</div>
+        <div class="bod">
+          <div class="seg" id="usDispSeg">
+            <button data-disp="b" class="on">B-mode</button>
+            <button data-disp="m">M-mode</button>
+          </div>
+          <div class="row" style="margin-top:9px"><div class="rl">M cursor <small>where the line cuts</small></div></div>
+          <input type="range" id="usMLine" min="0" max="1" value="0.5" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Heart rate</div>
+            <div class="valchip" id="usHrV">72 bpm</div></div>
+          <input type="range" id="usHr" min="40" max="140" value="72" step="2">
+          <div class="mini" style="margin-top:10px">
+            <button id="usHold">&#10074;&#10074; Breath hold</button>
+            <button id="usMotion" title="Freeze every rhythm — heart, diaphragm and gut. A still patient, for measuring against.">&#9724; Motion off</button>
+          </div>
+          <button class="fldose-rst" id="usCardiac" style="width:100%; margin-top:8px">seat the probe on the heart</button>
+          <div class="ctrst-note">The anatomy moves, not the hand: the probe holds its seat and
+            the patient breathes and beats underneath it &mdash; which is why the speckle rides
+            along with the tissue instead of sitting still in the screen. M-mode plots the one
+            cursor line against time, six seconds a screen, one gridline a second. Count the
+            gridlines between beats and you have measured the rate off the image.</div>
+        </div>
+      </div>
       <div class="expose us-only" id="usScanRow">
         <button class="flpedal" id="usFreeze">&#10074;&#10074; FREEZE</button>
         <div class="note" id="usStatus" style="margin-top:6px; text-align:center">&mdash;</div>

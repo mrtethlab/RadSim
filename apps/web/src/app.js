@@ -573,6 +573,10 @@ const S = {
        // machine's baseline ramp, so centred is a uniform image and pushing them apart
        // is the banded one every sonographer has seen on a colleague's screen.
        tgcBands:[0,0,0,0,0,0],
+       // The patient is not a still life: the same derived motion fluoro uses (diaphragm,
+       // heart, gut) warps what the beam echoes off. M-mode is the display that measures
+       // it — one line against time — and mLine is where that line cuts the fan.
+       motion:true, hr:72, hold:false, disp:'b', mLine:0.5,
        live:true },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine

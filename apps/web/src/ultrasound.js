@@ -23,6 +23,7 @@
    costs penetration, on the same image, from the same number.
    ============================================================================ */
 import { acousticTables } from './core/acoustics.js';
+import { deriveMotion, motionState, warpPoint } from './core/anatomyMotion.js';
 
 let ctx = null, U = null;
 const $ = (id) => document.getElementById(id);
@@ -45,6 +46,12 @@ const SYS_DB = 2;
 // turns to grey mush. That floor is what makes penetration cost something.
 const NOISE = 2.2e-7;
 
+// A window onto the heart, surveyed rather than guessed (docs/ultrasound.md §4.2): seven
+// candidate seats were scored on how much of the image the systolic warp actually moves,
+// and this one — epigastric, sagittal, angled up under the costal margin — won at 50.6
+// grey levels RMS against 0.00 for the RUQ view, which has no heart in its plane at all.
+const CARDIAC_SEAT = { px: 0.50, pz: 0.52, rot: 90, tilt: 25, depth: 22, focus: 12 };
+
 let TBL = null;               // flat acoustic tables
 
 /* ---- the volume sampler ---------------------------------------------------
@@ -58,10 +65,30 @@ function bindVolume() {
   [vnx, vny, vnz] = vm.dims;
   [vsx, vsy, vsz] = vm.vs;
   vex = vnx * vsx; vey = vny * vsy; vez = vnz * vsz;
+  anim = boundData === vol ? anim : deriveMotion(vol, vm.dims, vm.vs.map((v) => v * 10));
+  boundData = vol;
   return true;
 }
+/* ---- the anatomy moves (docs/ultrasound.md phase D) -------------------------
+   Shared with fluoro, region for region — same diaphragm, same heart, same gut, from
+   the same segmentation. Where the two differ is what they do with it: an x-ray warps
+   what it integrates THROUGH, ultrasound warps what it echoes OFF, and an interface
+   that moves toward the probe is the whole of what M-mode measures. */
+let anim = null, boundData = null, WST = null;
+const WP = new Float64Array(3);
+/* Material-space position of the last sample, in cm. With motion off this is just
+   where you looked; with motion on it is WHICH BIT OF TISSUE you looked at — and that
+   is the coordinate speckle must be hashed on, or the texture would sit still in
+   space while the anatomy slid through it. Speckle belongs to the tissue. */
+const MP = new Float64Array(3);
 function idAt(x, y, z) {
-  const ix = (x / vsx) | 0, iy = (y / vsy) | 0, iz = (z / vsz) | 0;
+  let fx = x / vsx, fy = y / vsy, fz = z / vsz;
+  if (WST && WST.on && fz >= WST.lo && fz <= WST.hi) {
+    warpPoint(WST, fx, fy, fz, WP);
+    fx = WP[0]; fy = WP[1]; fz = WP[2];
+  }
+  MP[0] = fx * vsx; MP[1] = fy * vsy; MP[2] = fz * vsz;
+  const ix = fx | 0, iy = fy | 0, iz = fz | 0;
   if (ix < 0 || iy < 0 || iz < 0 || ix >= vnx || iy >= vny || iz >= vnz) return 0;
   return vol[ix + vnx * (iy + vny * iz)];
 }
@@ -78,10 +105,35 @@ function hash3(a, b, c) {
    is not air. The probe then sits ON the patient, wherever the patient's surface
    happens to be — which is all "riding the surface" has ever meant. */
 function contactPoint(px, pz) {
-  for (let y = vey - 0.01; y > 0; y -= 0.05) {
-    if (idAt(px, y, pz) !== 0) return y;
-  }
-  return vey * 0.5;
+  // deliberately UNWARPED: the hand holds a position, and the anatomy moves under it.
+  // Seating the probe on the breathing surface instead would slide the whole image every
+  // frame, which is a moving hand, not a moving patient.
+  const save = WST; WST = null;
+  try {
+    for (let y = vey - 0.01; y > 0; y -= 0.05) {
+      if (idAt(px, y, pz) !== 0) return y;
+    }
+    return vey * 0.5;
+  } finally { WST = save; }
+}
+
+/* ---- the clocks ------------------------------------------------------------
+   Held on this side, exactly as fluoro holds its own — which is what makes breath-hold
+   a one-line trick: stop advancing one phase and every other rhythm keeps its time.
+   Quiet breathing at 14/min, the heart at whatever the slider says. */
+let brPhase = 0, cardPhase = 0, periT = 0, lastTick = 0;
+function animTick() {
+  const now = performance.now() / 1000;
+  const dt = Math.min(lastTick ? now - lastTick : 0, 0.5);
+  lastTick = now;
+  if (!U.motion) return { off: true };
+  // every clock pinned to one instant: a still frame AT a phase, which is not the same
+  // thing as motion off (the heart is held contracted, not put back at rest)
+  if (U.lockCard != null) return { br: brPhase, card: U.lockCard, peri: periT, sw: -1 };
+  if (!U.hold) brPhase = (brPhase + dt / 4.3) % 1;
+  cardPhase = (cardPhase + dt * U.hr / 60) % 1;
+  periT += dt;
+  return { br: brPhase, card: cardPhase, peri: periT, sw: -1 };
 }
 
 /* ---- one frame ------------------------------------------------------------- */
@@ -90,6 +142,7 @@ function scanFrame() {
   if (!vol && !bindVolume()) return null;
   const t0 = performance.now();
   if (!TBL) TBL = acousticTables(64);
+  WST = anim ? motionState(anim, animTick(), vsz, vnz) : null;
   const { z: Zt, att: At, bs: Bt } = TBL;
   const depth = U.depth, freq = U.freq;
   const R0 = U.probe === 'linear' ? 0 : 6.0;          // curvilinear: virtual apex 6 cm back
@@ -149,7 +202,7 @@ function scanFrame() {
       // diffuse backscatter from sub-resolution structure, random phase: SPECKLE
       const bs = Bt[id];
       if (bs > 0) {
-        const q = hash3((x * 50) | 0, (y * 50) | 0, (zc * 50) | 0);
+        const q = hash3((MP[0] * 50) | 0, (MP[1] * 50) | 0, (MP[2] * 50) | 0);
         e += bs * (q - 0.5) * 2.0 * amp * SCAT;
       }
       echo[base + k] = e;
@@ -209,26 +262,36 @@ function envelope(fr) {
 }
 
 /* ---- scan conversion + display --------------------------------------------- */
-let usCanvas = null;
-function render(fr) {
-  const film = $('film'); if (!film || !fr) return;
-  const env = envelope(fr);
-  const { depth, freq, ds, sector, R0, apert } = fr;
-  if (!usCanvas) { usCanvas = document.createElement('canvas'); usCanvas.width = 512; usCanvas.height = 512; }
-  const W = usCanvas.width, H = usCanvas.height;
-  const g = usCanvas.getContext('2d');
-  const img = g.createImageData(W, H);
-  const dr = U.range;                                   // displayed dynamic range, dB
+let usCanvas = null, bCanvas = null;
+/* One grey level from one echo, in the one place both displays can share — the B fan
+   and the M trace must map identically or the trace would lie about the image. */
+function greyOf(e, k, tgcLut, dr) {
+  const db = 20 * Math.log10(e + 1e-7) + SYS_DB + tgcLut[k] + U.gain;
+  const v = Math.max(0, Math.min(1, (db + dr) / dr));
+  return Math.pow(v, 0.85) * 255;
+}
+function buildTgc(freq, ds) {
   // TGC as a depth lookup: the machine's own ramp (which assumes uniform tissue —
   // see the note in the header) PLUS the operator's six band offsets, interpolated.
   // Every bit of this is display-side; the echo underneath never changes.
   const B = U.tgcBands || [0, 0, 0, 0, 0, 0], nb = B.length;
-  const tgcLut = new Float64Array(NSAMP);
+  const lut = new Float64Array(NSAMP);
   for (let k = 0; k < NSAMP; k++) {
     const t = k / (NSAMP - 1) * (nb - 1);
     const i0 = Math.min(nb - 1, t | 0), i1 = Math.min(nb - 1, i0 + 1), fr2 = t - i0;
-    tgcLut[k] = 2 * TGC_ASSUME * freq * (k * ds) + (B[i0] * (1 - fr2) + B[i1] * fr2);
+    lut[k] = 2 * TGC_ASSUME * freq * (k * ds) + (B[i0] * (1 - fr2) + B[i1] * fr2);
   }
+  return lut;
+}
+/* The B fan, scan-converted. Returns the geometry so the M cursor can be drawn in the
+   same frame the image was built in. */
+function drawFan(env, fr, tgcLut) {
+  const { depth, ds, sector, R0, apert } = fr;
+  if (!bCanvas) { bCanvas = document.createElement('canvas'); bCanvas.width = 512; bCanvas.height = 512; }
+  const W = bCanvas.width, H = bCanvas.height;
+  const g = bCanvas.getContext('2d');
+  const img = g.createImageData(W, H);
+  const dr = U.range;                                   // displayed dynamic range, dB
   // The fan, sized so the sector just fills the frame.
   const halfW = sector ? (R0 + depth) * Math.sin(sector / 2) : apert / 2;
   const totalH = sector ? (R0 + depth) - R0 * Math.cos(sector / 2) : depth;
@@ -250,19 +313,115 @@ function render(fr) {
       }
       const o = (j * W + i) * 4;
       let v = 0;
-      if (l >= 0 && l < NLINE && k >= 0 && k < NSAMP) {
-        // TGC: every machine compensates for an ASSUMED uniform tissue. That
-        // assumption is what makes a cyst's far wall bright and a stone's shadow
-        // black — the compensation is right for tissue and wrong for both.
-        const db = 20 * Math.log10(env[l * NSAMP + k] + 1e-7) + SYS_DB + tgcLut[k] + U.gain;
-        v = Math.max(0, Math.min(1, (db + dr) / dr));
-        v = Math.pow(v, 0.85) * 255;
-      }
+      // TGC: every machine compensates for an ASSUMED uniform tissue. That
+      // assumption is what makes a cyst's far wall bright and a stone's shadow
+      // black — the compensation is right for tissue and wrong for both.
+      if (l >= 0 && l < NLINE && k >= 0 && k < NSAMP) v = greyOf(env[l * NSAMP + k], k, tgcLut, dr);
       img.data[o] = img.data[o + 1] = img.data[o + 2] = v;
       img.data[o + 3] = 255;
     }
   }
   g.putImageData(img, 0, 0);
+  return { W, H, cx, cy, scale };
+}
+
+/* ---- M-mode ----------------------------------------------------------------
+   One scanline, plotted against TIME. Depth runs down, seconds run right, and an
+   interface that moves toward the probe draws a line that climbs — which is the whole
+   measurement: wall excursion in centimetres, and a period you can put a stopwatch on.
+
+   The trace carries a real time axis, not a frame counter: columns are appended at
+   MCOLS/M_SEC per second whatever the frame rate does, so a dropped frame stretches
+   nothing. Grey is written once, when the column is swept, exactly as a machine writes
+   it — turn the TGC afterwards and only the new columns change.
+
+   (A real machine's M-mode fires its one line at ~1 kHz, far faster than any B frame.
+   Ours resolves the sweep rate, ~50 Hz — well above wall motion, short of valve flutter.) */
+const MCOLS = 384, M_SEC = 6.0;
+let mCanvas = null, mCol1 = null, mHead = 0, mCarry = 0, mLastT = 0;
+function mReset() {
+  mHead = 0; mCarry = 0; mLastT = 0;
+  if (mCanvas) { const g = mCanvas.getContext('2d'); g.fillStyle = '#000'; g.fillRect(0, 0, MCOLS, NSAMP); }
+}
+function appendM(env, tgcLut) {
+  if (!mCanvas) {
+    mCanvas = document.createElement('canvas'); mCanvas.width = MCOLS; mCanvas.height = NSAMP;
+    const g0 = mCanvas.getContext('2d'); g0.fillStyle = '#000'; g0.fillRect(0, 0, MCOLS, NSAMP);
+  }
+  const g = mCanvas.getContext('2d');
+  if (!mCol1) mCol1 = g.createImageData(1, NSAMP);
+  const now = performance.now() / 1000;
+  const dt = mLastT ? Math.min(now - mLastT, 0.4) : 1 / 50;
+  mLastT = now;
+  mCarry += dt * (MCOLS / M_SEC);
+  let n = mCarry | 0; mCarry -= n;
+  if (n <= 0) return;
+  if (n > 48) n = 48;                                   // a backgrounded tab, not a sweep
+  const li = Math.round(U.mLine * (NLINE - 1)), dr = U.range;
+  for (let k = 0; k < NSAMP; k++) {
+    const v = greyOf(env[li * NSAMP + k], k, tgcLut, dr);
+    const o = k * 4;
+    mCol1.data[o] = mCol1.data[o + 1] = mCol1.data[o + 2] = v;
+    mCol1.data[o + 3] = 255;
+  }
+  for (let i = 0; i < n; i++) { g.putImageData(mCol1, mHead, 0); mHead = (mHead + 1) % MCOLS; }
+}
+/* B on top with the cursor drawn through it, trace below — the split screen every
+   machine shows, because an M trace means nothing without knowing what it cut. */
+function drawMScreen(g, geo, fr) {
+  // The M screen is TALLER than the B screen rather than a squeezed version of it: the
+  // fan keeps its full size and the trace is added beneath, because a trace you have to
+  // squint at measures nothing.
+  const W = usCanvas.width, H = usCanvas.height, TOP = geo.H;
+  g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+  const s = TOP / geo.H;
+  g.drawImage(bCanvas, (W - geo.W * s) / 2, 0, geo.W * s, TOP);
+  const { sector, R0, depth, apert } = fr;
+  const ox = (W - geo.W * s) / 2;
+  g.strokeStyle = 'rgba(255,220,90,0.85)'; g.lineWidth = 1; g.setLineDash([5, 4]);
+  g.beginPath();
+  if (sector) {
+    const th = (U.mLine - 0.5) * sector;
+    const sx = Math.sin(th), sy = Math.cos(th);
+    g.moveTo(ox + (geo.cx + sx * R0 * geo.scale) * s, (geo.cy + sy * R0 * geo.scale) * s);
+    g.lineTo(ox + (geo.cx + sx * (R0 + depth) * geo.scale) * s, (geo.cy + sy * (R0 + depth) * geo.scale) * s);
+  } else {
+    const X = (U.mLine - 0.5) * apert;
+    g.moveTo(ox + (geo.cx + X * geo.scale) * s, geo.cy * s);
+    g.lineTo(ox + (geo.cx + X * geo.scale) * s, (geo.cy + depth * geo.scale) * s);
+  }
+  g.stroke(); g.setLineDash([]);
+  // the trace, oldest column first so the newest is always at the right edge
+  if (mCanvas) {
+    const th2 = H - TOP - 2, y0 = TOP + 2, tail = MCOLS - mHead;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(mCanvas, mHead, 0, tail, NSAMP, 0, y0, W * tail / MCOLS, th2);
+    if (mHead > 0) g.drawImage(mCanvas, 0, 0, mHead, NSAMP, W * tail / MCOLS, y0, W * mHead / MCOLS, th2);
+    g.imageSmoothingEnabled = true;
+    // one gridline per second: the axis that turns "it wobbles" into a heart rate
+    g.strokeStyle = 'rgba(120,220,255,0.30)'; g.lineWidth = 1;
+    for (let t = 1; t < M_SEC; t++) {
+      const x = Math.round(W * (1 - t / M_SEC)) + 0.5;
+      g.beginPath(); g.moveTo(x, y0); g.lineTo(x, H); g.stroke();
+    }
+    g.fillStyle = 'rgba(150,230,255,0.75)'; g.font = '11px ui-monospace, monospace';
+    g.fillText('1 s', W - Math.round(W / M_SEC) + 4, H - 6);
+  }
+}
+
+function render(fr) {
+  const film = $('film'); if (!film || !fr) return;
+  const env = envelope(fr);
+  const { depth, freq, ds } = fr;
+  const tgcLut = buildTgc(freq, ds);
+  const geo = drawFan(env, fr, tgcLut);
+  if (!usCanvas) { usCanvas = document.createElement('canvas'); usCanvas.width = 512; }
+  const wantH = U.disp === 'm' ? 768 : 512;
+  if (usCanvas.height !== wantH) usCanvas.height = wantH;
+  const g = usCanvas.getContext('2d');
+  if (U.disp === 'm') { appendM(env, tgcLut); drawMScreen(g, geo, fr); }
+  else { g.drawImage(bCanvas, 0, 0); }
+  const W = usCanvas.width, H = usCanvas.height;
   const f2 = film.getContext('2d');
   if (film.width !== 330) { film.width = 330; film.height = 440; }
   f2.fillStyle = '#000'; f2.fillRect(0, 0, film.width, film.height);
@@ -271,7 +430,7 @@ function render(fr) {
   f2.drawImage(usCanvas, (film.width - W * s) / 2, (film.height - H * s) / 2, W * s, H * s);
   $('noexp')?.style.setProperty('display', 'none');
   if (ctx.S.bayContent === 'image') usImageToBay();
-  const tl = $('fnTL'); if (tl) tl.textContent = `US ${freq.toFixed(1)} MHz`;
+  const tl = $('fnTL'); if (tl) tl.textContent = `US ${freq.toFixed(1)} MHz` + (U.disp === 'm' ? ' · M' : '');
   const br = $('fnBR'); if (br) br.textContent = `D ${depth.toFixed(0)} cm · G ${U.gain} dB`;
 }
 export function usImageToBay() {
@@ -300,7 +459,9 @@ function setLive(on) {
   U.live = on;
   $('usFreeze')?.classList.toggle('on', !on);
   clearInterval(liveTimer); liveTimer = null;
-  if (on) liveTimer = setInterval(sweep, 60);
+  // M-mode buys its time resolution by asking for frames faster — the sweep writes a
+  // column per frame, so the frame rate IS the temporal resolution of the trace.
+  if (on) liveTimer = setInterval(sweep, U.disp === 'm' ? 20 : 60);
   sweep();
 }
 function setStatus(t) { const el = $('usStatus'); if (el) el.textContent = t; }
@@ -313,6 +474,9 @@ function renderReadouts() {
   set('usRotV', U.rot + '°');
   set('usTiltV', U.tilt + '°');
   set('usRangeV', U.range + ' dB');
+  set('usHrV', U.hr + ' bpm');
+  $('usHold')?.classList.toggle('on', U.hold);
+  $('usMotion')?.classList.toggle('on', !U.motion);
 }
 
 /* ---- the rig: a probe on the skin + the plane it images ---------------------
@@ -435,6 +599,7 @@ export function usApplyMode(on) {
     if (ctx.S.subject !== 'chestabdopelvis') ctx.setSubject?.('chestabdopelvis');
     renderReadouts();
     setStatus('Scanning…');
+    mReset(); lastTick = 0;
     setTimeout(() => { bindVolume(); setLive(true); }, 400);
   } else {
     clearInterval(liveTimer); liveTimer = null;
@@ -474,6 +639,42 @@ export function initUS(context) {
     setStatus('TGC centred.');
   });
   slide('usRange', 'range');
+  // ---- motion + M-mode ----
+  slide('usMLine', 'mLine');
+  $('usHr')?.addEventListener('input', (e) => {
+    U.hr = +e.target.value;
+    const el = $('usHrV'); if (el) el.textContent = U.hr + ' bpm';
+  });
+  $('usHold')?.addEventListener('click', () => {
+    U.hold = !U.hold;
+    $('usHold').classList.toggle('on', U.hold);
+    setStatus(U.hold ? 'Breath held — the dome stops, the heart does not.' : 'Breathing.');
+  });
+  $('usMotion')?.addEventListener('click', () => {
+    U.motion = !U.motion;
+    $('usMotion').classList.toggle('on', !U.motion);
+    setStatus(U.motion ? 'Motion on.' : 'Motion off — a still patient.');
+    if (!U.live) sweep();
+  });
+  document.querySelectorAll('#usDispSeg button').forEach((b) => {
+    b.addEventListener('click', () => {
+      U.disp = b.dataset.disp;
+      document.querySelectorAll('#usDispSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      mReset();
+      // M-mode is one line, so it can afford a faster sweep than a whole frame can
+      if (U.live) setLive(true); else sweep();
+    });
+  });
+  // The cardiac seat was surveyed, not guessed: from below the costal margin, angled up
+  // through the liver, is the one window into this subject's heart that ribs and lung do
+  // not close. See docs/ultrasound.md §4.2.
+  $('usCardiac')?.addEventListener('click', () => {
+    Object.assign(U, CARDIAC_SEAT);
+    ['usPx:px', 'usPz:pz', 'usRot:rot', 'usTilt:tilt', 'usDepth:depth', 'usFocus:focus']
+      .forEach((p) => { const [id, k] = p.split(':'); const el = $(id); if (el) el.value = U[k]; });
+    renderReadouts(); mReset(); sweep(); usSyncScene();
+    setStatus('Subcostal window — the heart is up and to the left of the fan.');
+  });
   document.querySelectorAll('#usProbeSeg button').forEach((b) => {
     b.addEventListener('click', () => {
       U.probe = b.dataset.probe;
@@ -488,7 +689,10 @@ export function initUS(context) {
     });
   });
   if (typeof window !== 'undefined') window.__usProbe = () => ({
-    U, lastMs, lastEcho, scanFrame, envelope,
+    U, lastMs, lastEcho, scanFrame, envelope, anim, WST, mReset,
+    bind: bindVolume, vdims: () => ({ vnx, vny, vnz, vsx, vsy, vsz, vex, vey, vez }),
+    idAt, buildTgc, greyOf, NLINE, NSAMP, mCanvas: () => mCanvas,
+    setPhase: (c) => { cardPhase = c; },
     // where the probe is on screen — the hook the drag test aims at
     screenPos: () => {
       const { THREE, three } = ctx;

@@ -5,7 +5,7 @@ IMAGE is made of physics artifacts. Shadowing, enhancement, speckle and reverber
 not defects to simulate reluctantly: they are how sonographers read tissue, and the mode
 succeeds only if the artifacts are honest enough to diagnose with.
 
-Status: **Phases A–C built and measured** on branch feature/ultrasound; D–F remain.
+Status: **Phases A–D built and measured** on branch feature/ultrasound; E–F remain.
 
 Decisions taken while building (the plan's own defaults, confirmed by measurement):
 RUQ abdomen is the exam tuned for; Doppler stays a later phase; the probe is a
@@ -66,7 +66,7 @@ The novel UI: no tube, no pedal — a **probe held against the skin**.
 | **A — acoustics** ✅ | acoustic table (Z, attenuation, backscatter, speed) for every material id; pulse-echo scanline march; beam PSF; scan conversion; curvilinear + linear probes; live sweep | **passed, and all three artifacts are consequences — there is no shadow code and no enhancement code**: behind bone/gas the display reads **0.000** against a clear-path 0.295 (a total shadow); behind fluid it reads **0.575**, nearly 2× the clear path, purely because the TGC compensates for an assumed uniform 0.5 dB/cm/MHz that the fluid does not have; the gallbladder itself reads **0.119** against liver's 0.318. Frequency trades as it must: 2.5 MHz reaches 15.9 cm with 5.3-sample speckle, 8 MHz reaches 13.8 cm with 4.6-sample speckle |
 | **B — the probe** ✅ | grab the probe in the room and slide it over the skin (the bay's orbit yields only when the grab lands on it); the scan plane belongs to the PROBE — rotate 0–90° turns transverse into sagittal, rock ±25° steers the fan without moving the hand; the room draws the true sector, through the patient | **passed**: a grab-and-drag moved the seat from (0.80, 0.44) to (0.51, 0.54) while a drag that missed the probe left it untouched and orbited instead; rotate and rock each change the image (field mean 65.8 transverse → 51.2 sagittal → 34.1 rocked); and one number trades resolution against penetration — speckle correlation length **0.077 cm at 3.5 MHz vs 0.031 cm at 10 MHz**, while useful depth falls **18.0 → 17.5 → 16.7 → 14.0 → 11.8 cm** across 2.5 / 3.5 / 5 / 8 / 12 MHz. 500+ fps |
 | **C — knobs** ✅ | the TGC column — six per-depth gains that ADD to the machine's own ramp — plus dynamic range, and depth/gain/focus/freeze from A–B; every one of them display-side | **passed**: alternating the column ±16 dB bands the image by **27.8 grey levels RMS**, in alternating sign, and it looks exactly like the mis-set screen it is; pressing *centre the TGC* returns the depth profile to the centred one **bit-identically (Δ = 0.0)**, which is the proof that none of it touched the echo underneath. Dynamic range behaves as the knob it is: at 35 dB the black point sits at 9 (crushed, hard contrast), at 80 dB it lifts to 49 (soft and grey) |
-| **D — motion** | anim warps in the marcher (heart, breathing, gut), M-mode | the heart visibly beats at the HR slider's rate; M-mode through it shows wall excursion; breath-hold stills the diaphragm |
+| **D — motion** ✅ | the fluoro warps moved into `core/anatomyMotion.js` and driven from the marcher; a clock column (HR, breath hold, motion off); M-mode with a real time axis and a steerable cursor; a surveyed cardiac window | **passed, and the rate is read back off the IMAGE**: tracking an interface in the M trace and autocorrelating its depth returns **60.0 / 72.5 / 89.3 / 120.0 bpm** for slider settings of 60 / 72 / 90 / 120 — within 1 %, measured through the real clock, the real warp and the real display. The contraction is affine and provable: boundaries move **7.9 % of their distance from the heart's centre**, inward (near wall +9.6 mm, far wall −7.6 mm, converging), and **exactly 0.000 mm outside the ellipsoid**. Breath-hold, tested at the RUQ seat that has no cardiac motion in its plane (beat RMS 0.00 there — the control): breathing moves the image **61.5 grey RMS** between frames 1.6 s apart, holding the breath moves it **0.000** |
 | **E — Doppler** (stretch) | colour box over `sVol` vessels, pulsatile velocity from the HR, aliasing at low PRF | flow paints red/blue by direction; the aorta pulses; turning the box off restores frame rate — the real cost of Doppler |
 | **F — polish** | tutorial, home card graduation, mobile pass | tutorial goals all achievable |
 
@@ -97,6 +97,53 @@ The novel UI: no tube, no pedal — a **probe held against the skin**.
 - **Speckle is hashed on POSITION, not time.** Scatterers sit where they sit, so a still
   probe gives a still image and moving the probe moves the speckle with the anatomy —
   which is how a sonographer tells texture from noise.
+
+## 4.2 What Phase D changed about the plan
+
+- **The motion is now SHARED with fluoro, not copied from it.** The plan said the warps
+  "transfer as-is", which quietly meant a second copy of "where is the diaphragm". They
+  now live in `core/anatomyMotion.js`: one region derivation, one phase-to-warp step, two
+  consumers. Fluoro keeps its hand-inlined inner loop (a call per cell is not free at 9 M
+  cells per pulse) and ultrasound calls `warpPoint`, but neither owns the anatomy any
+  more. Re-measured after the move, fluoro is unchanged: motion on 41.0 grey RMS
+  frame-to-frame against 10.9 with motion off — that floor being quantum mottle, which
+  should not stop when the patient does.
+- **An animation nobody measured was not animating at all.** The first build looked
+  entirely plausible — grainy, alive, a fine-looking scan — and every clock in it was
+  frozen: `lastTick` was only ever assigned when `dt > 0`, so `dt` was pinned at zero
+  forever. Nothing in the picture said so. It took an M trace with a time axis, which
+  drew six seconds of perfectly straight horizontal lines, to show it.
+- **Speckle is hashed on MATERIAL coordinates, not on where you looked.** Phase A hashed
+  the sample position, which was right while the anatomy held still and wrong the moment
+  it moved: the texture would have sat in the screen while the organs slid through it.
+  The hash now uses the WARPED coordinate — which piece of tissue this is, not which bit
+  of space — so the speckle travels with the anatomy. Verified rather than assumed: at
+  peak systole the deep-block correlation peaks at **−1.3 mm of shift**, not at zero. It
+  only reaches 0.43 there, because a contraction deforms rather than translates and no
+  single shift can align a block that spans a range of radii — which is also why real
+  speckle decorrelates during systole.
+- **The probe seat is deliberately NOT warped.** The contact search runs on the resting
+  volume, so the hand holds its position and the patient moves underneath it. Seating the
+  probe on the breathing surface instead would slide the entire image every frame, which
+  is a moving hand, not a moving patient.
+- **The cardiac window was surveyed, like the RUQ seat before it.** Seven candidate seats
+  were scored by how much of the image the systolic warp actually moves. The winner —
+  epigastric, sagittal, angled up under the costal margin, i.e. the subcostal view a real
+  operator uses when ribs are in the way — scored **50.6 grey RMS** against **0.00** for
+  the RUQ view, which has no heart in its plane at all. That zero is what makes the rest
+  of the number trustworthy.
+- **Per-column trackers are the wrong instrument on a speckle image.** Block matching and
+  peak tracking both railed at their search limits: they were measuring speckle, not
+  tissue. The honest instrument is the anatomy itself — walk the M-line ray at two locked
+  phases and report where the material boundaries went. That is what produced the affine
+  result, and it also found its own controls (the skin at 0.57 cm: 0.00 mm).
+- **The heart warp moves a REGION, not a segmented myocardium** — everything inside the
+  heart's ellipsoid contracts, including a little neighbouring fat and the oesophagus
+  behind it. Invisible in a fluoro projection, visible here. Real peri-cardiac tissue does
+  move with the heart, so it is not absurd, but it is a simplification and it is named.
+- **M-mode resolves 50 Hz, not the ~1 kHz a real machine gets.** A real M-mode fires its
+  one line far faster than any B frame; ours appends a column per frame at a 20 ms sweep.
+  Above wall motion, short of valve flutter.
 
 ## 5. Open questions for ML
 

@@ -13,14 +13,15 @@
    guarded by one z-band compare, and the three spectrum bins accumulate directly — no
    per-ray materials array at all.
 
-   ANIMATED ANATOMY (docs/fluoroscopy.md §3) is derived, not shipped: one scan pass at
-   init finds the moving regions from the material ids themselves — lungs (1) give the
-   diaphragm, heart (15) its ellipsoid, oesophagus (48) and stomach (49) their per-slice
-   centrelines. Motion PHASES are accumulated by the main thread (that is what makes
+   ANIMATED ANATOMY (docs/fluoroscopy.md §3) is derived, not shipped — and now lives in
+   core/anatomyMotion.js, because ultrasound scans the same moving anatomy and two copies
+   of "where is the diaphragm" would drift apart within a phase. This worker owns only the
+   inlining. Motion PHASES are accumulated by the main thread (that is what makes
    breath-hold trivial); the worker stays stateless between pulses.
    ============================================================================ */
 import { VoxelPhantom, muOverBins } from './core/voxelPhantom.js';
 import { BodyMaterials } from './core/materials.js';
+import { deriveMotion, motionState } from './core/anatomyMotion.js';
 
 let ph = null;
 let anim = null;
@@ -66,65 +67,10 @@ function poisson(lam) {
   return k - 1;
 }
 
-/* ---- motion-region scan (once per subject) -------------------------------- */
-function scanAnim(dims) {
-  const [nx, ny, nz] = dims, data = ph.data;
-  const cOes = new Float64Array(nz), cOesY = new Float64Array(nz), nOes = new Int32Array(nz);
-  const cSto = new Float64Array(nz), cStoY = new Float64Array(nz), nSto = new Int32Array(nz);
-  let lungLo = 1e9, lungHi = -1e9, nLung = 0;
-  const h = { n: 0, sx: 0, sy: 0, sz: 0, x0: 1e9, x1: -1e9, y0: 1e9, y1: -1e9, z0: 1e9, z1: -1e9 };
-  for (let z = 0; z < nz; z += 2) {
-    for (let y = 0; y < ny; y += 2) {
-      const row = (z * ny + y) * nx;
-      for (let x = 0; x < nx; x += 2) {
-        const id = data[row + x];
-        if (id === 1) { nLung++; if (z < lungLo) lungLo = z; if (z > lungHi) lungHi = z; }
-        else if (id === 15) {
-          h.n++; h.sx += x; h.sy += y; h.sz += z;
-          if (x < h.x0) h.x0 = x; if (x > h.x1) h.x1 = x;
-          if (y < h.y0) h.y0 = y; if (y > h.y1) h.y1 = y;
-          if (z < h.z0) h.z0 = z; if (z > h.z1) h.z1 = z;
-        } else if (id === 48) { cOes[z] += x; cOesY[z] += y; nOes[z]++; }
-        else if (id === 49) { cSto[z] += x; cStoY[z] += y; nSto[z]++; }
-      }
-    }
-  }
-  const a = { any: false };
-  const vz = vsMM[2] / 10;
-  if (nLung > 200) {
-    // The diaphragm slab: from just below the lung base up through the lower half of the
-    // lungs, weight 1 at the base tapering to 0 at the top. The shift samples superiorly,
-    // which moves every boundary in the slab inferiorly — the dome descends on
-    // inspiration. ~2 cm of quiet breathing.
-    a.br = { z0: Math.max(0, Math.round(lungLo - 3 / vz)),
-             z1: Math.round(lungLo + 0.55 * (lungHi - lungLo)),
-             amp: 2.0 / vz };
-    a.any = true;
-  }
-  if (h.n > 50) {
-    a.heart = { cx: h.sx / h.n, cy: h.sy / h.n, cz: h.sz / h.n,
-      rx: (h.x1 - h.x0) * 0.55 + 2, ry: (h.y1 - h.y0) * 0.55 + 2, rz: (h.z1 - h.z0) * 0.55 + 2 };
-    a.any = true;
-  }
-  const line = (cx, cy, cnt) => {
-    let z0 = -1, z1 = -1;
-    for (let z = 0; z < nz; z++) if (cnt[z] > 0) { if (z0 < 0) z0 = z; z1 = z; }
-    if (z0 < 0 || z1 - z0 < 6) return null;
-    const lx = new Float64Array(nz), ly = new Float64Array(nz);
-    let px = 0, py = 0;
-    for (let z = z0; z <= z1; z++) {            // fill gaps by carrying the last centroid
-      if (cnt[z] > 0) { px = cx[z] / cnt[z]; py = cy[z] / cnt[z]; }
-      lx[z] = px; ly[z] = py;
-    }
-    return { z0, z1, lx, ly };
-  };
-  a.oeso = line(cOes, cOesY, nOes);
-  a.sto = line(cSto, cStoY, nSto);
-  if (a.oeso || a.sto) a.any = true;
-  anim = a.any ? a : null;
-}
-
-/* ---- per-pulse warp state (rebuilt from the phases each pulse) ------------ */
+/* ---- per-pulse warp state -------------------------------------------------
+   The regions and the phase maths are shared (core/anatomyMotion.js); what stays here is
+   the flattening into module-level scalars, so the marcher's inner loop reads locals
+   instead of walking an object per cell. */
 let wOn = false, wLo = 0, wHi = 0;
 let brShift = null, brZ0 = 0, brZ1 = 0;
 let heOn = false, hx0 = 0, hx1 = 0, hy0 = 0, hy1 = 0, hz0 = 0, hz1 = 0;
@@ -134,61 +80,22 @@ let stOn = false, stZ = 0, stL = null;
 let pinchW = 8, pinchWst = 12;
 
 function applyAnimPulse(p) {
-  if (p && p.off) p = null;   // motion disabled: every warp off, lung mu at rest
+  const st = motionState(anim, p, vsMM[2] / 10, ph ? ph.nz : 1);
   // breathing thins the lungs too: more air in the same ribs — half of what makes a
-  // breathing chest look alive is the density drop, no geometry needed
-  const insp = anim && anim.br && p ? Math.sin(Math.PI * (p.br || 0)) ** 2 : 0;
+  // breathing chest look alive is the density drop, no geometry needed. (Acoustically
+  // it changes nothing, which is why this lives here and not in the shared module.)
   if (mu0) {
-    const f = 1 - 0.22 * insp;
+    const f = 1 - 0.22 * st.insp;
     mu0[1] = muLung[0] * f; mu1[1] = muLung[1] * f; mu2[1] = muLung[2] * f;
   }
-  wOn = false;
-  if (!anim || !p) return;
-  const nz = ph.nz;
-  let lo = 1e9, hi = -1e9;
-  const band = (a2, b2) => { if (a2 < lo) lo = a2; if (b2 > hi) hi = b2; };
-  const br = anim.br, he = anim.heart, oe = anim.oeso, st = anim.sto;
-  brShift = null;
-  if (br) {
-    const dz = br.amp * insp;
-    if (dz > 0.3) {
-      brZ0 = br.z0; brZ1 = br.z1;
-      brShift = new Int16Array(nz);
-      for (let z = br.z0; z <= br.z1 && z < nz; z++) {
-        const w = z <= br.z0 + 3 ? 1 : 1 - (z - br.z0) / (br.z1 - br.z0);
-        brShift[z] = Math.min(nz - 1 - z, Math.round(dz * w));
-      }
-      band(br.z0, br.z1);
-    }
-  }
-  // cardiac contraction: a sin^2 systolic pulse over the first 40 % of the cycle
-  const cph = p.card || 0;
-  const sysP = cph < 0.4 ? Math.sin(Math.PI * cph / 0.4) ** 2 : 0;
-  heOn = !!he && sysP > 0.02;
-  if (heOn) {
-    hs = 1 / (1 - 0.08 * sysP);
-    hcx = he.cx; hcy = he.cy; hcz = he.cz; hrx = he.rx; hry = he.ry; hrz = he.rz;
-    hx0 = hcx - hrx; hx1 = hcx + hrx; hy0 = hcy - hry; hy1 = hcy + hry;
-    hz0 = hcz - hrz; hz1 = hcz + hrz;
-    band(hz0, hz1);
-  }
-  pinchW = 1.5 / (vsMM[2] / 10);
-  pinchWst = pinchW * 1.6;
-  // swallow: a constriction wave running the oesophagus top -> bottom in ~1.2 s
-  swOn = !!oe && p.sw != null && p.sw >= 0 && p.sw < 1.6;
-  if (swOn) {
-    swZ = oe.z1 - (oe.z1 - oe.z0) * (Math.min(p.sw, 1.2) / 1.2);
-    oeL = oe;
-    band(swZ - pinchW, swZ + pinchW);
-  }
-  // stomach peristalsis: slow waves crawling aborally, one every ~7 s
-  stOn = !!st;
-  if (stOn) {
-    stZ = st.z1 - ((p.peri || 0) * (st.z1 - st.z0) / 7) % (st.z1 - st.z0);
-    stL = st;
-    band(stZ - pinchWst, stZ + pinchWst);
-  }
-  if (lo <= hi) { wOn = true; wLo = lo; wHi = hi; }
+  wOn = st.on; wLo = st.lo; wHi = st.hi;
+  brShift = st.brShift; brZ0 = st.brZ0; brZ1 = st.brZ1;
+  heOn = st.heOn; hx0 = st.hx0; hx1 = st.hx1; hy0 = st.hy0; hy1 = st.hy1;
+  hz0 = st.hz0; hz1 = st.hz1;
+  hcx = st.hcx; hcy = st.hcy; hcz = st.hcz;
+  hrx = st.hrx; hry = st.hry; hrz = st.hrz; hs = st.hs;
+  swOn = st.swOn; swZ = st.swZ; oeL = st.oeL; pinchW = st.pinchW;
+  stOn = st.stOn; stZ = st.stZ; stL = st.stL; pinchWst = st.pinchWst;
 }
 
 /* ---- the specialised marcher ----------------------------------------------
@@ -325,7 +232,7 @@ onmessage = (e) => {
     vsMM = m.vsMM || [2, 2, 2];
     anim = null;
     giVol = null; baLut = null; gasLut = null; sVol = null; iodLut = null;
-    scanAnim(m.dims);
+    anim = deriveMotion(ph.data, m.dims, vsMM);
     postMessage({ type: 'ready',
       anim: anim ? Object.keys(anim).filter((k) => k !== 'any' && anim[k]) : [] });
     return;
