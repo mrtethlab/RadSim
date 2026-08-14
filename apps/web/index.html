@@ -149,6 +149,7 @@
             radiography's, and CC / MLO views of a high-resolution breast phantom.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="mammo">Open</button>
+            <button class="hc-tut" data-tut="mammo" title="Walk through this mode control by control">&#9654; Tutorial</button>
           </div>
         </div>
       </div>
@@ -1152,6 +1153,24 @@
             breasts carry the same seeded findings &mdash; density is what changes whether you
             can see them. The QC slab is the accreditation phantom: score the fibres, speck
             groups and masses you can count, hardest first.</div>
+        </div>
+      </div>
+      <div class="grp mm-only">
+        <div class="lab">Reading case</div>
+        <div class="bod">
+          <div class="seg" id="mmCaseSeg">
+            <button data-case="demo" class="on">Demo</button>
+            <button data-case="A">A</button>
+            <button data-case="B">B</button>
+            <button data-case="C">C</button>
+            <button data-case="D">D</button>
+            <button data-case="E">E</button>
+          </div>
+          <button class="fldose-rst" id="mmReveal" style="width:100%; margin-top:8px">reveal the answer</button>
+          <div class="note" id="mmKey" style="margin-top:6px">&mdash;</div>
+          <div class="ctrst-note">The findings are not in the phantom &mdash; each case plants
+            its own, so A&ndash;E are cases you have not seen and some of them are NORMAL.
+            Read the image first, then reveal. Demo carries one of each finding.</div>
         </div>
       </div>
       <div class="grp mm-only">

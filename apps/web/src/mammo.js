@@ -70,6 +70,76 @@ function beamBins(tf, kv) {
   return { E: [0.58 * kv, line1, line2], w: [0.32, 0.45, 0.23] };        // mo/mo
 }
 
+/* ---- the cases: pathology injected, not baked ------------------------------
+   The phantoms carry parenchyma only (see build_breast.py). Each case seeds a
+   list of spheres in ANATOMY space and every ray adds their chords, which buys
+   three things a baked finding cannot: cases the learner has NOT seen, NORMAL
+   cases with nothing planted (being willing to call normal is half the skill),
+   and specks that stay sub-voxel — 0.4 mm baked into a 0.4 mm grid aliases.
+
+   Sub-pixel objects need care: a single ray through a speck's centre overstates
+   it and a ray beside it misses entirely. Each finding is intersected at
+   r_eff = max(r, 0.6 px) with its chord scaled by (r/r_eff)^3, which conserves
+   the integral of chord over area — the mean attenuation a pixel integrates. */
+const CASE_RECIPE = {
+  demo: ['specks', 'mass', 'spic'],
+  A: ['spic'], B: [], C: ['specks'], D: ['mass', 'specks'], E: [],
+};
+const CASE_IDS = Object.keys(CASE_RECIPE);
+function rngFor(id) {                       // deterministic per case
+  let s = 1013904223;
+  for (let i = 0; i < id.length; i++) s = (s * 1103515245 + id.charCodeAt(i) * 7919) & 0x7fffffff;
+  return () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+}
+function caseFindings() {
+  const S = ctx.S, vm = S.voxelModel;
+  if (!vm || S.subject === 'acrphantom') return { finds: [], key: 'QC phantom — the inserts ARE the test.' };
+  const ex = vm.extentMM[0] / 10, ey = vm.extentMM[1] / 10, ez = vm.extentMM[2] / 10;
+  // the mound's own geometry, derived from the volume so a rebuild stays honest
+  const C = [ex / 2, 0, ez / 2], A = [ex * 0.425, ey * 0.907, ez * 0.458];
+  const id = M.caseId || 'demo';
+  const rnd = rngFor(id);
+  const place = () => {                     // a point well inside the parenchyma
+    const u = 0.30 + 0.42 * rnd(), th = rnd() * 2 * Math.PI;
+    return [C[0] + Math.cos(th) * u * A[0], (0.28 + 0.34 * rnd()) * A[1],
+            C[2] + Math.sin(th) * u * A[2] * 0.85];
+  };
+  const finds = [], notes = [];
+  const where = (p) => `${p[2] > C[2] ? 'upper' : 'lower'} ${p[0] > C[0] ? 'outer' : 'inner'} quadrant`
+    + `, ${p[1] < 0.45 * A[1] ? 'posterior' : 'anterior'} half`;
+  for (const kind of CASE_RECIPE[id] || []) {
+    const p = place();
+    if (kind === 'specks') {
+      for (let i = 0; i < 13; i++) {
+        const v = [rnd() - 0.5, rnd() - 0.5, rnd() - 0.5];
+        const L = Math.hypot(v[0], v[1], v[2]) || 1, s = 0.44 * Math.cbrt(rnd()) / L;
+        finds.push({ x: p[0] + v[0] * s, y: p[1] + v[1] * s, z: p[2] + v[2] * s,
+                     r: 0.016 + 0.009 * rnd(), m: 21 });
+      }
+      notes.push(`a microcalcification cluster (~9 mm, 13 specks) — ${where(p)}`);
+    } else if (kind === 'mass') {
+      finds.push({ x: p[0], y: p[1], z: p[2], r: 0.42 + 0.12 * rnd(), m: 10 });
+      notes.push(`a circumscribed mass (~9 mm) — ${where(p)}`);
+    } else if (kind === 'spic') {
+      const r0 = 0.40 + 0.10 * rnd();
+      finds.push({ x: p[0], y: p[1], z: p[2], r: r0, m: 10 });
+      for (let i = 0; i < 11; i++) {          // radiating strands, as beads
+        const v = [rnd() - 0.5, rnd() - 0.5, rnd() - 0.5];
+        const L = Math.hypot(v[0], v[1], v[2]) || 1;
+        for (let t = 1; t <= 5; t++) {
+          const d = r0 + t * 0.17;
+          finds.push({ x: p[0] + v[0] / L * d, y: p[1] + v[1] / L * d, z: p[2] + v[2] / L * d,
+                       r: 0.05, m: 10 });
+        }
+      }
+      notes.push(`a SPICULATED mass (~8 mm core with radiating strands) — ${where(p)}`);
+    }
+  }
+  const key = notes.length ? `Case ${id.toUpperCase()}: ` + notes.join('; ') + '.'
+                           : `Case ${id.toUpperCase()}: NORMAL — nothing was planted.`;
+  return { finds, key };
+}
+
 /* ---- rig ------------------------------------------------------------------ */
 let rig = null, gantry = null, paddle = null, breastMesh = null, tubeHead = null;
 let magStand = null, acrSlab = null;
@@ -262,7 +332,11 @@ function expose() {
   // detector grid: chest wall along the top row, nipple toward the bottom. The field is
   // the RECEPTOR's, fixed — compression visibly spreads the breast across it, which is
   // half of what the image has to show
-  const NX = 470, NY = 300;
+  // 0.245 mm pixels. Mammography's defining feature is RESOLUTION — real detectors run
+  // 50-100 µm — and at the 0.49 mm this started with, a 0.4 mm microcalcification was
+  // smaller than the pixel that had to show it, which is a detector no unit would ship.
+  // 564 k rays costs about a second for a single shot; the modality takes longer.
+  const NX = 940, NY = 600;
   const fovX = 23.0, fovY = 14.6;
   const img = new Float32Array(NX * NY);
   const src = [0, 0.5, SID];                            // over the chest-wall edge, as built
@@ -273,6 +347,28 @@ function expose() {
   // lets a wax mass at 2 % subject contrast be scored on the QC slab); the AEC target
   // scales with it, so the mAs and AGD calibrations are untouched.
   const photons0 = 900 * M.mas;
+
+  // ---- the case's findings, flattened for the march --------------------------
+  const cs = caseFindings();
+  const nf = cs.finds.length;
+  const fx = new Float64Array(nf), fy = new Float64Array(nf), fz = new Float64Array(nf);
+  const fr2 = new Float64Array(nf), fw = new Float64Array(nf);
+  const fd = [new Float64Array(nf), new Float64Array(nf), new Float64Array(nf)];
+  const pxCm = fovX / NX;                       // detector pixel, cm (object plane ~ same)
+  let bx = 0, by = 0, bz = 0, br = 0;
+  if (nf) {
+    for (const f of cs.finds) { bx += f.x; by += f.y; bz += f.z; }
+    bx /= nf; by /= nf; bz /= nf;
+    cs.finds.forEach((f, i) => {
+      const rEff = Math.max(f.r, 0.6 * pxCm);
+      fx[i] = f.x; fy[i] = f.y; fz[i] = f.z;
+      fr2[i] = rEff * rEff;
+      fw[i] = Math.pow(f.r / rEff, 3);          // conserve integral(chord dA) = volume
+      for (let b = 0; b < 3; b++) fd[b][i] = muAt(f.m, E[b]) - muAt(2, E[b]);   // displaces fat
+      br = Math.max(br, Math.hypot(f.x - bx, f.y - by, f.z - bz) + rEff);
+    });
+  }
+  const fA = [0, 0, 0];
   let aecSum = 0, aecCnt = 0;
   const a0 = toAnat(src);
   for (let j = 0; j < NY; j++) {
@@ -287,9 +383,28 @@ function expose() {
       const mlen = Math.hypot(pix[0] - src[0], pix[1] - src[1], pix[2] - src[2]);
       const scaleL = mlen / alen;                       // machine cm per anatomy cm, this ray
       const L = ph.trace(a0, [dx, dy, dz]);
+      // the case's findings ride the same ray, in the same anatomy frame, so
+      // compression and the view angle carry them for free. One bounding-sphere
+      // test rejects the ~97 % of rays that miss everything.
+      fA[0] = fA[1] = fA[2] = 0;
+      if (nf) {
+        const ox = a0[0] - bx, oy = a0[1] - by, oz = a0[2] - bz;
+        const bb = -(ox * dx + oy * dy + oz * dz);
+        const dd = ox * ox + oy * oy + oz * oz - bb * bb;
+        if (dd < br * br) {
+          for (let k = 0; k < nf; k++) {
+            const qx = a0[0] - fx[k], qy = a0[1] - fy[k], qz = a0[2] - fz[k];
+            const h = -(qx * dx + qy * dy + qz * dz);
+            const disc = fr2[k] - (qx * qx + qy * qy + qz * qz - h * h);
+            if (disc <= 0) continue;
+            const chord = 2 * Math.sqrt(disc) * scaleL * fw[k];
+            fA[0] += chord * fd[0][k]; fA[1] += chord * fd[1][k]; fA[2] += chord * fd[2][k];
+          }
+        }
+      }
       let T = 0;
       for (let b = 0; b < 3; b++) {
-        let A = 0;
+        let A = fA[b];
         for (const id of ids) { const l = L[id]; if (l > 0) A += l * scaleL * mu[id][b]; }
         T += w[b] * Math.exp(-A);
       }
@@ -498,6 +613,17 @@ export function initMammo(context) {
       ctx.setSubject?.(M.phantom);
       renderReadouts();
     });
+  });
+  document.querySelectorAll('#mmCaseSeg button').forEach((b) => {
+    b.addEventListener('click', () => {
+      M.caseId = b.dataset.case;
+      document.querySelectorAll('#mmCaseSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      const k = $('mmKey'); if (k) k.textContent = '—';    // a new case is unread again
+      setStatus(`Case ${M.caseId.toUpperCase()} loaded — expose, read, then reveal.`);
+    });
+  });
+  $('mmReveal')?.addEventListener('click', () => {
+    const k = $('mmKey'); if (k) k.textContent = caseFindings().key;
   });
   document.querySelectorAll('#mmMagSeg button').forEach((b) => {
     b.addEventListener('click', () => {

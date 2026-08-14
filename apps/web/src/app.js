@@ -552,7 +552,8 @@ const S = {
           comp:1.0,            // compression factor: paddle height / uncompressed height
           view:'cc', agdMGy:0, fixedSeed:null,
           phantom:'breast',    // 'breast' (c) | 'breastdense' (d) | 'acrphantom' (QC)
-          mag:false },         // magnification stand: subject raised, x1.8 spot view
+          mag:false,           // magnification stand: subject raised, x1.8 spot view
+          caseId:'demo' },     // reading case: findings are injected, not baked
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
   computeInfo:null,            // /health result when the Python backend is reachable

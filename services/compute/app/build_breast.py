@@ -9,10 +9,11 @@ a half-ellipsoid mound against a chest-wall plane at y=0, with
     noise thresholded against a centrally-weighted probability field, tuned to a
     heterogeneously-dense (BI-RADS c) mix,
   - ductal strands converging on the nipple,
-  - a pectoralis slab behind the chest wall margin (MLO adequacy, later),
-  - and three SEEDED findings for the reading exercises: a microcalcification
-    cluster (single-voxel 0.4 mm specks — deliberately at the sampling limit), a
-    circumscribed homogeneous mass, and a spiculated mass with radiating strands.
+  - and a pectoralis slab behind the chest wall margin (MLO adequacy).
+
+Findings are NOT baked in — the mode injects them analytically from a case seed
+(see the note at the seeding site below), so cases can be blinded, normal cases
+exist, and sub-voxel specks do not alias.
 
 Compression is NOT baked here: the mammography mode compresses this uncompressed
 volume geometrically (anisotropic spacing — see mammo.js), so one phantom serves
@@ -31,7 +32,7 @@ import os
 import numpy as np
 from scipy import ndimage as ndi
 
-from .build_model import AIR, FAT, MUSCLE, SOFT, CALCIF, SKIN, write_model
+from .build_model import AIR, FAT, MUSCLE, SKIN, write_model
 
 GLAND = 53  # Glandular — new id, mirrored in apps/web/src/core/materials.js
 
@@ -100,41 +101,12 @@ def build(out_dir, name="breast", title="Breast · 0.4 mm", spacing=0.4, seed=7,
     pec = er & (ymm < 9.0 - 0.06 * (zmm - cz_mm))
     mat[pec] = MUSCLE
 
-    # ---- seeded findings -----------------------------------------------------
-    # 1. microcalcification cluster: 14 single-voxel specks in an 8 mm ball,
-    #    upper-outer quadrant — each speck is 0.4 mm, AT the sampling limit
-    ccx, ccy, ccz = cx_mm + 20, 0.52 * ay, cz_mm + 8
-    for _ in range(14):
-        v = rng.standard_normal(3)
-        v = v / np.linalg.norm(v) * rng.uniform(0, 4.0)
-        ix = int(round((ccx + v[0]) / spacing))
-        iy = int(round((ccy + v[1]) / spacing))
-        iz = int(round((ccz + v[2]) / spacing))
-        if 0 <= iz < nz and 0 <= iy < ny and 0 <= ix < nx and er[iz, iy, ix]:
-            mat[iz, iy, ix] = CALCIF
-
-    # 2. circumscribed mass: a 9 mm homogeneous ball — reads as a smooth density
-    #    against the textured background (cyst / fibroadenoma morphology)
-    mcx, mcy, mcz = cx_mm - 24, 0.45 * ay, cz_mm - 6
-    massA = (((xmm - mcx) ** 2 + (ymm - mcy) ** 2 + (zmm - mcz) ** 2) <= 4.5 ** 2) & er
-    mat[massA] = SOFT
-
-    # 3. spiculated mass: an irregular 11 mm core with radiating strands — the
-    #    morphology that matters, drawn with the geometry that makes it
-    scx, scy, scz = cx_mm + 8, 0.62 * ay, cz_mm - 9
-    core_r = 5.5 * (1.0 + 0.25 * np.sin(4 * np.arctan2(zmm - scz, xmm - scx)))
-    massB = (((xmm - scx) ** 2 + (ymm - scy) ** 2 + (zmm - scz) ** 2) <= core_r ** 2) & er
-    mat[massB] = SOFT
-    for _ in range(14):
-        v = rng.standard_normal(3)
-        v /= np.linalg.norm(v)
-        ln = rng.uniform(6, 15)
-        t = np.linspace(0, 1, 60)[:, None]
-        pts = (np.array([scx, scy, scz]) + v * (5.0 + ln * t))
-        for px, py, pz in pts:
-            ix, iy, iz = int(px / spacing), int(py / spacing), int(pz / spacing)
-            if 0 <= iz < nz and 0 <= iy < ny and 0 <= ix < nx and er[iz, iy, ix]:
-                mat[iz, iy, ix] = SOFT
+    # NO FINDINGS ARE BAKED IN. They are injected analytically at read time by the
+    # mammography mode (apps/web/src/mammo.js caseFindings) from a case seed, which
+    # buys three things a baked finding cannot: blinded cases the learner has not
+    # seen, NORMAL cases with nothing planted, and specks smaller than a voxel —
+    # a 0.4 mm speck baked into a 0.4 mm grid aliases, while an analytic chord does
+    # not. The parenchyma is the phantom's job; the pathology is the case's.
 
     hu_c = np.array([-1000, 3071], np.int16)
     gl_pct = 100.0 * (mat == GLAND).sum() / max(1, (er & (mat != MUSCLE)).sum())
