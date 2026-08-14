@@ -333,7 +333,13 @@ function flowDir(ix, iy, iz, id) {
 /* ---- one frame ------------------------------------------------------------- */
 let lastEcho = null, lastMs = 0, lastAcqMs = 0;
 function scanFrame() {
-  if (!vol && !bindVolume()) return null;
+  // REBIND WHEN THE SUBJECT CHANGES. This was `!vol && bindVolume()`, so the volume was
+  // bound once and never again: pick a different subject mid-session and ultrasound kept
+  // scanning the old one. Invisible in development, where the page is reloaded constantly,
+  // and plainly wrong on the deployed site, where the hand loads first and the RUQ seat
+  // then found no liver at all.
+  if (vol !== (ctx.S.voxelModel && ctx.S.voxelModel.data) && !bindVolume()) return null;
+  if (!vol) return null;
   const t0 = performance.now();
   syncPose();                       // the patient may have been rolled since the last frame
   if (!TBL) TBL = acousticTables(64);
@@ -859,7 +865,8 @@ export function usSyncScene() {
   if (three.detMarks) three.detMarks.visible = false;
   if (three.detArrow) three.detArrow.visible = false;
   if (three.aecGroup) three.aecGroup.visible = false;
-  if (!vol && !bindVolume()) return;
+  if (vol !== (ctx.S.voxelModel && ctx.S.voxelModel.data)) bindVolume();
+  if (!vol) return;
   // the room centres the volume on x/z with its base at y = 0, so anatomy (x, y, z)
   // sits at world (x - ex/2, y, z - ez/2)
   const px = vex * U.px, pz = vez * U.pz, py = contactPoint(px, pz);
