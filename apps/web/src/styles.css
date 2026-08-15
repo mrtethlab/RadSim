@@ -1258,6 +1258,54 @@ body.mode-home .home{display:block}
 .hc-us .hc-art::after{content:''; position:absolute; left:50%; top:6px; width:26px; height:12px;
   margin-left:-13px; border-radius:4px 4px 8px 8px; background:rgba(235,243,247,.85);
   box-shadow:0 0 14px rgba(228,240,248,.4)}
+/* THE DENSITOMETRY REPORT. A printout, so it is deliberately not themed like the rest of
+   the console — white page, black text, the way it would come off the printer and go in
+   the notes. It scrolls inside the bay. */
+.dxreport{position:absolute; inset:0; display:none; background:#20242a; overflow:hidden; z-index:3}
+.dxreport.show{display:block}
+.dxrep-scroll{position:absolute; inset:0; overflow:auto; padding:16px 16px 70px;
+  display:flex; justify-content:center}
+.dxrep-page{width:760px; max-width:100%; background:#fff; color:#111; padding:18px 22px 22px;
+  border-radius:3px; box-shadow:0 10px 40px rgba(0,0,0,.5);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif; font-size:11.5px; line-height:1.45}
+.dxrep-empty{color:var(--dim); align-self:center; font-size:13px}
+.dxrep-hd{text-align:center; margin-bottom:12px}
+.dxrep-org{font-size:20px; font-weight:700; letter-spacing:.2px}
+.dxrep-addr{font-size:11px; color:#333}
+.dxrep-pt{width:100%; border:1px solid #444; border-collapse:collapse; margin-bottom:12px}
+.dxrep-pt td{border:0; padding:2px 6px; font-size:11px}
+.dxrep-pt td.k{font-weight:700; width:88px; white-space:nowrap}
+.dxrep-body{display:flex; gap:14px; align-items:flex-start}
+.dxrep-col{flex:1; min-width:0}
+.dxrep-cap{font-weight:700; text-align:center; font-size:11.5px; margin-bottom:5px}
+.dxrep-img{width:100%; background:#000; border:1px solid #999}
+.dxrep-chart{width:100%; border:1px solid #999; background:#fff}
+.dxrep-chart.wide{margin-bottom:8px}
+.dxrep-note{font-size:10px; color:#555; text-align:center; margin-top:3px}
+.dxrep-tab{width:100%; border-collapse:collapse; margin-top:8px; font-size:10.5px}
+.dxrep-tab th,.dxrep-tab td{border:1px solid #666; padding:2px 5px; text-align:right}
+.dxrep-tab th{background:#e6e6e6; text-align:center; font-size:9.5px; line-height:1.2}
+.dxrep-tab td:first-child,.dxrep-tab th:first-child{text-align:left}
+.dxrep-tab tr.sum td{background:#f0f0f0; font-weight:600}
+.dxrep-dx{margin-top:10px; padding:6px 10px; border-radius:3px; font-weight:700; font-size:12px;
+  border:1px solid #666}
+.dxrep-normal{background:#d8f0dc}
+.dxrep-osteopenia{background:#f7efc9}
+.dxrep-osteoporosis{background:#f6d6d2}
+.dxrep-fine{margin-top:12px; font-size:8.6px; line-height:1.5; color:#333;
+  border-top:1px solid #bbb; padding-top:7px}
+/* the review strip, shared by the Image and Report views */
+.dxstrip-wrap{position:absolute; left:0; right:0; bottom:0; display:none; z-index:4;
+  background:linear-gradient(0deg,rgba(6,9,12,.94),rgba(6,9,12,.62) 70%,transparent);
+  padding:12px 10px 8px}
+.dxstrip-wrap.show{display:block}
+.dxstrip{display:flex; gap:6px; overflow-x:auto; justify-content:center}
+.dxthumb{position:relative; flex:0 0 auto; width:44px; height:56px; padding:0; cursor:pointer;
+  background:#0a0e12; border:1px solid var(--edge2); border-radius:3px; overflow:hidden}
+.dxthumb.on{border-color:#5ef09a; box-shadow:0 0 0 1px #5ef09a}
+.dxthumb img{width:100%; height:100%; object-fit:cover; display:block; opacity:.9}
+.dxthumb span{position:absolute; left:0; right:0; bottom:0; font:9px ui-monospace,monospace;
+  background:rgba(0,0,0,.72); color:#cfe8d8; padding:1px 0}
 /* DENSITOMETER ARM PAD. The real console recesses four arrow keys into an oval bezel with
    a status LED beside them; this is that cluster, close enough that the photo reads as the
    instruction manual for it. */

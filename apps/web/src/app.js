@@ -24,7 +24,7 @@ import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
-import { initDXA, dxaApplyMode, dxaSyncScene } from './dxa.js';
+import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay } from './dxa.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -1690,11 +1690,23 @@ function setContent(c){
   const fluoroImg=(img && S.mode==='fluoro');
   const mammoImg=(img && S.mode==='mammo');
   const usImg=(img && S.mode==='us');
-  const ownMode=(fluoroImg||mammoImg||usImg);
+  const dxaImg=(img && S.mode==='dxa');
+  // Densitometry owns two of these: Image is the archive of scans, Report the archive of
+  // pages. Both draw from the same ten filed studies and share the review strip.
+  const dxaRep=(c==='report' && S.mode==='dxa');
+  const dxrp=$('dxReport'); if(dxrp) dxrp.classList.toggle('show', dxaRep);
+  const dxsw=$('dxStripWrap'); if(dxsw) dxsw.classList.toggle('show', dxaImg||dxaRep);
+  if(dxaRep){ dxaReportToBay();
+    $('bigFilm').style.display='none'; $('bignote').style.display='none';
+    $('view').style.visibility='hidden';
+    $('imgViewUI')?.classList.remove('show');
+    return; }
+  const ownMode=(fluoroImg||mammoImg||usImg||dxaImg);
   const xrayImg=(img && S.hasImage && !scouts && !ownMode);
   let ownShown=false;
   if(ownMode){ $('bigFilm').style.display='block';
-    ownShown=fluoroImg?fluoroImageToBay():mammoImg?mammoImageToBay():usImageToBay();
+    ownShown=fluoroImg?fluoroImageToBay():mammoImg?mammoImageToBay()
+            :dxaImg?dxaImageToBay():usImageToBay();
     if(!ownShown) $('bigFilm').style.display='none'; }
   else $('bigFilm').style.display=xrayImg?'block':'none';
   $('bignote').style.display=(img && !scouts && (ownMode ? !ownShown : !S.hasImage))?'flex':'none';

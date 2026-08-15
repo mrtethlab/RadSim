@@ -19,6 +19,7 @@
 import { BodyMaterials } from './core/materials.js';
 import { muAtEnergy } from './core/voxelPhantom.js';
 import { dockConsole } from './core/paneDock.js';
+import { makePatient, drawAgeChart, reportHTML } from './dxaReport.js';
 
 let ctx = null, D = null;
 const $ = (id) => document.getElementById(id);
@@ -566,6 +567,103 @@ export function report(sc) {
   renderSerial();
 }
 
+/* ---- the archive ------------------------------------------------------------
+   Every completed scan is filed with its picture, its numbers and the patient it
+   belongs to, because that is what makes the trend real: a follow-up study is only
+   meaningful next to the one before it. The patient identity is invented ONCE and
+   then held for the session — a series that renamed the patient between studies
+   would teach the opposite of what a trend report is for.
+   Ten deep, newest first, matching the x-ray archive. */
+export const HISTORY_MAX = 10;
+function patientOf() {
+  if (!D.patient || D.patient.sex !== D.sex) {
+    D.patient = makePatient(D.sex, D.age, (D.patientSeed ||= (Math.random() * 4294967296) >>> 0));
+    D.patient.sex = D.sex;
+  }
+  return D.patient;
+}
+function fileStudy(sc) {
+  if (!sc || !sc.rois || !sc.rois.length) return;
+  const film = $('film');
+  let bmcT = 0, areaT = 0;
+  for (const r of sc.rois) { bmcT += r.bmc; areaT += r.area; }
+  D.history = D.history || [];
+  D.history.unshift({
+    region: sc.region, regionLabel: REGIONS[sc.region]?.label || sc.region,
+    rois: sc.rois.map((r) => ({ label: r.label, area: r.area, bmc: r.bmc, bmd: r.bmd })),
+    mean: sc.mean, T: sc.T, Z: sc.Z, dx: sc.dx, loss: sc.loss || 0,
+    area: areaT, bmc: bmcT,
+    age: D.age, weight: D.weight, sex: D.sex,
+    when: new Date(), patient: patientOf(),
+    img: film ? film.toDataURL('image/png') : null,
+  });
+  if (D.history.length > HISTORY_MAX) D.history.length = HISTORY_MAX;
+  D.histIdx = 0;
+  renderArchive();
+}
+/* The trend chart: the same age plot, zoomed onto the span the series actually
+   covers, which is how the printout draws it — a follow-up six months later gets
+   a decimal-year axis, not twenty years of empty chart. */
+function trendChart(cv, entry, hist) {
+  const site = entry.region === 'spine' ? 'spine' : 'hip';
+  const ages = hist.map((h) => h.age);
+  const lo = Math.min(...ages), hi = Math.max(...ages);
+  const pad = Math.max(0.6, (hi - lo) * 0.15);
+  drawAgeChart(cv, { site, sex: entry.sex,
+    points: hist.slice().reverse().map((h) => ({ age: h.age, bmd: h.mean })),
+    xMin: +(lo - pad).toFixed(1), xMax: +(hi + pad).toFixed(1) });
+}
+
+/* THE TWO BAY VIEWS. Image is the archive of scans; Report is the archive of pages.
+   Both are the same ten studies seen two ways, and both are scrollable back, because
+   the whole point of a densitometry service is that the last one is still on file. */
+export function dxaImageToBay() {
+  const list = D.history || [];
+  if (!list.length) return false;
+  const e = list[Math.min(D.histIdx || 0, list.length - 1)];
+  const big = $('bigFilm'); if (!big || !e.img) return false;
+  const im = new Image();
+  im.onload = () => {
+    const g = big.getContext('2d');
+    big.width = 560; big.height = 700;
+    g.fillStyle = '#000'; g.fillRect(0, 0, big.width, big.height);
+    const s = Math.min(big.width / im.width, big.height / im.height);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(im, (big.width - im.width * s) / 2, (big.height - im.height * s) / 2,
+      im.width * s, im.height * s);
+  };
+  im.src = e.img;
+  renderArchive();
+  return true;
+}
+export function dxaReportToBay() {
+  const host = $('dxReportPane'); if (!host) return false;
+  const list = D.history || [];
+  if (!list.length) { host.innerHTML = '<div class="dxrep-empty">No studies yet. '
+    + 'Run a scan and the report is written here.</div>'; return true; }
+  const e = list[Math.min(D.histIdx || 0, list.length - 1)];
+  const hist = list.filter((h) => h.region === e.region);
+  // the two charts are rendered offscreen and baked into the page as images, so the
+  // report is one self-contained block that can be scrolled, printed or saved
+  const c1 = document.createElement('canvas'); c1.width = 560; c1.height = 300;
+  drawAgeChart(c1, { site: e.region === 'spine' ? 'spine' : 'hip', sex: e.sex,
+    points: [{ age: e.age, bmd: e.mean }] });
+  const c2 = document.createElement('canvas'); c2.width = 700; c2.height = 260;
+  if (hist.length > 1) trendChart(c2, e, hist);
+  host.innerHTML = reportHTML(e, hist, { age: c1.toDataURL(), trend: c2.toDataURL() });
+  renderArchive();
+  return true;
+}
+/* The strip of stored studies, shared by both views. */
+function renderArchive() {
+  const el = $('dxStrip'); if (!el) return;
+  const list = D.history || [];
+  el.innerHTML = list.map((h, i) => `<button class="dxthumb${i === (D.histIdx || 0) ? ' on' : ''}" `
+    + `data-i="${i}" title="${h.regionLabel} · BMD ${h.mean.toFixed(3)} · T ${h.T.toFixed(1)}">`
+    + (h.img ? `<img src="${h.img}" alt="">` : '')
+    + `<span>${h.mean.toFixed(3)}</span></button>`).join('');
+}
+
 /* ---- serial scans -----------------------------------------------------------
    The follow-up question is never "what is the density" but "has it changed", and the
    honest answer has to clear the machine's own reproducibility before it means anything.
@@ -899,6 +997,7 @@ export function initDXA(context) {
         sc.col = lv.col;
         render(sc, bmd);
         report(sc);
+        fileStudy(sc);
         setStatus(`Done — ${REGIONS[sc.region].label}.`);
       });
   });
@@ -948,6 +1047,12 @@ export function initDXA(context) {
     b.addEventListener('pointercancel', stop);
   });
   $('dxLaserHome')?.addEventListener('click', () => { D.crossX = 0; syncHead(); syncPad(); });
+  // clicking a stored study reviews it, in whichever of the two views is showing
+  $('dxStrip')?.addEventListener('click', (e) => {
+    const b = e.target.closest('.dxthumb'); if (!b) return;
+    D.histIdx = +b.dataset.i;
+    if (ctx.S.bayContent === 'report') dxaReportToBay(); else dxaImageToBay();
+  });
   document.querySelectorAll('#dxRigSeg button').forEach((b) => {
     b.addEventListener('click', () => { setRig(b.dataset.rig); parkAtLandmark(); });
   });
