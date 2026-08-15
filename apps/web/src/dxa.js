@@ -567,7 +567,11 @@ export function findFemur(sc, bmd) {
      below into the intertrochanteric region, and stops at the distal cut. */
   const medSign = sc.region === 'hipL' ? +1 : -1;       // columns rise with world x
   const headC = [(sc.headX - sc.x0) / px - 0.5, tr];
-  const headR = Math.max(1.6, sc.headR || 2.2) / px;
+  /* The inscribed sphere stops growing at the search cap, and in a pelvis where the head
+     touches the acetabulum it reaches that cap — 3.2 cm, which is half again a femoral head
+     and would swallow the neck. Believe the measurement only while it is anatomically
+     possible; an adult femoral head runs about 2.0-2.6 cm in radius. */
+  const headR = Math.min(2.6, Math.max(1.7, sc.headR || 2.2)) / px;
 
   // the neck runs from the head down to where the shaft passes the intertrochanteric line
   const pivR = tr - 4.5 / px;
@@ -620,7 +624,6 @@ export function findFemur(sc, bmd) {
     if (t * latSign > 0 && s > sNeck - 1.5 / px) { troch[k] = 1; total[k] = 1; }
     else { inter[k] = 1; total[k] = 1; }
   }
-  const narrowT = Math.round((nStart + nEnd) / 2);
 
   /* WARD'S. Not a landmark but a SEARCH: the square centimetre of lowest density in the
      neck, where the compressive and tensile trabeculae leave a gap. It is reported because
@@ -628,10 +631,10 @@ export function findFemur(sc, bmd) {
      too variable — which is why the report carries it flagged rather than in the total. */
   const side = Math.max(2, Math.round(1 / px));
   let wardBest = Infinity, wardAt = null;
-  for (let t = Math.round(1.5 / px); t <= narrowT + Math.round(1 / px); t++) {
+  for (let t = Math.round(nStart); t <= Math.round(nEnd); t++) {
     for (let k = -Math.round(1.5 / px); k <= Math.round(1.5 / px); k++) {
-      const c0 = Math.round(pivot[0] + nAx[0] * t + nT[0] * k);
-      const r0 = Math.round(pivot[1] + nAx[1] * t + nT[1] * k);
+      const c0 = Math.round(headC[0] + nAx[0] * t + nT[0] * k);
+      const r0 = Math.round(headC[1] + nAx[1] * t + nT[1] * k);
       let s = 0, n = 0;
       for (let dr = 0; dr < side; dr++) for (let dc = 0; dc < side; dc++) {
         const c = c0 + dc - (side >> 1), r = r0 + dr - (side >> 1);
@@ -657,7 +660,7 @@ export function findFemur(sc, bmd) {
     { label: 'Inter', mask: inter, site: 'inter' },
     { label: 'Total', mask: total, site: 'total' },
   ].filter((r) => count(r.mask) > 4);
-  return { rois, axes: { p, u, H, nAx, halfH, halfW: halfWpx, sNeck, sStop } };
+  return { rois, axes: { p, u, H, nAx, headC, headR, nStart, nEnd, halfW: halfWpx, sNeck, sStop } };
 }
 
 /* ---- the numbers on the report ---------------------------------------------
@@ -1146,7 +1149,8 @@ export function dxaApplyMode(on) {
   if (on) {
     if (ctx.S.subject !== 'chestabdopelvis') ctx.setSubject?.('chestabdopelvis');
     setStatus('Ready — pick a region and scan.');
-    setTimeout(parkAtLandmark, 60);      // after the subject's volume is in place
+    D.region = D.region || 'spine';
+    setTimeout(() => parkWhenReady(), 60);   // as soon as the subject's volume is in place
   } else abortScan();
   dxaSyncScene();
 }
@@ -1284,9 +1288,19 @@ function positionError() {
    OFF the mark — which the note calls out immediately — is the thing you do on purpose. */
 function parkAtLandmark() {
   const t = landmarkTargets();
-  if (!t) return;
+  if (!t) return false;
   D.headZ = t.z; D.crossX = t.x;
   syncHead(); syncPad();
+  return true;
+}
+/* Parking has to wait for the volume. setSubject is async, so a fixed 60 ms delay was a bet
+   on the load finishing in time; when it did not, landmarkTargets() had no phantom to read
+   and the arm simply stayed where it was — parked over the middle of the chest instead of
+   the lumbar spine, which is the first thing you see on entering the mode. Keep asking until
+   the anatomy can answer. */
+function parkWhenReady(tries = 40) {
+  if (parkAtLandmark() || tries <= 0) return;
+  setTimeout(() => parkWhenReady(tries - 1), 100);
 }
 function nudge(dir) {
   const STEP = 1;                                  // cm per press, then repeat on hold
@@ -1437,7 +1451,18 @@ export function initDXA(context) {
       (sc) => {
         const { bmd } = decompose(sc);
         sc.bmdMap = bmd;
-        const an = analyse(sc, bmd);
+        /* A analysis that throws used to take the whole completion callback with it: no
+           regions, no report, no error — just a film with nothing drawn on it and a status
+           line still reading Done. That is the worst way for this to fail, because it looks
+           like an answer. Say so instead, and still show the picture that was acquired. */
+        let an;
+        try { an = analyse(sc, bmd); } catch (err) {
+          console.error('DXA analysis failed', err);
+          sc.rois = []; sc.col = null; sc.axes = null;
+          render(sc, bmd);
+          setStatus(`Scan complete — region analysis failed (${err.message}).`);
+          return;
+        }
         sc.rois = measure(sc, bmd, an.rois);
         sc.col = an.col; sc.axes = an.axes;
         render(sc, bmd);
