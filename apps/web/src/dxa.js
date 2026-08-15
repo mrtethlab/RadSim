@@ -36,7 +36,11 @@ const PX_CM = 0.12;                       // cm per DXA pixel, both axes
 /* Region presets: where the arm parks and how big a window it sweeps, in cm relative to
    the volume's own centre. Spine is the AP lumbar field; the hips are offset laterally. */
 export const REGIONS = {
-  spine: { label: 'AP lumbar spine', wx: 14, wz: 20 },
+  /* The lumbar field has to show the whole of L5-S1 at the bottom and T11-T12 at the top,
+     because those two junctions are what the level count is checked against — without them
+     you cannot prove which body you called L4. That is five bodies plus both joints, so
+     24 cm rather than the 20 it was, which was cutting the top joint off. */
+  spine: { label: 'AP lumbar spine', wx: 14, wz: 24 },
   hipL:  { label: 'Left hip',        wx: 14, wz: 16 },
   hipR:  { label: 'Right hip',       wx: 14, wz: 16 },
 };
@@ -310,13 +314,18 @@ export function findLevels(sc, bmd) {
     for (let k = -minGap; k <= minGap; k++) if (sm[r + k] < sm[r]) { isMin = false; break; }
     if (isMin && (!dips.length || r - dips[dips.length - 1] >= minGap)) dips.push(r);
   }
-  // 4. four bodies between consecutive dips, taken from the pelvis end
+  /* 4. FOUR BODIES, COUNTED UP FROM THE SACRUM — which is how a human does it, and the only
+     way to get the labels right. Rows count from the INFERIOR end of the window, so the
+     bands arrive inferior-first: slice(-4) took the four HIGHEST, i.e. the most superior,
+     which is how T12 ended up in the analysis wearing an L4 label. Take the first four
+     instead, and name them going up: the lowest lumbar body in the window is L4, and L1 is
+     the fourth one above it. */
   const bands = [];
   for (let i = 0; i + 1 < dips.length; i++) bands.push({ a: dips[i], b: dips[i + 1] });
   const named = [];
-  const pick = bands.slice(-4);                  // nearest the bottom of the window
-  const labels = ['L1', 'L2', 'L3', 'L4'];
-  pick.forEach((bd, i) => named.push({ label: labels[i] || `L${i + 1}`, ...bd, x0: cA, x1: cB }));
+  const pick = bands.slice(0, 4);                // nearest the sacrum
+  const labels = ['L4', 'L3', 'L2', 'L1'];       // inferior -> superior
+  pick.forEach((bd, i) => named.push({ label: labels[i] || `L${4 - i}`, ...bd, x0: cA, x1: cB }));
   return { rois: named, col: [cA, cB], prof: sm, dips };
 }
 
@@ -531,7 +540,9 @@ export function report(sc) {
   const tb = $('dxTable'); if (!tb || !sc.rois) return;
   const site = sc.region === 'spine' ? 'spine' : 'hip';
   const sex = D.sex || 'f', age = D.age || 60;
-  const rows = sc.rois;
+  // rois are stored inferior-first, because the cut editor needs them contiguous in row
+  // order; a report reads down from L1, so take a copy in label order for display only
+  const rows = sc.rois.slice().sort((p, q) => p.label.localeCompare(q.label));
   let bmcT = 0, areaT = 0;
   for (const r of rows) { bmcT += r.bmc; areaT += r.area; }
   const mean = areaT > 0 ? bmcT / areaT : 0;
@@ -605,7 +616,27 @@ export function dxaApplyMode(on) {
   dxaSyncScene();
 }
 
-const TABLE_LEN_CM = 200;             // the scanned table is a shade over 2 m end to end
+/* THE ROOM'S MACHINES. Two photogrammetry scans of a densitometer, each split offline into
+   'bed' and 'head' nodes by tools/split_dxa_rig.js. Both put the whole arm above y = 0 in
+   their own frame, so one split plane serves both — but they were scanned lying different
+   ways and everything downstream has to know which. Measured per model, not assumed:
+
+     v2  long axis is already z, so no turn, and travel runs with local +z. Table surface
+         at y = -0.09: the only large upward-facing plane between the pedestal and the arm
+         (the bigger one at -0.58 is the base plate). Arm sits mid-table on the -x side.
+     v1  long axis x, so the room turns it a quarter turn, which maps its local +x onto
+         world -z — hence the negative travel. Surface at y = -0.03, arm parked at one END.
+
+   TABLE_LEN_CM is the real machine's, and it sets the scale of everything else: get it
+   wrong and the patient is the wrong size relative to the couch they are lying on. */
+const TABLE_LEN_CM = 287;
+const RIGS = {
+  v2: { label: 'Mk II', url: 'models/rigs/dxa_rig_v2.glb',
+        rotY: 0,           surfaceY: -0.09, travelAxis: 'z', travelSign: +1 },
+  v1: { label: 'Mk I',  url: 'models/rigs/dxa_rig.glb',
+        rotY: Math.PI / 2, surfaceY: -0.03, travelAxis: 'x', travelSign: -1 },
+};
+const RIG_DEFAULT = 'v2';
 let rig = null, armMesh = null, scannedRig = null, headHome = null, laser = null;
 export function dxaSyncScene() {
   if (!ctx || !rig) return;
@@ -641,8 +672,7 @@ export function dxaHideExtras() { if (laser) laser.visible = false; }
    42 143 are 'bed'. Both share one vertex buffer and one texture, so the split cost two
    index views.
    The box rig below it is the fallback if the fetch fails — the mode still has to work. */
-const RIG_SPLIT_Y = 0.15;             // recorded so the offline split can be reproduced
-const BED_TOP_LOCAL = -0.03;          // the patient surface, in the scan's own units
+let rigCfg = RIGS[RIG_DEFAULT];       // which machine is standing in the room
 let bedNode = null, headNode = null, rigScale = 1, bedTopY = 0, bedLenCm = 0, headCentreHomeZ = 0;
 /* Drive the arm and its laser to wherever the pad has put them. The head travels along the
    couch only; the laser's cross slides across the table independently, which is what the
@@ -658,7 +688,8 @@ function syncHead() {
      The node lives in the scan's frame, before the quarter turn that stands the table up,
      and that turn maps local +x onto world −z, so travel toward +z is NEGATIVE in x. */
   headNode.position.copy(headHome);
-  headNode.position.x -= (D.headZ - headCentreHomeZ) / rigScale;
+  headNode.position[rigCfg.travelAxis] +=
+    rigCfg.travelSign * (D.headZ - headCentreHomeZ) / rigScale;
   if (laser) {
     laser.visible = true;
     laser.position.set(D.crossX, LASER_Y, D.headZ);
@@ -685,8 +716,12 @@ function landmarkTargets() {
   try { lm = findLandmarks(ph); } catch { return null; }
   if (!lm) return null;
   if (D.region === 'spine') {
-    // the crest scan gives the iliac crest; ASIS sits ~2 cm below it on this subject
-    const asis = lm.crestCm - lm.dirSup * 2;
+    /* The landmark scan finds the ILIAC CREST, whose summit sits about the L4-L5 interspace.
+       The ASIS is a good 7 cm inferior to it — not the 2 cm this used to assume, which put
+       the whole field two levels too high and had it analysing T12. From the ASIS the laser
+       goes 1 inch up, and that marks the INFERIOR edge of the sweep, so the window opens at
+       L5-S1 and runs superiorly to T11-T12. */
+    const asis = lm.crestCm - lm.dirSup * 7;
     return { z: asis + lm.dirSup * INCH, x: 0, label: '1 in above the ASIS midline' };
   }
   // greater trochanter is level with the crest minus ~7 cm on an adult femur
@@ -780,13 +815,37 @@ function buildLaser() {
   three.handGroup.parent.add(laser);
 }
 
-/* Load the scanned bed + head and stand them in the room. The scan's long axis is x and
-   the room's couch axis is z, so it turns a quarter turn; the table top is driven to y = 0
-   because that is the plane every mode already lies its subject on. */
+/* Load the selected machine and stand it in the room: turned so its long axis lies along
+   the couch, scaled so the table is TABLE_LEN_CM end to end, and dropped so the patient
+   surface sits at y = 0 — the plane every mode already lies its subject on. */
+/* Swap machines. The old one is taken out of the scene and its GPU buffers released — a
+   scanned rig is 3.5 MB of texture and geometry, and leaving both resident to toggle
+   between them would cost more than re-fetching the rare times anyone switches. */
+export function setRig(key) {
+  if (!RIGS[key] || rigCfg === RIGS[key]) return;
+  rigCfg = RIGS[key];
+  if (ctx?.S?.dxa) ctx.S.dxa.rig = key;
+  if (scannedRig) {
+    scannedRig.parent?.remove(scannedRig);
+    scannedRig.traverse((o) => {
+      if (!o.isMesh) return;
+      o.geometry?.dispose();
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => { m?.map?.dispose(); m?.dispose(); });
+    });
+    scannedRig = null; bedNode = null; headNode = null; headHome = null;
+  }
+  loadScannedRig();
+  document.querySelectorAll('#dxRigSeg button')
+    .forEach((b) => b.classList.toggle('on', b.dataset.rig === key));
+}
+
 function loadScannedRig() {
   const { THREE, three } = ctx;
   if (!ctx.loadModelUrl) return;
-  ctx.loadModelUrl(ctx.baseUrl + 'models/rigs/dxa_rig.glb').then((g) => {
+  const want = rigCfg;
+  ctx.loadModelUrl(ctx.baseUrl + want.url).then((g) => {
+    if (rigCfg !== want) return;                   // switched again while this was in flight
     g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     let bed = null, hd = null;
     g.traverse((o) => {
@@ -804,17 +863,16 @@ function loadScannedRig() {
     scannedRig = new THREE.Group();
     scannedRig.add(g);
     g.scale.setScalar(rigScale);
-    g.rotation.y = Math.PI / 2;                    // scan's long x -> the room's couch z
+    g.rotation.y = want.rotY;                      // lay the long axis along the couch
     /* Seat the PATIENT SURFACE at y = 0, which is the plane every mode lies its subject on.
-       Not the bed's bounding-box top: that is 0.18 in the scan's units and belongs to the
-       rail the arm rides, so dropping by it would leave the body floating 20 cm clear.
-       The surface is the largest upward-facing plane in the bed — measured over the mesh,
-       it carries 1.111 of area against 0.376 for the next candidate, and sits at -0.03. */
-    bedTopY = BED_TOP_LOCAL * rigScale;
+       NOT the bed's bounding-box top — on v1 that is the rail the arm rides, and dropping
+       by it leaves the body floating 20 cm clear. Each model's surface was measured as the
+       largest upward-facing plane in its bed and is recorded in RIGS. */
+    bedTopY = want.surfaceY * rigScale;
     g.position.y -= bedTopY;
     scannedRig.visible = false;
     three.handGroup.parent.add(scannedRig);
-    bedNode = bed; headNode = hd;
+    bedNode = bed; headNode = hd; scannedRig.userData.rigKey = want.key;
     headHome = hd.position.clone();
     // where the arm sits before anyone drives it, in room cm — syncHead subtracts this so
     // the head straddles the laser rather than trailing it by the length of the table
@@ -890,6 +948,10 @@ export function initDXA(context) {
     b.addEventListener('pointercancel', stop);
   });
   $('dxLaserHome')?.addEventListener('click', () => { D.crossX = 0; syncHead(); syncPad(); });
+  document.querySelectorAll('#dxRigSeg button').forEach((b) => {
+    b.addEventListener('click', () => { setRig(b.dataset.rig); parkAtLandmark(); });
+  });
+  if (D.rig && RIGS[D.rig]) rigCfg = RIGS[D.rig];
   // The regions are dragged on the film itself, so the handlers live on that canvas rather
   // than going through the 3D pointer router — nothing else competes for it in this mode.
   const film = $('film');

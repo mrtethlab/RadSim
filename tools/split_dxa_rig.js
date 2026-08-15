@@ -12,11 +12,24 @@
    at -0.02 there are 656, and at 0.000 there are none. */
 const fs = require('fs');
 const path = require('path');
-// usage: node tools/split_dxa_rig.js [source.glb] [out.glb]
-const SRC = process.argv[2] || 'C:/Users/mathi/Documents/ComfyUI/output/3D/Hy3D_textured_00040_.glb';
-const OUT = process.argv[3] ||
-  path.join(__dirname, '..', 'apps', 'web', 'public', 'models', 'rigs', 'dxa_rig.glb');
-const SPLIT_Y = 0.0;                  // the table surface: the whole arm lives above it
+/* Both scans put the arm entirely above y = 0 in their own frame, so one plane serves both
+   — but they are otherwise oriented differently, and dxa.js needs to know which way each
+   one lies. Measured per model rather than assumed:
+     v1  long axis x, table surface at y = -0.03, arm at one END of the table
+     v2  long axis z, table surface at y = -0.09, arm mid-table, column on the -x side
+   usage: node tools/split_dxa_rig.js [v1|v2] */
+const MODELS = {
+  v1: { src: 'C:/Users/mathi/Documents/ComfyUI/output/3D/Hy3D_textured_00040_.glb',
+        out: 'dxa_rig.glb',    splitY: 0.0 },
+  v2: { src: 'C:/Users/mathi/Downloads/Hy3D_textured_00041_.glb',
+        out: 'dxa_rig_v2.glb', splitY: 0.0 },
+};
+const WHICH = process.argv[2] || 'v1';
+const M = MODELS[WHICH];
+if (!M) { console.error('unknown model', WHICH, '- expected', Object.keys(MODELS).join('|')); process.exit(1); }
+const SRC = M.src;
+const OUT = path.join(__dirname, '..', 'apps', 'web', 'public', 'models', 'rigs', M.out);
+const SPLIT_Y = M.splitY;             // the table surface: the whole arm lives above it
 
 const b = fs.readFileSync(SRC);
 const jsonLen = b.readUInt32LE(12);
