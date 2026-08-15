@@ -532,18 +532,22 @@ export function dxaHideExtras() { if (laser) laser.visible = false; }
    The box rig below it is the fallback if the fetch fails — the mode still has to work. */
 const RIG_SPLIT_Y = 0.15;             // recorded so the offline split can be reproduced
 const BED_TOP_LOCAL = -0.03;          // the patient surface, in the scan's own units
-let bedNode = null, headNode = null, rigScale = 1, bedTopY = 0, bedLenCm = 0;
+let bedNode = null, headNode = null, rigScale = 1, bedTopY = 0, bedLenCm = 0, headCentreHomeZ = 0;
 /* Drive the arm and its laser to wherever the pad has put them. The head travels along the
    couch only; the laser's cross slides across the table independently, which is what the
    left/right keys on a real console do — they re-centre the measuring field, not the arm. */
 function syncHead() {
   if (!headNode || !headHome) return;
   const { THREE } = ctx;
-  // headZ is cm along the couch, + toward the head end. The node lives in the scan's own
-  // frame, before the quarter turn that stands the table up in the room, and that turn maps
-  // local +x onto world −z — so travelling toward +z means going NEGATIVE in x here.
+  /* headZ is where the LASER is, in cm along the couch, and the arm has to straddle it: the
+     laser is projected from the head, so the two cannot drift apart. The scan's arm does not
+     sit at the origin of its own frame — it is parked at one end of the table — so the head's
+     home centre is measured once after load and subtracted here. Without that, headZ = 0 put
+     the cross at the table's middle and the arm 65 cm away at the end of its rails.
+     The node lives in the scan's frame, before the quarter turn that stands the table up,
+     and that turn maps local +x onto world −z, so travel toward +z is NEGATIVE in x. */
   headNode.position.copy(headHome);
-  headNode.position.x -= D.headZ / rigScale;
+  headNode.position.x -= (D.headZ - headCentreHomeZ) / rigScale;
   if (laser) {
     laser.visible = true;
     laser.position.set(D.crossX, LASER_Y, D.headZ);
@@ -650,12 +654,13 @@ function buildRig() {
    operator actually aims with. Drawn slightly above the couch so it reads ON the body
    rather than through it, and left depth-testing off so it stays visible over the skin. */
 const LASER_Y = 22;                   // just above a supine torso
+const LASER_IN = 2;                   // the cross is 2 in across, as on the machine
 function buildLaser() {
   const { THREE, three } = ctx;
   const m = new THREE.LineBasicMaterial({ color: 0xff2d2d, transparent: true,
     opacity: 0.95, depthTest: false });
   const g = new THREE.BufferGeometry();
-  const A = 13;                       // arm half-length, cm
+  const A = (LASER_IN * INCH) / 2;    // half-length, cm — a small centring mark, not a grid
   g.setAttribute('position', new THREE.Float32BufferAttribute(
     [-A, 0, 0, A, 0, 0, 0, 0, -A, 0, 0, A], 3));
   laser = new THREE.LineSegments(g, m);
@@ -699,8 +704,12 @@ function loadScannedRig() {
     scannedRig.visible = false;
     three.handGroup.parent.add(scannedRig);
     bedNode = bed; headNode = hd;
-    // the head rides on its own group so the pad can slide it without touching the bed
     headHome = hd.position.clone();
+    // where the arm sits before anyone drives it, in room cm — syncHead subtracts this so
+    // the head straddles the laser rather than trailing it by the length of the table
+    scannedRig.updateMatrixWorld(true);
+    const hb = new THREE.Box3().setFromObject(hd);
+    headCentreHomeZ = (hb.min.z + hb.max.z) / 2;
     dxaSyncScene();
   }).catch(() => { /* the box rig remains */ });
 }

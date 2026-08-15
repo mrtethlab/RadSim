@@ -1,15 +1,22 @@
 /* Split the scanned DXA bed into two named nodes, 'bed' and 'head', the way the OEC rig
    was split, so dxa.js can find them by name and translate the head on its own.
 
-   The scan is one fused mesh of 50k triangles. The head separates on height alone:
-   everything above y = 0.15 lies in x [-0.94, -0.58] — a narrow band at one end of the
-   2.0-long table — and spans the full width z [-0.50, 0.49], which is exactly a scanning
-   arm. Both nodes share the original vertex and UV buffers and the single texture; only
-   the index arrays differ, so this costs two index views and nothing else. */
+   The arm separates on height alone, but the plane has to be the TABLE SURFACE and not the
+   height of the horizontal unit. The arm is an L: a horizontal head reaching across the
+   table at y 0.20..0.44, carried on a vertical column at y 0.00..0.20 which is a narrow
+   post at z [-0.53,-0.34] on the near side. Cutting at 0.15 severs that column and leaves
+   its lower half welded to the table — which is exactly what it looked like.
+   Cut at y = 0.000 and the arm comes away whole: 8 480 triangles above the plane, every one
+   inside the arm's own x band [-0.96,-0.54], and nothing of the table above it. Measured
+   across candidates — at -0.005 there are still 113 stray triangles of the table's near lip,
+   at -0.02 there are 656, and at 0.000 there are none. */
 const fs = require('fs');
-const SRC = 'C:/Users/mathi/Documents/ComfyUI/output/3D/Hy3D_textured_00040_.glb';
-const OUT = 'C:/Users/mathi/git/RadSim/apps/web/public/models/rigs/dxa_rig.glb';
-const SPLIT_Y = 0.15;
+const path = require('path');
+// usage: node tools/split_dxa_rig.js [source.glb] [out.glb]
+const SRC = process.argv[2] || 'C:/Users/mathi/Documents/ComfyUI/output/3D/Hy3D_textured_00040_.glb';
+const OUT = process.argv[3] ||
+  path.join(__dirname, '..', 'apps', 'web', 'public', 'models', 'rigs', 'dxa_rig.glb');
+const SPLIT_Y = 0.0;                  // the table surface: the whole arm lives above it
 
 const b = fs.readFileSync(SRC);
 const jsonLen = b.readUInt32LE(12);
