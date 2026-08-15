@@ -134,42 +134,56 @@ export function findLandmarks(ph) {
    find the shape the anatomy makes rather than pace out a number from another landmark. */
 function findTrochanters(ph, aOf, crestZ, dirSup) {
   const nx = ph.nx, ny = ph.ny, nz = ph.nz, data = ph.data, vs = ph.vs;
-  const MIN_W = 2.5, MAX_W = 10;                 // a proximal femur in cross-section, cm
-  const PELVIS_W = 18;                           // both innominates read as one mass
+  const isBone = (x, y, z) => {
+    if (x < 0 || y < 0 || z < 0 || x >= nx || y >= ny || z >= nz) return false;
+    const id = data[(z * ny + y) * nx + x];
+    return id < aOf.length && aOf[id] >= 0.35;
+  };
   const cxVox = nx / 2;
-  const found = { L: null, R: null };
-  let pastPelvis = false;
-  for (let step = 1; step < nz; step++) {
-    const z = Math.round(crestZ - dirSup * step);
-    if (z < 0 || z >= nz) break;
-    const col = new Uint8Array(nx);
-    for (let y = 0; y < ny; y++) {
-      const row = (z * ny + y) * nx;
-      for (let x = 0; x < nx; x++) { const id = data[row + x]; if (id < aOf.length && aOf[id] >= 0.35) col[x] = 1; }
+  /* Counting islands down from the crest does not work. The ilium separates from the sacrum
+     well ABOVE the hip joint, so the first free-standing lateral mass is the acetabular roof
+     and calling it the trochanter puts the whole field four centimetres high — which is
+     exactly what it did, with the acetabulum landing at the bottom of the picture instead of
+     the top.
+
+     The femoral HEAD is unambiguous instead: it is the roundest thing in the pelvis, so it
+     is the centre of the largest sphere that fits inside bone anywhere out to the side. And
+     the tip of the greater trochanter lies level with the centre of the femoral head — the
+     relationship every AP pelvis is read by — so finding the one gives the other. */
+  const found = {};
+  for (const side of ['L', 'R']) {
+    const sgn = side === 'L' ? -1 : +1;          // world -x is the patient's left
+    const xa = Math.round(cxVox + sgn * 16 / vs[0]), xb = Math.round(cxVox + sgn * 3 / vs[0]);
+    const x0 = Math.min(xa, xb), x1 = Math.max(xa, xb);
+    const z0 = Math.round(crestZ - dirSup * 20 / vs[2]), z1 = Math.round(crestZ - dirSup * 5 / vs[2]);
+    let best = { r: 0 };
+    for (let z = Math.min(z0, z1); z <= Math.max(z0, z1); z += 2) {
+      for (let y = 2; y < ny - 2; y += 2) {
+        for (let x = x0; x <= x1; x += 2) {
+          if (!isBone(x, y, z)) continue;
+          let r = 1;
+          for (; r < 16; r++) {
+            if (!isBone(x + r, y, z) || !isBone(x - r, y, z) || !isBone(x, y + r, z)
+              || !isBone(x, y - r, z) || !isBone(x, y, z + r) || !isBone(x, y, z - r)) break;
+          }
+          if (r > best.r) best = { r, x, y, z };
+        }
+      }
     }
-    const runs = [];
-    let s = -1;
-    for (let x = 0; x <= nx; x++) {
-      const on = x < nx && col[x];
-      if (on && s < 0) s = x;
-      else if (!on && s >= 0) { runs.push({ a: s, b: x - 1, w: (x - s) * vs[0], c: (s + x - 1) / 2 }); s = -1; }
-    }
-    if (!runs.length) continue;
-    /* THE PELVIS FIRST. At the crest the ilium is already a lateral, femur-sized island on
-       both sides, so looking straight for one finds the wing and calls it a trochanter —
-       which is how the first attempt put the landmark 9 cm high, back at the crest it
-       started from. The femur only counts once the sweep has passed the body of the pelvis,
-       and the pelvis is unmistakable: one mass 25-30 cm across, spanning both innominates. */
-    if (!pastPelvis) { if (Math.max(...runs.map((r) => r.w)) >= PELVIS_W) pastPelvis = true; continue; }
-    for (const r of runs) {
-      const off = (r.c - cxVox) * vs[0];
-      if (r.w < MIN_W || r.w > MAX_W || Math.abs(off) < 4) continue;
-      const side = off < 0 ? 'L' : 'R';          // world -x is the patient's left, as elsewhere
-      if (!found[side]) found[side] = { zCm: (z + 0.5) * vs[2] + ph.min[2], x: Math.abs(off) };
-    }
-    if (found.L && found.R) break;
+    if (!best.r) continue;
+    const headZ = (best.z + 0.5) * vs[2] + ph.min[2];
+    // the shaft, six centimetres below the head, is what the laser lines up with
+    const zs = Math.round(best.z - dirSup * 6 / vs[2]);
+    // Only bone near the head counts. This subject's arms lie along the thighs, and a
+    // centroid taken across the whole lateral band picks up the forearm and drags the shaft
+    // four centimetres out — which then aims the neck search off into the pubis.
+    const nearA = Math.round(best.x - 4 / vs[0]), nearB = Math.round(best.x + 4 / vs[0]);
+    let sx = 0, sn = 0;
+    for (let y = 0; y < ny; y++) for (let x = Math.max(x0, nearA); x <= Math.min(x1, nearB); x++) if (isBone(x, y, zs)) { sx += x; sn++; }
+    const shaftX = sn ? Math.abs(((sx / sn) - cxVox) * vs[0]) : Math.abs((best.x - cxVox) * vs[0]);
+    found[side] = { zCm: headZ, x: shaftX, headX: Math.abs((best.x - cxVox) * vs[0]) };
   }
-  const fallback = { zCm: (crestZ + 0.5) * vs[2] + ph.min[2] - dirSup * 9, x: 8 };
+  const fallback = { zCm: (crestZ + 0.5) * vs[2] + ph.min[2] - dirSup * 13, x: 8 };
   return { L: found.L || found.R || fallback, R: found.R || found.L || fallback };
 }
 // which way is superior: the spine's midline bone thins toward the pelvis and continues
@@ -281,7 +295,8 @@ export function acquire(onRow, onDone) {
   const tro = lm.troch?.[D.region === 'hipR' ? 'R' : 'L'];
   scan = { nx, nz, lo, hi, truth, x0, z0, px: PX_CM, region: D.region, loss: D.loss || 0,
     crestCm: lm.crestCm, dirSup: lm.dirSup,
-    trochZ: tro ? tro.zCm : null, trochX: tro ? (D.region === 'hipL' ? -tro.x : tro.x) : null };
+    trochZ: tro ? tro.zCm : null, trochX: tro ? (D.region === 'hipL' ? -tro.x : tro.x) : null,
+    headX: tro && tro.headX != null ? (D.region === 'hipL' ? -tro.headX : tro.headX) : null };
   rasterRow = 0; scanning = true;
 
   const step = () => {
@@ -523,11 +538,10 @@ function fitShaft(sc, bmd, tc, tr) {
 
 export function findFemur(sc, bmd) {
   const { nx, nz, px } = sc;
-  if (sc.trochX == null) return null;
+  if (sc.trochX == null || sc.headX == null) return null;
   const tc = (sc.trochX - sc.x0) / px - 0.5;      // trochanter, in scan coordinates
   const tr = (sc.trochZ - sc.z0) / px - 0.5;
   if (!(tc > 0 && tc < nx && tr > 0 && tr < nz)) return null;
-  const med = sc.region === 'hipL' ? +1 : -1;     // which way the midline lies, in columns
 
   const { p, u } = fitShaft(sc, bmd, tc, tr);
   const uT = [-u[1], u[0]];                       // across the shaft
@@ -537,28 +551,23 @@ export function findFemur(sc, bmd) {
      ridge running superomedially and it wins clearly. Then walk out along the winner and
      watch the width — the narrowest cross-section IS the neck, which is where a console
      puts the box and where a fracture starts. */
-  const pivot = [p[0] + u[0] * (tr - p[1]), tr];
-  const RAY = Math.round(6 / px);
-  // The neck-shaft angle is the angle at the DISTAL shaft, which is why the sweep starts
-  // from the shaft pointing at the knee. Swinging the proximal direction instead sends the
-  // search inferolaterally, out through the trochanter and off the bottom of the picture.
-  const dn = [-u[0], -u[1]];
-  let best = -1, bestAng = 0;
-  for (let deg = 100; deg <= 160; deg += 2) {
-    const th = deg * Math.PI / 180;
-    // rotate the shaft direction toward the midline by the neck-shaft angle
-    const cs = Math.cos(th), sn = Math.sin(th) * med;
-    const d = [dn[0] * cs - dn[1] * sn, dn[0] * sn + dn[1] * cs];
-    let sum = 0;
-    for (let t = Math.round(1.5 / px); t < RAY; t++) {
-      const c = Math.round(pivot[0] + d[0] * t), r = Math.round(pivot[1] + d[1] * t);
-      if (c < 0 || r < 0 || c >= nx || r >= nz) break;
-      sum += bmd[r * nx + c];
-    }
-    if (sum > best) { best = sum; bestAng = th; }
-  }
-  const cs = Math.cos(bestAng), sn = Math.sin(bestAng) * med;
-  const nAx = [dn[0] * cs - dn[1] * sn, dn[0] * sn + dn[1] * cs];
+  // the neck meets the shaft at the intertrochanteric line, about 4.5 cm below the head —
+  // taking the junction level with the head instead makes the neck axis horizontal
+  const pivR = tr - 4.5 / px;
+  const pivot = [p[0] + u[0] * (pivR - p[1]), pivR];
+  /* THE NECK IS THE LINE FROM THE HEAD TO THE SHAFT — that is what a femoral neck IS, and
+     both ends are already measured: the head centre as the largest sphere fitting inside
+     bone, the shaft by least squares down the diaphysis. An earlier version swung a ray
+     through the plausible neck-shaft angles and kept the densest, which sounds like a
+     measurement and is not one: medial of the femur lies the acetabulum, then the pubis,
+     so the most mineral is always found by aiming further and further inboard, and the
+     "neck" ended up on the pubic ramus. Two reliable endpoints beat a search over a field
+     where every direction is full of bone. */
+  const headC = [(sc.headX - sc.x0) / px - 0.5, tr];
+  let nAx = [headC[0] - pivot[0], headC[1] - pivot[1]];
+  const nL = Math.hypot(nAx[0], nAx[1]);
+  if (!(nL > 1)) return null;
+  nAx = [nAx[0] / nL, nAx[1] / nL];
   const nT = [-nAx[1], nAx[0]];
 
   // width across the neck, walking outward: the minimum is the neck proper
@@ -586,6 +595,8 @@ export function findFemur(sc, bmd) {
   const aOf2 = (c, r) => (c - H[0]) * nAx[0] + (r - H[1]) * nAx[1];
   const bOf = (c, r) => (c - H[0]) * nT[0] + (r - H[1]) * nT[1];
   const sNeck = sOf(H[0], H[1]), tLim = T_LIMIT / px;
+  // which side of the shaft axis is away from the midline: the head is on the medial side
+  const latSign = -Math.sign(tOf(headC[0], headC[1])) || 1;
   const sStop = sNeck - DISTAL / px, sTop = sNeck + 3.5 / px;   // above the trochanter is ilium
 
   const mk = () => new Uint8Array(nx * nz);
@@ -598,7 +609,13 @@ export function findFemur(sc, bmd) {
     if (Math.abs(a) <= halfH && Math.abs(b) <= halfWpx) { neck[k] = 1; total[k] = 1; continue; }
     if (a > halfH) continue;                      // femoral head and acetabulum: never counted
     if (s > sTop || s < sStop) continue;
-    if (s > sNeck) { troch[k] = 1; total[k] = 1; }
+    /* Greater trochanter or intertrochanteric? The trochanter is the LATERAL mass — that is
+       what makes it the greater trochanter — so the split is across the shaft, not up it.
+       Dividing by height works only while the neck runs obliquely; on a leg in neutral or
+       external rotation the neck is foreshortened almost to vertical, everything falls below
+       the neck's level and the trochanter collapses to a sliver. Lateral of the shaft axis
+       is true in any rotation. */
+    if (t * latSign > 0) { troch[k] = 1; total[k] = 1; }
     else { inter[k] = 1; total[k] = 1; }
   }
 
