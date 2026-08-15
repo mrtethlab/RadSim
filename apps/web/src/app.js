@@ -2007,8 +2007,18 @@ async function computeRadiograph(){
      fluoroscopic noise on a radiograph, and it was burying the anatomy — measured 9.1 %
      in a chest region where a real DR image sits at 1-2 %.
      A radiograph is three orders of magnitude more exposure than a fluoro pulse, so the
-     budget is now 6000: the same lung region lands near 1 %, the mediastinum near 3 %,
-     and detail stops competing with grain.
+     budget is now 6000.
+     Those were estimates. Since measured properly, by two-exposure differencing: expose
+     the same subject twice with AEC off so the dose is identical, subtract, and the
+     anatomy cancels leaving only mottle — sigma = SD(difference)/sqrt(2). 128 000 pixels,
+     3 of them coincidentally identical, so the two really are independent.
+     The model is exactly Poisson: sigma^2/mean held at 3.26e-5 across the full 3.7x
+     dynamic range, and inverting it recovers 30 675 quanta per pixel against the 30 619
+     this formula asks for at a 35x43 receptor and a 320x400 matrix — 0.18 % out.
+     A gridded chest measures 0.61 % noise in the lungs, 1.16 % mid-tissue and 1.96 %
+     behind the mediastinum, which is where a real DR chest sits. Pull the scatter dial to
+     zero and the retro-mediastinal figure goes to 5.17 %, because the fog had been
+     donating quanta: the same photons that wreck the contrast also quiet the grain.
      Note this constant sets NOISE ONLY. Detector.capture divides the noisy count back by
      photonScale, so the mean signal, the EI and the displayed brightness are untouched —
      which is why it can be recalibrated without disturbing the AEC or the APR chart. */
