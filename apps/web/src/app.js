@@ -371,23 +371,31 @@ async function setSubject(sub){
   if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
   // backend-only models (large, no volume in the browser) MUST use the Python engine
   applyBackendOnly(!!vm.backendOnly);
-  // A new subject invalidates any solved timeline: the arclength volume and the vessel set
-  // both belong to the old model.
-  S.contrast.timeline=null; S.contrast.sVol=null; S.contrast.sVolFor=null;
-  S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false; S.contrast.static=false;
-  // The barium field belongs to the old model in exactly the same way.
-  S.barium.timeline=null; S.barium.giVol=null; S.barium.giVolFor=null;
-  S.barium.lut=null; S.barium.lutT=null; S.barium.on=false;
-  if($('ctrstPanel')) ctrstApply();
-  // The GI geometry belongs to the old model too, so drop it and re-evaluate whether the new
-  // subject can carry barium at all.
-  S.barium.gi=null; S.barium.study=null; S.barium.running=false;
-  if($('giPanel')) giApply();
+  resetStudyState();
   showActive(sub);
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
   if(sel) sel.value=sub;
   syncScene();
 }
+/* Everything an injected study leaves behind on the model. A study belongs to one patient
+   on one machine, so it survives neither a change of subject nor a change of modality: the
+   arclength volume and the vessel set are solved against the old geometry, and the bolus
+   itself is a fact about the last ten minutes in the last room. Clearing it here is what
+   lets every downstream consumer assume the phantom it gets is the plain model — DXA in
+   particular, whose two-material solve would otherwise read a leftover aortic bolus as
+   mineral and quietly inflate the BMD. */
+function resetStudyState(){
+  S.contrast.timeline=null; S.contrast.sVol=null; S.contrast.sVolFor=null;
+  S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false; S.contrast.static=false;
+  S.barium.timeline=null; S.barium.giVol=null; S.barium.giVolFor=null;
+  S.barium.lut=null; S.barium.lutT=null; S.barium.on=false;
+  if($('ctrstPanel')) ctrstApply();
+  // The GI geometry is solved against the model too, so drop it and re-evaluate whether
+  // the subject can carry barium at all.
+  S.barium.gi=null; S.barium.study=null; S.barium.running=false;
+  if($('giPanel')) giApply();
+}
+
 /* Photo-textured display skin. Purely cosmetic: the attenuation always comes from the
    voxel material volume, so switching this never changes an image. Keeps the textured
    map and gives it skin-like shading (matte, no metalness). */
@@ -855,14 +863,8 @@ function buildPhantom(){
   const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10 + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
   const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R);
-  /* Iodine and barium belong to the modes that give them. Densitometry never does, and it
-     is the one mode where leftover contrast would do real damage rather than just look odd:
-     its two-material solve is bone against soft tissue, so a bolus still sitting in the
-     aorta from an earlier x-ray gets read as mineral and quietly inflates the BMD. The
-     injector's tab is hidden in this mode, so the operator could not even see what was
-     wrong — which is exactly why the phantom has to refuse it rather than rely on the UI. */
-  const usesContrast = S.mode!=='dxa' && S.mode!=='mammo' && S.mode!=='us';
-  if(usesContrast){ applyContrast(ph); applyBarium(ph); }
+  applyContrast(ph);
+  applyBarium(ph);
   return ph;
 }
 
@@ -3457,6 +3459,7 @@ window.addEventListener('load',()=>{
            // them is exactly what the exercise is about.
            contrastStart: ()=>{ if(S.contrast.on && S.contrast.timeline) ctrstStart(); },
            contrastReset: ()=>ctrstReset(),
+           resetStudy: ()=>resetStudyState(),
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on),
