@@ -511,8 +511,8 @@ export function analyse(sc, bmd) {
    Two frames sit on top of that — s/t along and across the SHAFT, a/b along and across the
    NECK — and every region is a pair of inequalities in them. */
 const NECK_H = 1.5;         // cm along the neck axis: the GE Lunar neck ROI height
-const DISTAL = 5.0;         // cm below the neck, where the total-hip box stops
-const T_LIMIT = 5.0;        // cm either side of the shaft: keeps the ischium out
+const TROCH_RUN = 4.5;      // cm past the neck: the trochanteric mass, then diaphysis
+const B_LIMIT = 5.0;        // cm either side of the NECK: keeps the ischium out
 
 function fitShaft(sc, bmd, tc, tr) {
   const { nx, nz, px } = sc;
@@ -624,23 +624,37 @@ export function findFemur(sc, bmd) {
   const tOf = (c, r) => (c - p[0]) * uT[0] + (r - p[1]) * uT[1];
   const aOf2 = (c, r) => (c - headC[0]) * nAx[0] + (r - headC[1]) * nAx[1];
   const bOf = (c, r) => (c - headC[0]) * nT[0] + (r - headC[1]) * nT[1];
-  // is +t medial or lateral? read it off the shaft's own across-vector, in columns
-  const latSign = -Math.sign(uT[0] * medSign) || 1;
-  const sNeck = sOf(H[0], H[1]), tLim = T_LIMIT / px;
-  const sStop = sNeck - DISTAL / px, sTop = sNeck + 4.5 / px;
+  const sNeck = sOf(H[0], H[1]);
+  const aMax = nEnd + TROCH_RUN / px;                   // past this, along the neck, is diaphysis
+
+  /* WHICH SIDE OF THE NECK IS THE TROCHANTER. Splitting on the SHAFT coordinate — lateral of
+     the shaft axis, above the neck's level — produced the two things that cannot be true of
+     a femur: a trochanter lying on the mid-shaft, and a trochanter sandwiched between the
+     neck and the intertrochanteric region. Both follow from measuring across the wrong axis.
+     The neck runs diagonally, and the trochanteric mass divides ACROSS IT: the greater
+     trochanter is the bone superolateral of the neck axis, the intertrochanteric region the
+     wedge inferomedial of it running down to the lesser trochanter. So the sign of b decides
+     it, and b is measured off the neck. nT is nAx turned a quarter; work out which way that
+     points by asking where it puts a step toward the head's own superior side. */
+  const supSign = nT[1] > 0 ? +1 : -1;            // rows rise toward the head, so +row is superior
 
   const mk = () => new Uint8Array(nx * nz);
   const neck = mk(), troch = mk(), inter = mk(), total = mk();
   for (let r = 0; r < nz; r++) for (let c = 0; c < nx; c++) {
     const k = r * nx + c;
     if (bmd[k] <= BONE) continue;
-    const a = aOf2(c, r), b = bOf(c, r), s = sOf(c, r), t = tOf(c, r);
-    if (Math.abs(t) > tLim) continue;             // the ischium, and the far side of the pelvis
+    const a = aOf2(c, r), b = bOf(c, r);
+    /* Bound the field in the NECK's frame, not the shaft's. The guard used to cut anything
+       more than five centimetres either side of the fitted shaft axis, and the greater
+       trochanter sits five and a half out — so the one region this was meant to find was the
+       one it threw away, every time. The shaft fit is the least trustworthy thing here
+       anyway: below the trochanter this subject's forearm lies alongside the femur. The neck
+       frame needs no fit, and the ischium is far enough off it to be excluded just as well. */
+    if (Math.abs(b) > B_LIMIT / px) continue;
     if (a < headR) continue;                      // the femoral head: never part of total hip
+    if (a > aMax) continue;                       // out along the diaphysis
     if (a <= nEnd && Math.abs(b) <= halfWpx) { neck[k] = 1; total[k] = 1; continue; }
-    if (s > sTop || s < sStop) continue;
-    // lateral of the shaft is the greater trochanter; medial and below it, intertrochanteric
-    if (t * latSign > 0 && s > sNeck - 1.5 / px) { troch[k] = 1; total[k] = 1; }
+    if (b * supSign > 0) { troch[k] = 1; total[k] = 1; }
     else { inter[k] = 1; total[k] = 1; }
   }
 
@@ -679,7 +693,7 @@ export function findFemur(sc, bmd) {
     { label: 'Inter', mask: inter, site: 'inter' },
     { label: 'Total', mask: total, site: 'total' },
   ].filter((r) => count(r.mask) > 4);
-  return { rois, axes: { p, u, H, nAx, headC, headR, nStart, nEnd, halfW: halfWpx, sNeck, sStop } };
+  return { rois, axes: { p, u, H, nAx, headC, headR, nStart, nEnd, aMax, halfW: halfWpx, sNeck } };
 }
 
 /* ---- the numbers on the report ---------------------------------------------
