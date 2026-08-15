@@ -19,17 +19,29 @@ const path = require('path');
      v2  long axis z, table surface at y = -0.09, arm mid-table, column on the -x side
    usage: node tools/split_dxa_rig.js [v1|v2] */
 const MODELS = {
+  /* v1's arm stands ON the table: below the surface there is table geometry at every x,
+     inside the column's z band and out, so there is no free-standing column to isolate and
+     a single horizontal plane is the whole story. */
   v1: { src: 'C:/Users/mathi/Documents/ComfyUI/output/3D/Hy3D_textured_00040_.glb',
-        out: 'dxa_rig.glb',    splitY: 0.0 },
+        out: 'dxa_rig.glb',
+        isArm: (c) => c.y >= 0.0 },
+  /* v2's arm is a full L — the column runs floor to ceiling beside the table rather than
+     rising off it, so a horizontal plane cuts the column off at the table top and leaves
+     most of it behind. The table's leftmost geometry sits at x = -0.320, so nothing left of
+     -0.34 belongs to it: that half of the rule takes the whole column, floor included, and
+     y >= 0.42 takes the horizontal bar that reaches back across the table.
+     Checked by watching the arm's z extent: at -0.34 it stays in the narrow band
+     [-0.18,0.14], which is the arm alone; loosen it to -0.30 and it blows out to the full
+     [-1.00,0.96], i.e. it has begun eating the table. */
   v2: { src: 'C:/Users/mathi/Downloads/Hy3D_textured_00041_.glb',
-        out: 'dxa_rig_v2.glb', splitY: 0.0 },
+        out: 'dxa_rig_v2.glb',
+        isArm: (c) => c.x <= -0.34 || c.y >= 0.42 },
 };
 const WHICH = process.argv[2] || 'v1';
 const M = MODELS[WHICH];
 if (!M) { console.error('unknown model', WHICH, '- expected', Object.keys(MODELS).join('|')); process.exit(1); }
 const SRC = M.src;
 const OUT = path.join(__dirname, '..', 'apps', 'web', 'public', 'models', 'rigs', M.out);
-const SPLIT_Y = M.splitY;             // the table surface: the whole arm lives above it
 
 const b = fs.readFileSync(SRC);
 const jsonLen = b.readUInt32LE(12);
@@ -56,8 +68,10 @@ const idx = idxV.a.componentType === 5125
 const bedIdx = [], headIdx = [];
 for (let t = 0; t < nT; t++) {
   const a = idx[t*3], b2 = idx[t*3+1], c = idx[t*3+2];
-  const cy = (pos[a*3+1] + pos[b2*3+1] + pos[c*3+1]) / 3;
-  (cy >= SPLIT_Y ? headIdx : bedIdx).push(a, b2, c);
+  const cen = { x: (pos[a*3] + pos[b2*3] + pos[c*3]) / 3,
+                y: (pos[a*3+1] + pos[b2*3+1] + pos[c*3+1]) / 3,
+                z: (pos[a*3+2] + pos[b2*3+2] + pos[c*3+2]) / 3 };
+  (M.isArm(cen) ? headIdx : bedIdx).push(a, b2, c);
 }
 console.log('triangles  bed', bedIdx.length/3, ' head', headIdx.length/3);
 const bbox = (arr) => { const mn=[9,9,9], mx=[-9,-9,-9];
