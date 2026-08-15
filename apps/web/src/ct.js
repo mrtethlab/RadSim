@@ -934,6 +934,18 @@ function resetCTSession() {
 }
 
 function applyMode(mode) {
+  // Walking out of the room ends the study. The bolus, the barium and the solved timelines
+  // all belong to the machine you just left, so a genuine change of modality rebuilds the
+  // model clean rather than handing the next machine a patient who is still opacified.
+  // Guarded on an actual change: re-entering the mode you are already in must not abort an
+  // injection that is mid-run.
+  if (ctx.S.mode !== mode) {
+    ctx.resetStudy?.();
+    // The corner annotations are burned in by whichever modality last drew a film, and each
+    // one writes only the corners it uses. Left alone they outlive their image: walk from
+    // ultrasound to DXA and the empty densitometry film still says US 3.5 MHz.
+    ['fnTL', 'fnTR', 'fnBL', 'fnBR'].forEach((id) => { const e = ctx.$(id); if (e) e.textContent = ''; });
+  }
   // 'home' is a real mode, not the absence of one: it parks the app on the menu with every
   // mode torn down, so nothing from the last machine leaks into the next.
   document.body.classList.toggle('mode-home', mode === 'home');

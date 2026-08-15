@@ -934,6 +934,14 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
    the injector is a setting you dip into, not something you work in. The tab stays visible
    when closed so the feature is discoverable without hunting through settings. */
 .ctrst{position:absolute; top:0; bottom:0; left:0; z-index:12; pointer-events:none}
+/* The injector belongs to the modes that actually run iodine: radiography, CT and
+   fluoroscopy. Densitometry, mammography and ultrasound never give IV contrast — a
+   densitometer measures mineral, a mammogram is a plain soft-tissue film, and an
+   ultrasound has no x-ray beam for iodine to attenuate — so the tab is not merely
+   disabled in those rooms, it is absent. (The barium drawer is already xray-only.) */
+body.mode-dxa #ctrstPanel,
+body.mode-mammo #ctrstPanel,
+body.mode-us #ctrstPanel{display:none}
 /* Slide by transform, not width. The panel is a shrink-to-fit absolutely positioned box, so
    a flex child sized in px gets clamped by percentage max-width against a container that is
    only as wide as the closed tab — the drawer stayed 1px no matter what width it asked for.
@@ -1258,6 +1266,71 @@ body.mode-home .home{display:block}
 .hc-us .hc-art::after{content:''; position:absolute; left:50%; top:6px; width:26px; height:12px;
   margin-left:-13px; border-radius:4px 4px 8px 8px; background:rgba(235,243,247,.85);
   box-shadow:0 0 14px rgba(228,240,248,.4)}
+/* THE DENSITOMETRY REPORT. A printout, so it is deliberately not themed like the rest of
+   the console — white page, black text, the way it would come off the printer and go in
+   the notes. It scrolls inside the bay. */
+.dxreport{position:absolute; inset:0; display:none; background:#20242a; overflow:hidden; z-index:3}
+.dxreport.show{display:block}
+.dxrep-scroll{position:absolute; inset:0; overflow:auto; padding:16px 16px 70px;
+  display:flex; justify-content:center}
+.dxrep-page{width:760px; max-width:100%; background:#fff; color:#111; padding:18px 22px 22px;
+  border-radius:3px; box-shadow:0 10px 40px rgba(0,0,0,.5);
+  font-family:system-ui,-apple-system,"Segoe UI",sans-serif; font-size:11.5px; line-height:1.45}
+.dxrep-empty{color:var(--dim); align-self:center; font-size:13px}
+.dxrep-hd{text-align:center; margin-bottom:12px}
+.dxrep-org{font-size:20px; font-weight:700; letter-spacing:.2px}
+.dxrep-addr{font-size:11px; color:#333}
+.dxrep-pt{width:100%; border:1px solid #444; border-collapse:collapse; margin-bottom:12px}
+.dxrep-pt td{border:0; padding:2px 6px; font-size:11px}
+.dxrep-pt td.k{font-weight:700; width:88px; white-space:nowrap}
+.dxrep-body{display:flex; gap:14px; align-items:flex-start}
+.dxrep-col{flex:1; min-width:0}
+.dxrep-cap{font-weight:700; text-align:center; font-size:11.5px; margin-bottom:5px}
+.dxrep-img{width:100%; background:#000; border:1px solid #999}
+.dxrep-chart{width:100%; border:1px solid #999; background:#fff}
+.dxrep-chart.wide{margin-bottom:8px}
+.dxrep-note{font-size:10px; color:#555; text-align:center; margin-top:3px}
+.dxrep-tab{width:100%; border-collapse:collapse; margin-top:8px; font-size:10.5px}
+.dxrep-tab th,.dxrep-tab td{border:1px solid #666; padding:2px 5px; text-align:right}
+.dxrep-tab th{background:#e6e6e6; text-align:center; font-size:9.5px; line-height:1.2}
+.dxrep-tab td:first-child,.dxrep-tab th:first-child{text-align:left}
+.dxrep-tab tr.sum td{background:#f0f0f0; font-weight:600}
+.dxrep-dx{margin-top:10px; padding:6px 10px; border-radius:3px; font-weight:700; font-size:12px;
+  border:1px solid #666}
+.dxrep-normal{background:#d8f0dc}
+.dxrep-osteopenia{background:#f7efc9}
+.dxrep-osteoporosis{background:#f6d6d2}
+.dxrep-fine{margin-top:12px; font-size:8.6px; line-height:1.5; color:#333;
+  border-top:1px solid #bbb; padding-top:7px}
+/* the review strip, shared by the Image and Report views */
+.dxstrip-wrap{position:absolute; left:0; right:0; bottom:0; display:none; z-index:4;
+  background:linear-gradient(0deg,rgba(6,9,12,.94),rgba(6,9,12,.62) 70%,transparent);
+  padding:12px 10px 8px}
+.dxstrip-wrap.show{display:block}
+.dxstrip{display:flex; gap:6px; overflow-x:auto; justify-content:center}
+.dxthumb{position:relative; flex:0 0 auto; width:44px; height:56px; padding:0; cursor:pointer;
+  background:#0a0e12; border:1px solid var(--edge2); border-radius:3px; overflow:hidden}
+.dxthumb.on{border-color:#5ef09a; box-shadow:0 0 0 1px #5ef09a}
+.dxthumb img{width:100%; height:100%; object-fit:cover; display:block; opacity:.9}
+.dxthumb span{position:absolute; left:0; right:0; bottom:0; font:9px ui-monospace,monospace;
+  background:rgba(0,0,0,.72); color:#cfe8d8; padding:1px 0}
+/* DENSITOMETER ARM PAD. The real console recesses four arrow keys into an oval bezel with
+   a status LED beside them; this is that cluster, close enough that the photo reads as the
+   instruction manual for it. */
+.dxpad{position:relative; width:132px; height:132px; margin:2px auto 0;
+  border-radius:50%/46%; background:radial-gradient(circle at 50% 38%, #2b333c, #1b2128 70%);
+  border:1px solid var(--edge2); box-shadow:inset 0 2px 10px rgba(0,0,0,.55)}
+.dxpad-b{position:absolute; width:40px; height:34px; padding:0; cursor:pointer;
+  background:linear-gradient(180deg,#39424c,#28303a); color:#cfd9e2; font-size:15px; line-height:1;
+  border:1px solid #4a5560; border-radius:7px; transition:background .12s, color .12s}
+.dxpad-b:hover{background:linear-gradient(180deg,#465260,#313b46); color:#eaf2f8}
+.dxpad-b:active{background:#5b6b7a; color:#fff}
+.dxpad-up{left:46px; top:12px}
+.dxpad-down{left:46px; bottom:12px}
+.dxpad-left{left:10px; top:49px}
+.dxpad-right{right:10px; top:49px}
+.dxpad-dot{position:absolute; left:50%; top:50%; width:9px; height:9px; margin:-4.5px 0 0 -4.5px;
+  border-radius:50%; background:#2fd06a; box-shadow:0 0 9px rgba(60,220,120,.8)}
 .hc-body{padding:16px 18px 20px}
 .hc-name{font-family:var(--disp); font-weight:700; font-size:25px; letter-spacing:.5px;
   color:#eef3f8}
@@ -1513,6 +1586,13 @@ body.mode-fluoro .fl-hide{display:none}   /* x-ray/CT display options with no fl
 .tgclab{font-family:var(--seg); font-size:8.5px; letter-spacing:1.2px; color:var(--dmuted2);
   width:26px; text-align:right; flex:none}
 .tgcrow .tgcs{flex:1; margin:0}
+/* Only x-ray and CT put the camera under the operator's control, so everywhere else the
+   Camera heading was labelling an empty box — and now that other sections sit below it in
+   the menu, an empty heading reads as the title of whatever follows. Opt in rather than
+   out: a new mode gets no Camera section until it grows camera controls. */
+#bayCamGrp{display:none}
+body.mode-xray #bayCamGrp, body.mode-ct #bayCamGrp{display:block}
+
 /* ---- ultrasound mode gating ---- */
 .dx-only{display:none}
 body.mode-dxa .dx-only{display:block}

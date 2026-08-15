@@ -520,6 +520,10 @@
     </div>
     <div class="ctpop" id="ctPop"><div class="ctpop-inner" id="ctPopInner"></div></div>
     <div class="bignote" id="bignote">NO IMAGE ACQUIRED — EXPOSE FIRST</div>
+    <!-- Densitometry: the written report, and the strip of stored studies shared by
+         the Image and Report views -->
+    <div class="dxreport" id="dxReport"><div class="dxrep-scroll" id="dxReportPane"></div></div>
+    <div class="dxstrip-wrap" id="dxStripWrap"><div class="dxstrip" id="dxStrip"></div></div>
     <!-- Image-view overlay (x-ray): 4-corner metadata + last-10 review strip -->
     <div class="imgview-ui" id="imgViewUI">
       <div class="ivnote t l" id="ivTL"></div>
@@ -539,11 +543,12 @@
           <div class="segmini" id="contentSeg">
             <button data-c="3d" class="on">3D</button>
             <button data-c="image" id="contentImageBtn">Image</button>
+            <button data-c="report" class="dx-only" id="contentReportBtn">Report</button>
             <button data-c="slices" class="ct-only">Slices</button>
             <button data-c="recons" class="ct-only">Recons</button>
           </div>
         </div>
-        <div>
+        <div id="bayCamGrp">
           <div class="cl">Camera</div>
           <div class="xray-only">
             <div class="segmini" id="camSeg">
@@ -557,6 +562,16 @@
               <button data-cam="lat">Lat-PoV</button>
               <button data-cam="orbit">Orbit</button>
             </div>
+          </div>
+        </div>
+        <!-- Which couch you scan on is scenery, not technique: it changes nothing about the
+             beam or the numbers, so it belongs with the other things you set once and forget
+             rather than on the console beside the controls you actually operate. -->
+        <div class="dx-only">
+          <div class="cl">Scanner table</div>
+          <div class="segmini" id="dxRigSeg">
+            <button data-rig="v2" class="on">Mk II</button>
+            <button data-rig="v1">Mk I</button>
           </div>
         </div>
       </div>
@@ -1320,6 +1335,28 @@
         </div>
       </div>
       <div class="grp dx-only">
+        <div class="lab">Scanner arm</div>
+        <div class="bod">
+          <div class="dxpad" id="dxPad">
+            <button class="dxpad-b dxpad-up"    data-nudge="sup"  title="Move the arm toward the head">&#9651;</button>
+            <button class="dxpad-b dxpad-left"  data-nudge="left" title="Centre the laser toward the patient's right">&#9665;</button>
+            <button class="dxpad-b dxpad-right" data-nudge="right" title="Centre the laser toward the patient's left">&#9655;</button>
+            <button class="dxpad-b dxpad-down"  data-nudge="inf"  title="Move the arm toward the feet">&#9661;</button>
+            <span class="dxpad-dot"></span>
+          </div>
+          <div class="row" style="margin-top:10px"><div class="rl">Arm <small>couch position</small></div>
+            <div class="valchip" id="dxHeadV">0 cm</div></div>
+          <div class="row"><div class="rl">Laser <small>across table</small></div>
+            <div class="valchip" id="dxCrossV">0 cm</div></div>
+          <div class="mini" style="margin-top:8px">
+            <button id="dxLaserHome">&#9678; Centre laser</button>
+          </div>
+          <div class="ctrst-note" id="dxPosNote">Up and down drive the arm along the couch. Left
+            and right move only the centring laser across the table &mdash; the arm itself is
+            wide enough to see the whole width, so it never travels sideways.</div>
+        </div>
+      </div>
+      <div class="grp dx-only">
         <div class="lab">Patient</div>
         <div class="bod">
           <div class="seg" id="dxSexSeg">
@@ -1329,6 +1366,9 @@
           <div class="row" style="margin-top:9px"><div class="rl">Age</div>
             <div class="valchip" id="dxAgeV">62</div></div>
           <input type="range" id="dxAge" min="20" max="90" value="62" step="1">
+          <div class="row" style="margin-top:9px"><div class="rl">Weight</div>
+            <div class="valchip" id="dxWtV">70 kg</div></div>
+          <input type="range" id="dxWt" min="35" max="160" value="70" step="1">
           <div class="ctrst-note">The T-score compares this patient with a <b>young adult of
             the same sex</b>; the Z-score compares them with someone their own age. That is why
             an 80-year-old can be osteoporotic by T and entirely unremarkable by Z &mdash; and
@@ -1350,6 +1390,23 @@
             could not catch. Scan, drop the slider, scan again: the same skeleton walks from
             normal through osteopenia and into osteoporosis, and the series below shows what
             a follow-up study would actually report.</div>
+        </div>
+      </div>
+      <div class="grp dx-only">
+        <div class="lab">Analysis regions</div>
+        <div class="bod">
+          <label class="cttoggle"><input type="checkbox" id="dxShowRois" checked>
+            <span>Show scored regions <small style="color:var(--muted)">(green)</small></span></label>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="dxEditRois">
+            <span>Adjust regions <small style="color:var(--muted)">(drag cuts &amp; edges)</small></span></label>
+          <div class="mini" style="margin-top:8px">
+            <button id="dxRoiReset">&#8635; Re-detect levels</button>
+          </div>
+          <div class="ctrst-note">Green is what the numbers are actually averaged over. BMD is
+            BMC divided by AREA &mdash; a ratio &mdash; so growing a box does not simply grow
+            the answer; it depends what falls inside. Drag an inter-vertebral cut onto its disc
+            space, or pull the side edges clear of the transverse processes, and watch the
+            table move.</div>
         </div>
       </div>
       <div class="grp dx-only">

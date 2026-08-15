@@ -24,7 +24,7 @@ import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
-import { initDXA, dxaApplyMode, dxaSyncScene } from './dxa.js';
+import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay } from './dxa.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -371,23 +371,31 @@ async function setSubject(sub){
   if(cfg.xrayKv){ S.kv=cfg.xrayKv; const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts(); }
   // backend-only models (large, no volume in the browser) MUST use the Python engine
   applyBackendOnly(!!vm.backendOnly);
-  // A new subject invalidates any solved timeline: the arclength volume and the vessel set
-  // both belong to the old model.
-  S.contrast.timeline=null; S.contrast.sVol=null; S.contrast.sVolFor=null;
-  S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false; S.contrast.static=false;
-  // The barium field belongs to the old model in exactly the same way.
-  S.barium.timeline=null; S.barium.giVol=null; S.barium.giVolFor=null;
-  S.barium.lut=null; S.barium.lutT=null; S.barium.on=false;
-  if($('ctrstPanel')) ctrstApply();
-  // The GI geometry belongs to the old model too, so drop it and re-evaluate whether the new
-  // subject can carry barium at all.
-  S.barium.gi=null; S.barium.study=null; S.barium.running=false;
-  if($('giPanel')) giApply();
+  resetStudyState();
   showActive(sub);
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
   if(sel) sel.value=sub;
   syncScene();
 }
+/* Everything an injected study leaves behind on the model. A study belongs to one patient
+   on one machine, so it survives neither a change of subject nor a change of modality: the
+   arclength volume and the vessel set are solved against the old geometry, and the bolus
+   itself is a fact about the last ten minutes in the last room. Clearing it here is what
+   lets every downstream consumer assume the phantom it gets is the plain model — DXA in
+   particular, whose two-material solve would otherwise read a leftover aortic bolus as
+   mineral and quietly inflate the BMD. */
+function resetStudyState(){
+  S.contrast.timeline=null; S.contrast.sVol=null; S.contrast.sVolFor=null;
+  S.contrast.lut=null; S.contrast.lutT=null; S.contrast.on=false; S.contrast.static=false;
+  S.barium.timeline=null; S.barium.giVol=null; S.barium.giVolFor=null;
+  S.barium.lut=null; S.barium.lutT=null; S.barium.on=false;
+  if($('ctrstPanel')) ctrstApply();
+  // The GI geometry is solved against the model too, so drop it and re-evaluate whether
+  // the subject can carry barium at all.
+  S.barium.gi=null; S.barium.study=null; S.barium.running=false;
+  if($('giPanel')) giApply();
+}
+
 /* Photo-textured display skin. Purely cosmetic: the attenuation always comes from the
    voxel material volume, so switching this never changes an image. Keeps the textured
    map and gives it skin-like shading (matte, no metalness). */
@@ -576,7 +584,14 @@ const S = {
         loss:0,              // fractional mineral loss applied to the skeleton, 0..0.4
         // T compares against a young adult of the same SEX, which is why the reference
         // has to be chosen rather than averaged; Z compares against the patient's own age
-        sex:'f', age:62,
+        sex:'f', age:62, weight:70,
+        showRois:true, editRois:false,   // the green scored map, and whether it can be dragged
+        rig:'v2',                        // which scanned table is standing in the room
+        // Where the operator has driven the arm. headZ is the scanning head's centre along
+        // the couch (cm, + toward the head end); crossX slides only the laser's centring
+        // mark across the table, because the head is wide enough to cover the full width
+        // and does not itself travel left or right.
+        headZ:0, crossX:0,
         scans:[] },          // serial acquisitions, for the % change comparison
   // ---- ultrasound (docs/ultrasound.md): the probe, the beam and the display ----
   us:{ probe:'curvi',        // 'curvi' (3-5 MHz sector) | 'linear' (7-12 MHz)
@@ -1683,11 +1698,23 @@ function setContent(c){
   const fluoroImg=(img && S.mode==='fluoro');
   const mammoImg=(img && S.mode==='mammo');
   const usImg=(img && S.mode==='us');
-  const ownMode=(fluoroImg||mammoImg||usImg);
+  const dxaImg=(img && S.mode==='dxa');
+  // Densitometry owns two of these: Image is the archive of scans, Report the archive of
+  // pages. Both draw from the same ten filed studies and share the review strip.
+  const dxaRep=(c==='report' && S.mode==='dxa');
+  const dxrp=$('dxReport'); if(dxrp) dxrp.classList.toggle('show', dxaRep);
+  const dxsw=$('dxStripWrap'); if(dxsw) dxsw.classList.toggle('show', dxaImg||dxaRep);
+  if(dxaRep){ dxaReportToBay();
+    $('bigFilm').style.display='none'; $('bignote').style.display='none';
+    $('view').style.visibility='hidden';
+    $('imgViewUI')?.classList.remove('show');
+    return; }
+  const ownMode=(fluoroImg||mammoImg||usImg||dxaImg);
   const xrayImg=(img && S.hasImage && !scouts && !ownMode);
   let ownShown=false;
   if(ownMode){ $('bigFilm').style.display='block';
-    ownShown=fluoroImg?fluoroImageToBay():mammoImg?mammoImageToBay():usImageToBay();
+    ownShown=fluoroImg?fluoroImageToBay():mammoImg?mammoImageToBay()
+            :dxaImg?dxaImageToBay():usImageToBay();
     if(!ownShown) $('bigFilm').style.display='none'; }
   else $('bigFilm').style.display=xrayImg?'block':'none';
   $('bignote').style.display=(img && !scouts && (ownMode ? !ownShown : !S.hasImage))?'flex':'none';
@@ -3432,6 +3459,7 @@ window.addEventListener('load',()=>{
            // them is exactly what the exercise is about.
            contrastStart: ()=>{ if(S.contrast.on && S.contrast.timeline) ctrstStart(); },
            contrastReset: ()=>ctrstReset(),
+           resetStudy: ()=>resetStudyState(),
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on),
@@ -3469,7 +3497,8 @@ window.addEventListener('load',()=>{
   // phantomPose is what lets ultrasound turn the patient under the probe — without it the
   // roll slider moved the body in the room and nothing on the monitor
   initDXA({ THREE, S, three, setSubject: (s) => setSubject(s),
-            buildPhantom: () => buildPhantom() });
+            buildPhantom: () => buildPhantom(),
+            loadModelUrl, baseUrl: import.meta.env.BASE_URL });
   initUS({ THREE, S, three, setSubject: (s) => setSubject(s),
            phantomPose: () => ({ center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1] / 2) / 10 : 5) + S.objOff.y, S.objOff.z],
                                  flip: voxelFlips(), rot: objMat() }) });
