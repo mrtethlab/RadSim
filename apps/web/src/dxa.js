@@ -1256,10 +1256,16 @@ function landmarkTargets() {
     const asis = lm.crestCm - lm.dirSup * 7;
     return { z: asis + lm.dirSup * INCH, x: 0, label: '1 in above the ASIS midline' };
   }
-  // the trochanter is measured off the phantom, not paced out from the crest
+  /* The trochanter is measured off the phantom, not paced out from the crest — but the
+     measurement is of the femoral HEAD, used as a stand-in for the trochanter tip on the
+     rule that the two lie level. Checked against the rendered study the stand-in runs high
+     and inboard: the field wanted another inch and a half down and an inch out to sit over
+     the neck. Both corrections belong to the landmark rather than to the field, so that the
+     console's "2 in below the greater trochanter" keeps describing where the laser is. */
+  const GT_DROP = 1.5 * INCH, GT_LAT = 1.0 * INCH;
   const t = lm.troch?.[D.region === 'hipL' ? 'L' : 'R'];
-  const gt = t ? t.zCm : lm.crestCm - lm.dirSup * 9;
-  const lat = t ? t.x : 8;
+  const gt = (t ? t.zCm : lm.crestCm - lm.dirSup * 9) - lm.dirSup * GT_DROP;
+  const lat = (t ? t.x : 8) + GT_LAT;
   return { z: gt - lm.dirSup * 2 * INCH, x: D.region === 'hipL' ? -lat : lat,
     label: '2 in below the greater trochanter' };
 }
