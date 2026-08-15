@@ -507,6 +507,8 @@ const S = {
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   curve:null, curveManual:false,                   // response-curve handles; null = follow the image
   resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
+  scatter:1,                   // scatter dial, 1 = the calibrated physical model
+
   detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
   detW:35, detH:43,            // effective receptor W×H (derived from size + orientation)
@@ -1797,6 +1799,11 @@ function bind(){
   // DR detail (edge) enhancement — multiscale unsharp on the acquired image
   $('detailToggle')?.addEventListener('change',e=>{ S.detailEnh=e.target.checked;
     S._proc=null; if(S.hasImage) drawFilm(); });
+  // Scatter dial. Scatter is produced in the patient during the exposure, so unlike the
+  // display controls above this does NOT re-render the stored image — it changes what the
+  // next exposure records. 100 % is the calibrated model; the note keeps the number honest
+  // by reporting the fraction the last exposure actually landed on.
+  $('scatterSld')?.addEventListener('input',e=>{ S.scatter=(+e.target.value)/100; updateScatterNote(); });
   // APR protocol picker
   $('protocolBtn')?.addEventListener('click',openProtocolPopup);
   $('protoPopClose')?.addEventListener('click',closeProtocolPopup);
@@ -2081,7 +2088,7 @@ async function computeRadiograph(){
   // 2.45), 2.0 -> 0.27 (mid band, 3.53), 1.5 -> 0.20 (3.53 -> 4.11). 2.0 it is. Setting it by
   // the contrast ratio instead would mean pushing residual SPR below anything defensible.
   const SCAT_SPR_MAX=_t.spr??2.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
-  let scatterFog=0;
+  let scatterFog=0, scatterMap=null;
   {
     const distC=Math.hypot(source[0],source[1],source[2])||100, invSqC=(100*100)/(distC*distC);
     // Reference the fog to the primary that actually passed THROUGH the patient, not to the
@@ -2097,9 +2104,34 @@ async function computeRadiograph(){
       const meanP=sumP/nF, meanIncident=I0*invSqC;
       const atten=Math.max(0,Math.min(1,1-meanP/(meanIncident||1)));     // 0 = air, ~1 = heavily attenuated
       const areaCm2=S.collX*S.collZ, areaF=areaCm2/(areaCm2+SCAT_AREA0);  // saturates with field size
-      let spr=SCAT_SPR_MAX*areaF*atten;
+      let spr=SCAT_SPR_MAX*areaF*atten*S.scatter;    // S.scatter: the console's 0-200 % dial
       if(S.gridOn) spr*=GRID_SCATTER;                                      // grid removes most scatter
-      scatterFog=spr*meanP;                                                // diffuse fog, added uniformly below
+      scatterFog=spr*meanP;                                                // the MEAN fog; shaped below
+      /* WHERE the fog lands, which matters as much as how much of it there is. It used to
+         be added as a flat constant across the whole field, and that is what made these
+         images read as too dense: a chest's lungs are air and scatter almost nothing, yet
+         they were being veiled exactly as hard as the mediastinum. Radiographers notice,
+         because filled-in lung fields are the one thing a chest film must not have.
+         Scatter is generated in proportion to the tissue a ray actually passed through, so
+         the generation map is the local attenuation. It does not stay where it is made —
+         it spreads several cm before reaching the receptor — so the map is heavily blurred.
+         Normalising the blurred map back to mean 1 keeps the TOTAL fog exactly as
+         calibrated above, so the scatter fraction, the AEC and the EI are untouched; only
+         its distribution changes. */
+      scatterMap=new Float32Array(dose.length);
+      for(let k=0;k<dose.length;k++)
+        scatterMap[k]= mask[k] ? Math.max(0, 1-dose[k]/(maxP||1)) : 0;
+      const rPx=Math.max(1, Math.min(120, Math.round(5/Math.max(pxU,1e-6))));   // ~5 cm spread
+      boxBlur2D(scatterMap, nx, ny, rPx); boxBlur2D(scatterMap, nx, ny, rPx);   // 2 passes ≈ gaussian
+      let mSum=0, mN=0;
+      for(let k=0;k<dose.length;k++) if(mask[k]){ mSum+=scatterMap[k]; mN++; }
+      const mAvg=mN? mSum/mN : 0;
+      if(mAvg>1e-9) for(let k=0;k<dose.length;k++) scatterMap[k]/=mAvg;         // mean 1 over the field
+      else scatterMap=null;                                                     // nothing in the beam
+      // reported so the scatter fraction can be measured rather than inferred from greys
+      if(typeof window!=='undefined')
+        window.__scatterInfo={spr:+spr.toFixed(3), sf:+(spr/(1+spr)).toFixed(3),
+          areaF:+areaF.toFixed(3), atten:+atten.toFixed(3), grid:!!S.gridOn, dial:S.scatter};
     }
   }
 
@@ -2122,8 +2154,13 @@ async function computeRadiograph(){
       dose[k]*= base*t;
     }
   }
-  // add the diffuse scatter fog (already grid-attenuated) onto the primary
-  if(scatterFog>0) for(let k=0;k<dose.length;k++) if(mask[k]) dose[k]+=scatterFog;
+  // add the diffuse scatter fog (already grid-attenuated) onto the primary, shaped by where
+  // the scattering tissue actually was. scatterMap averages 1 over the field, so the total
+  // added is the same scatterFog as before — the lungs simply stop taking the abdomen's share.
+  if(scatterFog>0){
+    if(scatterMap) for(let k=0;k<dose.length;k++){ if(mask[k]) dose[k]+=scatterFog*scatterMap[k]; }
+    else for(let k=0;k<dose.length;k++) if(mask[k]) dose[k]+=scatterFog;
+  }
 
   // ---- AEC: the chambers integrate receptor-plane kerma DURING the exposure and cut it
   // when the average over the selected cells reaches the calibrated target (the same
@@ -2623,7 +2660,7 @@ function setActiveImage(idx){
   S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true;
   reseedCurve();                     // handles land on THIS image's toe/inflection/shoulder
   drawFilm();
-  updateImageMeta(); renderImageStrip();
+  updateImageMeta(); renderImageStrip(); updateScatterNote();
 }
 /* Write the active image's metadata into the big Image-view corner overlays. */
 function updateImageMeta(){
@@ -2695,6 +2732,49 @@ function updateComputeNote(mode){
   const el=$(mode==='xray'?'computeNoteX':'computeNoteCT'); if(!el) return;
   const val=mode==='xray'?S.xrayBackend:S.ct.backend;
   el.textContent=(COMPUTE_NOTES[mode]||{})[val]||'';
+}
+/* Separable box blur over a detector-sized float grid, in place. Two passes of this stand
+   in for the gaussian spread of scatter on its way to the receptor; a running sum keeps it
+   O(1) per pixel, so a 5 cm radius costs the same as a 1 cm one. */
+function boxBlur2D(a, nx, ny, r){
+  const line=new Float32Array(Math.max(nx,ny)), w=2*r+1;
+  for(let y=0;y<ny;y++){                                   // horizontal
+    const off=y*nx; let sum=0;
+    for(let i=-r;i<=r;i++) sum+=a[off+Math.min(nx-1,Math.max(0,i))];
+    for(let x=0;x<nx;x++){
+      line[x]=sum/w;
+      sum-=a[off+Math.min(nx-1,Math.max(0,x-r))];
+      sum+=a[off+Math.min(nx-1,Math.max(0,x+r+1))];
+    }
+    for(let x=0;x<nx;x++) a[off+x]=line[x];
+  }
+  for(let x=0;x<nx;x++){                                   // vertical
+    let sum=0;
+    for(let i=-r;i<=r;i++) sum+=a[Math.min(ny-1,Math.max(0,i))*nx+x];
+    for(let y=0;y<ny;y++){
+      line[y]=sum/w;
+      sum-=a[Math.min(ny-1,Math.max(0,y-r))*nx+x];
+      sum+=a[Math.min(ny-1,Math.max(0,y+r+1))*nx+x];
+    }
+    for(let y=0;y<ny;y++) a[y*nx+x]=line[y];
+  }
+}
+/* The scatter dial's readout. Scatter-to-primary is not a property of the dial — it also
+   depends on how open the collimator is, how much patient is in the beam, and whether a
+   grid is catching it. So the note reports the fraction the LAST exposure actually landed
+   on, which is the number a physicist would quote, and names what is driving it. */
+function updateScatterNote(){
+  const v=$('scatterVal'); if(v) v.textContent=Math.round(S.scatter*100)+' %';
+  const el=$('scatterNote'); if(!el) return;
+  if(S.scatter===0){ el.textContent='Off — primary beam only. Not physical, but it shows '
+    + 'you exactly how much contrast the scatter is costing.'; return; }
+  const i=(typeof window!=='undefined')&&window.__scatterInfo;
+  if(!i){ el.textContent='Fraction of the receptor signal that is scattered rather than '
+    + 'image-forming. Expose to measure it.'; return; }
+  el.textContent=`Last exposure: ${Math.round(i.sf*100)} % of the signal was scatter `
+    + `(S/P ${i.spr.toFixed(2)})${i.grid?', grid fitted':' — no grid'}. `
+    + `Field size sets ${Math.round(i.areaF*100)} % of the maximum; collimating tighter is `
+    + 'what actually removes it.';
 }
 function setBackend(mode,val){
   if(mode==='xray') S.xrayBackend=val; else S.ct.backend=val;
@@ -3321,7 +3401,7 @@ window.radsimContrast={
 function initExtras(){
   wireBackendToggles();
   syncFeatureToggles();
-  updateComputeNote('xray'); updateComputeNote('ct'); updateDetWarn();
+  updateComputeNote('xray'); updateComputeNote('ct'); updateDetWarn(); updateScatterNote();
   refreshComputeStatus();
   // poll the backend so the Python GPU button enables/greys out as it connects/drops
   setInterval(refreshComputeStatus, 5000);
