@@ -511,6 +511,7 @@ export function analyse(sc, bmd) {
    Two frames sit on top of that — s/t along and across the SHAFT, a/b along and across the
    NECK — and every region is a pair of inequalities in them. */
 const NECK_H = 1.5;         // cm along the neck axis: the GE Lunar neck ROI height
+const NECK_PROX = 1.2;      // cm the neck reaches back past the head's estimated rim
 const TROCH_RUN = 4.5;      // cm past the neck: the trochanteric mass, then diaphysis
 const B_LIMIT = 5.0;        // cm either side of the NECK: keeps the ischium out
 
@@ -632,11 +633,14 @@ export function findFemur(sc, bmd) {
      measured rather than assumed: walk out and take the narrowest cross-section, which is the
      neck proper and where a fracture starts. */
   const BONE = 0.5;
-  /* A neck ROI is 1.5 cm along the axis, not three and a half. Running it the length of the
-     whole neck put its centre four centimetres out from the head, well down toward the
-     trochanteric flare, and inflated its area to twice the clinical figure. Start at the
-     head's rim and take the standard box. */
-  const nStart = headR, nEnd = headR + NECK_H / px;
+  /* WHERE THE NECK BEGINS. Its proximal edge and the head's exclusion boundary are the same
+     line — the head-neck junction — so the two move together and neither can be set alone.
+     Placing that line at the head's own radius cut the neck short of the junction, because
+     the radius is a clamped estimate: the inscribed sphere cannot find the head's edge where
+     it meets the acetabulum, so it reads large and the boundary lands out in the neck. Carry
+     it back toward the head, which lengthens the neck proximally by the same centimetre. */
+  const nStart = Math.max(headR * 0.45, headR - NECK_PROX / px);
+  const nEnd = headR + NECK_H / px;
   let halfW = 1.4 / px;
   for (let t = Math.round(nStart); t <= Math.round(nEnd); t++) {
     const c0 = headC[0] + nAx[0] * t, r0 = headC[1] + nAx[1] * t;
@@ -682,9 +686,14 @@ export function findFemur(sc, bmd) {
        anyway: below the trochanter this subject's forearm lies alongside the femur. The neck
        frame needs no fit, and the ischium is far enough off it to be excluded just as well. */
     if (Math.abs(b) > B_LIMIT / px) continue;
-    if (a < headR) continue;                      // the femoral head: never part of total hip
+    if (a < nStart) continue;                     // the femoral head: never part of total hip
     if (a > aMax) continue;                       // out along the diaphysis
     if (a <= nEnd && Math.abs(b) <= halfWpx) { neck[k] = 1; total[k] = 1; continue; }
+    /* Only the NECK reaches back to the head-neck junction. The bone proximal of the head's
+       rim but off the neck's axis is the head's own upper and lower margin, not trochanter
+       and not intertrochanteric — and letting the shared boundary move dragged both of those
+       regions with it. They keep their own edge at the rim. */
+    if (a < headR) continue;
     if (b * supSign > 0) { troch[k] = 1; total[k] = 1; }
     else { inter[k] = 1; total[k] = 1; }
   }
