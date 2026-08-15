@@ -407,9 +407,120 @@ export function render(sc, bmd, upto) {
   const s = Math.min(film.width / nx, film.height / nz);
   f2.imageSmoothingEnabled = true;
   f2.drawImage(dxCanvas, (film.width - nx * s) / 2, (film.height - nz * s) / 2, nx * s, nz * s);
+  drawRois(f2, sc, s, (film.width - nx * s) / 2, (film.height - nz * s) / 2);
   $('noexp')?.style.setProperty('display', 'none');
   const tl = $('fnTL'); if (tl) tl.textContent = `DXA ${REGIONS[sc.region]?.label || ''}`;
   const br = $('fnBR'); if (br) br.textContent = `${E_LO} / ${E_HI} keV`;
+}
+
+/* WHAT IS ACTUALLY BEING COUNTED, drawn on the picture. A DXA number is an average over a
+   box, and until you can see the box you are taking the machine's word for which bones it
+   averaged — which is exactly the mistake a mis-analysed spine makes. Green is the
+   convention on every densitometer console, so green it is.
+   Everything here works in DISPLAY pixels: the image is hung superior-up and read as if
+   facing the patient, so a scan row maps to nz-1-row and a column to nx-1-col. roiView
+   keeps that mapping so the pointer can be turned back into scan coordinates. */
+let roiView = null;
+function roiRect(sc, r, s, ox, oy) {
+  const dyA = (sc.nz - r.b) * s + oy, dyB = (sc.nz - r.a) * s + oy;
+  const dxA = (sc.nx - 1 - r.x1) * s + ox, dxB = (sc.nx - r.x0) * s + ox;
+  return { x: dxA, y: dyA, w: dxB - dxA, h: dyB - dyA };
+}
+function drawRois(g, sc, s, ox, oy) {
+  roiView = null;
+  if (!sc.rois || !sc.rois.length || !D.showRois) return;
+  roiView = { s, ox, oy, nx: sc.nx, nz: sc.nz };
+  g.save();
+  g.lineWidth = 1.5;
+  const boxes = sc.rois.map((r) => roiRect(sc, r, s, ox, oy));
+  boxes.forEach((b, i) => {
+    g.fillStyle = 'rgba(64,220,120,.16)';
+    g.fillRect(b.x, b.y, b.w, b.h);
+    g.strokeStyle = 'rgba(90,240,145,.95)';
+    g.strokeRect(b.x + .5, b.y + .5, b.w - 1, b.h - 1);
+    g.fillStyle = '#8dffc0';
+    g.font = '11px ui-monospace, monospace';
+    g.fillText(sc.rois[i].label, b.x + 4, b.y + 13);
+  });
+  if (D.editRois) {
+    g.fillStyle = '#bfffda';
+    const cx = boxes[0].x + boxes[0].w / 2;
+    cutYs(sc, s, oy).forEach((y) => hdl(g, cx, y));
+    const yMid = (Math.min(...boxes.map((b) => b.y)) + Math.max(...boxes.map((b) => b.y + b.h))) / 2;
+    hdl(g, boxes[0].x, yMid);
+    hdl(g, boxes[0].x + boxes[0].w, yMid);
+  }
+  g.restore();
+}
+function hdl(g, x, y) { g.fillRect(x - 4, y - 3, 8, 6); }
+
+/* EDITING THE REGIONS. On a real console the analysis is adjustable and the technologist
+   owns the result: you drag the inter-vertebral cuts onto the disc spaces and pull the
+   lateral edges clear of the transverse processes. Same three gestures here.
+   BMD is BMC over AREA, a ratio, so growing a box does not simply grow the number — it
+   depends on what falls inside. That is the thing to feel, so every drag re-runs measure()
+   and the report rather than scaling anything. */
+/* THE CUTS ARE SHARED. rois are consecutive bands, roi[i].b == roi[i+1].a, so a cut is one
+   boundary owned by two bodies and moving it has to write both. Treating it as "the top of
+   box i" and then adjusting box i-1 pairs it with the wrong neighbour: the boxes run bottom
+   to top on screen, because the image is hung superior-up while the rows count from the
+   inferior end. Getting that backwards inverted a body — a > b — and zeroed its BMD.
+   So the model is a list of n+1 boundary rows, and each drag writes the one boundary. */
+let drag = null;
+function cutRows(sc) {
+  const r = sc.rois;
+  return [r[0].a, ...r.map((q) => q.b)];
+}
+function cutYs(sc, s, oy) { return cutRows(sc).map((row) => (sc.nz - row) * s + oy); }
+function hitTest(px, py) {
+  if (!scan || !scan.rois || !scan.rois.length || !roiView || !D.editRois) return null;
+  const { s, ox, oy } = roiView;
+  const boxes = scan.rois.map((r) => roiRect(scan, r, s, ox, oy));
+  const top = Math.min(...boxes.map((b) => b.y));
+  const bot = Math.max(...boxes.map((b) => b.y + b.h));
+  const left = boxes[0].x, right = boxes[0].x + boxes[0].w;
+  if (py > top - 8 && py < bot + 8) {
+    if (Math.abs(px - left) < 7) return { kind: 'edgeL' };
+    if (Math.abs(px - right) < 7) return { kind: 'edgeR' };
+  }
+  const ys = cutYs(scan, s, oy);
+  for (let k = 0; k < ys.length; k++) if (Math.abs(py - ys[k]) < 7) return { kind: 'cut', k };
+  return null;
+}
+export function dxaPointer(e, phase, canvas) {
+  if (!ctx || ctx.S.mode !== 'dxa' || !scan || !scan.rois) return false;
+  const r = canvas.getBoundingClientRect();
+  const px = (e.clientX - r.left) * (canvas.width / r.width);
+  const py = (e.clientY - r.top) * (canvas.height / r.height);
+  if (phase === 'down') { drag = hitTest(px, py); return !!drag; }
+  if (phase === 'up') { const was = !!drag; drag = null; if (was) reportNow(); return was; }
+  if (!drag || !roiView) return false;
+  const { s, ox, oy } = roiView;
+  const rois = scan.rois;
+  if (drag.kind === 'edgeL' || drag.kind === 'edgeR') {
+    // display x runs opposite to scan x, so the LEFT edge on screen is the HIGH column
+    const col = Math.round(scan.nx - 1 - (px - ox) / s);
+    const v = Math.max(0, Math.min(scan.nx - 1, col));
+    rois.forEach((q) => { if (drag.kind === 'edgeL') q.x1 = Math.max(q.x0 + 2, v);
+                          else q.x0 = Math.min(q.x1 - 2, v); });
+  } else {
+    const row = Math.round(scan.nz - (py - oy) / s);
+    const cuts = cutRows(scan), k = drag.k;
+    // keep it between its neighbours so a body can never be turned inside out
+    const lo = k > 0 ? cuts[k - 1] + 3 : 0;
+    const hi = k < cuts.length - 1 ? cuts[k + 1] - 3 : scan.nz;
+    const v = Math.max(lo, Math.min(hi, row));
+    if (k > 0) rois[k - 1].b = v;                 // the body below this cut ends here
+    if (k < rois.length) rois[k].a = v;           // and the one above it starts here
+  }
+  redrawRois();
+  return true;
+}
+function redrawRois() { render(scan, scan.bmdMap, null); }
+function reportNow() {
+  if (!scan || !scan.rois || !scan.bmdMap) return;
+  scan.rois = measure(scan, scan.bmdMap, scan.rois);
+  report(scan);
 }
 
 /* ---- the report -------------------------------------------------------------
@@ -779,6 +890,39 @@ export function initDXA(context) {
     b.addEventListener('pointercancel', stop);
   });
   $('dxLaserHome')?.addEventListener('click', () => { D.crossX = 0; syncHead(); syncPad(); });
+  // The regions are dragged on the film itself, so the handlers live on that canvas rather
+  // than going through the 3D pointer router — nothing else competes for it in this mode.
+  const film = $('film');
+  if (film) {
+    film.addEventListener('pointerdown', (e) => {
+      if (dxaPointer(e, 'down', film)) { film.setPointerCapture(e.pointerId); e.preventDefault(); }
+    });
+    film.addEventListener('pointermove', (e) => {
+      if (ctx.S.mode !== 'dxa') return;
+      if (dxaPointer(e, 'move', film)) return;
+      film.style.cursor = (D.editRois && hitTest(
+        (e.clientX - film.getBoundingClientRect().left) * (film.width / film.getBoundingClientRect().width),
+        (e.clientY - film.getBoundingClientRect().top) * (film.height / film.getBoundingClientRect().height)
+      )) ? 'move' : '';
+    });
+    film.addEventListener('pointerup', (e) => dxaPointer(e, 'up', film));
+    film.addEventListener('pointercancel', (e) => dxaPointer(e, 'up', film));
+  }
+  $('dxShowRois')?.addEventListener('change', (e) => {
+    D.showRois = e.target.checked; if (scan) redrawRois();
+  });
+  $('dxEditRois')?.addEventListener('change', (e) => {
+    D.editRois = e.target.checked;
+    if (D.editRois && !D.showRois) { D.showRois = true; const c = $('dxShowRois'); if (c) c.checked = true; }
+    if (scan) redrawRois();
+  });
+  $('dxRoiReset')?.addEventListener('click', () => {
+    if (!scan || !scan.bmdMap) return;
+    const lv = findLevels(scan, scan.bmdMap);          // back to what the machine found
+    scan.rois = measure(scan, scan.bmdMap, lv.rois);
+    scan.col = lv.col;
+    render(scan, scan.bmdMap); report(scan);
+  });
   syncPad();
   if (typeof window !== 'undefined') window.__dxa = () => ({ D, scan, acquire, decompose, basis,
     E_LO, E_HI, REGIONS, findLevels, measure, scores, diagnosis, ageMean, REF, CAL,

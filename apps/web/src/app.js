@@ -577,6 +577,7 @@ const S = {
         // T compares against a young adult of the same SEX, which is why the reference
         // has to be chosen rather than averaged; Z compares against the patient's own age
         sex:'f', age:62, weight:70,
+        showRois:true, editRois:false,   // the green scored map, and whether it can be dragged
         // Where the operator has driven the arm. headZ is the scanning head's centre along
         // the couch (cm, + toward the head end); crossX slides only the laser's centring
         // mark across the table, because the head is wide enough to cover the full width

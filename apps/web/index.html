@@ -1378,6 +1378,23 @@
         </div>
       </div>
       <div class="grp dx-only">
+        <div class="lab">Analysis regions</div>
+        <div class="bod">
+          <label class="cttoggle"><input type="checkbox" id="dxShowRois" checked>
+            <span>Show scored regions <small style="color:var(--muted)">(green)</small></span></label>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="dxEditRois">
+            <span>Adjust regions <small style="color:var(--muted)">(drag cuts &amp; edges)</small></span></label>
+          <div class="mini" style="margin-top:8px">
+            <button id="dxRoiReset">&#8635; Re-detect levels</button>
+          </div>
+          <div class="ctrst-note">Green is what the numbers are actually averaged over. BMD is
+            BMC divided by AREA &mdash; a ratio &mdash; so growing a box does not simply grow
+            the answer; it depends what falls inside. Drag an inter-vertebral cut onto its disc
+            space, or pull the side edges clear of the transverse processes, and watch the
+            table move.</div>
+        </div>
+      </div>
+      <div class="grp dx-only">
         <div class="lab">Serial comparison</div>
         <div class="bod"><div id="dxSerial"><div class="note">No stored scans.</div></div></div>
       </div>
