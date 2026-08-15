@@ -517,15 +517,42 @@ const B_LIMIT = 5.0;        // cm either side of the NECK: keeps the ischium out
 function fitShaft(sc, bmd, tc, tr) {
   const { nx, nz, px } = sc;
   const BONE = 0.5;
-  // The shaft is the only femoral bone that stands alone: five centimetres below the
-  // trochanter nothing else of the patient is within four centimetres of it.
-  const band = Math.round(4 / px);
+  /* FOLLOW THE FEMUR DOWN, DO NOT AVERAGE ACROSS IT. A mineral-weighted centroid over a band
+     around the trochanter assumes the only bone in that band is the femur. On a supine CT
+     the arms lie along the thighs, so a few centimetres below the trochanter the band holds
+     the femoral shaft AND the forearm, and the centroid settles between them — dragging the
+     fitted axis several centimetres lateral and tilting it. Every region hangs off this
+     vector, so that one bad average was the last thing holding the neck out of place.
+
+     The forearm is a SEPARATE island, which is the whole answer: take contiguous runs of
+     bone per row and keep the one that continues the femur, starting from the trochanter and
+     tracking downward. An island that does not touch the run above it is a different bone,
+     however close it lies. */
+  const runsAt = (r) => {
+    const out = [];
+    let a = -1;
+    for (let i = 0; i <= nx; i++) {
+      const on = i < nx && bmd[r * nx + i] > BONE;
+      if (on && a < 0) a = i;
+      else if (!on && a >= 0) { out.push({ a, b: i - 1, c: (a + i - 1) / 2, w: i - a }); a = -1; }
+    }
+    return out;
+  };
+  const MAX_JUMP = 1.5 / px;                      // a shaft does not move this fast per row
   const pts = [];
-  for (let r = 0; r < Math.min(nz, tr - Math.round(2.5 / px)); r++) {
-    let s = 0, n = 0;
-    const lo = Math.max(0, Math.round(tc - band)), hi = Math.min(nx - 1, Math.round(tc + band));
-    for (let i = lo; i <= hi; i++) { const v = bmd[r * nx + i]; if (v > BONE) { s += i * v; n += v; } }
-    if (n > 0) pts.push({ r, c: s / n });
+  let cur = tc;
+  for (let r = Math.round(tr); r >= 0; r--) {
+    const runs = runsAt(r).filter((q) => q.w * px > 0.8);   // ignore speckle
+    if (!runs.length) continue;
+    let best = null, bestD = Infinity;
+    for (const q of runs) {
+      const d = q.a - 1 <= cur && cur <= q.b + 1 ? 0 : Math.min(Math.abs(q.a - cur), Math.abs(q.b - cur));
+      if (d < bestD) { bestD = d; best = q; }
+    }
+    if (!best || bestD > MAX_JUMP) continue;      // the femur left the picture: stop guessing
+    cur = best.c;
+    // only the part clear of the trochanteric flare is diaphysis worth fitting
+    if (r < tr - 2.5 / px) pts.push({ r, c: best.c });
   }
   if (pts.length < 5) return { p: [tc, tr], u: [0, 1] };
   // least squares c = m*r + k, then the axis direction is (m, 1) normalised, superior-going
@@ -605,7 +632,11 @@ export function findFemur(sc, bmd) {
      measured rather than assumed: walk out and take the narrowest cross-section, which is the
      neck proper and where a fracture starts. */
   const BONE = 0.5;
-  const nStart = headR + 0.2 / px, nEnd = headR + 3.4 / px;
+  /* A neck ROI is 1.5 cm along the axis, not three and a half. Running it the length of the
+     whole neck put its centre four centimetres out from the head, well down toward the
+     trochanteric flare, and inflated its area to twice the clinical figure. Start at the
+     head's rim and take the standard box. */
+  const nStart = headR, nEnd = headR + NECK_H / px;
   let halfW = 1.4 / px;
   for (let t = Math.round(nStart); t <= Math.round(nEnd); t++) {
     const c0 = headC[0] + nAx[0] * t, r0 = headC[1] + nAx[1] * t;
