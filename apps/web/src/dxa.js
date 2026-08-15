@@ -181,7 +181,8 @@ function findTrochanters(ph, aOf, crestZ, dirSup) {
     let sx = 0, sn = 0;
     for (let y = 0; y < ny; y++) for (let x = Math.max(x0, nearA); x <= Math.min(x1, nearB); x++) if (isBone(x, y, zs)) { sx += x; sn++; }
     const shaftX = sn ? Math.abs(((sx / sn) - cxVox) * vs[0]) : Math.abs((best.x - cxVox) * vs[0]);
-    found[side] = { zCm: headZ, x: shaftX, headX: Math.abs((best.x - cxVox) * vs[0]) };
+    found[side] = { zCm: headZ, x: shaftX, headX: Math.abs((best.x - cxVox) * vs[0]),
+      headR: best.r * vs[0] };
   }
   const fallback = { zCm: (crestZ + 0.5) * vs[2] + ph.min[2] - dirSup * 13, x: 8 };
   return { L: found.L || found.R || fallback, R: found.R || found.L || fallback };
@@ -296,7 +297,8 @@ export function acquire(onRow, onDone) {
   scan = { nx, nz, lo, hi, truth, x0, z0, px: PX_CM, region: D.region, loss: D.loss || 0,
     crestCm: lm.crestCm, dirSup: lm.dirSup,
     trochZ: tro ? tro.zCm : null, trochX: tro ? (D.region === 'hipL' ? -tro.x : tro.x) : null,
-    headX: tro && tro.headX != null ? (D.region === 'hipL' ? -tro.headX : tro.headX) : null };
+    headX: tro && tro.headX != null ? (D.region === 'hipL' ? -tro.headX : tro.headX) : null,
+    headR: tro && tro.headR != null ? tro.headR : null };
   rasterRow = 0; scanning = true;
 
   const step = () => {
@@ -551,53 +553,58 @@ export function findFemur(sc, bmd) {
      ridge running superomedially and it wins clearly. Then walk out along the winner and
      watch the width — the narrowest cross-section IS the neck, which is where a console
      puts the box and where a fracture starts. */
-  // the neck meets the shaft at the intertrochanteric line, about 4.5 cm below the head —
-  // taking the junction level with the head instead makes the neck axis horizontal
+  /* THE REGIONS, LAID OUT FROM THE HEAD OUTWARD.
+     Everything is anchored on two measured points and one unambiguous direction: the head
+     centre with its radius (the largest sphere that fits inside bone), the shaft axis fitted
+     down the diaphysis, and MEDIAL — which needs no fitting at all, because world +x is the
+     midline side for a left hip and -x for a right one. The previous version derived the
+     lateral direction from the sign of the head's offset across the fitted shaft axis, and
+     when the two nearly coincide that sign is noise: it put the greater trochanter on the
+     medial side of the picture, opposite the anatomy.
+
+     Walking out from the head along the neck: head (never scored), then neck, then the
+     trochanteric mass, which divides laterally into the greater trochanter and medially and
+     below into the intertrochanteric region, and stops at the distal cut. */
+  const medSign = sc.region === 'hipL' ? +1 : -1;       // columns rise with world x
+  const headC = [(sc.headX - sc.x0) / px - 0.5, tr];
+  const headR = Math.max(1.6, sc.headR || 2.2) / px;
+
+  // the neck runs from the head down to where the shaft passes the intertrochanteric line
   const pivR = tr - 4.5 / px;
   const pivot = [p[0] + u[0] * (pivR - p[1]), pivR];
-  /* THE NECK IS THE LINE FROM THE HEAD TO THE SHAFT — that is what a femoral neck IS, and
-     both ends are already measured: the head centre as the largest sphere fitting inside
-     bone, the shaft by least squares down the diaphysis. An earlier version swung a ray
-     through the plausible neck-shaft angles and kept the densest, which sounds like a
-     measurement and is not one: medial of the femur lies the acetabulum, then the pubis,
-     so the most mineral is always found by aiming further and further inboard, and the
-     "neck" ended up on the pubic ramus. Two reliable endpoints beat a search over a field
-     where every direction is full of bone. */
-  const headC = [(sc.headX - sc.x0) / px - 0.5, tr];
-  let nAx = [headC[0] - pivot[0], headC[1] - pivot[1]];
+  let nAx = [pivot[0] - headC[0], pivot[1] - headC[1]];
   const nL = Math.hypot(nAx[0], nAx[1]);
   if (!(nL > 1)) return null;
-  nAx = [nAx[0] / nL, nAx[1] / nL];
+  nAx = [nAx[0] / nL, nAx[1] / nL];                     // points AWAY from the head
   const nT = [-nAx[1], nAx[0]];
 
-  // width across the neck, walking outward: the minimum is the neck proper
+  /* The neck starts at the edge of the head and runs to the trochanteric flare. Its width is
+     measured rather than assumed: walk out and take the narrowest cross-section, which is the
+     neck proper and where a fracture starts. */
   const BONE = 0.5;
-  let narrow = Infinity, narrowT = Math.round(3 / px), halfW = Math.round(2 / px);
-  for (let t = Math.round(2 / px); t <= Math.round(5.5 / px); t++) {
-    const c0 = pivot[0] + nAx[0] * t, r0 = pivot[1] + nAx[1] * t;
+  const nStart = headR + 0.2 / px, nEnd = headR + 3.4 / px;
+  let halfW = 1.4 / px;
+  for (let t = Math.round(nStart); t <= Math.round(nEnd); t++) {
+    const c0 = headC[0] + nAx[0] * t, r0 = headC[1] + nAx[1] * t;
     let w = 0;
     for (let k = -Math.round(3 / px); k <= Math.round(3 / px); k++) {
       const c = Math.round(c0 + nT[0] * k), r = Math.round(r0 + nT[1] * k);
       if (c < 0 || r < 0 || c >= nx || r >= nz) continue;
       if (bmd[r * nx + c] > BONE) w++;
     }
-    if (w > 0 && w < narrow) { narrow = w; narrowT = t; halfW = w / 2; }
+    if (w > 0 && w / 2 < halfW) halfW = w / 2;
   }
-  const H = [pivot[0] + nAx[0] * narrowT, pivot[1] + nAx[1] * narrowT];
+  const halfWpx = Math.max(halfW, 1.2 / px);
+  const H = [headC[0] + nAx[0] * (nStart + nEnd) / 2, headC[1] + nAx[1] * (nStart + nEnd) / 2];
 
-  /* THE REGIONS. Along the neck: the head sits beyond the box and is thrown away, because
-     total hip has never included it. Behind the box, the trochanteric mass divides at the
-     neck's own level — greater trochanter above, intertrochanteric below — and stops five
-     centimetres down, which is the distal cut every total-hip box uses. */
-  const halfH = (NECK_H / 2) / px, halfWpx = Math.max(halfW, 1.2 / px);
   const sOf = (c, r) => (c - p[0]) * u[0] + (r - p[1]) * u[1];
   const tOf = (c, r) => (c - p[0]) * uT[0] + (r - p[1]) * uT[1];
-  const aOf2 = (c, r) => (c - H[0]) * nAx[0] + (r - H[1]) * nAx[1];
-  const bOf = (c, r) => (c - H[0]) * nT[0] + (r - H[1]) * nT[1];
+  const aOf2 = (c, r) => (c - headC[0]) * nAx[0] + (r - headC[1]) * nAx[1];
+  const bOf = (c, r) => (c - headC[0]) * nT[0] + (r - headC[1]) * nT[1];
+  // is +t medial or lateral? read it off the shaft's own across-vector, in columns
+  const latSign = -Math.sign(uT[0] * medSign) || 1;
   const sNeck = sOf(H[0], H[1]), tLim = T_LIMIT / px;
-  // which side of the shaft axis is away from the midline: the head is on the medial side
-  const latSign = -Math.sign(tOf(headC[0], headC[1])) || 1;
-  const sStop = sNeck - DISTAL / px, sTop = sNeck + 3.5 / px;   // above the trochanter is ilium
+  const sStop = sNeck - DISTAL / px, sTop = sNeck + 4.5 / px;
 
   const mk = () => new Uint8Array(nx * nz);
   const neck = mk(), troch = mk(), inter = mk(), total = mk();
@@ -606,18 +613,14 @@ export function findFemur(sc, bmd) {
     if (bmd[k] <= BONE) continue;
     const a = aOf2(c, r), b = bOf(c, r), s = sOf(c, r), t = tOf(c, r);
     if (Math.abs(t) > tLim) continue;             // the ischium, and the far side of the pelvis
-    if (Math.abs(a) <= halfH && Math.abs(b) <= halfWpx) { neck[k] = 1; total[k] = 1; continue; }
-    if (a > halfH) continue;                      // femoral head and acetabulum: never counted
+    if (a < headR) continue;                      // the femoral head: never part of total hip
+    if (a <= nEnd && Math.abs(b) <= halfWpx) { neck[k] = 1; total[k] = 1; continue; }
     if (s > sTop || s < sStop) continue;
-    /* Greater trochanter or intertrochanteric? The trochanter is the LATERAL mass — that is
-       what makes it the greater trochanter — so the split is across the shaft, not up it.
-       Dividing by height works only while the neck runs obliquely; on a leg in neutral or
-       external rotation the neck is foreshortened almost to vertical, everything falls below
-       the neck's level and the trochanter collapses to a sliver. Lateral of the shaft axis
-       is true in any rotation. */
-    if (t * latSign > 0) { troch[k] = 1; total[k] = 1; }
+    // lateral of the shaft is the greater trochanter; medial and below it, intertrochanteric
+    if (t * latSign > 0 && s > sNeck - 1.5 / px) { troch[k] = 1; total[k] = 1; }
     else { inter[k] = 1; total[k] = 1; }
   }
+  const narrowT = Math.round((nStart + nEnd) / 2);
 
   /* WARD'S. Not a landmark but a SEARCH: the square centimetre of lowest density in the
      neck, where the compressive and tensile trabeculae leave a gap. It is reported because
