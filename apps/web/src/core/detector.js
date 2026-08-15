@@ -30,6 +30,28 @@ export const EI_K = 900;
    toward the lung, so removing it widened the true ratio from 2.8. */
 export const AEC_CHAMBER_CAL = 6.1;
 export const DIRECT_CUT = 0.60;
+/* ADDITIVE ELECTRONIC NOISE, in quanta-equivalent RMS per pixel.
+
+   Quantum noise has variance N, so it grows with the square root of the dose and its
+   RELATIVE size falls as 1/sqrt(N) — halve the dose and the image gets modestly grainier.
+   That is a gentle penalty, and on its own it makes underexposure look merely soft. Real
+   flat panels also carry a FIXED noise from the readout electronics: an amplifier and an
+   ADC contribute the same electrons whether or not any x-rays arrived. Its variance does
+   not shrink with dose, so as the exposure falls it stops being a rounding error and
+   starts being the whole signal. That is the cliff a real underexposed radiograph falls
+   off, and why "just turn the mAs down" is punished rather than tolerated.
+
+   A typical indirect (CsI/aSi) panel reads about 1500 e- RMS, and its conversion gain runs
+   near 100 e- per absorbed x-ray quantum, which puts the electronic noise at ~15 quanta
+   equivalent. Deliberately a per-PIXEL constant and NOT scaled by pixel area, unlike the
+   quantum budget: readout noise belongs to the amplifier chain, one per detector element,
+   however large that element is. So a finer matrix collects fewer quanta per pixel while
+   paying the same electronics — which is exactly why high-resolution modes need more dose.
+
+   Total variance is then N + ELECTRONIC^2, the two being independent. At a correct
+   exposure this is invisible; measured in the darkest clinically relevant region of a
+   gridded chest it lifts the noise 1.96 % -> 2.04 %. Ten times under, it bites. */
+export const ELECTRONIC_NOISE = 15;
 
 export const Detector = (()=>{
   function gauss(){ let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random();
@@ -38,9 +60,14 @@ export const Detector = (()=>{
   function capture(dose, nx, ny, photonScale, mask){
     const signal=new Float32Array(nx*ny);
     const inField=[];
+    const eVar = ELECTRONIC_NOISE*ELECTRONIC_NOISE;   // dose-independent, so it rules at low N
     for(let k=0;k<dose.length;k++){
       const N = dose[k]*photonScale;               // expected quanta
-      const noisy = mask[k] ? Math.max(0, N + gauss()*Math.sqrt(N+1)) : 0;
+      // quantum (variance N) and readout (variance eVar) noise are independent, so the
+      // variances add. The clamp is the detector's own floor: a real panel cannot report
+      // less than nothing either, and near the floor that rectification is part of why an
+      // underexposed image goes flat and mushy rather than merely noisy.
+      const noisy = mask[k] ? Math.max(0, N + gauss()*Math.sqrt(N+1+eVar)) : 0;
       const s = noisy/photonScale;
       signal[k]=s;
       if(mask[k]) inField.push(s);
