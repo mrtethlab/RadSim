@@ -1320,6 +1320,28 @@
         </div>
       </div>
       <div class="grp dx-only">
+        <div class="lab">Scanner arm</div>
+        <div class="bod">
+          <div class="dxpad" id="dxPad">
+            <button class="dxpad-b dxpad-up"    data-nudge="sup"  title="Move the arm toward the head">&#9651;</button>
+            <button class="dxpad-b dxpad-left"  data-nudge="left" title="Centre the laser toward the patient's right">&#9665;</button>
+            <button class="dxpad-b dxpad-right" data-nudge="right" title="Centre the laser toward the patient's left">&#9655;</button>
+            <button class="dxpad-b dxpad-down"  data-nudge="inf"  title="Move the arm toward the feet">&#9661;</button>
+            <span class="dxpad-dot"></span>
+          </div>
+          <div class="row" style="margin-top:10px"><div class="rl">Arm <small>couch position</small></div>
+            <div class="valchip" id="dxHeadV">0 cm</div></div>
+          <div class="row"><div class="rl">Laser <small>across table</small></div>
+            <div class="valchip" id="dxCrossV">0 cm</div></div>
+          <div class="mini" style="margin-top:8px">
+            <button id="dxLaserHome">&#9678; Centre laser</button>
+          </div>
+          <div class="ctrst-note" id="dxPosNote">Up and down drive the arm along the couch. Left
+            and right move only the centring laser across the table &mdash; the arm itself is
+            wide enough to see the whole width, so it never travels sideways.</div>
+        </div>
+      </div>
+      <div class="grp dx-only">
         <div class="lab">Patient</div>
         <div class="bod">
           <div class="seg" id="dxSexSeg">
@@ -1329,6 +1351,9 @@
           <div class="row" style="margin-top:9px"><div class="rl">Age</div>
             <div class="valchip" id="dxAgeV">62</div></div>
           <input type="range" id="dxAge" min="20" max="90" value="62" step="1">
+          <div class="row" style="margin-top:9px"><div class="rl">Weight</div>
+            <div class="valchip" id="dxWtV">70 kg</div></div>
+          <input type="range" id="dxWt" min="35" max="160" value="70" step="1">
           <div class="ctrst-note">The T-score compares this patient with a <b>young adult of
             the same sex</b>; the Z-score compares them with someone their own age. That is why
             an 80-year-old can be osteoporotic by T and entirely unremarkable by Z &mdash; and

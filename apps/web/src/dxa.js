@@ -199,16 +199,18 @@ export function acquire(onRow, onDone) {
   // move together. Scaling only the image would be a lie the report could not detect.
   const keep = 1 - (D.loss || 0);
 
-  /* THE WINDOW IS PLACED ON THE ANATOMY, NOT ON THE VOLUME. The lumbar field is centred
-     on the waist the landmark scan found; the hip fields sit at the iliac crest and
-     off to one side, which is where a proximal femur is. */
+  /* THE WINDOW IS WHERE THE OPERATOR PUT THE LASER. It used to be placed on the anatomy
+     automatically, which meant the study could not be mispositioned and the pad would have
+     been decoration. Now the field is built around the laser: the cross marks the INFERIOR
+     edge of a spine sweep, because the lumbar scan starts at the ASIS and runs superiorly
+     to T11, and marks the CENTRE of a hip field, which is how the femur window is set.
+     Drive the arm to the wrong place and the wrong bones land in the window — which is the
+     lesson. positionError() tells the console how far off it is. */
   const cen = ph.min.map((m, i) => (m + ph.max[i]) / 2);
   const lm = findLandmarks(ph);
-  let cxW = cen[0], czW = lm.lumbarCm;
-  if (D.region === 'hipL' || D.region === 'hipR') {
-    czW = lm.crestCm - lm.dirSup * 7;               // proximal femur: below the crest
-    cxW = cen[0] + (D.region === 'hipL' ? -8 : 8);
-  }
+  const spine = D.region === 'spine';
+  const cxW = cen[0] + D.crossX;
+  const czW = spine ? D.headZ + lm.dirSup * reg.wz / 2 : D.headZ;
   const x0 = cxW - reg.wx / 2, z0 = czW - reg.wz / 2;
   const yBelow = ph.min[1] - 5, yLen = (ph.max[1] - ph.min[1]) + 10;
 
@@ -487,17 +489,22 @@ export function dxaApplyMode(on) {
   if (on) {
     if (ctx.S.subject !== 'chestabdopelvis') ctx.setSubject?.('chestabdopelvis');
     setStatus('Ready — pick a region and scan.');
+    setTimeout(parkAtLandmark, 60);      // after the subject's volume is in place
   } else abortScan();
   dxaSyncScene();
 }
 
-let rig = null, armMesh = null;
+const TABLE_LEN_CM = 200;             // the scanned table is a shade over 2 m end to end
+let rig = null, armMesh = null, scannedRig = null, headHome = null, laser = null;
 export function dxaSyncScene() {
   if (!ctx || !rig) return;
   const on = ctx.S.mode === 'dxa';
-  rig.visible = on;
+  // the scanned machine wins once it arrives; the boxes are only the fallback
+  rig.visible = on && !scannedRig;
+  if (scannedRig) scannedRig.visible = on;
   const three = ctx.three;
-  if (!on) return;
+  if (!on) { dxaHideExtras(); return; }
+  syncHead();
   // A densitometer carries its own source and detector inside the scanning arm, so none of
   // the radiographic room belongs in this scene. syncScene() re-shows that hardware every
   // frame, which is why this runs from there rather than only on the mode switch.
@@ -510,10 +517,119 @@ export function dxaSyncScene() {
   if (three.lamp) three.lamp.intensity = 0;
 }
 
+/* Leaving the mode has to take the laser with it — it is parented to the room, not to the
+   rig group, so that it can sit above the patient rather than inside the machine. */
+export function dxaHideExtras() { if (laser) laser.visible = false; }
+
+/* THE ROOM. A densitometer is a table with a scanning arm riding over it, and the arm is
+   the only part that moves. The scanned machine (public/models/rigs/dxa_rig.glb) came off
+   photogrammetry as one fused mesh of 50k triangles, so it was split offline the same way
+   the OEC was: everything above y = 0.15 in the scan's own frame lies in x [-0.94, -0.58]
+   — a narrow band at one end of the 2.0-long table — and spans the full width, which is a
+   scanning arm and nothing else. That became the 'head' node (7 857 faces); the remaining
+   42 143 are 'bed'. Both share one vertex buffer and one texture, so the split cost two
+   index views.
+   The box rig below it is the fallback if the fetch fails — the mode still has to work. */
+const RIG_SPLIT_Y = 0.15;             // recorded so the offline split can be reproduced
+const BED_TOP_LOCAL = -0.03;          // the patient surface, in the scan's own units
+let bedNode = null, headNode = null, rigScale = 1, bedTopY = 0, bedLenCm = 0;
+/* Drive the arm and its laser to wherever the pad has put them. The head travels along the
+   couch only; the laser's cross slides across the table independently, which is what the
+   left/right keys on a real console do — they re-centre the measuring field, not the arm. */
+function syncHead() {
+  if (!headNode || !headHome) return;
+  const { THREE } = ctx;
+  // headZ is cm along the couch, + toward the head end. The node lives in the scan's own
+  // frame, before the quarter turn that stands the table up in the room, and that turn maps
+  // local +x onto world −z — so travelling toward +z means going NEGATIVE in x here.
+  headNode.position.copy(headHome);
+  headNode.position.x -= D.headZ / rigScale;
+  if (laser) {
+    laser.visible = true;
+    laser.position.set(D.crossX, LASER_Y, D.headZ);
+  }
+}
+
+/* WHERE THE ARM IS SUPPOSED TO BE. These are the landmarks a technologist actually uses,
+   and the whole point of the pad is that getting them wrong costs you the study:
+     AP lumbar spine — the laser sits 1 inch ABOVE the ASIS midline, and the arm sweeps
+       from there superiorly to T11, so the field must contain L1-L4 with a slice of T12
+       above and the iliac crest below to prove the level count.
+     Proximal femur — 2 inches BELOW the greater trochanter, the laser on the midline of
+       the femoral shaft, so the neck and trochanteric region both fall in the window.
+   Both are expressed against landmarks found in the volume, not against table coordinates,
+   so they follow the subject rather than assuming one. */
+const INCH = 2.54;
+function landmarkTargets() {
+  // At boot there is no subject yet and buildPhantom() hands back an EMPTY phantom, which
+  // is truthy — findLandmarks would then walk undefined dimensions and take the rest of
+  // initDXA down with it. Check for real data, not just for an object.
+  const ph = ctx.buildPhantom?.();
+  if (!ph || !ph.data || !ph.nz) return null;
+  let lm = null;
+  try { lm = findLandmarks(ph); } catch { return null; }
+  if (!lm) return null;
+  if (D.region === 'spine') {
+    // the crest scan gives the iliac crest; ASIS sits ~2 cm below it on this subject
+    const asis = lm.crestCm - lm.dirSup * 2;
+    return { z: asis + lm.dirSup * INCH, x: 0, label: '1 in above the ASIS midline' };
+  }
+  // greater trochanter is level with the crest minus ~7 cm on an adult femur
+  const gt = lm.crestCm - lm.dirSup * 7;
+  return { z: gt - lm.dirSup * 2 * INCH, x: D.region === 'hipL' ? -8 : 8,
+    label: '2 in below the greater trochanter' };
+}
+/* How far the operator is from that mark, in cm — what the console reports back and what
+   the scan field is built around. */
+function positionError() {
+  const t = landmarkTargets();
+  if (!t) return null;
+  return { dz: D.headZ - t.z, dx: D.crossX - t.x, target: t };
+}
+/* Selecting a region parks the arm on that region's landmark, the way pressing a preset on
+   a real console drives it there. So the default study is correctly positioned, and driving
+   OFF the mark — which the note calls out immediately — is the thing you do on purpose. */
+function parkAtLandmark() {
+  const t = landmarkTargets();
+  if (!t) return;
+  D.headZ = t.z; D.crossX = t.x;
+  syncHead(); syncPad();
+}
+function nudge(dir) {
+  const STEP = 1;                                  // cm per press, then repeat on hold
+  if (dir === 'sup') D.headZ += STEP;
+  else if (dir === 'inf') D.headZ -= STEP;
+  else if (dir === 'left') D.crossX -= STEP;       // toward the patient's right
+  else if (dir === 'right') D.crossX += STEP;
+  D.headZ = Math.max(-TABLE_LEN_CM / 2, Math.min(TABLE_LEN_CM / 2, D.headZ));
+  D.crossX = Math.max(-25, Math.min(25, D.crossX));
+  syncHead(); syncPad();
+}
+/* The readouts, and the coaching line. It names the landmark rather than the number,
+   because "5 cm inferior of the mark" is what a supervisor would actually say. */
+function syncPad() {
+  const hv = $('dxHeadV'); if (hv) hv.textContent = `${D.headZ.toFixed(0)} cm`;
+  const cv = $('dxCrossV'); if (cv) cv.textContent = `${D.crossX.toFixed(0)} cm`;
+  const note = $('dxPosNote'); if (!note) return;
+  const e = positionError();
+  if (!e) { note.textContent = 'Drive the arm over the region of interest.'; return; }
+  const near = Math.abs(e.dz) <= 2 && Math.abs(e.dx) <= 2;
+  if (near) {
+    note.innerHTML = `<b style="color:#3fd07a">On the mark</b> &mdash; laser is at the `
+      + `${e.target.label}. Scan will demonstrate the required anatomy.`;
+    return;
+  }
+  const zs = Math.abs(e.dz) <= 2 ? '' :
+    `${Math.abs(e.dz).toFixed(0)} cm ${e.dz > 0 ? 'superior' : 'inferior'} of the mark`;
+  const xs = Math.abs(e.dx) <= 2 ? '' :
+    `${Math.abs(e.dx).toFixed(0)} cm ${e.dx > 0 ? 'left' : 'right'} of the midline`;
+  note.innerHTML = `<b style="color:#e8b552">Off the mark</b> &mdash; `
+    + [zs, xs].filter(Boolean).join(', ') + `. Correct is the ${e.target.label}.`;
+}
+
 function buildRig() {
   const { THREE, three } = ctx;
   rig = new THREE.Group();
-  // the C-shaped scanning arm: source under the table, detector head above it
   const mat = new THREE.MeshStandardMaterial({ color: 0xdfe6ec, roughness: 0.5 });
   const head = new THREE.Mesh(new THREE.BoxGeometry(26, 7, 14), mat);
   head.position.set(0, 34, 0);
@@ -526,6 +642,67 @@ function buildRig() {
   armMesh = rig;
   rig.visible = false;
   three.handGroup.parent.add(rig);
+  buildLaser();
+  loadScannedRig();
+}
+
+/* The centring laser: a thin cross projected on the patient, which is the only thing the
+   operator actually aims with. Drawn slightly above the couch so it reads ON the body
+   rather than through it, and left depth-testing off so it stays visible over the skin. */
+const LASER_Y = 22;                   // just above a supine torso
+function buildLaser() {
+  const { THREE, three } = ctx;
+  const m = new THREE.LineBasicMaterial({ color: 0xff2d2d, transparent: true,
+    opacity: 0.95, depthTest: false });
+  const g = new THREE.BufferGeometry();
+  const A = 13;                       // arm half-length, cm
+  g.setAttribute('position', new THREE.Float32BufferAttribute(
+    [-A, 0, 0, A, 0, 0, 0, 0, -A, 0, 0, A], 3));
+  laser = new THREE.LineSegments(g, m);
+  laser.renderOrder = 999;
+  laser.visible = false;
+  three.handGroup.parent.add(laser);
+}
+
+/* Load the scanned bed + head and stand them in the room. The scan's long axis is x and
+   the room's couch axis is z, so it turns a quarter turn; the table top is driven to y = 0
+   because that is the plane every mode already lies its subject on. */
+function loadScannedRig() {
+  const { THREE, three } = ctx;
+  if (!ctx.loadModelUrl) return;
+  ctx.loadModelUrl(ctx.baseUrl + 'models/rigs/dxa_rig.glb').then((g) => {
+    g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+    let bed = null, hd = null;
+    g.traverse((o) => {
+      const n = (o.name || '').toLowerCase();
+      if (!bed && n === 'bed') bed = o;
+      else if (!hd && n === 'head') hd = o;
+    });
+    if (!bed || !hd) return;                       // keep the boxes
+    // Scale from the BED alone. Each part carries its own vertex buffer precisely so this
+    // measures the table and not the whole machine — see the note on the splitter.
+    const bedBox = new THREE.Box3().setFromObject(bed);
+    const size = bedBox.getSize(new THREE.Vector3());
+    rigScale = TABLE_LEN_CM / Math.max(size.x, size.y, size.z);
+    bedLenCm = TABLE_LEN_CM;
+    scannedRig = new THREE.Group();
+    scannedRig.add(g);
+    g.scale.setScalar(rigScale);
+    g.rotation.y = Math.PI / 2;                    // scan's long x -> the room's couch z
+    /* Seat the PATIENT SURFACE at y = 0, which is the plane every mode lies its subject on.
+       Not the bed's bounding-box top: that is 0.18 in the scan's units and belongs to the
+       rail the arm rides, so dropping by it would leave the body floating 20 cm clear.
+       The surface is the largest upward-facing plane in the bed — measured over the mesh,
+       it carries 1.111 of area against 0.376 for the next candidate, and sits at -0.03. */
+    bedTopY = BED_TOP_LOCAL * rigScale;
+    g.position.y -= bedTopY;
+    scannedRig.visible = false;
+    three.handGroup.parent.add(scannedRig);
+    bedNode = bed; headNode = hd;
+    // the head rides on its own group so the pad can slide it without touching the bed
+    headHome = hd.position.clone();
+    dxaSyncScene();
+  }).catch(() => { /* the box rig remains */ });
 }
 
 export function initDXA(context) {
@@ -567,13 +744,36 @@ export function initDXA(context) {
     const el = $('dxAgeV'); if (el) el.textContent = D.age;
     if (scan && scan.rois) report(scan);        // only Z moves — T has no age in it
   });
+  $('dxWt')?.addEventListener('input', (e) => {
+    D.weight = +e.target.value;
+    const el = $('dxWtV'); if (el) el.textContent = `${D.weight} kg`;
+  });
   document.querySelectorAll('#dxRegionSeg button').forEach((b) => {
     b.addEventListener('click', () => {
       D.region = b.dataset.region;
       document.querySelectorAll('#dxRegionSeg button').forEach((x) => x.classList.toggle('on', x === b));
       setStatus(`${REGIONS[D.region].label} selected — press SCAN.`);
+      parkAtLandmark();
     });
   });
+  // ---- the arm pad. Held keys repeat, because nudging 20 cm one press at a time is not
+  // how anyone drives a real console.
+  document.querySelectorAll('#dxPad .dxpad-b').forEach((b) => {
+    let t = null, rep = null;
+    const go = () => nudge(b.dataset.nudge);
+    const start = (e) => { e.preventDefault(); go();
+      t = setTimeout(() => { rep = setInterval(go, 70); }, 380); };
+    const stop = () => { clearTimeout(t); clearInterval(rep); t = rep = null; };
+    b.addEventListener('pointerdown', start);
+    b.addEventListener('pointerup', stop);
+    b.addEventListener('pointerleave', stop);
+    b.addEventListener('pointercancel', stop);
+  });
+  $('dxLaserHome')?.addEventListener('click', () => { D.crossX = 0; syncHead(); syncPad(); });
+  syncPad();
   if (typeof window !== 'undefined') window.__dxa = () => ({ D, scan, acquire, decompose, basis,
-    E_LO, E_HI, REGIONS, findLevels, measure, scores, diagnosis, ageMean, REF, CAL });
+    E_LO, E_HI, REGIONS, findLevels, measure, scores, diagnosis, ageMean, REF, CAL,
+    THREE: ctx.THREE,
+    rig: { scannedRig, bedNode, headNode, laser, rigScale, bedTopY, bedLenCm },
+    landmarkTargets, positionError, parkAtLandmark, nudge });
 }

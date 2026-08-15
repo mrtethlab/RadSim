@@ -1258,6 +1258,23 @@ body.mode-home .home{display:block}
 .hc-us .hc-art::after{content:''; position:absolute; left:50%; top:6px; width:26px; height:12px;
   margin-left:-13px; border-radius:4px 4px 8px 8px; background:rgba(235,243,247,.85);
   box-shadow:0 0 14px rgba(228,240,248,.4)}
+/* DENSITOMETER ARM PAD. The real console recesses four arrow keys into an oval bezel with
+   a status LED beside them; this is that cluster, close enough that the photo reads as the
+   instruction manual for it. */
+.dxpad{position:relative; width:132px; height:132px; margin:2px auto 0;
+  border-radius:50%/46%; background:radial-gradient(circle at 50% 38%, #2b333c, #1b2128 70%);
+  border:1px solid var(--edge2); box-shadow:inset 0 2px 10px rgba(0,0,0,.55)}
+.dxpad-b{position:absolute; width:40px; height:34px; padding:0; cursor:pointer;
+  background:linear-gradient(180deg,#39424c,#28303a); color:#cfd9e2; font-size:15px; line-height:1;
+  border:1px solid #4a5560; border-radius:7px; transition:background .12s, color .12s}
+.dxpad-b:hover{background:linear-gradient(180deg,#465260,#313b46); color:#eaf2f8}
+.dxpad-b:active{background:#5b6b7a; color:#fff}
+.dxpad-up{left:46px; top:12px}
+.dxpad-down{left:46px; bottom:12px}
+.dxpad-left{left:10px; top:49px}
+.dxpad-right{right:10px; top:49px}
+.dxpad-dot{position:absolute; left:50%; top:50%; width:9px; height:9px; margin:-4.5px 0 0 -4.5px;
+  border-radius:50%; background:#2fd06a; box-shadow:0 0 9px rgba(60,220,120,.8)}
 .hc-body{padding:16px 18px 20px}
 .hc-name{font-family:var(--disp); font-weight:700; font-size:25px; letter-spacing:.5px;
   color:#eef3f8}
