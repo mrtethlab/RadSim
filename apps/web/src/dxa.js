@@ -566,21 +566,40 @@ export function findFemur(sc, bmd) {
      trochanteric mass, which divides laterally into the greater trochanter and medially and
      below into the intertrochanteric region, and stops at the distal cut. */
   const medSign = sc.region === 'hipL' ? +1 : -1;       // columns rise with world x
-  const headC = [(sc.headX - sc.x0) / px - 0.5, tr];
+  /* The inscribed sphere finds the joint, not the head. Where the head meets the acetabulum
+     there is no gap to stop it, so the biggest sphere straddles both and its centre settles
+     up in the acetabular roof — measured against the femur on the film it sits about 1.6 cm
+     superior and 0.9 cm medial of the head's own centre. Correct it HERE rather than in the
+     landmark: the landmark drives where the laser goes and that is already right. */
+  const headC = [(sc.headX - sc.x0) / px - 0.5 - medSign * 0.9 / px, tr - 1.6 / px];
   /* The inscribed sphere stops growing at the search cap, and in a pelvis where the head
      touches the acetabulum it reaches that cap — 3.2 cm, which is half again a femoral head
      and would swallow the neck. Believe the measurement only while it is anatomically
      possible; an adult femoral head runs about 2.0-2.6 cm in radius. */
   const headR = Math.min(2.6, Math.max(1.7, sc.headR || 2.2)) / px;
 
-  // the neck runs from the head down to where the shaft passes the intertrochanteric line
-  const pivR = tr - 4.5 / px;
-  const pivot = [p[0] + u[0] * (pivR - p[1]), pivR];
-  let nAx = [pivot[0] - headC[0], pivot[1] - headC[1]];
-  const nL = Math.hypot(nAx[0], nAx[1]);
-  if (!(nL > 1)) return null;
+  /* THE NECK RUNS OUT OF THE HEAD AT THE NECK-SHAFT ANGLE. Taking its direction as
+     head-to-shaft sounds exact and collapses in the one case that matters: with the leg in
+     neutral rotation the neck is foreshortened until the head sits half a centimetre from
+     the shaft axis, the two points nearly coincide, and the "neck" ends up pointing straight
+     down the diaphysis. Every region hangs off that axis, so all of them came out about
+     three centimetres medial of where they belong.
+     The neck-shaft angle does not foreshorten. An adult femur carries about 127 degrees
+     between neck and shaft, which puts the neck 53 degrees off the shaft: from the head it
+     runs down and LATERALLY at that angle, which is the diagonal a hip film shows. Lateral
+     needs no fitting — columns rise with world x, so the midline side is known outright. */
+  const NECK_SHAFT = 127 * Math.PI / 180;
+  const dn = [-u[0], -u[1]];                            // down the shaft, toward the knee
+  // the perpendicular to the shaft that points AWAY from the midline
+  let lat = [-dn[1], dn[0]];
+  if (Math.sign(lat[0]) === Math.sign(medSign)) lat = [dn[1], -dn[0]];
+  const th = Math.PI - NECK_SHAFT;
+  let nAx = [dn[0] * Math.cos(th) + lat[0] * Math.sin(th),
+             dn[1] * Math.cos(th) + lat[1] * Math.sin(th)];
+  const nL = Math.hypot(nAx[0], nAx[1]) || 1;
   nAx = [nAx[0] / nL, nAx[1] / nL];                     // points AWAY from the head
   const nT = [-nAx[1], nAx[0]];
+  const pivot = [headC[0] + nAx[0] * (4.5 / px), headC[1] + nAx[1] * (4.5 / px)];
 
   /* The neck starts at the edge of the head and runs to the trochanteric flare. Its width is
      measured rather than assumed: walk out and take the narrowest cross-section, which is the
@@ -1298,9 +1317,20 @@ function parkAtLandmark() {
    and the arm simply stayed where it was — parked over the middle of the chest instead of
    the lumbar spine, which is the first thing you see on entering the mode. Keep asking until
    the anatomy can answer. */
-function parkWhenReady(tries = 40) {
-  if (parkAtLandmark() || tries <= 0) return;
-  setTimeout(() => parkWhenReady(tries - 1), 100);
+function parkWhenReady(tries = 30, lastZ = null, stable = 0) {
+  const t = landmarkTargets();
+  // Parking on the FIRST answer is not enough either: while the new volume is still coming
+  // in, buildPhantom() hands back whatever is loaded, findLandmarks measures that, and the
+  // arm is confidently parked on the wrong patient. Keep parking until the landmark stops
+  // moving — two identical answers mean the anatomy underneath has settled.
+  if (t) {
+    D.headZ = t.z; D.crossX = t.x;
+    syncHead(); syncPad();
+    stable = (lastZ != null && Math.abs(t.z - lastZ) < 0.01) ? stable + 1 : 0;
+    if (stable >= 1) return;
+    lastZ = t.z;
+  }
+  if (tries > 0) setTimeout(() => parkWhenReady(tries - 1, lastZ, stable), 120);
 }
 function nudge(dir) {
   const STEP = 1;                                  // cm per press, then repeat on hold
