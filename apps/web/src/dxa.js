@@ -219,7 +219,10 @@ export function acquire(onRow, onDone) {
   const x0 = cxW - reg.wx / 2, z0 = czW - reg.wz / 2;
   const yBelow = ph.min[1] - 5, yLen = (ph.max[1] - ph.min[1]) + 10;
 
-  scan = { nx, nz, lo, hi, truth, x0, z0, px: PX_CM, region: D.region, loss: D.loss || 0 };
+  // Carry the crest with the scan: it is the only thing in the image that says WHICH
+  // vertebra is which, and the analysis needs it after the raster is long finished.
+  scan = { nx, nz, lo, hi, truth, x0, z0, px: PX_CM, region: D.region, loss: D.loss || 0,
+    crestCm: lm.crestCm, dirSup: lm.dirSup };
   rasterRow = 0; scanning = true;
 
   const step = () => {
@@ -285,49 +288,119 @@ export function decompose(sc) {
 export function findLevels(sc, bmd) {
   const { nx, nz, px } = sc;
   const BONE = 0.25;                            // g/cm2 of HA: present, not noise
-  // 1. the spine column: the run of x that carries bone on most rows
+  const boxcar = (src, rad) => {                // moving average over rows
+    const out = new Float32Array(nz);
+    for (let r = 0; r < nz; r++) {
+      let s = 0, n = 0;
+      for (let k = -rad; k <= rad; k++) { const j = r + k; if (j < 0 || j >= nz) continue; s += src[j]; n++; }
+      out[r] = s / n;
+    }
+    return out;
+  };
+
+  /* 1. THE SPINE COLUMN. Count the rows carrying bone at each x and take the run around
+     the peak. The threshold has to be measured from the field's own FLOOR, not from zero:
+     ribs, transverse processes and the iliac wings put bone in every column of an abdominal
+     window, so the floor here sits near 30% of the peak and a flat "45% of peak" cut clears
+     it by a hair. Park the arm off the landmark and the floor rises past the cut entirely,
+     at which point the column grows to both edges of the field and the "spine" is the whole
+     abdomen. Subtracting the floor makes the threshold a contrast, which cannot blow out. */
   const colHit = new Float32Array(nx);
   for (let r = 0; r < nz; r++) for (let i = 0; i < nx; i++) if (bmd[r * nx + i] > BONE) colHit[i]++;
-  let best = 0, bestI = nx >> 1;
-  for (let i = 0; i < nx; i++) if (colHit[i] > best) { best = colHit[i]; bestI = i; }
+  let best = 0, bestI = nx >> 1, floor = Infinity;
+  for (let i = 0; i < nx; i++) { if (colHit[i] > best) { best = colHit[i]; bestI = i; } if (colHit[i] < floor) floor = colHit[i]; }
+  const colCut = floor + (best - floor) * 0.45;
   let cA = bestI, cB = bestI;
-  while (cA > 0 && colHit[cA - 1] > best * 0.45) cA--;
-  while (cB < nx - 1 && colHit[cB + 1] > best * 0.45) cB++;
-  // 2. mineral per row within the column
+  while (cA > 0 && colHit[cA - 1] > colCut) cA--;
+  while (cB < nx - 1 && colHit[cB + 1] > colCut) cB++;
+
+  /* 2. THE PROFILE, TAKEN OVER THE BODIES ONLY. At a disc space the facet joints and
+     laminae are continuous bone — only the vertebral BODY is lucent there. Integrate across
+     the full column and the posterior elements fill the very dips being looked for, and
+     they fill them unevenly: the lower lumbar facets are bulkier, so L3/L4 and L4/L5 washed
+     out while L1 and L2 came through clean. That is exactly the failure that put the L3/L4
+     cut a third of a body too high. Keep the wide column for the measured box — that is the
+     box a real machine draws — but hunt the cuts down the middle. */
+  const mid = (cA + cB) / 2, halfBody = Math.max(1, (cB - cA) / 2 * 0.55);
+  const bA = Math.max(0, Math.round(mid - halfBody)), bB = Math.min(nx - 1, Math.round(mid + halfBody));
   const prof = new Float32Array(nz);
   for (let r = 0; r < nz; r++) {
     let s = 0;
-    for (let i = cA; i <= cB; i++) s += bmd[r * nx + i];
+    for (let i = bA; i <= bB; i++) s += bmd[r * nx + i];
     prof[r] = s;
   }
-  const w = Math.max(1, Math.round(0.4 / px));
-  const sm = new Float32Array(nz);
-  for (let r = 0; r < nz; r++) {
+  const sm = boxcar(prof, Math.max(1, Math.round(0.4 / px)));
+
+  /* 3. DETREND. Mineral per row falls away steadily from the pelvis toward the ribs, and
+     that slope is bigger than the disc modulation riding on it — absolute minima all end up
+     bunched at the superior end. Dividing by a long average leaves the rhythm and throws
+     away the taper, which is a soft-tissue and thickness gradient rather than anatomy. */
+  const trend = boxcar(prof, Math.max(2, Math.round(3.0 / px)));
+  const det = new Float32Array(nz);
+  for (let r = 0; r < nz; r++) det[r] = trend[r] > 1e-6 ? sm[r] / trend[r] : 1;
+
+  /* 4. THE RHYTHM, THEN THE BODIES. Each disc found on its own is a coin toss — a shallow
+     one gets missed, a mottled body invents an extra. But the lumbar spine is regular, so
+     find the PERIOD once by autocorrelation (every disc voting together), pick the phase
+     that sits lowest, and only then let each cut slide to its own local minimum. The rhythm
+     supplies the robustness and the snap supplies the anatomy: bodies are not identical. */
+  const pLo = Math.max(2, Math.round(2.2 / px)), pHi = Math.max(pLo + 1, Math.round(4.6 / px));
+  let period = pLo, bestCorr = -Infinity;
+  for (let L = pLo; L <= pHi && L < nz; L++) {
     let s = 0, n = 0;
-    for (let k = -w; k <= w; k++) { const j = r + k; if (j < 0 || j >= nz) continue; s += prof[j]; n++; }
-    sm[r] = s / n;
+    for (let r = 0; r + L < nz; r++) { s += (det[r] - 1) * (det[r + L] - 1); n++; }
+    if (n && s / n > bestCorr) { bestCorr = s / n; period = L; }
   }
-  // 3. the dips: disc spaces. A vertebral body is ~3 cm, so look that far apart.
-  const minGap = Math.max(3, Math.round(2.0 / px));
+  let phase = 0, bestMean = Infinity;
+  for (let o = 0; o < period; o++) {
+    let s = 0, n = 0;
+    for (let r = o; r < nz; r += period) { s += det[r]; n++; }
+    if (n && s / n < bestMean) { bestMean = s / n; phase = o; }
+  }
+  const snap = Math.max(1, Math.round(period / 4));
+  const edge = Math.round(period * 0.6);         // no room for a body: the window ending
   const dips = [];
-  for (let r = minGap; r < nz - minGap; r++) {
-    let isMin = true;
-    for (let k = -minGap; k <= minGap; k++) if (sm[r + k] < sm[r]) { isMin = false; break; }
-    if (isMin && (!dips.length || r - dips[dips.length - 1] >= minGap)) dips.push(r);
+  for (let r = phase; r < nz; r += period) {
+    let bi = -1, bv = Infinity;
+    for (let k = -snap; k <= snap; k++) {
+      const j = r + k;
+      if (j < edge || j > nz - 1 - edge) continue;
+      if (det[j] < bv) { bv = det[j]; bi = j; }
+    }
+    if (bi >= 0 && (!dips.length || bi > dips[dips.length - 1])) dips.push(bi);
   }
-  /* 4. FOUR BODIES, COUNTED UP FROM THE SACRUM — which is how a human does it, and the only
-     way to get the labels right. Rows count from the INFERIOR end of the window, so the
-     bands arrive inferior-first: slice(-4) took the four HIGHEST, i.e. the most superior,
-     which is how T12 ended up in the analysis wearing an L4 label. Take the first four
-     instead, and name them going up: the lowest lumbar body in the window is L4, and L1 is
-     the fourth one above it. */
   const bands = [];
   for (let i = 0; i + 1 < dips.length; i++) bands.push({ a: dips[i], b: dips[i + 1] });
+
+  /* 5. WHICH ONE IS L4. Counting the bodies is not the same as naming them, and the window
+     deliberately opens at L5-S1, so the lowest body in it is L5 — take the first four from
+     the inferior end and every label is off by one. What settles it is the same landmark a
+     technologist reads off a plain film: THE SUMMIT OF THE ILIAC CREST LIES AT THE L4-L5
+     INTERSPACE. The crest is already measured on the phantom for positioning, so the cut
+     nearest it is the L4-L5 disc and L4 is the body immediately superior to that.
+     Two independent routes to the same row — the crest predicts 36.7 on this subject and
+     the profile finds a disc at 36 — which is the check that this is anatomy and not a
+     coincidence of one scan. Rows run with world z, so which way is up depends on dirSup. */
+  const labels = ['L4', 'L3', 'L2', 'L1'];       // in order, walking superiorly
+  const supUp = (sc.dirSup ?? 1) >= 0;           // does the row index increase toward the head?
+  let start = supUp ? 0 : bands.length - 1;      // fall back to the end nearest the sacrum
+  // The crest names LUMBAR vertebrae and nothing else; a hip window sits below it entirely,
+  // so anchoring there would be reading a landmark that is not in the picture.
+  if (sc.region === 'spine' && sc.crestCm != null && dips.length) {
+    const crestRow = (sc.crestCm - sc.z0) / px - 0.5;
+    let k = 0;
+    for (let i = 1; i < dips.length; i++) if (Math.abs(dips[i] - crestRow) < Math.abs(dips[k] - crestRow)) k = i;
+    // the band on the superior side of that cut, in whichever direction superior runs
+    const cand = supUp ? k : k - 1;
+    if (cand >= 0 && cand < bands.length) start = cand;
+  }
   const named = [];
-  const pick = bands.slice(0, 4);                // nearest the sacrum
-  const labels = ['L4', 'L3', 'L2', 'L1'];       // inferior -> superior
-  pick.forEach((bd, i) => named.push({ label: labels[i] || `L${4 - i}`, ...bd, x0: cA, x1: cB }));
-  return { rois: named, col: [cA, cB], prof: sm, dips };
+  for (let i = 0; i < 4; i++) {
+    const bd = bands[supUp ? start + i : start - i];
+    if (!bd) break;
+    named.push({ label: labels[i], ...bd, x0: cA, x1: cB });
+  }
+  return { rois: named, col: [cA, cB], prof: sm, dips, period };
 }
 
 /* ---- the numbers on the report ---------------------------------------------
