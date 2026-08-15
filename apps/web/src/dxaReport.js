@@ -123,12 +123,23 @@ export function drawAgeChart(cv, opts) {
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
 
 export function reportHTML(entry, history, charts) {
-  const p = entry.patient, site = entry.region === 'spine' ? 'spine' : 'hip';
-  const rows = entry.rois.slice().sort((a, b) => a.label.localeCompare(b.label));
+  const p = entry.patient, spine = entry.region === 'spine';
+  /* A femur report is not an alphabetised list. Its regions have a fixed order on every
+     printout — neck, Ward's, trochanter, intertrochanteric, total — and each is scored
+     against its OWN reference, because the intertrochanteric region is half again as dense
+     as the trochanter and one mean for all five would call a normal trochanter osteoporotic.
+     Sorting by name gave "Inter–Wards" as the study's title, which names nothing. */
+  const FEMUR_ORDER = ['Neck', 'Wards', 'Troch', 'Inter', 'Total'];
+  const rows = entry.rois.slice().sort(spine
+    ? (a, b) => a.label.localeCompare(b.label)
+    : (a, b) => FEMUR_ORDER.indexOf(a.label) - FEMUR_ORDER.indexOf(b.label));
   const label = entry.regionLabel;
-  const span = rows.length ? `${rows[0].label}–${rows[rows.length - 1].label}` : 'Total';
+  const site = spine ? 'spine' : 'total';           // what the study as a whole is scored on
+  const span = spine
+    ? (rows.length ? `${rows[0].label}–${rows[rows.length - 1].label}` : 'Total')
+    : 'Total hip';
   const line = (r) => {
-    const s = scores(r.bmd, site, entry.sex, entry.age);
+    const s = scores(r.bmd, spine ? 'spine' : (r.site || 'total'), entry.sex, entry.age);
     return `<tr><td>${r.label}</td><td>${r.area.toFixed(2)}</td><td>${r.bmc.toFixed(2)}</td>`
       + `<td><b>${r.bmd.toFixed(3)}</b></td><td>${s.T.toFixed(1)}</td><td>${s.Z.toFixed(1)}</td></tr>`;
   };

@@ -42,8 +42,13 @@ export const REGIONS = {
      you cannot prove which body you called L4. That is five bodies plus both joints, so
      24 cm rather than the 20 it was, which was cutting the top joint off. */
   spine: { label: 'AP lumbar spine', wx: 14, wz: 24 },
-  hipL:  { label: 'Left hip',        wx: 14, wz: 16 },
-  hipR:  { label: 'Right hip',       wx: 14, wz: 16 },
+  /* The femur field runs UP from its mark exactly as the spine does. Treating the mark as
+     the centre of the window put 13 cm of shaft in the picture and pushed the femoral head
+     hard against the top edge — the one part of the study that carries the diagnosis. Two
+     inches below the trochanter is where the sweep STARTS: 5 cm of shaft below the
+     trochanter, then the trochanter, neck, head and a little acetabulum above it. */
+  hipL:  { label: 'Left hip',        wx: 12, wz: 12 },
+  hipR:  { label: 'Right hip',       wx: 12, wz: 12 },
 };
 
 /* WHERE THE LUMBAR SPINE IS, FOUND RATHER THAN ASSUMED.
@@ -109,11 +114,63 @@ export function findLandmarks(ph) {
     const gapB = Math.max(crestZ, pelvis === first ? ribs.a : ribs.b);
     lumbarZ = (gapA + gapB) / 2;
   }
-  landmarks = { lumbarZ, crestZ, dirSup: Math.sign(landmarkSupDir(mid, nz)) || 1,
+  const dirSup = Math.sign(landmarkSupDir(mid, nz)) || 1;
+  const troch = findTrochanters(ph, aOf, crestZ, dirSup);
+  landmarks = { lumbarZ, crestZ, dirSup,
                 lumbarCm: (lumbarZ + 0.5) * vs[2] + ph.min[2],
-                crestCm: (crestZ + 0.5) * vs[2] + ph.min[2] };
+                crestCm: (crestZ + 0.5) * vs[2] + ph.min[2],
+                troch };
   landmarksFor = ctx.S.subject;
   return landmarks;
+}
+
+/* THE GREATER TROCHANTER, MEASURED. It used to be assumed at "crest minus ~7 cm", which is
+   about where the ASIS is — on this subject the real thing is 9 cm down, so the hip field
+   opened two centimetres high and took in more ilium than femur. There is no need to guess:
+   the trochanter announces itself. Walk down from the crest and the pelvis is ONE bone mass
+   spanning both innominates, 25-30 cm across; the first slice below it where a small
+   free-standing island appears out to the side is the tip of the greater trochanter, because
+   that island is the femur and nothing else is out there. Same idea as the crest above —
+   find the shape the anatomy makes rather than pace out a number from another landmark. */
+function findTrochanters(ph, aOf, crestZ, dirSup) {
+  const nx = ph.nx, ny = ph.ny, nz = ph.nz, data = ph.data, vs = ph.vs;
+  const MIN_W = 2.5, MAX_W = 10;                 // a proximal femur in cross-section, cm
+  const PELVIS_W = 18;                           // both innominates read as one mass
+  const cxVox = nx / 2;
+  const found = { L: null, R: null };
+  let pastPelvis = false;
+  for (let step = 1; step < nz; step++) {
+    const z = Math.round(crestZ - dirSup * step);
+    if (z < 0 || z >= nz) break;
+    const col = new Uint8Array(nx);
+    for (let y = 0; y < ny; y++) {
+      const row = (z * ny + y) * nx;
+      for (let x = 0; x < nx; x++) { const id = data[row + x]; if (id < aOf.length && aOf[id] >= 0.35) col[x] = 1; }
+    }
+    const runs = [];
+    let s = -1;
+    for (let x = 0; x <= nx; x++) {
+      const on = x < nx && col[x];
+      if (on && s < 0) s = x;
+      else if (!on && s >= 0) { runs.push({ a: s, b: x - 1, w: (x - s) * vs[0], c: (s + x - 1) / 2 }); s = -1; }
+    }
+    if (!runs.length) continue;
+    /* THE PELVIS FIRST. At the crest the ilium is already a lateral, femur-sized island on
+       both sides, so looking straight for one finds the wing and calls it a trochanter —
+       which is how the first attempt put the landmark 9 cm high, back at the crest it
+       started from. The femur only counts once the sweep has passed the body of the pelvis,
+       and the pelvis is unmistakable: one mass 25-30 cm across, spanning both innominates. */
+    if (!pastPelvis) { if (Math.max(...runs.map((r) => r.w)) >= PELVIS_W) pastPelvis = true; continue; }
+    for (const r of runs) {
+      const off = (r.c - cxVox) * vs[0];
+      if (r.w < MIN_W || r.w > MAX_W || Math.abs(off) < 4) continue;
+      const side = off < 0 ? 'L' : 'R';          // world -x is the patient's left, as elsewhere
+      if (!found[side]) found[side] = { zCm: (z + 0.5) * vs[2] + ph.min[2], x: Math.abs(off) };
+    }
+    if (found.L && found.R) break;
+  }
+  const fallback = { zCm: (crestZ + 0.5) * vs[2] + ph.min[2] - dirSup * 9, x: 8 };
+  return { L: found.L || found.R || fallback, R: found.R || found.L || fallback };
 }
 // which way is superior: the spine's midline bone thins toward the pelvis and continues
 // toward the chest, so the half with more midline bone away from the crest is cranial
@@ -207,22 +264,24 @@ export function acquire(onRow, onDone) {
   /* THE WINDOW IS WHERE THE OPERATOR PUT THE LASER. It used to be placed on the anatomy
      automatically, which meant the study could not be mispositioned and the pad would have
      been decoration. Now the field is built around the laser: the cross marks the INFERIOR
-     edge of a spine sweep, because the lumbar scan starts at the ASIS and runs superiorly
-     to T11, and marks the CENTRE of a hip field, which is how the femur window is set.
+     edge of the sweep at both sites, because both scans run up the patient — the lumbar
+     from the ASIS to T11, the femur from two inches below the trochanter to the acetabulum.
      Drive the arm to the wrong place and the wrong bones land in the window — which is the
      lesson. positionError() tells the console how far off it is. */
   const cen = ph.min.map((m, i) => (m + ph.max[i]) / 2);
   const lm = findLandmarks(ph);
   const spine = D.region === 'spine';
   const cxW = cen[0] + D.crossX;
-  const czW = spine ? D.headZ + lm.dirSup * reg.wz / 2 : D.headZ;
+  const czW = D.headZ + lm.dirSup * reg.wz / 2;   // the cross is the INFERIOR edge, both sites
   const x0 = cxW - reg.wx / 2, z0 = czW - reg.wz / 2;
   const yBelow = ph.min[1] - 5, yLen = (ph.max[1] - ph.min[1]) + 10;
 
   // Carry the crest with the scan: it is the only thing in the image that says WHICH
   // vertebra is which, and the analysis needs it after the raster is long finished.
+  const tro = lm.troch?.[D.region === 'hipR' ? 'R' : 'L'];
   scan = { nx, nz, lo, hi, truth, x0, z0, px: PX_CM, region: D.region, loss: D.loss || 0,
-    crestCm: lm.crestCm, dirSup: lm.dirSup };
+    crestCm: lm.crestCm, dirSup: lm.dirSup,
+    trochZ: tro ? tro.zCm : null, trochX: tro ? (D.region === 'hipL' ? -tro.x : tro.x) : null };
   rasterRow = 0; scanning = true;
 
   const step = () => {
@@ -403,6 +462,184 @@ export function findLevels(sc, bmd) {
   return { rois: named, col: [cA, cB], prof: sm, dips, period };
 }
 
+/* One entry point for both sites, so every caller — the scan, the reset button, the tests —
+   analyses a study the same way and neither has to know which bone it is holding. */
+export function analyse(sc, bmd) {
+  if (sc.region === 'spine') {
+    const lv = findLevels(sc, bmd);
+    return { rois: lv.rois, col: lv.col, axes: null };
+  }
+  const f = findFemur(sc, bmd);
+  return { rois: f ? f.rois : [], col: null, axes: f ? f.axes : null };
+}
+
+/* ---- the proximal femur ------------------------------------------------------
+   The spine could be segmented straight out of its own image because the discs cut the
+   column into pieces. The femur cannot, and it is worth being clear about why rather than
+   tuning a threshold until it looks right: an AP ray through the hip passes through ilium,
+   acetabulum, femur and ischium stacked on top of one another, so seven tenths of this
+   window is "bone" at any threshold that keeps the femoral neck. Nor does 3-D connectivity
+   help — at the hip joint the head touches the acetabulum, and a flood fill from the
+   trochanter swallows the whole skeleton.
+
+   Real hip densitometry has the same problem and solves it the same way: it fits a MODEL of
+   the proximal femur to the image rather than segmenting the femur out of it. So the axes
+   are measured — the shaft from the image, the neck by searching for it, the trochanter from
+   the phantom during positioning — and the regions are then constructed on those axes the
+   way a console constructs them. Everything that determines a number is a measurement; only
+   the shape of the regions is prior knowledge, which is exactly the split a real analysis
+   makes.
+
+   Coordinates here are (col, row) in scan order: +row is superior, +col is +x in the world.
+   Two frames sit on top of that — s/t along and across the SHAFT, a/b along and across the
+   NECK — and every region is a pair of inequalities in them. */
+const NECK_H = 1.5;         // cm along the neck axis: the GE Lunar neck ROI height
+const DISTAL = 5.0;         // cm below the neck, where the total-hip box stops
+const T_LIMIT = 5.0;        // cm either side of the shaft: keeps the ischium out
+
+function fitShaft(sc, bmd, tc, tr) {
+  const { nx, nz, px } = sc;
+  const BONE = 0.5;
+  // The shaft is the only femoral bone that stands alone: five centimetres below the
+  // trochanter nothing else of the patient is within four centimetres of it.
+  const band = Math.round(4 / px);
+  const pts = [];
+  for (let r = 0; r < Math.min(nz, tr - Math.round(2.5 / px)); r++) {
+    let s = 0, n = 0;
+    const lo = Math.max(0, Math.round(tc - band)), hi = Math.min(nx - 1, Math.round(tc + band));
+    for (let i = lo; i <= hi; i++) { const v = bmd[r * nx + i]; if (v > BONE) { s += i * v; n += v; } }
+    if (n > 0) pts.push({ r, c: s / n });
+  }
+  if (pts.length < 5) return { p: [tc, tr], u: [0, 1] };
+  // least squares c = m*r + k, then the axis direction is (m, 1) normalised, superior-going
+  let sr = 0, sc2 = 0, srr = 0, src = 0;
+  for (const q of pts) { sr += q.r; sc2 += q.c; srr += q.r * q.r; src += q.r * q.c; }
+  const n = pts.length, den = n * srr - sr * sr;
+  const m = Math.abs(den) < 1e-6 ? 0 : (n * src - sr * sc2) / den;
+  const k = (sc2 - m * sr) / n;
+  const L = Math.hypot(m, 1);
+  return { p: [m * tr + k, tr], u: [m / L, 1 / L] };
+}
+
+export function findFemur(sc, bmd) {
+  const { nx, nz, px } = sc;
+  if (sc.trochX == null) return null;
+  const tc = (sc.trochX - sc.x0) / px - 0.5;      // trochanter, in scan coordinates
+  const tr = (sc.trochZ - sc.z0) / px - 0.5;
+  if (!(tc > 0 && tc < nx && tr > 0 && tr < nz)) return null;
+  const med = sc.region === 'hipL' ? +1 : -1;     // which way the midline lies, in columns
+
+  const { p, u } = fitShaft(sc, bmd, tc, tr);
+  const uT = [-u[1], u[0]];                       // across the shaft
+
+  /* THE NECK, BY LOOKING FOR IT. Swing a ray out of the trochanteric mass across the
+     plausible neck-shaft angles and integrate the mineral along it: the neck is a dense
+     ridge running superomedially and it wins clearly. Then walk out along the winner and
+     watch the width — the narrowest cross-section IS the neck, which is where a console
+     puts the box and where a fracture starts. */
+  const pivot = [p[0] + u[0] * (tr - p[1]), tr];
+  const RAY = Math.round(6 / px);
+  // The neck-shaft angle is the angle at the DISTAL shaft, which is why the sweep starts
+  // from the shaft pointing at the knee. Swinging the proximal direction instead sends the
+  // search inferolaterally, out through the trochanter and off the bottom of the picture.
+  const dn = [-u[0], -u[1]];
+  let best = -1, bestAng = 0;
+  for (let deg = 100; deg <= 160; deg += 2) {
+    const th = deg * Math.PI / 180;
+    // rotate the shaft direction toward the midline by the neck-shaft angle
+    const cs = Math.cos(th), sn = Math.sin(th) * med;
+    const d = [dn[0] * cs - dn[1] * sn, dn[0] * sn + dn[1] * cs];
+    let sum = 0;
+    for (let t = Math.round(1.5 / px); t < RAY; t++) {
+      const c = Math.round(pivot[0] + d[0] * t), r = Math.round(pivot[1] + d[1] * t);
+      if (c < 0 || r < 0 || c >= nx || r >= nz) break;
+      sum += bmd[r * nx + c];
+    }
+    if (sum > best) { best = sum; bestAng = th; }
+  }
+  const cs = Math.cos(bestAng), sn = Math.sin(bestAng) * med;
+  const nAx = [dn[0] * cs - dn[1] * sn, dn[0] * sn + dn[1] * cs];
+  const nT = [-nAx[1], nAx[0]];
+
+  // width across the neck, walking outward: the minimum is the neck proper
+  const BONE = 0.5;
+  let narrow = Infinity, narrowT = Math.round(3 / px), halfW = Math.round(2 / px);
+  for (let t = Math.round(2 / px); t <= Math.round(5.5 / px); t++) {
+    const c0 = pivot[0] + nAx[0] * t, r0 = pivot[1] + nAx[1] * t;
+    let w = 0;
+    for (let k = -Math.round(3 / px); k <= Math.round(3 / px); k++) {
+      const c = Math.round(c0 + nT[0] * k), r = Math.round(r0 + nT[1] * k);
+      if (c < 0 || r < 0 || c >= nx || r >= nz) continue;
+      if (bmd[r * nx + c] > BONE) w++;
+    }
+    if (w > 0 && w < narrow) { narrow = w; narrowT = t; halfW = w / 2; }
+  }
+  const H = [pivot[0] + nAx[0] * narrowT, pivot[1] + nAx[1] * narrowT];
+
+  /* THE REGIONS. Along the neck: the head sits beyond the box and is thrown away, because
+     total hip has never included it. Behind the box, the trochanteric mass divides at the
+     neck's own level — greater trochanter above, intertrochanteric below — and stops five
+     centimetres down, which is the distal cut every total-hip box uses. */
+  const halfH = (NECK_H / 2) / px, halfWpx = Math.max(halfW, 1.2 / px);
+  const sOf = (c, r) => (c - p[0]) * u[0] + (r - p[1]) * u[1];
+  const tOf = (c, r) => (c - p[0]) * uT[0] + (r - p[1]) * uT[1];
+  const aOf2 = (c, r) => (c - H[0]) * nAx[0] + (r - H[1]) * nAx[1];
+  const bOf = (c, r) => (c - H[0]) * nT[0] + (r - H[1]) * nT[1];
+  const sNeck = sOf(H[0], H[1]), tLim = T_LIMIT / px;
+  const sStop = sNeck - DISTAL / px, sTop = sNeck + 3.5 / px;   // above the trochanter is ilium
+
+  const mk = () => new Uint8Array(nx * nz);
+  const neck = mk(), troch = mk(), inter = mk(), total = mk();
+  for (let r = 0; r < nz; r++) for (let c = 0; c < nx; c++) {
+    const k = r * nx + c;
+    if (bmd[k] <= BONE) continue;
+    const a = aOf2(c, r), b = bOf(c, r), s = sOf(c, r), t = tOf(c, r);
+    if (Math.abs(t) > tLim) continue;             // the ischium, and the far side of the pelvis
+    if (Math.abs(a) <= halfH && Math.abs(b) <= halfWpx) { neck[k] = 1; total[k] = 1; continue; }
+    if (a > halfH) continue;                      // femoral head and acetabulum: never counted
+    if (s > sTop || s < sStop) continue;
+    if (s > sNeck) { troch[k] = 1; total[k] = 1; }
+    else { inter[k] = 1; total[k] = 1; }
+  }
+
+  /* WARD'S. Not a landmark but a SEARCH: the square centimetre of lowest density in the
+     neck, where the compressive and tensile trabeculae leave a gap. It is reported because
+     it is the first thing to thin, and it must never be used for diagnosis — too small and
+     too variable — which is why the report carries it flagged rather than in the total. */
+  const side = Math.max(2, Math.round(1 / px));
+  let wardBest = Infinity, wardAt = null;
+  for (let t = Math.round(1.5 / px); t <= narrowT + Math.round(1 / px); t++) {
+    for (let k = -Math.round(1.5 / px); k <= Math.round(1.5 / px); k++) {
+      const c0 = Math.round(pivot[0] + nAx[0] * t + nT[0] * k);
+      const r0 = Math.round(pivot[1] + nAx[1] * t + nT[1] * k);
+      let s = 0, n = 0;
+      for (let dr = 0; dr < side; dr++) for (let dc = 0; dc < side; dc++) {
+        const c = c0 + dc - (side >> 1), r = r0 + dr - (side >> 1);
+        if (c < 0 || r < 0 || c >= nx || r >= nz) { n = 0; dr = side; break; }
+        s += bmd[r * nx + c]; n++;
+      }
+      if (n === side * side && s / n > 0.2 && s / n < wardBest) { wardBest = s / n; wardAt = [c0, r0]; }
+    }
+  }
+  const wards = mk();
+  if (wardAt) {
+    for (let dr = 0; dr < side; dr++) for (let dc = 0; dc < side; dc++) {
+      const c = wardAt[0] + dc - (side >> 1), r = wardAt[1] + dr - (side >> 1);
+      if (c >= 0 && r >= 0 && c < nx && r < nz) wards[r * nx + c] = 1;
+    }
+  }
+
+  const count = (m) => { let n = 0; for (let i = 0; i < m.length; i++) n += m[i]; return n; };
+  const rois = [
+    { label: 'Neck', mask: neck, site: 'neck' },
+    { label: 'Wards', mask: wards, site: 'wards', noTotal: true },
+    { label: 'Troch', mask: troch, site: 'troch' },
+    { label: 'Inter', mask: inter, site: 'inter' },
+    { label: 'Total', mask: total, site: 'total' },
+  ].filter((r) => count(r.mask) > 4);
+  return { rois, axes: { p, u, H, nAx, halfH, halfW: halfWpx, sNeck, sStop } };
+}
+
 /* ---- the numbers on the report ---------------------------------------------
    BMC is the mineral actually in the box (g); AREA is the box's projected area (cm2);
    BMD is one divided by the other. That order matters — BMD is a RATIO, which is why a
@@ -412,10 +649,19 @@ export function measure(sc, bmd, rois) {
   const a = sc.px * sc.px;                       // cm2 per pixel
   return rois.map((r) => {
     let bmc = 0, n = 0;
-    for (let row = r.a; row < r.b; row++) {
-      for (let i = r.x0; i <= r.x1; i++) {
-        const v = bmd[row * sc.nx + i];
+    if (r.mask) {
+      // femoral regions are masks, not bands: their edges follow the bone, not the raster
+      for (let k = 0; k < r.mask.length; k++) {
+        if (!r.mask[k]) continue;
+        const v = bmd[k];
         if (v > 0.05) { bmc += v * a; n++; }
+      }
+    } else {
+      for (let row = r.a; row < r.b; row++) {
+        for (let i = r.x0; i <= r.x1; i++) {
+          const v = bmd[row * sc.nx + i];
+          if (v > 0.05) { bmc += v * a; n++; }
+        }
       }
     }
     const area = n * a;
@@ -430,7 +676,17 @@ export function measure(sc, bmd, rois) {
    osteoporotic by T and perfectly ordinary by Z. */
 export const REF = {
   spine: { f: { yMean: 1.047, ySD: 0.110 }, m: { yMean: 1.087, ySD: 0.120 } },
-  hip:   { f: { yMean: 0.858, ySD: 0.120 }, m: { yMean: 0.934, ySD: 0.130 } },
+  /* The femur is not one site. Its regions differ by a factor of two — the intertrochanteric
+     is the densest thing in the proximal femur and Ward's the least — so scoring them all
+     against one mean would make a normal trochanter look osteoporotic and a normal
+     intertrochanter look enviable. NHANES III publishes them separately, so use them
+     separately. `hip` is kept as the total-hip alias for anything still asking for it. */
+  neck:  { f: { yMean: 0.858, ySD: 0.120 }, m: { yMean: 0.934, ySD: 0.130 } },
+  troch: { f: { yMean: 0.697, ySD: 0.100 }, m: { yMean: 0.769, ySD: 0.110 } },
+  inter: { f: { yMean: 1.092, ySD: 0.155 }, m: { yMean: 1.194, ySD: 0.166 } },
+  total: { f: { yMean: 0.942, ySD: 0.122 }, m: { yMean: 1.031, ySD: 0.134 } },
+  wards: { f: { yMean: 0.727, ySD: 0.128 }, m: { yMean: 0.766, ySD: 0.140 } },
+  hip:   { f: { yMean: 0.942, ySD: 0.122 }, m: { yMean: 1.031, ySD: 0.134 } },
 };
 export function ageMean(site, sex, age) {
   const r = REF[site][sex];
@@ -462,9 +718,21 @@ export function render(sc, bmd, upto) {
   const img = g.createImageData(nx, nz);
   const rows = upto == null ? nz : Math.min(nz, upto);
   // window on the bone-mineral map: 0 to ~1.6 g/cm2 covers spine and hip
+  /* WINDOW ON A PERCENTILE, NOT THE PEAK. Scaling to the brightest pixel works at the spine,
+     where the brightest thing IS the anatomy. At the hip a single ray can catch ilium,
+     acetabulum, femur and ischium end-on and come back at 7 g/cm2 — five times the femur —
+     and everything the study is about gets squeezed into the bottom fifth of the greyscale.
+     Clipping at the 99th percentile throws away that one hot ray and gives the femur the
+     range instead. It is a display window and nothing more: no measurement reads this. */
   const src = bmd || sc.lo;
+  const n = rows * nx;
   let hiV = 0;
-  for (let k = 0; k < rows * nx; k++) if (src[k] > hiV) hiV = src[k];
+  if (n > 0) {
+    const sample = new Float32Array(n);
+    sample.set(src.subarray(0, n));
+    sample.sort();
+    hiV = sample[Math.min(n - 1, Math.floor(n * 0.99))];
+  }
   hiV = hiV || 1;
   // HANGING. The raster walks world +z, which is the patient's head, so scan row 0 is the
   // most INFERIOR line and would land at the top of the canvas — the film upside down.
@@ -509,10 +777,53 @@ function roiRect(sc, r, s, ox, oy) {
   const dxA = (sc.nx - 1 - r.x1) * s + ox, dxB = (sc.nx - r.x0) * s + ox;
   return { x: dxA, y: dyA, w: dxB - dxA, h: dyB - dyA };
 }
+/* The femoral regions are masks whose edges follow the bone, not the raster, so they are
+   painted at scan resolution and scaled up with the same double flip as the image. Drawing
+   them as outlines would be a lie about what was counted; on a real console the femur
+   regions hug the cortex in exactly this way. */
+let maskCanvas = null;
+const MASK_RGB = { Neck: [64, 220, 120], Troch: [96, 190, 255], Inter: [255, 190, 90],
+  Wards: [255, 120, 160], Total: null };
+function drawMasks(g, sc, s, ox, oy) {
+  const { nx, nz } = sc;
+  if (!maskCanvas) maskCanvas = document.createElement('canvas');
+  if (maskCanvas.width !== nx || maskCanvas.height !== nz) { maskCanvas.width = nx; maskCanvas.height = nz; }
+  const m2 = maskCanvas.getContext('2d');
+  const img = m2.createImageData(nx, nz);
+  for (const r of sc.rois) {
+    const rgb = MASK_RGB[r.label];
+    if (!rgb || !r.mask) continue;               // Total is the union of the others: not drawn twice
+    for (let dy = 0; dy < nz; dy++) {
+      const sy = nz - 1 - dy;
+      for (let dx = 0; dx < nx; dx++) {
+        const sx = nx - 1 - dx;
+        if (!r.mask[sy * nx + sx]) continue;
+        const k = (dy * nx + dx) * 4;
+        img.data[k] = rgb[0]; img.data[k + 1] = rgb[1]; img.data[k + 2] = rgb[2]; img.data[k + 3] = 92;
+      }
+    }
+  }
+  m2.putImageData(img, 0, 0);
+  g.drawImage(maskCanvas, ox, oy, nx * s, nz * s);
+  // a label on each region, at its own centre of mass
+  g.font = '11px ui-monospace, monospace';
+  for (const r of sc.rois) {
+    const rgb = MASK_RGB[r.label];
+    if (!rgb || !r.mask) continue;
+    let sx = 0, sy = 0, n = 0;
+    for (let row = 0; row < nz; row++) for (let c = 0; c < nx; c++) if (r.mask[row * nx + c]) { sx += c; sy += row; n++; }
+    if (!n) continue;
+    const dx = (nx - 1 - sx / n) * s + ox, dy = (nz - 1 - sy / n) * s + oy;
+    g.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    g.fillText(r.label, dx - 12, dy + 4);
+  }
+}
+
 function drawRois(g, sc, s, ox, oy) {
   roiView = null;
   if (!sc.rois || !sc.rois.length || !D.showRois) return;
   roiView = { s, ox, oy, nx: sc.nx, nz: sc.nz };
+  if (sc.rois.some((r) => r.mask)) { drawMasks(g, sc, s, ox, oy); return; }
   g.save();
   g.lineWidth = 1.5;
   const boxes = sc.rois.map((r) => roiRect(sc, r, s, ox, oy));
@@ -557,6 +868,9 @@ function cutRows(sc) {
 function cutYs(sc, s, oy) { return cutRows(sc).map((row) => (sc.nz - row) * s + oy); }
 function hitTest(px, py) {
   if (!scan || !scan.rois || !scan.rois.length || !roiView || !D.editRois) return null;
+  // The three spine gestures — drag a cut, pull an edge — have no meaning on a femur, whose
+  // regions are built on the neck and shaft axes rather than stacked in rows.
+  if (scan.rois.some((r) => r.mask)) return null;
   const { s, ox, oy } = roiView;
   const boxes = scan.rois.map((r) => roiRect(scan, r, s, ox, oy));
   const top = Math.min(...boxes.map((b) => b.y));
@@ -610,30 +924,57 @@ function reportNow() {
    The classic output: a row per level, the L1-L4 mean that the diagnosis is actually
    made on, and the T-score against the -1.0 / -2.5 lines. The raw uncalibrated density
    rides along in the last column so the calibration is visible rather than assumed. */
+const FEMUR_ORDER = ['Neck', 'Wards', 'Troch', 'Inter', 'Total'];
 export function report(sc) {
   const tb = $('dxTable'); if (!tb || !sc.rois) return;
-  const site = sc.region === 'spine' ? 'spine' : 'hip';
+  const spine = sc.region === 'spine';
   const sex = D.sex || 'f', age = D.age || 60;
   // rois are stored inferior-first, because the cut editor needs them contiguous in row
   // order; a report reads down from L1, so take a copy in label order for display only
-  const rows = sc.rois.slice().sort((p, q) => p.label.localeCompare(q.label));
-  let bmcT = 0, areaT = 0;
-  for (const r of rows) { bmcT += r.bmc; areaT += r.area; }
-  const mean = areaT > 0 ? bmcT / areaT : 0;
-  const s = scores(mean, site, sex, age);
+  const rows = sc.rois.slice().sort(spine
+    ? (p, q) => p.label.localeCompare(q.label)
+    : (p, q) => FEMUR_ORDER.indexOf(p.label) - FEMUR_ORDER.indexOf(q.label));
+  const siteOf = (r) => (spine ? 'spine' : (r.site || 'total'));
+
+  /* WHAT THE DIAGNOSIS IS MADE ON. At the spine it is the L1-L4 mean, so the areas add.
+     At the femur they must NOT: the regions overlap the total, adding them would count the
+     same bone twice, and Ward's is not a diagnostic site at all — too small and too
+     variable, which is why the ISCD names only the femoral neck and the total hip. So the
+     femur reports its measured Total region and scores that, rather than summing a column. */
+  let head, mean, s;
+  if (spine) {
+    let bmcT = 0, areaT = 0;
+    for (const r of rows) { bmcT += r.bmc; areaT += r.area; }
+    mean = areaT > 0 ? bmcT / areaT : 0;
+    s = scores(mean, 'spine', sex, age);
+    head = rows.length ? rows[0].label + '–' + rows[rows.length - 1].label : 'Total';
+    sc.areaT = areaT; sc.bmcT = bmcT;
+  } else {
+    const tot = rows.find((r) => r.label === 'Total') || rows[0];
+    mean = tot ? tot.bmd : 0;
+    s = tot ? scores(mean, 'total', sex, age) : { T: 0, Z: 0 };
+    head = 'Total hip';
+    sc.areaT = tot ? tot.area : 0; sc.bmcT = tot ? tot.bmc : 0;
+  }
   const dx = diagnosis(s.T);
   const line = (r) => {
-    const sc2 = scores(r.bmd, site, sex, age);
-    return `<tr><td>${r.label}</td><td>${r.area.toFixed(1)}</td><td>${r.bmc.toFixed(2)}</td>`
+    const sc2 = scores(r.bmd, siteOf(r), sex, age);
+    const flag = r.label === 'Wards' ? ' title="Reported, never used for diagnosis"' : '';
+    return `<tr${r.label === 'Total' ? ' class="dxsum"' : ''}${flag}><td>${r.label}${r.label === 'Wards' ? '*' : ''}</td>`
+      + `<td>${r.area.toFixed(1)}</td><td>${r.bmc.toFixed(2)}</td>`
       + `<td><b>${r.bmd.toFixed(3)}</b></td><td>${sc2.T.toFixed(1)}</td><td class="dxraw">${r.bmdRaw.toFixed(2)}</td></tr>`;
   };
   tb.innerHTML = '<table class="dxtab"><tr><th>Region</th><th>Area<br><small>cm²</small></th>'
     + '<th>BMC<br><small>g</small></th><th>BMD<br><small>g/cm²</small></th><th>T</th>'
     + '<th class="dxraw">raw</th></tr>'
-    + rows.map(line).join('')
-    + `<tr class="dxsum"><td>${rows.length ? rows[0].label + '–' + rows[rows.length - 1].label : 'Total'}</td>`
-    + `<td>${areaT.toFixed(1)}</td><td>${bmcT.toFixed(2)}</td><td><b>${mean.toFixed(3)}</b></td>`
-    + `<td><b>${s.T.toFixed(1)}</b></td><td class="dxraw">—</td></tr></table>`
+    + rows.filter((r) => spine || r.label !== 'Total').map(line).join('')
+    + (spine
+      ? `<tr class="dxsum"><td>${head}</td><td>${sc.areaT.toFixed(1)}</td><td>${sc.bmcT.toFixed(2)}</td>`
+        + `<td><b>${mean.toFixed(3)}</b></td><td><b>${s.T.toFixed(1)}</b></td><td class="dxraw">—</td></tr>`
+      : rows.filter((r) => r.label === 'Total').map(line).join(''))
+    + '</table>'
+    + (spine ? '' : '<div class="dxnote">* Ward\'s area is reported by convention and never used for '
+      + 'diagnosis. The WHO thresholds apply at the femoral neck and the total hip.</div>')
     + `<div class="dxdx dx-${dx.toLowerCase()}">${dx} &middot; T ${s.T.toFixed(1)} &middot; Z ${s.Z.toFixed(1)}`
     + `<small>WHO: normal &ge; &minus;1.0 &middot; osteopenia &minus;1.0 to &minus;2.5 &middot; osteoporosis &le; &minus;2.5</small></div>`;
   sc.mean = mean; sc.T = s.T; sc.Z = s.Z; sc.dx = dx;
@@ -658,12 +999,15 @@ function patientOf() {
 function fileStudy(sc) {
   if (!sc || !sc.rois || !sc.rois.length) return;
   const film = $('film');
-  let bmcT = 0, areaT = 0;
-  for (const r of sc.rois) { bmcT += r.bmc; areaT += r.area; }
+  // report() has already worked out what the study's headline area and mass are: the L1-L4
+  // sum at the spine, the measured Total region at the femur. Re-summing the rows here would
+  // count the femur twice over, since Neck, Troch and Inter are all inside Total.
+  const areaT = sc.areaT ?? sc.rois.reduce((s, r) => s + r.area, 0);
+  const bmcT = sc.bmcT ?? sc.rois.reduce((s, r) => s + r.bmc, 0);
   D.history = D.history || [];
   D.history.unshift({
     region: sc.region, regionLabel: REGIONS[sc.region]?.label || sc.region,
-    rois: sc.rois.map((r) => ({ label: r.label, area: r.area, bmc: r.bmc, bmd: r.bmd })),
+    rois: sc.rois.map((r) => ({ label: r.label, area: r.area, bmc: r.bmc, bmd: r.bmd, site: r.site })),
     mean: sc.mean, T: sc.T, Z: sc.Z, dx: sc.dx, loss: sc.loss || 0,
     area: areaT, bmc: bmcT,
     age: D.age, weight: D.weight, sex: D.sex,
@@ -895,9 +1239,11 @@ function landmarkTargets() {
     const asis = lm.crestCm - lm.dirSup * 7;
     return { z: asis + lm.dirSup * INCH, x: 0, label: '1 in above the ASIS midline' };
   }
-  // greater trochanter is level with the crest minus ~7 cm on an adult femur
-  const gt = lm.crestCm - lm.dirSup * 7;
-  return { z: gt - lm.dirSup * 2 * INCH, x: D.region === 'hipL' ? -8 : 8,
+  // the trochanter is measured off the phantom, not paced out from the crest
+  const t = lm.troch?.[D.region === 'hipL' ? 'L' : 'R'];
+  const gt = t ? t.zCm : lm.crestCm - lm.dirSup * 9;
+  const lat = t ? t.x : 8;
+  return { z: gt - lm.dirSup * 2 * INCH, x: D.region === 'hipL' ? -lat : lat,
     label: '2 in below the greater trochanter' };
 }
 /* How far the operator is from that mark, in cm — what the console reports back and what
@@ -1065,9 +1411,9 @@ export function initDXA(context) {
       (sc) => {
         const { bmd } = decompose(sc);
         sc.bmdMap = bmd;
-        const lv = findLevels(sc, bmd);
-        sc.rois = measure(sc, bmd, lv.rois);
-        sc.col = lv.col;
+        const an = analyse(sc, bmd);
+        sc.rois = measure(sc, bmd, an.rois);
+        sc.col = an.col; sc.axes = an.axes;
         render(sc, bmd);
         report(sc);
         fileStudy(sc);
@@ -1158,14 +1504,14 @@ export function initDXA(context) {
   });
   $('dxRoiReset')?.addEventListener('click', () => {
     if (!scan || !scan.bmdMap) return;
-    const lv = findLevels(scan, scan.bmdMap);          // back to what the machine found
-    scan.rois = measure(scan, scan.bmdMap, lv.rois);
-    scan.col = lv.col;
+    const an = analyse(scan, scan.bmdMap);             // back to what the machine found
+    scan.rois = measure(scan, scan.bmdMap, an.rois);
+    scan.col = an.col; scan.axes = an.axes;
     render(scan, scan.bmdMap); report(scan);
   });
   syncPad();
   if (typeof window !== 'undefined') window.__dxa = () => ({ D, scan, acquire, decompose, basis,
-    E_LO, E_HI, REGIONS, findLevels, measure, scores, diagnosis, ageMean, REF, CAL,
+    E_LO, E_HI, REGIONS, findLevels, findFemur, analyse, measure, scores, diagnosis, ageMean, REF, CAL,
     THREE: ctx.THREE,
     rig: { scannedRig, bedNode, headNode, laser, rigScale, bedTopY, bedLenCm },
     landmarkTargets, positionError, parkAtLandmark, nudge });
