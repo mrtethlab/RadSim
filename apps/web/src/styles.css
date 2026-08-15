@@ -1586,6 +1586,13 @@ body.mode-fluoro .fl-hide{display:none}   /* x-ray/CT display options with no fl
 .tgclab{font-family:var(--seg); font-size:8.5px; letter-spacing:1.2px; color:var(--dmuted2);
   width:26px; text-align:right; flex:none}
 .tgcrow .tgcs{flex:1; margin:0}
+/* Only x-ray and CT put the camera under the operator's control, so everywhere else the
+   Camera heading was labelling an empty box — and now that other sections sit below it in
+   the menu, an empty heading reads as the title of whatever follows. Opt in rather than
+   out: a new mode gets no Camera section until it grows camera controls. */
+#bayCamGrp{display:none}
+body.mode-xray #bayCamGrp, body.mode-ct #bayCamGrp{display:block}
+
 /* ---- ultrasound mode gating ---- */
 .dx-only{display:none}
 body.mode-dxa .dx-only{display:block}
