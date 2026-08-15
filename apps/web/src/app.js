@@ -855,8 +855,14 @@ function buildPhantom(){
   const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10 + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
   const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R);
-  applyContrast(ph);
-  applyBarium(ph);
+  /* Iodine and barium belong to the modes that give them. Densitometry never does, and it
+     is the one mode where leftover contrast would do real damage rather than just look odd:
+     its two-material solve is bone against soft tissue, so a bolus still sitting in the
+     aorta from an earlier x-ray gets read as mineral and quietly inflates the BMD. The
+     injector's tab is hidden in this mode, so the operator could not even see what was
+     wrong — which is exactly why the phantom has to refuse it rather than rely on the UI. */
+  const usesContrast = S.mode!=='dxa' && S.mode!=='mammo' && S.mode!=='us';
+  if(usesContrast){ applyContrast(ph); applyBarium(ph); }
   return ph;
 }
 

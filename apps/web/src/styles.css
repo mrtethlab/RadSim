@@ -934,6 +934,14 @@ body.ct-busy #ctScanGroups, body.ct-busy #modeBar{opacity:.45; pointer-events:no
    the injector is a setting you dip into, not something you work in. The tab stays visible
    when closed so the feature is discoverable without hunting through settings. */
 .ctrst{position:absolute; top:0; bottom:0; left:0; z-index:12; pointer-events:none}
+/* The injector belongs to the modes that actually run iodine: radiography, CT and
+   fluoroscopy. Densitometry, mammography and ultrasound never give IV contrast — a
+   densitometer measures mineral, a mammogram is a plain soft-tissue film, and an
+   ultrasound has no x-ray beam for iodine to attenuate — so the tab is not merely
+   disabled in those rooms, it is absent. (The barium drawer is already xray-only.) */
+body.mode-dxa #ctrstPanel,
+body.mode-mammo #ctrstPanel,
+body.mode-us #ctrstPanel{display:none}
 /* Slide by transform, not width. The panel is a shrink-to-fit absolutely positioned box, so
    a flex child sized in px gets clamped by percentage max-width against a container that is
    only as wide as the closed tab — the drawer stayed 1px no matter what width it asked for.
