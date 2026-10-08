@@ -13,6 +13,8 @@ import { Materials, BodyMaterials } from './core/materials.js';
 import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
 import { buildConcLUT, NS as CONTRAST_NS, groupFireTime, afterGroupTime } from './core/contrast.js';
 import { Sound } from './audio/sound.js';
+import { groupDose, effectiveMAs } from './core/ctDose.js';
+import { roiStats } from './core/ctRoi.js';
 
 let ctx = null;
 let couch = null, gantry = null, gantrySpin = null;  // couch pallet (moves) + gantry ring (static) + rotating tube/detector (scan only)
@@ -2090,9 +2092,30 @@ function addGroup() {
 const EYE_OPEN = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6" fill="currentColor"/></svg>';
 const EYE_CLOSED = '<svg viewBox="0 0 24 24" width="16" height="16"><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M3 10c2.2 2.9 5.6 4.6 9 4.6S18.8 12.9 21 10"/><path stroke="currentColor" stroke-width="1.7" stroke-linecap="round" d="M6 13.3l-1.6 2M12 15.1v2.4M18 13.3l1.6 2"/></svg>';
 const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff" d="M9 3l-1 1H4v2h16V4h-4l-1-1H9zM6 8l1.2 12.2c.1.9.9 1.8 1.9 1.8h5.8c1 0 1.8-.9 1.9-1.8L18 8H6zm4 2h1v9h-1v-9zm3 0h1v9h-1v-9z"/></svg>';
+/* Dose for one group, from the same geometry the scan itself uses: the planned length and the
+   table feed per rotation (the overrun at each end is about one rotation's feed). */
+function doseOf(g) {
+  return groupDose(g, { scanLenMM: groupScanLenMM(g), feedMMPerRot: tableSpeedOf(g), subject: ctx.S.subject });
+}
+/* The study total the dose screen shows: DLP adds across groups (each irradiates its own
+   length), CTDIvol does not — it is a per-group intensity, so the total reports the largest. */
+function studyDoseLine() {
+  const gs = ctx.S.ct.groups.filter((g) => g.on && !g.monitor);
+  if (!gs.length) return '';
+  const ds = gs.map(doseOf);
+  const totDLP = ds.reduce((a, d) => a + d.dlp, 0);
+  const maxCTDI = Math.max(...ds.map((d) => d.ctdiVol));
+  const e = ds[0].effective;
+  return '<div class="sg-dose">Study: CTDIvol up to <b>' + maxCTDI.toFixed(1) + ' mGy</b> · total DLP <b>'
+    + Math.round(totDLP) + ' mGy·cm</b>'
+    + (e ? ' · effective dose ≈ <b>' + (totDLP * e.k).toFixed(1) + ' mSv</b> <span class="sg-dose-note">('
+      + e.region + ', k = ' + e.k + ' mSv/mGy·cm, adult — a population estimate, not this patient’s dose)</span>'
+      : ' <span class="sg-dose-note">(phantom — no effective dose)</span>')
+    + '</div>';
+}
 const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'SFOV', 'DFOV', 'Detector Config',
   'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time',
-  'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'Scan Delay'];
+  'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'CTDIvol', 'DLP', 'Scan Delay'];
 // DFOV-centre offset from the SFOV centre (isocentre): anteroposterior + mediolateral (mm).
 // DFOV centre offset (mm) relative to the isocentre: +ml = patient-right, +ap = posterior.
 // GE reads it off the box position (off-centred by dragging); Canon reads the un-committed
@@ -2201,6 +2224,10 @@ function renderScanGroups() {
       + cell('sg-edit', 'kv', g.kv + ' kV')
       + cell('sg-edit', 'ma', g.ma + ' mA')
       + cell('sg-calc', '', groupExpTime(g).toFixed(1) + ' s')
+      + (() => { const d = doseOf(g);
+          return '<td><span class="sg-calc" title="' + (d.phantom === 'head' ? '16 cm head' : '32 cm body')
+            + ' CTDI phantom · effective ' + Math.round(d.effMAs) + ' mAs">' + d.ctdiVol.toFixed(1) + ' mGy</span></td>'
+            + '<td><span class="sg-calc">' + Math.round(d.dlp) + ' mGy·cm</span></td>'; })()
       + cell('sg-edit' + (g.delayMode === 'bolus' || g.delayMode === 'test' ? ' sg-bolus' : '')
                + (g.monitor ? ' sg-mon' : ''), 'delay',
              g.monitor ? (nextIsTest(gi) ? 'Test bolus · 0 s' : 'Tracking · 0 s')
@@ -2213,7 +2240,8 @@ function renderScanGroups() {
   }
   const anyOff = c.groups.some((g) => !g.on);
   cont.innerHTML = '<table class="sg-table"><thead><tr>' + SG_HEADERS.map((h) => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>'
-    + rows + '</tbody></table>' + (anyOff ? '<button class="sg-add">+ Add scan group</button>' : '');
+    + rows + '</tbody></table>' + studyDoseLine()
+    + (anyOff ? '<button class="sg-add">+ Add scan group</button>' : '');
   // table height changed (rows added/removed) → re-fit the scouts so nothing overlaps
   if (ctx.$('ctScouts')?.classList.contains('show')) layoutScouts();
 }
@@ -3726,8 +3754,12 @@ function scanSetup(g) {
 // photon-starved (metal) rays. Together with the harder spectrum (less beam hardening +
 // better metal penetration, handled in scanSetup), this reproduces the clinical result
 // that raising kVp reduces metal artifacts.
-function photonsFor(g, geo) {
-  return (geo.m.photonBase || PHOTON_BASE) * (g.ma / 300) * (g.rotSpeed / 0.5) * (groupBaseThk(g) / 5)
+/* Photons per reconstructed slice. They scale with the EFFECTIVE mAs — mA x rotation time /
+   pitch — the same quantity CTDIvol is built from (core/ctDose.js), so the noise and the dose
+   readout can never disagree. Pitch used to be missing here: stretching the helix thinned the
+   dose on the console and left the noise untouched. Reference 300 mA x 0.5 s at pitch 1. */
+export function photonsFor(g, geo) {
+  return (geo.m.photonBase || PHOTON_BASE) * (effectiveMAs(g.ma, g.rotSpeed, g.pitch) / (300 * 0.5)) * (groupBaseThk(g) / 5)
     * Math.pow(g.kv / 120, 2)                              // fluence ∝ kVp² (120 kVp = reference)
     * (DET_MODES.quick.nAngles / geo.m.nAngles);
 }
@@ -3853,7 +3885,8 @@ function storeScan(g, i, recon) {
   const el = acqThkOf(g);                          // detector element = minimum recon thickness
   const entry = {
     id, label: 'Scan ' + id + ' · G' + (i + 1), ts: tstamp(),
-    params: { kv: g.kv, ma: g.ma, sliceThk: groupBaseThk(g), pitch: g.pitch, interval: groupBaseInterval(g), rotSpeed: g.rotSpeed, acqThk: el, detRows: g.detRows, beamColl: g.beamColl },
+    params: { kv: g.kv, ma: g.ma, sliceThk: groupBaseThk(g), pitch: g.pitch, interval: groupBaseInterval(g), rotSpeed: g.rotSpeed, acqThk: el, detRows: g.detRows, beamColl: g.beamColl ,
+      dose: (() => { const d = doseOf(g); return { ctdiVol: d.ctdiVol, dlp: d.dlp, phantom: d.phantom }; })() },
     gridN: recon.gridN, fovMM: recon.fovMM, muWater: recon.muWater, effE: recon.effE, slices: recon.slices,
     // full volume + geometry for multiplanar resampling
     vol: recon.vol, nz: recon.nz, z0: recon.z0, dz: recon.dz, centerY: recon.centerY,
@@ -3926,6 +3959,64 @@ function drawSliceToCanvas(cv, scan, sl, wl, ww) {
   g.putImageData(im, 0, 0);
 }
 
+/* ---- the HU region of interest ---- */
+// v.roi = { cx, cy, r } in slice-grid pixels, display orientation. It stays where it was put
+// while the slices scroll or another scan is chosen, so the same patch can be compared.
+const SMALL_ROI_PX = 200;          // below this, an SD is too noisy to compare techniques with
+function drawRoi(cv, scan) {
+  const roi = ctx.S.ct.viewer.roi; if (!roi) return;
+  const g = cv.getContext('2d'), N = scan.gridN;
+  g.save();
+  g.strokeStyle = '#ffd24a'; g.lineWidth = Math.max(1, N / 256);
+  g.beginPath(); g.arc(roi.cx, roi.cy, roi.r, 0, 2 * Math.PI); g.stroke();
+  g.restore();
+}
+function roiInfo(scan, sl) {
+  const roi = ctx.S.ct.viewer.roi;
+  if (!roi) return '<span class="slroi-hint">drag on the image to measure HU</span>';
+  const st = roiStats(sl.mu, scan.gridN, scan.muWater, roi.cx, roi.cy, roi.r);
+  if (!st) return '<span class="slroi">ROI outside the reconstruction</span>';
+  const pxCm = scan.fovMM / scan.gridN / 10;
+  /* A small ROI's SD is noise about the noise. CT noise is spatially correlated (the ramp
+     filter sees to that), so a few dozen pixels hold far fewer independent samples than they
+     look like — measured: a 50-pixel ROI put a pitch-2 scan level with a pitch-1 scan whose
+     noise was really 1.41x lower. Show the count, and say when it is too few to trust. */
+  const small = st.n < SMALL_ROI_PX;
+  return '<span class="slroi">ROI mean <b>' + (Math.round(st.mean) || 0) + '</b> HU · SD <b>'   // || 0: never print "-0" + st.sd.toFixed(1)
+    + '</b> HU · ' + (st.n * pxCm * pxCm).toFixed(2) + ' cm² · ' + st.n + ' px · ' + (Math.round(st.min) || 0) + ' … ' + (Math.round(st.max) || 0) + '</span>'
+    + (small ? '<span class="slroi-warn">' + (pxCm > 0.2
+        /* On the quick-preview grid (128 px across the DFOV) a pixel can be 2-4 mm, so a circle
+           with enough pixels for a stable SD is ~4 cm across and takes in organ boundaries — measured, that dilutes a
+           true 1.41x noise ratio to 1.15x. Saying "drag a larger circle" would be bad advice
+           there; the real answer is finer pixels. */
+        ? 'too few pixels for a stable SD on this coarse preview grid — use the realistic detector to measure noise'
+        : 'small ROI — SD unreliable, drag a larger circle') + '</span>' : '');
+}
+function wireRoi() {
+  const cv = ctx.$('ctSliceCanvas'); if (!cv) return;
+  let drag = null;
+  const at = (e) => { const r = cv.getBoundingClientRect();
+    return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+  cv.addEventListener('pointerdown', (e) => {
+    if (!currentScan()) return;
+    const [x, y] = at(e); drag = { x, y, moved: false };
+    try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const [x, y] = at(e), r = Math.hypot(x - drag.x, y - drag.y);
+    if (r < 2 && !drag.moved) return;
+    drag.moved = true;
+    ctx.S.ct.viewer.roi = { cx: drag.x, cy: drag.y, r: Math.max(2, r) };
+    refreshViewer();
+  });
+  const end = () => {
+    if (drag && !drag.moved) { ctx.S.ct.viewer.roi = null; refreshViewer(); }   // a click clears it
+    drag = null;
+  };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+}
+
 function currentScan() {
   const S = ctx.S;
   return S.ct.storage.find(s => s.id === S.ct.viewer.scanId) || S.ct.storage[S.ct.storage.length - 1] || null;
@@ -3942,11 +4033,18 @@ function updateViewerInfo(scan, sl) {
   const el = ctx.$('ctSliceInfo'); if (!el) return;
   const v = ctx.S.ct.viewer;
   if (!scan || !sl) { el.textContent = ''; return; }
+  // The four corners are placed by CLASS, not by position in this list: they used to be
+  // nth-child rules, so the first measurement line added here pushed the window readout out
+  // of its corner and stacked the rest on top of the slice number.
   el.innerHTML =
-    '<span>SLICE ' + (v.slice + 1) + ' / ' + scan.slices.length + '</span>' +
-    '<span>' + fmtTablePos(sl.d) + ' mm</span>' +
-    '<span>DFOV ' + (scan.fovMM / 10).toFixed(1) + ' cm · ' + scan.params.sliceThk + ' mm · ' + scan.params.kv + ' kV</span>' +
-    '<span>WL ' + Math.round(v.wl) + ' / WW ' + Math.round(v.ww) + ' HU</span>';
+    '<span class="c-tl">SLICE ' + (v.slice + 1) + ' / ' + scan.slices.length + '</span>' +
+    '<span class="c-tr">' + fmtTablePos(sl.d) + ' mm</span>' +
+    '<span class="c-bl">DFOV ' + (scan.fovMM / 10).toFixed(1) + ' cm · ' + scan.params.sliceThk + ' mm · ' + scan.params.kv + ' kV</span>' +
+    '<span class="c-br">WL ' + Math.round(v.wl) + ' / WW ' + Math.round(v.ww) + ' HU</span>' +
+    '<div class="slmeasure">' +
+      (scan.params.dose ? '<span>CTDIvol ' + scan.params.dose.ctdiVol.toFixed(1) + ' mGy · DLP ' + Math.round(scan.params.dose.dlp) + ' mGy·cm</span>' : '') +
+      roiInfo(scan, sl) +
+    '</div>';
 }
 
 // Exported: (re)draw the whole viewer for the current scan/slice/window. Called by
@@ -3970,6 +4068,7 @@ export function ctRenderViewer() {
   v.slice = Math.max(0, Math.min(scan.slices.length - 1, v.slice));
   const sl = scan.slices[v.slice];
   drawSliceToCanvas(cv, scan, sl, v.wl, v.ww);
+  drawRoi(cv, scan);
   updateCtHistogram(scan, sl, v.wl, v.ww);
   if (slider) { slider.max = scan.slices.length - 1; slider.value = v.slice; slider.disabled = scan.slices.length < 2; }
   updateViewerInfo(scan, sl);
@@ -4825,6 +4924,7 @@ function wireStorage() {
 }
 
 function wireSliceViewer() {
+  wireRoi();
   const slider = ctx.$('ctSliceSlider');
   slider?.addEventListener('input', () => { ctx.S.ct.viewer.slice = parseInt(slider.value, 10) || 0; refreshViewer(); });
   const scrollSlices = (dir) => {
