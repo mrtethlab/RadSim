@@ -2,69 +2,1053 @@
   "_about": "Anatomically Programmed Radiography (APR) chart. Selecting a protocol sets technique (kVp/mAs), anti-scatter grid, display LUT, SID, collimated field, and receptor size/orientation for that projection. Grouped body part -> region -> projection. Typical adult DR values: distal extremities 50-65 kVp no grid at 100 cm SID; proximal limb/skull/spine/abdomen/pelvis 70-90 kVp with grid at 100 cm; chest high-kVp 110-125 kVp with grid at 180 cm. coll = collimated field [width_cm, length_cm]; det = receptor [short_cm, long_cm]; orient = portrait/landscape. Teaching approximations, not a facility chart.",
   "_reference": "Merrill's Atlas / Bontrager positioning references for SID, receptor size, and collimation; grid + kVp per body-part attenuation.",
   "groups": [
-    { "part": "Upper extremity", "regions": [
-      { "region": "Fingers", "projections": [
-        { "proj": "PA fingers",      "kv": 55, "mas": 1.6, "grid": false, "lut": "extremity", "sid": 100, "coll": [9, 12],  "det": [25, 30], "orient": "portrait" },
-        { "proj": "Lateral finger",  "kv": 57, "mas": 2.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [7, 12],  "det": [25, 30], "orient": "portrait" } ] },
-      { "region": "Hand", "projections": [
-        { "proj": "PA hand",         "kv": 55, "mas": 2.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [14, 18], "det": [25, 30], "orient": "portrait", "subject": "hand" },
-        { "proj": "Oblique hand",    "kv": 57, "mas": 2.5, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 18], "det": [25, 30], "orient": "portrait", "subject": "hand" },
-        { "proj": "Lateral hand",    "kv": 58, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 18], "det": [25, 30], "orient": "portrait", "subject": "hand" } ] },
-      { "region": "Wrist", "projections": [
-        { "proj": "PA wrist",        "kv": 58, "mas": 2.5, "grid": false, "lut": "extremity", "sid": 100, "coll": [10, 13], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Oblique wrist",   "kv": 60, "mas": 3.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [10, 13], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Lateral wrist",   "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [9, 13],  "det": [25, 30], "orient": "portrait" } ] },
-      { "region": "Forearm", "projections": [
-        { "proj": "AP forearm",      "kv": 62, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 40], "det": [35, 43], "orient": "portrait" },
-        { "proj": "Lateral forearm", "kv": 64, "mas": 4.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 40], "det": [35, 43], "orient": "portrait" } ] },
-      { "region": "Elbow", "projections": [
-        { "proj": "AP elbow",        "kv": 64, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 18], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Lateral elbow",   "kv": 66, "mas": 4.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 18], "det": [25, 30], "orient": "portrait" } ] },
-      { "region": "Humerus", "projections": [
-        { "proj": "AP humerus",      "kv": 70, "mas": 5.0, "grid": false, "lut": "bone", "sid": 100, "coll": [15, 40], "det": [35, 43], "orient": "portrait" },
-        { "proj": "Lateral humerus", "kv": 72, "mas": 6.4, "grid": false, "lut": "bone", "sid": 100, "coll": [15, 40], "det": [35, 43], "orient": "portrait" } ] },
-      { "region": "Shoulder", "projections": [
-        { "proj": "AP shoulder",     "kv": 72, "mas": 6.4, "grid": true,  "lut": "bone", "sid": 100, "coll": [20, 25], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Y view shoulder", "kv": 75, "mas": 8.0, "grid": true,  "lut": "bone", "sid": 100, "coll": [22, 27], "det": [25, 30], "orient": "portrait" } ] } ] },
-    { "part": "Lower extremity", "regions": [
-      { "region": "Toes / Foot", "projections": [
-        { "proj": "AP foot",         "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 20], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Oblique foot",    "kv": 60, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [15, 20], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Lateral foot",    "kv": 62, "mas": 4.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [14, 22], "det": [25, 30], "orient": "portrait" } ] },
-      { "region": "Ankle", "projections": [
-        { "proj": "AP ankle",        "kv": 63, "mas": 3.2, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 16], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Mortise ankle",   "kv": 64, "mas": 3.6, "grid": false, "lut": "extremity", "sid": 100, "coll": [13, 16], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Lateral ankle",   "kv": 65, "mas": 4.0, "grid": false, "lut": "extremity", "sid": 100, "coll": [14, 16], "det": [25, 30], "orient": "portrait" } ] },
-      { "region": "Knee", "projections": [
-        { "proj": "AP knee",         "kv": 68, "mas": 5.0, "grid": true,  "lut": "bone", "sid": 100, "coll": [18, 22], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Lateral knee",    "kv": 70, "mas": 5.6, "grid": true,  "lut": "bone", "sid": 100, "coll": [18, 22], "det": [25, 30], "orient": "portrait" } ] },
-      { "region": "Femur", "projections": [
-        { "proj": "AP femur",        "kv": 75, "mas": 8.0,  "grid": true, "lut": "bone", "sid": 100, "coll": [15, 43], "det": [35, 43], "orient": "portrait" },
-        { "proj": "Lateral femur",   "kv": 77, "mas": 10.0, "grid": true, "lut": "bone", "sid": 100, "coll": [15, 43], "det": [35, 43], "orient": "portrait" } ] } ] },
-    { "part": "Chest", "regions": [
-      { "region": "Chest", "projections": [
-        { "proj": "PA chest",        "kv": 120, "mas": 2.5, "grid": true,  "lut": "chest", "sid": 180, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" },
-        { "proj": "Lateral chest",   "kv": 120, "mas": 6.4, "grid": true,  "lut": "chest", "sid": 180, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" },
-        { "proj": "AP chest (portable)", "kv": 90, "mas": 3.2, "grid": false, "lut": "chest", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait", "subject": "chest" } ] } ] },
-    { "part": "Abdomen / Pelvis", "regions": [
-      { "region": "Abdomen", "projections": [
-        { "proj": "AP abdomen (KUB)", "kv": 80, "mas": 32.0, "grid": true, "lut": "abdomen", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait" },
-        { "proj": "Upright abdomen",  "kv": 80, "mas": 36.0, "grid": true, "lut": "abdomen", "sid": 100, "coll": [35, 42], "det": [35, 43], "orient": "portrait" } ] },
-      { "region": "Pelvis", "projections": [
-        { "proj": "AP pelvis",        "kv": 80, "mas": 36.0, "grid": true, "lut": "bone", "sid": 100, "coll": [43, 35], "det": [35, 43], "orient": "landscape" } ] } ] },
-    { "part": "Spine", "regions": [
-      { "region": "Cervical", "projections": [
-        { "proj": "AP cervical",      "kv": 75, "mas": 12.5, "grid": true, "lut": "spine", "sid": 100, "coll": [12, 25], "det": [25, 30], "orient": "portrait" },
-        { "proj": "Lateral cervical", "kv": 78, "mas": 16.0, "grid": true, "lut": "spine", "sid": 180, "coll": [18, 25], "det": [25, 30], "orient": "portrait" } ] },
-      { "region": "Thoracic", "projections": [
-        { "proj": "AP thoracic",      "kv": 80, "mas": 25.0, "grid": true, "lut": "spine", "sid": 100, "coll": [15, 42], "det": [35, 43], "orient": "portrait" },
-        { "proj": "Lateral thoracic", "kv": 85, "mas": 50.0, "grid": true, "lut": "spine", "sid": 100, "coll": [15, 42], "det": [35, 43], "orient": "portrait" } ] },
-      { "region": "Lumbar", "projections": [
-        { "proj": "AP lumbar",        "kv": 82, "mas": 36.0, "grid": true, "lut": "spine", "sid": 100, "coll": [20, 42], "det": [35, 43], "orient": "portrait" },
-        { "proj": "Lateral lumbar",   "kv": 90, "mas": 64.0, "grid": true, "lut": "spine", "sid": 100, "coll": [18, 42], "det": [35, 43], "orient": "portrait" } ] } ] },
-    { "part": "Head", "regions": [
-      { "region": "Skull", "projections": [
-        { "proj": "AP skull",         "kv": 80, "mas": 25.0, "grid": true, "lut": "skull", "sid": 100, "coll": [20, 25], "det": [25, 30], "orient": "portrait", "subject": "headneck" },
-        { "proj": "Lateral skull",    "kv": 78, "mas": 20.0, "grid": true, "lut": "skull", "sid": 100, "coll": [22, 25], "det": [25, 30], "orient": "portrait", "subject": "headneck" } ] } ] }
-  ]
+    {
+      "part": "Upper extremity",
+      "regions": [
+        {
+          "region": "Fingers",
+          "projections": [
+            {
+              "proj": "PA fingers",
+              "kv": 55,
+              "mas": 1.6,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                9,
+                12
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "fingers"
+              }
+            },
+            {
+              "proj": "Lateral finger",
+              "kv": 57,
+              "mas": 2.0,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                7,
+                12
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "fingers"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Hand",
+          "projections": [
+            {
+              "proj": "PA hand",
+              "kv": 55,
+              "mas": 2.0,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                14,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "hand"
+              }
+            },
+            {
+              "proj": "Oblique hand",
+              "kv": 57,
+              "mas": 2.5,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 45,
+                "cc": 0,
+                "centre": "hand"
+              }
+            },
+            {
+              "proj": "Lateral hand",
+              "kv": 58,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                13,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "hand"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Wrist",
+          "projections": [
+            {
+              "proj": "PA wrist",
+              "kv": 58,
+              "mas": 2.5,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                10,
+                13
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "wrist"
+              }
+            },
+            {
+              "proj": "Oblique wrist",
+              "kv": 60,
+              "mas": 3.0,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                10,
+                13
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 45,
+                "cc": 0,
+                "centre": "wrist"
+              }
+            },
+            {
+              "proj": "Lateral wrist",
+              "kv": 60,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                9,
+                13
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "wrist"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Forearm",
+          "projections": [
+            {
+              "proj": "AP forearm",
+              "kv": 62,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                13,
+                40
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "forearm"
+              }
+            },
+            {
+              "proj": "Lateral forearm",
+              "kv": 64,
+              "mas": 4.0,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                13,
+                40
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": -90,
+                "cc": 0,
+                "centre": "forearm"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Elbow",
+          "projections": [
+            {
+              "proj": "AP elbow",
+              "kv": 64,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "elbow"
+              }
+            },
+            {
+              "proj": "Lateral elbow",
+              "kv": 66,
+              "mas": 4.0,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": -90,
+                "cc": 0,
+                "centre": "elbow",
+                "fidelity": "approx",
+                "note": "A true lateral elbow needs 90° of flexion; this arm is straight, so this is a lateral of the extended elbow."
+              }
+            }
+          ]
+        },
+        {
+          "region": "Humerus",
+          "projections": [
+            {
+              "proj": "AP humerus",
+              "kv": 70,
+              "mas": 5.0,
+              "grid": false,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                15,
+                40
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "humerus"
+              }
+            },
+            {
+              "proj": "Lateral humerus",
+              "kv": 72,
+              "mas": 6.4,
+              "grid": false,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                15,
+                40
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": -90,
+                "cc": 0,
+                "centre": "humerus"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Shoulder",
+          "projections": [
+            {
+              "proj": "AP shoulder",
+              "kv": 72,
+              "mas": 6.4,
+              "grid": true,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "shoulder"
+              }
+            },
+            {
+              "proj": "Y view shoulder",
+              "kv": 75,
+              "mas": 8.0,
+              "grid": true,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                22,
+                27
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 45,
+                "cc": 0,
+                "centre": "shoulder",
+                "fidelity": "approx",
+                "note": "The Y view puts the scapula in profile; this model carries only part of the scapula, so the Y is not fully formed."
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "Lower extremity",
+      "regions": [
+        {
+          "region": "Toes / Foot",
+          "projections": [
+            {
+              "proj": "AP foot",
+              "kv": 60,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                15,
+                20
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 10,
+                "centre": "foot",
+                "fidelity": "approx",
+                "note": "AP foot needs the sole flat on the receptor with the knee flexed; this leg is straight, so the beam meets the foot end-on."
+              }
+            },
+            {
+              "proj": "Oblique foot",
+              "kv": 60,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                15,
+                20
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 30,
+                "cc": 0,
+                "centre": "foot",
+                "fidelity": "approx",
+                "note": "A medial oblique foot needs the sole on the receptor first; with a straight leg it cannot be set up."
+              }
+            },
+            {
+              "proj": "Lateral foot",
+              "kv": 62,
+              "mas": 4.0,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                14,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -90,
+                "cc": 0,
+                "centre": "foot"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Ankle",
+          "projections": [
+            {
+              "proj": "AP ankle",
+              "kv": 63,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                13,
+                16
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "ankle"
+              }
+            },
+            {
+              "proj": "Mortise ankle",
+              "kv": 64,
+              "mas": 3.6,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                13,
+                16
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 15,
+                "cc": 0,
+                "centre": "ankle"
+              }
+            },
+            {
+              "proj": "Lateral ankle",
+              "kv": 65,
+              "mas": 4.0,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                14,
+                16
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -90,
+                "cc": 0,
+                "centre": "ankle"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Knee",
+          "projections": [
+            {
+              "proj": "AP knee",
+              "kv": 68,
+              "mas": 5.0,
+              "grid": true,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                18,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "knee"
+              }
+            },
+            {
+              "proj": "Lateral knee",
+              "kv": 70,
+              "mas": 5.6,
+              "grid": true,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                18,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -90,
+                "cc": 0,
+                "centre": "knee",
+                "fidelity": "approx",
+                "note": "A lateral knee is taken with 20-30° of flexion; this leg is straight."
+              }
+            }
+          ]
+        },
+        {
+          "region": "Femur",
+          "projections": [
+            {
+              "proj": "AP femur",
+              "kv": 75,
+              "mas": 8.0,
+              "grid": true,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "femur"
+              }
+            },
+            {
+              "proj": "Lateral femur",
+              "kv": 77,
+              "mas": 10.0,
+              "grid": true,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -90,
+                "cc": 0,
+                "centre": "femur"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "Chest",
+      "regions": [
+        {
+          "region": "Chest",
+          "projections": [
+            {
+              "proj": "PA chest",
+              "kv": 120,
+              "mas": 2.5,
+              "grid": true,
+              "lut": "chest",
+              "sid": 180,
+              "coll": [
+                35,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chest",
+              "pose": {
+                "roll": 180,
+                "cc": 0
+              }
+            },
+            {
+              "proj": "Lateral chest",
+              "kv": 120,
+              "mas": 6.4,
+              "grid": true,
+              "lut": "chest",
+              "sid": 180,
+              "coll": [
+                35,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chest",
+              "pose": {
+                "roll": 90,
+                "cc": 0
+              }
+            },
+            {
+              "proj": "AP chest (portable)",
+              "kv": 90,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "chest",
+              "sid": 100,
+              "coll": [
+                35,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chest",
+              "pose": {
+                "roll": 0,
+                "cc": 0
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "Abdomen / Pelvis",
+      "regions": [
+        {
+          "region": "Abdomen",
+          "projections": [
+            {
+              "proj": "AP abdomen (KUB)",
+              "kv": 80,
+              "mas": 32.0,
+              "grid": true,
+              "lut": "abdomen",
+              "sid": 100,
+              "coll": [
+                35,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "kub"
+              }
+            },
+            {
+              "proj": "Upright abdomen",
+              "kv": 80,
+              "mas": 36.0,
+              "grid": true,
+              "lut": "abdomen",
+              "sid": 100,
+              "coll": [
+                35,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "abdomenErect"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Pelvis",
+          "projections": [
+            {
+              "proj": "AP pelvis",
+              "kv": 80,
+              "mas": 36.0,
+              "grid": true,
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                43,
+                35
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "landscape",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "pelvis"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "Spine",
+      "regions": [
+        {
+          "region": "Cervical",
+          "projections": [
+            {
+              "proj": "AP cervical",
+              "kv": 75,
+              "mas": 12.5,
+              "grid": true,
+              "lut": "spine",
+              "sid": 100,
+              "coll": [
+                12,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 0,
+                "cc": -15,
+                "centre": "cspine"
+              }
+            },
+            {
+              "proj": "Lateral cervical",
+              "kv": 78,
+              "mas": 16.0,
+              "grid": true,
+              "lut": "spine",
+              "sid": 180,
+              "coll": [
+                18,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "cspine"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Thoracic",
+          "projections": [
+            {
+              "proj": "AP thoracic",
+              "kv": 80,
+              "mas": 25.0,
+              "grid": true,
+              "lut": "spine",
+              "sid": 100,
+              "coll": [
+                15,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "thoracic"
+              }
+            },
+            {
+              "proj": "Lateral thoracic",
+              "kv": 85,
+              "mas": 50.0,
+              "grid": true,
+              "lut": "spine",
+              "sid": 100,
+              "coll": [
+                15,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "thoracic"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Lumbar",
+          "projections": [
+            {
+              "proj": "AP lumbar",
+              "kv": 82,
+              "mas": 36.0,
+              "grid": true,
+              "lut": "spine",
+              "sid": 100,
+              "coll": [
+                20,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "lumbar"
+              }
+            },
+            {
+              "proj": "Lateral lumbar",
+              "kv": 90,
+              "mas": 64.0,
+              "grid": true,
+              "lut": "spine",
+              "sid": 100,
+              "coll": [
+                18,
+                42
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "lumbar"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "part": "Head",
+      "regions": [
+        {
+          "region": "Skull",
+          "projections": [
+            {
+              "proj": "AP skull",
+              "kv": 80,
+              "mas": 25.0,
+              "grid": true,
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "skull"
+              }
+            },
+            {
+              "proj": "Lateral skull",
+              "kv": 78,
+              "mas": 20.0,
+              "grid": true,
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                22,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "skull"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "_pose": "pose.roll: degrees about the long axis from the subject's rest pose (body subjects rest supine/AP; the hand rests PA); +roll lifts world +x. pose.cc: central-ray angle, negative = cephalic. pose.centre: a landmark in landmarks.json (measured by tools/measure_landmarks.py) that the patient is moved to put under the central ray. pose.fidelity \"approx\" marks a view a rigid model cannot truly achieve; pose.note says why."
 }

@@ -15,6 +15,7 @@ import { decodeGITimeline, buildGIVolume, buildBariumLUT, buildGasLUT, NS as GI_
 import { GIStudy, SEGMENTS as GI_SEGMENTS } from './core/giSolve.js';
 import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
+import landmarkData from './data/landmarks.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
@@ -2655,9 +2656,68 @@ function applyProtocol(p,part){
   updateGeomReadouts();
   const pv=$('protocolV'); if(pv) pv.textContent=p.proj;
   refreshReadouts();
-  // switch the subject model when the protocol targets one we have
-  if(p.subject && p.subject!==S.subject && VOXEL_MODELS[p.subject]) setSubject(p.subject);
-  else { syncScene(); if(S.hasImage) drawFilm(); }
+  // switch the subject model when the protocol targets one we have, THEN pose it: the pose
+  // depends on the subject (its rest orientation, its flips, where its landmarks are), so it
+  // cannot be applied to whatever happened to be on the table a moment ago
+  const want = p.subject && VOXEL_MODELS[p.subject] ? p.subject : S.subject;
+  const ticket = S.protocol;
+  const done = () => {
+    if (S.protocol !== ticket || S.subject !== want) return;   // superseded: a newer protocol, or a hand-picked subject
+    applyPose(p.pose);
+    syncScene(); if(S.hasImage) drawFilm();
+  };
+  if (want !== S.subject || !S.voxelModel) setSubject(want).then(done);
+  else done();
+}
+
+/* POSITIONING. A protocol used to set the technique and nothing else, so "Lateral chest" and
+   "Mortise ankle" were both exposed in the rest pose and labelled AP. Now each projection carries
+   a pose: a roll about the long axis from the subject's rest position, a central-ray angle, and
+   a LANDMARK to centre on. The landmarks are measured from the models' own bone by
+   tools/measure_landmarks.py — joint spaces from the cross-section, the hand and forearm by
+   counting the bones each slice cuts — so an AP knee is centred on the knee, not on the middle
+   of a metre-long leg.
+   Centring moves the PATIENT, as a radiographer does: the receptor is fixed under the central
+   ray, and the tube only travels a few centimetres. The landmark is rotated with the patient
+   first, so a lateral is centred as well as an AP. */
+function landmarkLocal(subject, name){
+  const lm = landmarkData[subject]?.[name];
+  if (!lm) return null;
+  if (lm.frame === 'world') return [lm.x || 0, lm.y || 0, lm.z];   // measured in the x-ray world already
+  const f = voxelFlips();                                          // the same flips the phantom uses
+  return [f[0] ? -lm.x : lm.x, f[1] ? -(lm.y || 0) : (lm.y || 0), f[2] ? -lm.z : lm.z];
+}
+const OFF_LIMIT = 45;                                              // the patient-offset sliders' range, cm
+function applyPose(pose){
+  const note = $('protocolPose');
+  if (!pose) { if (note) note.textContent = ''; return; }
+  S.objRot = { x: 0, y: 0, z: pose.roll || 0 };
+  S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
+  let clamped = false;
+  S.objOff.x = 0; S.objOff.z = 0;
+  const loc = pose.centre ? landmarkLocal(S.subject, pose.centre) : null;
+  if (loc) {
+    const w = applyMat3(objMat(), loc);                            // where the landmark sits after the roll
+    const ox = -w[0], oz = -w[2];
+    S.objOff.x = Math.max(-OFF_LIMIT, Math.min(OFF_LIMIT, ox));
+    S.objOff.z = Math.max(-OFF_LIMIT, Math.min(OFF_LIMIT, oz));
+    clamped = S.objOff.x !== ox || S.objOff.z !== oz;
+  }
+  // the controls show what the protocol did, so the operator can see and change it
+  const setSl = (id, v, label) => { const el = $(id); if (el) el.value = v; const t = $(id + 'v'); if (t) t.textContent = label; };
+  setSl('objRotX', 0, '0°'); setSl('objRotY', 0, '0°'); setSl('objRotZ', S.objRot.z, S.objRot.z + '°');
+  setSl('objOffX', S.objOff.x.toFixed(1), S.objOff.x.toFixed(1) + ' cm');
+  setSl('objOffZ', S.objOff.z.toFixed(1), S.objOff.z.toFixed(1) + ' cm');
+  for (const id of ['tubeX', 'tubeZ', 'angLM']) { const el = $(id); if (el) el.value = 0; }
+  const cc = $('angCC'); if (cc) cc.value = S.angCC;
+  updateGeomReadouts();
+  if (note) {
+    const bits = [];
+    if (pose.fidelity === 'approx') bits.push('<b>Approximate view.</b> ' + pose.note);
+    if (clamped) bits.push('Centring limited by the table travel — the landmark is not quite under the central ray.');
+    note.innerHTML = bits.join(' ');
+    note.classList.toggle('show', bits.length > 0);
+  }
 }
 function openProtocolPopup(){
   const pop=$('protoPop'), body=$('protoPopBody'); if(!pop||!body) return;
