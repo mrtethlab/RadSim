@@ -1071,8 +1071,8 @@ export const US_STEPS = [
     text: 'Frequency is the trade the whole modality turns on. The pulse is about two '
       + 'wavelengths long, so raising the frequency shortens it and the speckle gets finer — '
       + 'but attenuation is dB per centimetre <i>per megahertz</i>, so the far field goes '
-      + 'under the receiver’s own noise and turns to grey mush. Measured here: <b>18.0 cm of '
-      + 'useful depth at 2.5 MHz against 11.8 cm at 12 MHz.</b> The linear probe runs high '
+      + 'under the receiver’s own noise and turns to grey mush. Measured here: <b>about 20 cm of '
+      + 'useful depth at 2.5 MHz against 6 cm at 12 MHz.</b> The linear probe runs high '
       + 'and shallow for exactly this reason.',
     goal: {
       label: 'Push the frequency to 8 MHz or more',

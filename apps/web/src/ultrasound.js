@@ -34,19 +34,30 @@ const NLINE = 192;            // scanlines per frame
 const NSAMP = 512;            // samples along each line
 const C_SND = 0.154;          // cm per microsecond — 1540 m/s, fixed (see the plan)
 const TGC_ASSUME = 0.5;       // dB/cm/MHz the TGC assumes: the lie that makes enhancement
+// A receiver's depth gain has a ceiling. Uncapped, the ramp at 12 MHz and 16 cm is 192 dB,
+// which lifts the noise floor to saturated white — the far field went BLANK WHITE past
+// penetration instead of dark. 66 dB leaves noise as dim grey snow, and only bites at depths
+// that are already past where the echo falls under it.
+const TGC_MAX = 66;
 // Diffuse backscatter, scaled so tissue speckle sits ~40 dB under a specular bone echo —
 // which is what puts liver at mid-grey and leaves room for an interface to be bright.
 const SCAT = 0.09;
 // Receiver amplification. A real machine's "0 dB" is not zero amplification — it is the
 // system's reference, chosen so ordinary tissue lands mid-grey. Calibrated here so liver
 // at working depth reads ~45 % of full scale with the gain knob centred.
-const SYS_DB = 2;
+// Raised 2 -> 9 when the echo started paying attenuation both ways: the old value had been set
+// against an image that was getting 0.5·f·d dB of free gain. +7 dB returns the shallow field
+// (2-5 cm, where that free gain was smallest) to the brightness it was calibrated at.
+const SYS_DB = 9;
 // ELECTRONIC NOISE FLOOR. Without one, the TGC — which scales with frequency, as real
 // TGC does — would perfectly cancel attenuation at ANY frequency, and 12 MHz would see
 // as deep as 2 MHz. It cannot, because past the depth where the echo falls under the
 // receiver's own noise the gain amplifies noise instead of signal, and the far field
 // turns to grey mush. That floor is what makes penetration cost something.
-const NOISE = 2.2e-7;
+// Re-set after the echo was made to pay attenuation BOTH ways: at the old 2.2e-7 the speckle
+// stood ~90 dB clear of it, too much headroom. +10 dB puts the noise crossing of the speckle
+// at 5.5 / 8.9 / 13 / 19 cm for 12 / 7.5 / 5 / 3.5 MHz, the textbook penetration figures.
+const NOISE = 7.0e-7;
 
 // A window onto the heart, surveyed rather than guessed (docs/ultrasound.md §4.2): seven
 // candidate seats were scored on how much of the image the systolic warp actually moves,
@@ -427,7 +438,13 @@ function scanFrame() {
         const q = hash3((MP[0] * 50) | 0, (MP[1] * 50) | 0, (MP[2] * 50) | 0);
         e += bs * (q - 0.5) * 2.0 * amp * SCAT;
       }
-      echo[base + k] = e;
+      /* THE ECHO COMES BACK THE WAY IT WENT IN. `amp` is what survives the trip DOWN to this
+         depth; the echo must make the same trip back up, through the same tissue and the same
+         interfaces, so it is scaled by `amp` a second time. Without this the image paid
+         attenuation one way while the TGC repaid it both ways — 0.5·f·d dB of free gain
+         (+17 dB at 3.5 MHz and 10 cm), liver brightening with depth, and 19 cm of
+         penetration at 12 MHz, which is what made the frequency lesson mean nothing. */
+      echo[base + k] = e * amp;
       // ---- COLOUR: the axial component of flow, wrapped at the Nyquist velocity ----
       if (dopOn && id >= 29 && id <= 46 && k >= dk0 && k <= dk1 && l >= dl0 && l <= dl1) {
         const ix = (MP[0] / vsx) | 0, iy = (MP[1] / vsy) | 0, iz = (MP[2] / vsz) | 0;
@@ -457,7 +474,7 @@ function scanFrame() {
           velId[base + k] = id;
         }
       }
-      // attenuation over this step (one way; the echo pays it twice by construction)
+      // attenuation over this step, one way — the echo pays it again on the way back (above)
       amp *= Math.exp(-At[id] * freq * ds / 8.686);
       if (amp < 1e-6) { prevId = id; break; }          // nothing is coming back from here
       prevId = id;
@@ -544,7 +561,7 @@ function buildTgc(freq, ds) {
   for (let k = 0; k < NSAMP; k++) {
     const t = k / (NSAMP - 1) * (nb - 1);
     const i0 = Math.min(nb - 1, t | 0), i1 = Math.min(nb - 1, i0 + 1), fr2 = t - i0;
-    lut[k] = 2 * TGC_ASSUME * freq * (k * ds) + (B[i0] * (1 - fr2) + B[i1] * fr2);
+    lut[k] = Math.min(TGC_MAX, 2 * TGC_ASSUME * freq * (k * ds)) + (B[i0] * (1 - fr2) + B[i1] * fr2);
   }
   return lut;
 }
