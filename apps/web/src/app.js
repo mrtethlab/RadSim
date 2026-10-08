@@ -10,6 +10,7 @@ import { Sound } from './audio/sound.js';
 import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
+import { segmentFemur, poseFemurs } from './core/limbPose.js';
 import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
 import { decodeGITimeline, buildGIVolume, buildBariumLUT, buildGasLUT, NS as GI_NS } from './core/gi.js';
 import { GIStudy, SEGMENTS as GI_SEGMENTS } from './core/giSolve.js';
@@ -389,6 +390,7 @@ async function setSubject(sub){
      entry to a room, or from a room that picks its own patient — and a room that prepares
      per-subject state (fluoro's pulse workers) has to hear about it either way. Fired only
      once the volume is in place and the scene has been synced around it. */
+  syncLegRotUI();
   window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
 /* Everything an injected study leaves behind on the model. A study belongs to one patient
@@ -525,6 +527,7 @@ const S = {
   spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
+  legRot:0,                    // both legs turned about the femoral heads, deg (+ internal) — core/limbPose.js
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
   aecOn:false, aecCells:{l:false,c:true,r:false}, aecResult:null,  // AEC: cells + achieved mAs of the last exposure
@@ -612,6 +615,9 @@ const S = {
         // mark across the table, because the head is wide enough to cover the full width
         // and does not itself travel left or right.
         headZ:0, crossX:0,
+        // the foot brace: a densitometer femur is scanned with the leg turned in, which lays
+        // the femoral neck flat on the table (core/limbPose.js). 0 = the leg as CT left it.
+        legRot:20,
         scans:[] },          // serial acquisitions, for the % change comparison
   // ---- ultrasound (docs/ultrasound.md): the probe, the beam and the display ----
   us:{ probe:'curvi',        // 'curvi' (3-5 MHz sector) | 'linear' (7-12 MHz)
@@ -869,6 +875,32 @@ function voxelFlips(){
   if(ROLLED_180.has(S.subject)){ f[0]=!f[0]; f[1]=!f[1]; }
   return f;
 }
+/* LEG ROTATION. Turning the legs is not a roll of the patient: the pelvis stays where it is and
+   each femur turns under it about its own head (core/limbPose.js). Only subjects with measured
+   femoral heads can do it, and only the projection modes use it — CT and fluoroscopy scan the
+   patient as the volume has them. The femurs are found once per subject; the posed volume is
+   kept for the last angle asked for, so re-exposing at the same rotation costs nothing. */
+function legRotNow(){
+  return S.mode==='xray' ? S.legRot : S.mode==='dxa' ? (S.dxa.legRot||0) : 0;
+}
+function femoralHeads(sub){
+  const set=landmarkData[sub]; const L=set?.femoralHeadL, R=set?.femoralHeadR;
+  return L && R ? [L,R] : null;
+}
+function posedVolume(vm, deg){
+  if(!deg || !vm.data) return null;
+  const heads=femoralHeads(S.subject);
+  if(!heads) return null;
+  if(!vm._femurs) vm._femurs=heads.map(h=>segmentFemur(vm, h));
+  if(vm._posed?.deg!==deg) vm._posed={ deg, data: poseFemurs(vm, vm._femurs, deg, heads[0].anteriorY||1) };
+  return vm._posed.data;
+}
+function syncLegRotUI(){
+  const row=$('legRotRow'); if(row) row.hidden=!femoralHeads(S.subject);
+  const el=$('legRot'); if(el) el.value=S.legRot;
+  const v=$('legRotV'); if(v) v.textContent=legRotLabel(S.legRot);
+}
+const legRotLabel=(d)=> d===0 ? '0°' : d>0 ? `${d}° in` : `${-d}° out`;
 function buildPhantom(){
   // Return a VoxelPhantom centred at the CT patient offset (couch position / table
   // height) or the x-ray object offset, so scout + recon sweep the real anatomy.
@@ -882,7 +914,7 @@ function buildPhantom(){
   // real geometric unsharpness, because the divergent rays do the rest.
   const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10 + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
-  const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R);
+  const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R, posedVolume(vm, legRotNow()));
   applyContrast(ph);
   applyBarium(ph);
   return ph;
@@ -1769,7 +1801,10 @@ function bind(){
       if(ax==='y'){ S.oid=S.objOff.y; const o=$('oidV'); if(o) o.textContent=S.oid+' cm'; }
     });
   }
+  $('legRot')?.addEventListener('input',e=>{ S.legRot=parseInt(e.target.value);
+    syncLegRotUI(); resetPrep(); syncScene(); });
   $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0,y:0};
+    S.legRot=0; syncLegRotUI();
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
     S.oid=0; const o=$('oidV'); if(o) o.textContent='0 cm';
@@ -2663,6 +2698,9 @@ function applyProtocol(p,part){
   const ticket = S.protocol;
   const done = () => {
     if (S.protocol !== ticket || S.subject !== want) return;   // superseded: a newer protocol, or a hand-picked subject
+    // loading a subject sets that subject's default kV, which would overwrite the chart's: an AP
+    // pelvis went out at 120 kVp instead of 80. The protocol's technique is the one asked for.
+    S.kv=Math.max(40,Math.min(120,p.kv)); const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts();
     applyPose(p.pose);
     syncScene(); if(S.hasImage) drawFilm();
   };
@@ -2692,6 +2730,7 @@ function applyPose(pose){
   const note = $('protocolPose');
   if (!pose) { if (note) note.textContent = ''; return; }
   S.objRot = { x: 0, y: 0, z: pose.roll || 0 };
+  S.legRot = pose.legs || 0; syncLegRotUI();
   S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
   let clamped = false;
   S.objOff.x = 0; S.objOff.z = 0;

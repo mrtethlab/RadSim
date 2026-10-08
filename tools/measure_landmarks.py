@@ -270,6 +270,49 @@ def chest_abdo_pelvis():
     }
 
 
+def femoral_heads(vol, sp):
+    """Centre of each femoral head, for turning the leg about it (src/core/limbPose.js).
+
+    NOT the inscribed sphere the DXA work used: filled, the head and the acetabulum fuse, and
+    the largest ball fits in the acetabular roof ~2.5 cm too high. The head's surface is a
+    cortical shell, and the acetabulum's is a shell CONCENTRIC with it, so the centre is where a
+    2.2 cm sphere passes through the most cortical bone. Checked by eye on coronal, axial and
+    sagittal slices: the circle sits on the head's cortex in all three.
+
+    Coordinates are voxel CENTRES, (i - (n - 1) / 2) * spacing, which is how VoxelPhantom places
+    a voxel. anteriorY tells the posing code which way the leg turns for "internal"."""
+    cort = vol == 18
+    k, j, i = np.nonzero(cort)
+    nz, ny, nx = vol.shape
+    P = np.stack([(i - (nx - 1) / 2) * sp[0], (j - (ny - 1) / 2) * sp[1], (k - (nz - 1) / 2) * sp[2]], 1)
+    R = 2.2
+
+    def vote(lo, hi, step):
+        near = P[np.all((P > lo - R - 0.5) & (P < hi + R + 0.5), axis=1)]
+        best = (-1, None)
+        for x in np.arange(lo[0], hi[0] + 1e-6, step):
+            for y in np.arange(lo[1], hi[1] + 1e-6, step):
+                for z in np.arange(lo[2], hi[2] + 1e-6, step):
+                    n = int(np.sum(np.abs(np.linalg.norm(near - (x, y, z), axis=1) - R) < 0.12))
+                    if n > best[0]:
+                        best = (n, np.array([x, y, z]))
+        return best[1]
+
+    out = {}
+    z0 = CAP_FROM_DXA['femoralHeads']
+    for name, sx in (('femoralHeadL', -1), ('femoralHeadR', +1)):   # patient right is +x in this volume
+        # z0 is the DXA's inscribed sphere, which sits in the acetabular roof: the head centre is
+        # at or below it. Searched above it too, the roof's own shells win on one side.
+        lo, hi = np.array([6.0 if sx > 0 else -12.0, -6.0, z0 - 3]), np.array([12.0 if sx > 0 else -6.0, 3.0, z0])
+        c = vote(lo, hi, 0.4)
+        c = vote(c - 0.4, c + 0.4, 0.1)
+        out[name] = {'x': round(float(c[0]), 2), 'y': round(float(c[1]), 2), 'z': round(float(c[2]), 2),
+                     'frame': 'volume', 'r': R, 'anteriorY': 1,
+                     'how': 'centre of the 2.2 cm sphere through the most cortical bone (head and acetabular shells)',
+                     'confidence': 'high'}
+    return out
+
+
 def main():
     out = {
         '_about': ('Anatomical centring landmarks for the x-ray protocols, measured by tools/measure_landmarks.py. '
@@ -280,7 +323,7 @@ def main():
         'upperextremity': upper_extremity(),
         'hand': hand(),
         'headneck': head_neck(),
-        'chestabdopelvis': chest_abdo_pelvis(),
+        'chestabdopelvis': {**chest_abdo_pelvis(), **femoral_heads(*load('chestabdopelvis')[1::2])},
     }
     OUT.write_text(json.dumps(out, indent=2) + '\n', encoding='utf-8')
     for model, lm in out.items():

@@ -649,6 +649,15 @@
             <div class="row" style="margin-top:8px"><div class="rl">Height <small>off receptor</small></div>
               <div class="valchip" id="objOffYv">0 cm</div></div>
             <input type="range" id="objOffY" min="0" max="20" value="0" step="0.5">
+            <div id="legRotRow" hidden>
+              <div class="row" style="margin-top:8px"><div class="rl">Legs <small>rotation at the hip</small></div>
+                <div class="valchip" id="legRotV">0°</div></div>
+              <input type="range" id="legRot" min="-45" max="30" value="0" step="1">
+              <div class="ctrst-note">Turns each femur about its own head; the pelvis stays put.
+                Right is internal: 15&deg; in lays the femoral necks flat for an AP pelvis. Left is
+                external, the way legs fall when left alone &mdash; the necks foreshorten and the
+                lesser trochanters stand out.</div>
+            </div>
           </div>
           <div class="mini"><button id="objRotReset">↺ reset orientation &amp; offset</button></div>
         </div>
@@ -1370,6 +1379,14 @@
           <div class="row" style="margin-top:9px"><div class="rl">Weight</div>
             <div class="valchip" id="dxWtV">70 kg</div></div>
           <input type="range" id="dxWt" min="35" max="160" value="70" step="1">
+          <div class="row" style="margin-top:9px"><div class="rl">Leg <small>rotation at the hip</small></div>
+            <div class="valchip" id="dxLegV">20° in</div></div>
+          <input type="range" id="dxLeg" min="-30" max="30" value="20" step="1">
+          <div class="ctrst-note">The foot brace turns the leg in 15&ndash;25&deg;, which lays the
+            femoral neck flat under the arm. Without it the neck turns toward the beam, projects
+            shorter and reads denser &mdash; about 8&nbsp;% higher with the leg left neutral, far
+            more turned out &mdash; so a positioning change between visits can look like a change
+            in the bone.</div>
           <div class="ctrst-note">The T-score compares this patient with a <b>young adult of
             the same sex</b>; the Z-score compares them with someone their own age. That is why
             an 80-year-old can be osteoporotic by T and entirely unremarkable by Z &mdash; and
