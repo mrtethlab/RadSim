@@ -2,7 +2,7 @@
 // entered. They used to be split between 919 KB of base64 compiled INTO the JS bundle (the
 // x-ray set — about two thirds of the bundle every visitor downloaded) and four CT WAVs
 // fetched at boot (1.6 MB, uncompressed on the wire). Nobody on the home screen needs either.
-const BASE = import.meta.env.BASE_URL;      // '/' in dev; relative under a subpath deploy
+const BASE = import.meta.env?.BASE_URL ?? './';   // '/' in dev; relative under a subpath deploy; './' outside Vite (tests)
 const FILES = {
   press: 'sounds/xray/press.wav', start: 'sounds/xray/start.wav', buzz: 'sounds/xray/buzz.wav',
   end: 'sounds/xray/end.wav', cooldown: 'sounds/xray/cooldown.wav',
