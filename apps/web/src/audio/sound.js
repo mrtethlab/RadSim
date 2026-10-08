@@ -1,23 +1,39 @@
-import { AUDIO_B64 } from './data.js';
-
-// CT patient sounds shipped as assets (public/sounds); the CT scan-exposure sound
-// reuses the x-ray 'buzz'. Loaded from URL on init alongside the embedded set.
+// Every sound is a file under public/sounds, fetched the first time a mode that uses it is
+// entered. They used to be split between 919 KB of base64 compiled INTO the JS bundle (the
+// x-ray set — about two thirds of the bundle every visitor downloaded) and four CT WAVs
+// fetched at boot (1.6 MB, uncompressed on the wire). Nobody on the home screen needs either.
 const BASE = import.meta.env.BASE_URL;      // '/' in dev; relative under a subpath deploy
-const URL_SOUNDS = {
-  breathIn: BASE+'sounds/CTBreathIn.wav',
-  breathNormal: BASE+'sounds/CTBreathNormal.wav',
-  tableMove: BASE+'sounds/TableMovement.wav',
-  ctExposureS1: BASE+'sounds/CTExposure_S1.wav',
+const FILES = {
+  press: 'sounds/xray/press.wav', start: 'sounds/xray/start.wav', buzz: 'sounds/xray/buzz.wav',
+  end: 'sounds/xray/end.wav', cooldown: 'sounds/xray/cooldown.wav',
+  breathIn: 'sounds/CTBreathIn.wav', breathNormal: 'sounds/CTBreathNormal.wav',
+  tableMove: 'sounds/TableMovement.wav', ctExposureS1: 'sounds/CTExposure_S1.wav',
+};
+// What each room needs. CT borrows the x-ray buzz as its classic scan tone, and its timing
+// (breath-hold, the contrast acquisition clock) reads the breath sounds' DURATIONS — so
+// they are requested on entry to the room, long before the first scan can start.
+const MODE_SOUNDS = {
+  xray: ['press', 'start', 'buzz', 'end', 'cooldown'],
+  ct: ['breathIn', 'breathNormal', 'tableMove', 'ctExposureS1', 'buzz'],
 };
 
 export const Sound=(()=>{
   let ctx=null; const buf={}; let buzzSrc=null; let inited=false;
   let tableSrc=null, tableGain=null;
-  function b2ab(b64){const bin=atob(b64),n=bin.length,u=new Uint8Array(n);for(let i=0;i<n;i++)u[i]=bin.charCodeAt(i);return u.buffer;}
-  async function init(){ if(inited)return; inited=true;
-    try{ctx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){return;}
-    for(const k in AUDIO_B64){ try{buf[k]=await ctx.decodeAudioData(b2ab(AUDIO_B64[k]));}catch(e){console.warn("audio decode failed",k);} }
-    for(const k in URL_SOUNDS){ try{const r=await fetch(URL_SOUNDS[k]); buf[k]=await ctx.decodeAudioData(await r.arrayBuffer());}catch(e){console.warn("audio fetch failed",k);} } }
+  const pending={};
+  function init(){ if(inited)return; inited=true;
+    try{ctx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){ctx=null;} }
+  function load(name){
+    if(!ctx || buf[name] || pending[name] || !FILES[name]) return pending[name] || Promise.resolve();
+    pending[name]=fetch(BASE+FILES[name])
+      .then(r=>{ if(!r.ok) throw new Error(r.status+' '+FILES[name]); return r.arrayBuffer(); })
+      .then(ab=>ctx.decodeAudioData(ab))
+      .then(b=>{ buf[name]=b; })
+      .catch(e=>{ console.warn('audio load failed', name, e.message); delete pending[name]; });
+    return pending[name];
+  }
+  // fetch everything a mode uses; returns when it has all arrived (or failed)
+  function need(mode){ init(); return Promise.all((MODE_SOUNDS[mode]||[]).map(load)); }
   function resume(){ if(ctx&&ctx.state==="suspended") ctx.resume(); }
   function play(name,onended){ if(!ctx||!buf[name])return; const s=ctx.createBufferSource(); s.buffer=buf[name]; s.connect(ctx.destination); if(onended)s.onended=onended; try{s.start();}catch(e){} }
   function duration(name){ return buf[name] ? buf[name].duration : 0; }
@@ -53,5 +69,5 @@ export const Sound=(()=>{
     const t=ctx.currentTime;
     try{ g.gain.cancelScheduledValues(t); g.gain.setValueAtTime(g.gain.value,t); g.gain.linearRampToValueAtTime(0, t+0.1); s.stop(t+0.12); }catch(e){}
   }
-  return {init,resume,play,duration,startBuzz,stopBuzz,startScan,stopScan,preview,startTableSound,stopTableSound};
+  return {init,need,resume,play,duration,startBuzz,stopBuzz,startScan,stopScan,preview,startTableSound,stopTableSound};
 })();

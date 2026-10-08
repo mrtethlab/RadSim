@@ -1768,3 +1768,7 @@ body.mode-fluoro .scr2{display:block}
 .dxtab .dxdown{color:#ff9c9c}
 .dxtab .dxup{color:#8fe3a8}
 .dxtab .dxflat{color:var(--muted2)}
+
+/* The Python engine button stays clickable while the backend is offline (a click probes for
+   it), so it needs to LOOK offline without being disabled. */
+#backendSegX button.offline, #backendSegCT button.offline{opacity:.55; font-style:italic}
