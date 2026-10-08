@@ -1020,6 +1020,23 @@ function reportNow() {
    The classic output: a row per level, the L1-L4 mean that the diagnosis is actually
    made on, and the T-score against the -1.0 / -2.5 lines. The raw uncalibrated density
    rides along in the last column so the calibration is visible rather than assumed. */
+/* THE DIAGNOSIS IS THE LOWER OF TWO SITES. WHO/ISCD apply the thresholds at the femoral neck
+   AND the total hip and classify on whichever is worse; scoring the total alone let a neck at
+   T -2.6 sit under a "Normal" banner because the trochanter held the total up. The headline
+   area and mass stay on the total hip — that is the site a follow-up is tracked on — but the
+   T and Z that drive the banner come from the deciding site, and say which it was.
+   Pure, so the rule can be tested without a scan. */
+export function hipDiagnosis(rois, sex, age) {
+  const tot = rois.find((r) => r.label === 'Total') || rois[0];
+  if (!tot) return { mean: 0, T: 0, Z: 0, totT: 0, totZ: 0, area: 0, bmc: 0, site: 'total hip', dx: diagnosis(0) };
+  const sT = scores(tot.bmd, 'total', sex, age);
+  const neck = rois.find((r) => r.label === 'Neck');
+  const sN = neck ? scores(neck.bmd, 'neck', sex, age) : null;
+  const useNeck = !!(sN && sN.T < sT.T);
+  const s = useNeck ? sN : sT;
+  return { mean: tot.bmd, T: s.T, Z: s.Z, totT: sT.T, totZ: sT.Z, area: tot.area, bmc: tot.bmc,
+           site: useNeck ? 'femoral neck' : 'total hip', dx: diagnosis(s.T) };
+}
 const FEMUR_ORDER = ['Neck', 'Wards', 'Troch', 'Inter', 'Total'];
 export function report(sc) {
   const tb = $('dxTable'); if (!tb || !sc.rois) return;
@@ -1046,21 +1063,11 @@ export function report(sc) {
     head = rows.length ? rows[0].label + '–' + rows[rows.length - 1].label : 'Total';
     sc.areaT = areaT; sc.bmcT = bmcT;
   } else {
-    const tot = rows.find((r) => r.label === 'Total') || rows[0];
-    mean = tot ? tot.bmd : 0;
-    s = tot ? scores(mean, 'total', sex, age) : { T: 0, Z: 0 };
+    const h = hipDiagnosis(rows, sex, age);
+    mean = h.mean; s = { T: h.T, Z: h.Z };
     head = 'Total hip';
-    sc.areaT = tot ? tot.area : 0; sc.bmcT = tot ? tot.bmc : 0;
-    sc.totT = s.T; sc.totZ = s.Z;
-    /* THE DIAGNOSIS IS THE LOWER OF TWO SITES. WHO/ISCD apply the thresholds at the femoral
-       neck AND the total hip and classify on whichever is worse; scoring the total alone let a
-       neck at T -2.6 sit under a "Normal" banner because the trochanter held the total up. The
-       headline area and mass stay on the total hip — that is the site a follow-up is tracked
-       on — but the T and Z that drive the banner come from the deciding site, and say so. */
-    const neck = rows.find((r) => r.label === 'Neck');
-    const sN = neck ? scores(neck.bmd, 'neck', sex, age) : null;
-    sc.dxSite = 'total hip';
-    if (sN && sN.T < s.T) { s = sN; sc.dxSite = 'femoral neck'; }
+    sc.areaT = h.area; sc.bmcT = h.bmc;
+    sc.totT = h.totT; sc.totZ = h.totZ; sc.dxSite = h.site;
   }
   const dx = diagnosis(s.T);
   const line = (r) => {

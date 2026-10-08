@@ -1,0 +1,23 @@
+# Unit tests on every pull request and every push to main. They pin numbers that were measured
+# by hand — detector noise, the K-edges, DXA level finding and hip regions, the CT acquisition
+# clock — so a physics change that undoes an earlier fix fails here rather than in a lesson.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: npm test
+      - run: npm run check:legends
