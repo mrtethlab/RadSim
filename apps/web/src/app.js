@@ -2003,7 +2003,18 @@ function finishExposure(success){
   S.prepped=false; $('rotor').classList.remove('on'); $('fire').disabled=true; $('fire').classList.remove('armed');
   if(success){
     $('clock').textContent='ACQUIRING';
-    computeRadiograph().then(()=>{ S.exposing=false; $('clock').textContent=''; });
+    // An exposure that throws must still hand the console back. With no catch here any
+    // error — the backend-only refusal, a failed fetch — left S.exposing set, and the rotor
+    // and the Space key then refused every later exposure until the page was reloaded.
+    computeRadiograph()
+      .then(()=>{ $('clock').textContent=''; })
+      .catch((err)=>{
+        console.error('exposure failed', err);
+        $('clock').textContent='EXPOSURE FAILED';
+        showExposureError(['IMAGE COULD NOT BE PROCESSED', String(err?.message||err).toUpperCase().slice(0,40)],
+                          'CHECK THE ENGINE SETTING AND RETRY', 'PROCESSING', 'FAILED');
+      })
+      .finally(()=>{ S.exposing=false; });
   } else {
     S.exposing=false;
     $('clock').textContent='EXPOSURE TERMINATED';
@@ -3029,6 +3040,14 @@ function ctrstTick(){
 function ctrstLatch(){
   const t=ctrstClock();
   if(t==null) return null;
+  return ctrstSetAcq(t);
+}
+/* Put the acquisition at an explicit injector time. A multiphase CT needs this: each group
+   fires at its own moment in the bolus, and that moment is a SIMULATED time — the couch move,
+   the programmed delay, the breath-hold and the previous groups' scan time — not the wall
+   clock, which also counts however long the browser spent reconstructing. */
+function ctrstSetAcq(t){
+  if(t==null || S.contrast.run.t0==null) return null;
   S.contrast.run.latched=Math.min(t, 90);
   S.contrast.scanTime=S.contrast.run.latched;
   S.contrast.lut=null; S.contrast.lutT=null;
@@ -3459,6 +3478,7 @@ window.addEventListener('load',()=>{
            // them is exactly what the exercise is about.
            contrastStart: ()=>{ if(S.contrast.on && S.contrast.timeline) ctrstStart(); },
            contrastReset: ()=>ctrstReset(),
+           contrastAt: (t)=>ctrstSetAcq(t),
            resetStudy: ()=>resetStudyState(),
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),

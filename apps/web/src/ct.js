@@ -3131,8 +3131,15 @@ async function runScan() {
   const S = ctx.S, tok = ++scanToken, alive = () => tok === scanToken;
   const groups = S.ct.groups.map((g, i) => ({ g, i })).filter(x => x.g.on);
   if (!groups.length) { setHint('No scan groups enabled.'); return; }
-  // Freeze the contrast clock as the scan begins; per-slice timing counts on from there.
-  if (ctx.contrastLatch) ctx.contrastLatch();
+  /* THE ACQUISITION CLOCK. Each group fires at its own moment in the bolus, so the clock is
+     carried through the scan rather than frozen once at START — frozen, every phase of a
+     multiphase study showed the same instant and a group delay did nothing to the image.
+     It is a SIMULATED clock: it advances by what a scanner actually spends (couch travel, the
+     programmed delay, the breath-hold, each group's acquisition) and NOT by wall time, which
+     would also count the seconds the browser spends reconstructing between groups. */
+  let acqT = ctx.contrastLatch ? ctx.contrastLatch() : null;
+  const breathHoldS = () => (Sound.duration('breathIn') || 2) + 0.7;   // as scanGroupExposure waits
+  const breathOutS = () => Sound.duration('breathNormal') || 1.8;
   setBusy(true);
   setPhase('scanning');
   setConsoleEnabled(false);
@@ -3161,14 +3168,23 @@ async function runScan() {
           return;
         }
         if (how !== 'scan' || !alive()) { setHint('Bolus tracking stopped.'); return; }
+        // the trigger re-latched the injector clock: the diagnostic scan counts on from THERE
+        if (acqT != null) acqT = S.contrast.run?.latched ?? acqT;
         setPhase('scanning');
         continue;
       }
+      const tMove = performance.now();
       await repositionForGroup(i, alive);                  // 1) move the couch for this group
       if (!alive()) return;
+      if (acqT != null) acqT += (performance.now() - tMove) / 1000;   // motor time is physical
       if (g.delay > 0) { await scanDelay(g.delay, alive); if (!alive()) return; }   // 2) scan delay
+      if (acqT != null) {
+        acqT += (g.delay > 0 ? g.delay : 0) + breathHoldS();
+        ctx.contrastAt?.(acqT);                            // the tube fires here, for this group
+      }
       lastEntry = await scanGroupExposure(g, i, alive);    // 3) expose + reconstruct + store
       if (!alive()) return;
+      if (acqT != null) acqT += groupExpTime(g) + breathOutS();
     }
   } catch (err) {
     console.error('scan failed', err); setHint('Scan failed: ' + err.message);
