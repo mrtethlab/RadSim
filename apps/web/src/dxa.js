@@ -1051,6 +1051,16 @@ export function report(sc) {
     s = tot ? scores(mean, 'total', sex, age) : { T: 0, Z: 0 };
     head = 'Total hip';
     sc.areaT = tot ? tot.area : 0; sc.bmcT = tot ? tot.bmc : 0;
+    sc.totT = s.T; sc.totZ = s.Z;
+    /* THE DIAGNOSIS IS THE LOWER OF TWO SITES. WHO/ISCD apply the thresholds at the femoral
+       neck AND the total hip and classify on whichever is worse; scoring the total alone let a
+       neck at T -2.6 sit under a "Normal" banner because the trochanter held the total up. The
+       headline area and mass stay on the total hip — that is the site a follow-up is tracked
+       on — but the T and Z that drive the banner come from the deciding site, and say so. */
+    const neck = rows.find((r) => r.label === 'Neck');
+    const sN = neck ? scores(neck.bmd, 'neck', sex, age) : null;
+    sc.dxSite = 'total hip';
+    if (sN && sN.T < s.T) { s = sN; sc.dxSite = 'femoral neck'; }
   }
   const dx = diagnosis(s.T);
   const line = (r) => {
@@ -1072,6 +1082,7 @@ export function report(sc) {
     + (spine ? '' : '<div class="dxnote">* Ward\'s area is reported by convention and never used for '
       + 'diagnosis. The WHO thresholds apply at the femoral neck and the total hip.</div>')
     + `<div class="dxdx dx-${dx.toLowerCase()}">${dx} &middot; T ${s.T.toFixed(1)} &middot; Z ${s.Z.toFixed(1)}`
+    + (spine ? '' : ` <span class="dxsite">(${sc.dxSite})</span>`)
     + `<small>WHO: normal &ge; &minus;1.0 &middot; osteopenia &minus;1.0 to &minus;2.5 &middot; osteoporosis &le; &minus;2.5</small></div>`;
   sc.mean = mean; sc.T = s.T; sc.Z = s.Z; sc.dx = dx;
   renderSerial();
@@ -1104,7 +1115,7 @@ function fileStudy(sc) {
   D.history.unshift({
     region: sc.region, regionLabel: REGIONS[sc.region]?.label || sc.region,
     rois: sc.rois.map((r) => ({ label: r.label, area: r.area, bmc: r.bmc, bmd: r.bmd, site: r.site })),
-    mean: sc.mean, T: sc.T, Z: sc.Z, dx: sc.dx, loss: sc.loss || 0,
+    mean: sc.mean, T: sc.T, Z: sc.Z, dx: sc.dx, dxSite: sc.dxSite, totT: sc.totT, totZ: sc.totZ, loss: sc.loss || 0,
     area: areaT, bmc: bmcT,
     age: D.age, weight: D.weight, sex: D.sex,
     when: new Date(), patient: patientOf(),
