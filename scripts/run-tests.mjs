@@ -15,7 +15,9 @@ const dir = join(root, 'apps', 'web', 'test');
 const files = readdirSync(dir).filter((f) => f.endsWith('.test.js')).sort().map((f) => join(dir, f));
 if (!files.length) { console.error(`no *.test.js files in ${dir}`); process.exit(1); }
 
-const r = spawnSync(process.execPath, ['--test', ...files], { encoding: 'utf8' });
+// the spec reporter, explicitly: older Node versions switch to TAP when stdout is not a
+// terminal (it never is in CI), and the guard below reads the spec reporter's summary
+const r = spawnSync(process.execPath, ['--test', '--test-reporter=spec', ...files], { encoding: 'utf8' });
 process.stdout.write(r.stdout); process.stderr.write(r.stderr);
 const ran = /^ℹ tests (\d+)/m.exec(r.stdout);
 if (!ran || +ran[1] === 0) { console.error('the test runner ran no tests'); process.exit(1); }
