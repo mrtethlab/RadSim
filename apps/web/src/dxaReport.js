@@ -186,12 +186,12 @@ export function reportHTML(entry, history, charts) {
             <th>BMD<br><small>(g/cm&sup2;)</small></th><th>Young-Adult<br>T-score</th><th>Age-Matched<br>Z-score</th></tr>
         ${rows.map(line).join('')}
         <tr class="sum"><td>${span}</td><td>${entry.area.toFixed(2)}</td><td>${entry.bmc.toFixed(2)}</td>
-            <td><b>${entry.mean.toFixed(3)}</b></td><td><b>${entry.T.toFixed(1)}</b></td>
-            <td><b>${entry.Z.toFixed(1)}</b></td></tr>
+            <td><b>${entry.mean.toFixed(3)}</b></td><td><b>${(entry.totT ?? entry.T).toFixed(1)}</b></td>
+            <td><b>${(entry.totZ ?? entry.Z).toFixed(1)}</b></td></tr>
       </table>
     </div>
   </div>
-  <div class="dxrep-dx dxrep-${dx.toLowerCase()}">${dx} &middot; T ${entry.T.toFixed(1)} &middot; Z ${entry.Z.toFixed(1)}</div>
+  <div class="dxrep-dx dxrep-${dx.toLowerCase()}">${dx} &middot; T ${entry.T.toFixed(1)} &middot; Z ${entry.Z.toFixed(1)}${entry.dxSite ? ` &middot; ${entry.dxSite}` : ''}</div>
   ${hist.length > 1 ? `
   <div class="dxrep-cap" style="margin-top:14px">Densitometry Trend: ${span}</div>
   <img class="dxrep-chart wide" src="${charts.trend}" alt="">
