@@ -8,6 +8,18 @@ handoff document and is not committed.)
 
 ## 2026-10-08
 
+### Legs turned at the hip — [#34](https://github.com/mrtethlab/RadSim/pull/34)
+The CT volume has the legs in neutral, so each femoral neck points about 20° forward of the
+table and projects foreshortened. Each femur is now cut out of the volume (a 3 cm ball
+around the head separates it from the acetabulum) and turned about its own head, so the
+joint stays seated while the pelvis stays put. The head centres are measured by the landmark
+tool and checked on orthogonal slices. AP pelvis sets the legs 15° in; the DXA femur defaults
+to 20° in (the foot brace), with a control to show what happens without it. Measured: the
+lesser trochanter stands 2.0 / 1.2 / 1.0 / 0.8 cm proud of the shaft at 30° out / neutral /
+15° in / 25° in. DXA neck BMD is 0.934 / 0.757 / 0.701 at 20° out / neutral / 20° in, so the
+default hip report now reads osteopenia (neck T −1.3). Also fixed: a protocol that loaded a
+new subject lost its kV to the subject default (AP pelvis went out at 120 kVp, not 80).
+
 ### X-ray protocols position the patient — [#32](https://github.com/mrtethlab/RadSim/pull/32)
 Protocols used to set only the technique: a lateral chest was exposed supine and labelled AP,
 29 of 40 projections loaded no model, and nothing was centred. Each projection now has a
