@@ -11,7 +11,7 @@
 import { Spectrum } from './core/spectrum.js';
 import { Materials, BodyMaterials } from './core/materials.js';
 import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
-import { buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
+import { buildConcLUT, NS as CONTRAST_NS, groupFireTime, afterGroupTime } from './core/contrast.js';
 import { Sound } from './audio/sound.js';
 
 let ctx = null;
@@ -3192,15 +3192,13 @@ async function runScan() {
       const tMove = performance.now();
       await repositionForGroup(i, alive);                  // 1) move the couch for this group
       if (!alive()) return;
-      if (acqT != null) acqT += (performance.now() - tMove) / 1000;   // motor time is physical
+      const moveS = (performance.now() - tMove) / 1000;    // motor time is physical
       if (g.delay > 0) { await scanDelay(g.delay, alive); if (!alive()) return; }   // 2) scan delay
-      if (acqT != null) {
-        acqT += (g.delay > 0 ? g.delay : 0) + breathHoldS();
-        ctx.contrastAt?.(acqT);                            // the tube fires here, for this group
-      }
+      acqT = groupFireTime(acqT, { moveS, delayS: g.delay, breathHoldS: breathHoldS() });
+      if (acqT != null) ctx.contrastAt?.(acqT);           // the tube fires here, for this group
       lastEntry = await scanGroupExposure(g, i, alive);    // 3) expose + reconstruct + store
       if (!alive()) return;
-      if (acqT != null) acqT += groupExpTime(g) + breathOutS();
+      acqT = afterGroupTime(acqT, { expS: groupExpTime(g), breathOutS: breathOutS() });
     }
   } catch (err) {
     console.error('scan failed', err); setHint('Scan failed: ' + err.message);

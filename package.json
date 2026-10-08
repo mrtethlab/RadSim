@@ -2,7 +2,7 @@
   "name": "radsim",
   "version": "0.1.0",
   "private": true,
-  "description": "RadSim — physics-based x-ray / (future) CT simulator. Three.js web frontend + Python compute backend.",
+  "description": "RadSim \u2014 physics-based x-ray / (future) CT simulator. Three.js web frontend + Python compute backend.",
   "workspaces": [
     "apps/web"
   ],
@@ -10,7 +10,8 @@
     "dev": "npm run dev --workspace @radsim/web",
     "build": "npm run check:legends && npm run build --workspace @radsim/web",
     "preview": "npm run preview --workspace @radsim/web",
-    "check:legends": "node scripts/check-legends.mjs"
+    "check:legends": "node scripts/check-legends.mjs",
+    "test": "node scripts/run-tests.mjs"
   },
   "engines": {
     "node": ">=18"

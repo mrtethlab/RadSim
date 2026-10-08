@@ -27,6 +27,8 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
       - run: npm ci
+      # the unit tests gate the deploy: nothing ships that undoes a measured fix
+      - run: npm test
       - run: npm run build
       # Belt and braces on the sub-mm volumes. They are gitignored, so a CI checkout has
       # them absent and Vite copies nothing — but Vite mirrors public/ wholesale, so a

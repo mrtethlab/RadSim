@@ -100,3 +100,16 @@ export function acquisitionTime(z, zStart, tStart, speed) {
   if (!speed) return tStart;
   return tStart + (z - zStart) / speed;
 }
+
+/* THE CT ACQUISITION CLOCK, as arithmetic. A multiphase scan fires each group at its own
+   moment in the bolus, and that moment is SIMULATED time: couch travel, the programmed delay
+   and the breath-hold before the tube fires; the group's own acquisition and the breathe-out
+   after it. Reconstruction time is deliberately not a parameter — a real scanner does not wait
+   for the browser. A null clock (no injection running) stays null. Used by runScan, and pure
+   so the rule can be tested. */
+export function groupFireTime(t, { moveS = 0, delayS = 0, breathHoldS = 0 } = {}) {
+  return t == null ? null : t + moveS + Math.max(0, delayS) + breathHoldS;
+}
+export function afterGroupTime(t, { expS = 0, breathOutS = 0 } = {}) {
+  return t == null ? null : t + expS + breathOutS;
+}
