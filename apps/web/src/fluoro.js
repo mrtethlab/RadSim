@@ -773,6 +773,24 @@ function buildRig() {
   // throat centre) rotates with the orbital/tilt sliders while the 'body' node (37k
   // faces: cart, column, workstation) stands still. Loaded async; the beam line alone
   // is the fallback if the fetch fails.
+  // the scanned machine itself is fetched on first entry to the room: see loadOecRig()
+  // the stretcher the subject lies on (the x-ray placement already lies flat at y≈0)
+  stretcher = new THREE.Mesh(new THREE.BoxGeometry(55, 2.4, 210),
+    new THREE.MeshStandardMaterial({ color: 0x3c4650, roughness: 0.85 }));
+  stretcher.position.set(0, -1.6, 0);
+  stretcher.visible = false;
+  rig.parent.add(stretcher);
+}
+
+/* 0.54 MB of photogrammetry that only the fluoroscopy room ever shows. It used to be
+   fetched while the page booted, for every visitor, whether or not they opened this mode.
+   Now it is fetched the first time the room is entered; until it lands the beam line and
+   the stretcher stand in, exactly as they already did when the fetch failed. */
+let oecRequested = false;
+function loadOecRig() {
+  if (oecRequested) return;
+  oecRequested = true;
+  const { THREE, three } = ctx;
   ctx.loadModelUrl?.(ctx.baseUrl + 'models/rigs/oec_rig.glb').then((g) => {
     g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
     let carmNode = null, boomNode = null, colNode = null;
@@ -805,12 +823,6 @@ function buildRig() {
     if (colNode) oecCol = wrap(colNode);
     fluoroSyncScene();
   }).catch(() => { /* the beam line remains */ });
-  // the stretcher the subject lies on (the x-ray placement already lies flat at y≈0)
-  stretcher = new THREE.Mesh(new THREE.BoxGeometry(55, 2.4, 210),
-    new THREE.MeshStandardMaterial({ color: 0x3c4650, roughness: 0.85 }));
-  stretcher.position.set(0, -1.6, 0);
-  stretcher.visible = false;
-  rig.parent.add(stretcher);
 }
 
 export function fluoroSyncScene() {
@@ -886,6 +898,7 @@ export function fluoroApplyMode(on) {
   // core/paneDock.js, which ultrasound shares.
   dockConsole(on, $('flPedalRow'));
   if (on) {
+    loadOecRig();
     ensureWorker();
     renderReadouts();
     setStatus(readyCount === workers.length && workers.length
@@ -1166,17 +1179,14 @@ export function initFluoro(context) {
   // A subject change invalidates the workers' copy of the volume. Rebuild once the new
   // volume has actually LOADED (the change event fires before the fetch finishes) so the
   // motion scan runs and the status tells the truth without waiting for a pedal press.
-  const sel = $('subjectSel');
-  sel?.addEventListener('change', () => {
-    workerSub = null;
-    const want = sel.value;
-    const poll = setInterval(() => {
-      if (ctx.S.mode !== 'fluoro') { clearInterval(poll); return; }
-      if (ctx.S.subject === want && ctx.S.voxelModel && !ctx.S.subjectLoading) {
-        clearInterval(poll); F.motions = []; ensureWorker();
-      }
-    }, 300);
-    setTimeout(() => clearInterval(poll), 30000);
+  // Rebuild the pool whenever a subject finishes loading. This used to listen for the
+  // dropdown's change event and poll until the volume landed — which never fires for a subject
+  // that arrives on its own, so entering fluoro straight from the menu (the hand now loads on
+  // entry, not at boot) left the status on "Loading the subject into the pulse workers…" for
+  // good. setSubject announces completion; that covers every way a subject can arrive.
+  window.addEventListener('radsim:subject', () => {
+    workerSub = null; F.motions = [];
+    if (ctx.S.mode === 'fluoro') ensureWorker();
   });
   renderReadouts();
 }

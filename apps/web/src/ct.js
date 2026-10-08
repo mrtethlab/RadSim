@@ -126,6 +126,7 @@ export function initCT(context) {
   wireRecons();
   wireScoutZoom();
   applyMode(ctx.S.mode);        // establish initial (x-ray) state + body class
+  booted = true;                // from here on, entering a room fetches what it needs
   // keep the scout panels row-locked at the shared scale when the window resizes
   window.addEventListener('resize', () => {
     if (ctx.$('ctScouts')?.classList.contains('show')) layoutScouts();
@@ -933,6 +934,7 @@ function resetCTSession() {
   setConsoleEnabled(true);
 }
 
+let booted = false;
 function applyMode(mode) {
   // Walking out of the room ends the study. The bolus, the barium and the solved timelines
   // all belong to the machine you just left, so a genuine change of modality rebuilds the
@@ -961,6 +963,14 @@ function applyMode(mode) {
     return;
   }
   ctx.S.mode = mode;
+  /* A room's sounds and subject are fetched on first ENTRY — but not on the one applyMode
+     that runs during start-up, which only lays out the default x-ray state before boot parks
+     the app on the home screen. Fetching there would download the hand and the x-ray sounds
+     for every visitor who never leaves the menu, which is the cost this exists to avoid. */
+  if (booted) {
+    Sound.need(mode);
+    if (mode === 'xray' || mode === 'ct' || mode === 'fluoro' || mode === 'editor') ctx.ensureSubject?.();
+  }
   document.body.classList.toggle('mode-ct', mode === 'ct');
   document.body.classList.toggle('mode-xray', mode === 'xray');
   document.body.classList.toggle('mode-editor', mode === 'editor');
@@ -3137,6 +3147,12 @@ async function runScan() {
      It is a SIMULATED clock: it advances by what a scanner actually spends (couch travel, the
      programmed delay, the breath-hold, each group's acquisition) and NOT by wall time, which
      would also count the seconds the browser spends reconstructing between groups. */
+  // The breath-hold — and so every acquisition time below — is timed off the breath sounds'
+  // durations. They are fetched on entry to the room and are always in long before a scan
+  // can start, but "always" is enforced rather than assumed: a missing sound would fall back
+  // to a 2 s guess and quietly shift every phase. Resolves at once when already loaded.
+  await Sound.need('ct');
+  if (!alive()) return;
   let acqT = ctx.contrastLatch ? ctx.contrastLatch() : null;
   const breathHoldS = () => (Sound.duration('breathIn') || 2) + 0.7;   // as scanGroupExposure waits
   const breathOutS = () => Sound.duration('breathNormal') || 1.8;

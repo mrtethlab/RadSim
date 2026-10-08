@@ -296,7 +296,14 @@ function prepVoxelMesh(grp, translucent){
 /* Switch the scan subject to any voxel model. Models (material volume + display mesh)
    are fetched on first use and cached; the meshes all live in handGroup so the CT
    positioning offsets apply to every subject the same way. */
+/* LATEST REQUEST WINS. Loads are async and finish in network order, not request order, so two
+   overlapping requests used to race: pick the chest and then the hand, and if the chest's
+   40 MB landed last it took over, leaving the dropdown, the scene and the physics on
+   different patients. Every call takes a ticket; a load that finishes behind a newer ticket
+   is still cached, but it does not become the subject. */
+let subjectReq=0;
 async function setSubject(sub){
+  const req=++subjectReq;
   const sel=$('subjectSel'); const hint=$('subjectHint');
   S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
   const showActive=(id)=>{ for(const k in three.voxelMeshes) three.voxelMeshes[k].visible=(k===id);
@@ -342,8 +349,9 @@ async function setSubject(sub){
       }
     }catch(err){ console.error(sub+' load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
       if(sel) sel.value=S.subject; return; }
-    finally{ S.subjectLoading=false; }
+    finally{ if(req===subjectReq) S.subjectLoading=false; }
   }
+  if(req!==subjectReq) return;          // a newer request has been made: this one is only cached
   S.voxelModel=vm; S.subject=sub;
   // Phones: one material volume resident at a time. A desktop keeps every subject it has
   // touched (instant switching); a phone that did that would hold hundreds of MB of
@@ -376,6 +384,11 @@ async function setSubject(sub){
   if(hint) hint.textContent=vm.header.name+' · '+vm.dims.join('×')+' @ '+vm.spacingMM[0]+'mm';
   if(sel) sel.value=sub;
   syncScene();
+  /* Announce it. A subject can now arrive without anyone touching the dropdown — on first
+     entry to a room, or from a room that picks its own patient — and a room that prepares
+     per-subject state (fluoro's pulse workers) has to hear about it either way. Fired only
+     once the volume is in place and the scene has been synced around it. */
+  window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
 /* Everything an injected study leaves behind on the model. A study belongs to one patient
    on one machine, so it survives neither a change of subject nor a change of modality: the
@@ -394,6 +407,12 @@ function resetStudyState(){
   // the subject can carry barium at all.
   S.barium.gi=null; S.barium.study=null; S.barium.running=false;
   if($('giPanel')) giApply();
+}
+
+/* Load the current subject if nothing is loaded yet. Called on entry to the rooms that image
+   whatever subject is selected (x-ray, CT, fluoro, the editor); the others choose their own. */
+function ensureSubject(){
+  if(!S.voxelModel && !S.subjectLoading) setSubject(S.subject||'hand');
 }
 
 /* Photo-textured display skin. Purely cosmetic: the attenuation always comes from the
@@ -1951,6 +1970,16 @@ const EXP={holding:false, done:false, t0:0, dur:0, raf:0, timer:0};
 
 function startExposure(){
   if(!S.prepped || S.exposing) return;
+  // The subject now arrives AFTER the room is entered rather than at boot, so for a second
+  // or two there may be nobody on the table. Exposing then traced an empty phantom and
+  // filed a blank, perfectly-exposed-looking film. Inhibit instead, as the AEC interlock does.
+  if(!S.voxelModel || S.subjectLoading){
+    S.prepped=false; $('rotor').classList.remove('on');
+    $('fire').disabled=true; $('fire').classList.remove('armed');
+    setWarn('standby'); $('clock').textContent='EXPOSURE INHIBITED';
+    showExposureError(['SUBJECT STILL LOADING'], 'WAIT FOR THE MODEL, THEN PREP AGAIN', 'EXPOSURE', 'INHIBITED');
+    return;
+  }
   // Interlock BEFORE anything is delivered: no rotor sound, no timer, no image. The tube
   // never fires, so this is not a terminated exposure — it is an exposure that never
   // happened, and the fault screen says which.
@@ -2751,9 +2780,13 @@ async function refreshComputeStatus(){
     el.textContent=label;
     el.classList.toggle('green', on);
   }
+  // The Python button stays CLICKABLE while the backend is offline: clicking it is how the
+  // public site looks for a backend (it no longer polls), so disabling it would leave no way
+  // to connect at all. It is marked offline instead, and the click probes.
   for(const segId of ['backendSegX','backendSegCT']){
     const b=document.querySelector('#'+segId+' button[data-be="python"]');
-    if(b) b.disabled=!on;
+    if(b){ b.disabled=false; b.classList.toggle('offline', !on);
+           b.title=on ? '' : 'Compute backend offline — click to look for it'; }
   }
   // if the backend vanished while selected, drop back to the browser engine — unless
   // a backend-only model is loaded (it has no browser volume, so local can't render it)
@@ -2840,7 +2873,7 @@ function applyBackendOnly(on){
     const local=seg.querySelector('button[data-be="local"]');
     const py=seg.querySelector('button[data-be="python"]');
     if(local) local.disabled=on;                          // can't use the browser engine
-    if(on && py) py.disabled=!S.computeInfo;               // python still needs the backend up
+    if(on && py) py.disabled=false;                        // clickable: a click probes for the backend
   }
   if(on && !S.computeInfo){ refreshComputeStatus().then(ok=>{
     if(!ok){ const h=$('subjectHint'); if(h) h.textContent='⚠ Start the Python backend — this model needs the GPU engine.'; }
@@ -2852,7 +2885,11 @@ function wireBackendToggles(){
       const b=e.target.closest('button'); if(!b||b.disabled) return;
       if(b.dataset.be==='python' && !S.computeInfo){
         const ok=await refreshComputeStatus();
-        if(!ok) return;   // still offline — stay on the browser engine
+        if(!ok){          // still offline — stay on the browser engine, and say why
+          const h=$('subjectHint');
+          if(h) h.textContent='Python backend not found at '+compute.base+' — run start-radsim.bat, then click again.';
+          return;
+        }
       }
       setBackend(mode,b.dataset.be);
     });
@@ -3458,9 +3495,25 @@ function initExtras(){
   wireBackendToggles();
   syncFeatureToggles();
   updateComputeNote('xray'); updateComputeNote('ct'); updateDetWarn(); updateScatterNote();
-  refreshComputeStatus();
-  // poll the backend so the Python GPU button enables/greys out as it connects/drops
-  setInterval(refreshComputeStatus, 5000);
+  startComputePoll();
+}
+/* WHEN TO LOOK FOR THE BACKEND. It used to be fetched every 5 s, forever, on every page — the
+   public site included, where no visitor has a backend, so each one logged a refused
+   connection every five seconds and asked the browser to reach into their local network.
+   Now: on the public site, never on its own — the Python button probes when clicked. On a
+   local checkout (where start-radsim.bat runs the backend) it is still polled, so the button
+   lights up when the server comes up, but not while the tab is hidden, and backing off to a
+   minute while it stays down. */
+const COMPUTE_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
+  || !!import.meta.env.VITE_COMPUTE_URL;
+function startComputePoll(){
+  if(!COMPUTE_LOCAL) return;
+  let fails=0;
+  const tick=async()=>{
+    if(!document.hidden){ const ok=await refreshComputeStatus(); fails=ok?0:fails+1; }
+    setTimeout(tick, fails ? Math.min(60000, 5000*2**Math.min(fails,4)) : 5000);
+  };
+  tick();
 }
 
 /* ---- boot ---- */
@@ -3480,6 +3533,7 @@ window.addEventListener('load',()=>{
            contrastReset: ()=>ctrstReset(),
            contrastAt: (t)=>ctrstSetAcq(t),
            resetStudy: ()=>resetStudyState(),
+           ensureSubject: ()=>ensureSubject(),
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on),
@@ -3526,7 +3580,10 @@ window.addEventListener('load',()=>{
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
-  setSubject('hand');                           // default subject: the voxel hand phantom
+  /* The default subject is NOT loaded at boot any more. The home screen never shows it, and
+     it cost every visitor 3.5 MB before they had picked a mode — and DXA, ultrasound and
+     mammography each swap it straight out for their own patient anyway. The rooms that
+     use whatever subject is current ask for it on entry instead: see ensureSubject. */
   document.body.classList.add('mode-home');     // open on the menu, not inside a mode
   S.mode='home';
 });

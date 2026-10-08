@@ -1232,6 +1232,7 @@ export function dxaApplyMode(on) {
   dockConsole(on, $('dxScanRow'));
   if (on) {
     if (ctx.S.subject !== 'chestabdopelvis') ctx.setSubject?.('chestabdopelvis');
+    ensureScannedRig();
     setStatus('Ready — pick a region and scan.');
     D.region = D.region || 'spine';
     setTimeout(() => parkWhenReady(), 60);   // as soon as the subject's volume is in place
@@ -1445,7 +1446,7 @@ function buildRig() {
   rig.visible = false;
   three.handGroup.parent.add(rig);
   buildLaser();
-  loadScannedRig();
+  // the scanned machine is fetched on first entry to the room: see ensureScannedRig()
 }
 
 /* The centring laser: a thin cross projected on the patient, which is the only thing the
@@ -1487,11 +1488,17 @@ export function setRig(key) {
     });
     scannedRig = null; bedNode = null; headNode = null; headHome = null;
   }
+  rigRequested = true;
   loadScannedRig();
   document.querySelectorAll('#dxRigSeg button')
     .forEach((b) => b.classList.toggle('on', b.dataset.rig === key));
 }
 
+/* 3.2 MB — the single largest thing the site downloaded at boot, for a room most visitors
+   never open. Fetch it the first time the DXA room is entered instead; the box stand-in
+   is drawn until it lands, as it always was while the fetch was in flight. */
+let rigRequested = false;
+function ensureScannedRig() { if (rigRequested) return; rigRequested = true; loadScannedRig(); }
 function loadScannedRig() {
   const { THREE, three } = ctx;
   if (!ctx.loadModelUrl) return;
