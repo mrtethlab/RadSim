@@ -156,6 +156,26 @@
       "z": 15.5,
       "how": "T7: L1 + six thoracic bodies at ~2.6 cm (estimated, not measured)",
       "confidence": "low"
+    },
+    "femoralHeadL": {
+      "x": -8.8,
+      "y": -1.7,
+      "z": -26.6,
+      "frame": "volume",
+      "r": 2.2,
+      "anteriorY": 1,
+      "how": "centre of the 2.2 cm sphere through the most cortical bone (head and acetabular shells)",
+      "confidence": "high"
+    },
+    "femoralHeadR": {
+      "x": 8.9,
+      "y": -2.8,
+      "z": -27.2,
+      "frame": "volume",
+      "r": 2.2,
+      "anteriorY": 1,
+      "how": "centre of the 2.2 cm sphere through the most cortical bone (head and acetabular shells)",
+      "confidence": "high"
     }
   }
 }

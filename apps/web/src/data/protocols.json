@@ -828,7 +828,8 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "pelvis"
+                "centre": "pelvis",
+                "legs": 15
               }
             }
           ]

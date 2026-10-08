@@ -88,6 +88,8 @@ export async function loadVoxelModel(baseUrl, name) {
     // build a VoxelPhantom centred at `center` (world cm) with optional axis flips.
     // With data=null it is geometry-only (extent/flip for placement; trace unused —
     // the backend does the ray-casting).
-    makePhantom(center, flip, rot) { return new VoxelPhantom({ dims: [nx, ny, nz], vs, data }, center, flip, rot); },
+    // `posed` stands in for the material volume when the patient's limbs have been turned
+    // (core/limbPose.js) — same grid, same legend, different anatomy
+    makePhantom(center, flip, rot, posed = null) { return new VoxelPhantom({ dims: [nx, ny, nz], vs, data: posed || data }, center, flip, rot); },
   };
 }

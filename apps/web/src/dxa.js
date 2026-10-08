@@ -64,7 +64,9 @@ export const REGIONS = {
    technologist actually uses, since the L4-L5 disc sits at the crest. */
 let landmarks = null, landmarksFor = null;
 export function findLandmarks(ph) {
-  if (landmarks && landmarksFor === ctx.S.subject) return landmarks;
+  // keyed on the leg rotation too: turning the leg moves the greater trochanter
+  const key = `${ctx.S.subject}|${D?.legRot || 0}`;
+  if (landmarks && landmarksFor === key) return landmarks;
   const M = BodyMaterials;
   const aOf = boneEquivById();
   const nx = ph.nx, ny = ph.ny, nz = ph.nz, data = ph.data;
@@ -120,7 +122,7 @@ export function findLandmarks(ph) {
                 lumbarCm: (lumbarZ + 0.5) * vs[2] + ph.min[2],
                 crestCm: (crestZ + 0.5) * vs[2] + ph.min[2],
                 troch };
-  landmarksFor = ctx.S.subject;
+  landmarksFor = key;
   return landmarks;
 }
 
@@ -1599,6 +1601,13 @@ export function initDXA(context) {
     D.age = +e.target.value;
     const el = $('dxAgeV'); if (el) el.textContent = D.age;
     if (scan && scan.rois) report(scan);        // only Z moves — T has no age in it
+  });
+  $('dxLeg')?.addEventListener('input', (e) => {
+    D.legRot = +e.target.value;
+    const d = D.legRot, el = $('dxLegV');
+    if (el) el.textContent = d === 0 ? '0°' : d > 0 ? `${d}° in` : `${-d}° out`;
+    setStatus(d >= 15 && d <= 25 ? 'Leg in the brace — rescan to see it.'
+      : 'Leg out of the brace position — rescan and watch the femoral neck.');
   });
   $('dxWt')?.addEventListener('input', (e) => {
     D.weight = +e.target.value;
