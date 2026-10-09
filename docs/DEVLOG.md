@@ -8,6 +8,17 @@ handoff document and is not committed.)
 
 ## 2026-10-09
 
+### X-ray patient dose — [#52](https://github.com/mrtethlab/RadSim/pull/52)
+The x-ray console showed the detector's dose (EI, DI) and nothing of the patient's. Each exposure
+now reports the entrance surface dose (skin kerma on the central ray, with backscatter), the
+dose-area product, and a running DAP total for the patient, repeats included. The focus-to-skin
+distance is found on the central ray as the caliper finds thickness, and the AEC's delivered mAs is
+used, not the backup. The scale is a typical tube output (50 µGy/mAs at 1 m at 80 kV): the chain's
+own units come from the EI calibration and are about a quarter of a real tube's. Measured: PA chest
+0.28 mGy and 0.2 Gy·cm²; half the field halves the DAP and leaves the ESD; a 31 cm pelvis charted to
+100 mAs reads 13.6 mGy, which is what that technique costs. A tutorial step asks for a tighter
+field and checks the DAP fall.
+
 ### Audit 2, group 1: bugs across the modes — [#50](https://github.com/mrtethlab/RadSim/pull/50)
 A PA chest hung mirrored, with the heart on the viewer's left: the display mirror now follows the
 roll each image was taken at. On a frozen ultrasound image the knobs re-scanned under the FROZEN
