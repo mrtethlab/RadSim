@@ -106,11 +106,11 @@
       "confidence": "medium"
     },
     "cspine": {
-      "x": 1.35,
-      "y": -0.96,
-      "z": -1.58,
-      "how": "narrowest bone section between the skull and the shoulders: mid-cervical; the island nearest the midline",
-      "confidence": "medium"
+      "x": 0.39,
+      "y": -3.86,
+      "z": -6.58,
+      "how": "C4 vertebral body, from the CT's own vertebra labels (s1397), registered to the model (99.8% of label voxels on bone)",
+      "confidence": "high"
     },
     "_skullPeak": {
       "z": 1.88

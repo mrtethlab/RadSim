@@ -120,6 +120,9 @@ def main():
     ap.add_argument('--subject')
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--limit', type=int, default=25)
+    ap.add_argument('--only', nargs='+', default=None,
+                    help='fetch only members whose path contains one of these substrings '
+                         '(e.g. vertebrae_C: a landmark needs a few labels, not the whole study)')
     a = ap.parse_args()
 
     z = open_zip()
@@ -148,6 +151,10 @@ def main():
                or f'/{a.subject}/' in n or n.startswith(a.subject + '/')]
     if not members:
         sys.exit(f'{a.subject} not in the archive')
+    if a.only:
+        members = [n for n in members if any(o in n for o in a.only)]
+        if not members:
+            sys.exit(f'nothing in {a.subject} matches {a.only}')
     dest = os.path.join(OUT, a.subject)
     os.makedirs(dest, exist_ok=True)
     total = sum(z.getinfo(n).file_size for n in members)

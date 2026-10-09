@@ -189,6 +189,60 @@ def hand():
     }
 
 
+HEADNECK_LABELS = ROOT / 'services' / 'compute' / 'data' / 'totalseg' / 's1397' / 'segmentations'
+
+
+def cervical_from_labels(bone, sp, level=4):
+    """The cervical landmark from the CT's own vertebra labels, when they are on disk.
+
+    Fetch them with  services/compute: python -m app.fetch_totalseg --subject s1397 --only vertebrae_C
+    (seven masks, ~0.4 MB). The head & neck model was built from that CT at its native 1.5 mm, so
+    the labels and the model differ only by the builder's crop: the offset is found by sliding the
+    union of the masks over the model's bone (FFT cross-correlation) and is accepted only if the
+    masks then sit on bone. Measured: 99.8 % of label voxels land on bone.
+
+    Why it matters: the profile method below took 'the narrowest bone section between the skull and
+    the shoulders' — which in this CT is C1, not C4. The patient was scanned with the arms raised
+    beside the head, so the neck's bone section narrows at the atlas, and both cervical views were
+    centred 4.8 cm high, the AP through the mandible. Returns None when the labels or nibabel are
+    missing, and the caller falls back to the profile."""
+    try:
+        import nibabel as nib
+        from scipy.signal import fftconvolve
+    except ImportError:
+        return None
+    files = {k: HEADNECK_LABELS / f'vertebrae_C{k}.nii.gz' for k in range(1, 8)}
+    if not all(f.exists() for f in files.values()):
+        return None
+    labs = {k: np.asarray(nib.load(str(f)).dataobj) > 0 for k, f in files.items()}   # [i, j, k] = [x, y, z]
+    union = np.zeros_like(labs[1])
+    for a in labs.values():
+        union |= a
+    idx = np.argwhere(union)
+    lo, hi = idx.min(0), idx.max(0) + 1
+    tmpl = union[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]].astype(np.float32)
+    bxyz = bone.transpose(2, 1, 0).astype(np.float32)                                  # model as [x, y, z]
+    corr = fftconvolve(bxyz, tmpl[::-1, ::-1, ::-1], mode='valid')
+    at = np.array(np.unravel_index(int(np.argmax(corr)), corr.shape))
+    on_bone = float(corr[tuple(at)] / tmpl.sum())
+    if on_bone < 0.95:
+        print(f'  cervical labels did not register (only {on_bone:.1%} on bone) — using the profile')
+        return None
+    off = at - lo
+    nx, ny, nz = bxyz.shape
+    v = np.argwhere(labs[level]) + off
+    ys = v[:, 1]
+    # the vertebral BODY: the anterior 40 % of the vertebra (anterior is +y in this volume); the
+    # centroid of the whole bone sits back in the posterior arch
+    body = v[ys >= ys.max() - 0.4 * (ys.max() - ys.min())]
+    cx, cy, cz = body.mean(0)
+    cm = lambda i, n, s: round(float((i - (n - 1) / 2) * s), 2)
+    return {'x': cm(cx, nx, sp[0]), 'y': cm(cy, ny, sp[1]), 'z': cm(cz, nz, sp[2]),
+            'how': f'C{level} vertebral body, from the CT\'s own vertebra labels (s1397), registered to the model '
+                   f'({on_bone:.1%} of label voxels on bone)',
+            'confidence': 'high'}
+
+
 def head_neck():
     h, vol, bone, sp = load('headneck')
     p = profile(bone, sp)
@@ -199,9 +253,12 @@ def head_neck():
     zs = np.arange(nz); upper = zs > int(0.5 * nz)
     zc = int((p[upper] * zs[upper]).sum() / p[upper].sum())     # bone-weighted centre of the skull
     neck = int(np.argmin(p[int(0.15 * nz): int(0.5 * nz)])) + int(0.15 * nz)
+    cs = cervical_from_labels(bone, sp) or mark(
+        bone, neck, sp, 'narrowest bone section between the skull and the shoulders (lands on C1 in this CT; '
+        'fetch the vertebra labels for C4); the island nearest the midline', 'low', prefer='midline')
     return {
         'skull': mark(bone, zc, sp, 'bone-weighted centre of the upper half (the cranium)', 'medium'),
-        'cspine': mark(bone, neck, sp, 'narrowest bone section between the skull and the shoulders: mid-cervical; the island nearest the midline', 'medium', prefer='midline'),
+        'cspine': cs,
         '_skullPeak': {'z': round((skull - nz / 2) * sp[2], 2)},
     }
 
