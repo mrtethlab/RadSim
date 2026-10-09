@@ -645,7 +645,131 @@ function drawFan(env, fr, tgcLut) {
     g.fillText(`+${vNyq.toFixed(0)}`, 8, 18);
     g.fillText(`-${vNyq.toFixed(0)} cm/s`, 8, H - 8);
   }
-  return { W, H, cx, cy, scale };
+  const geo = { W, H, cx, cy, scale };
+  drawDepthScale(g, geo, fr);
+  drawCalipers(g, geo);
+  lastGeo = geo;
+  return geo;
+}
+
+/* ---- the depth scale -------------------------------------------------------
+   Every machine prints one down the side of the image, and without it nothing on the screen
+   has a size: centimetre ticks from the skin line, numbered, and the focal-zone marker at the
+   transmit focus, so "focus at the lesion" is something you can check rather than guess. */
+function drawDepthScale(g, geo, fr) {
+  const { depth, R0 } = fr;
+  const { W, cx, cy, scale } = geo;
+  const yOf = (d) => cy + ((R0 || 0) + d) * scale;      // along the centre line
+  const x = W - 8;
+  const every = depth <= 8 ? 1 : depth <= 16 ? 2 : 5;
+  g.save();
+  g.strokeStyle = 'rgba(190,225,240,0.85)'; g.fillStyle = 'rgba(190,225,240,0.85)';
+  g.lineWidth = 1; g.font = '11px ui-monospace, monospace'; g.textAlign = 'right';
+  g.beginPath(); g.moveTo(x + 0.5, yOf(0)); g.lineTo(x + 0.5, yOf(depth)); g.stroke();
+  for (let d = 0; d <= depth + 1e-6; d += 0.5) {
+    const major = Math.abs(d - Math.round(d)) < 1e-6;
+    const len = major ? (Math.round(d) % every === 0 ? 8 : 5) : 2.5;
+    const y = Math.round(yOf(d)) + 0.5;
+    g.beginPath(); g.moveTo(x - len, y); g.lineTo(x, y); g.stroke();
+    if (major && Math.round(d) % every === 0 && d > 0) g.fillText(String(Math.round(d)), x - 10, y + 4);
+  }
+  // the focal zone: a small triangle pointing at the scale
+  const fy = yOf(Math.min(U.focus, depth));
+  g.fillStyle = 'rgba(255,214,90,0.95)';
+  g.beginPath(); g.moveTo(x - 14, fy); g.lineTo(x - 22, fy - 5); g.lineTo(x - 22, fy + 5); g.closePath(); g.fill();
+  g.textAlign = 'left'; g.fillStyle = 'rgba(190,225,240,0.75)';
+  g.fillText('cm', x - 18, yOf(depth) + 14 > geo.H - 2 ? geo.H - 4 : yOf(depth) + 14);
+  g.restore();
+}
+
+/* ---- calipers --------------------------------------------------------------
+   Freeze, click two points: the distance between them. Points are kept in the image's own
+   centimetres — the scan conversion is geometric, so a centimetre on the screen is one in the
+   patient at any depth or probe — and a third click starts the next pair (D1, D2). Going live
+   clears them, as on a machine: a measurement belongs to the frame it was made on. */
+let calipers = [];                    // [{X, Y}] in image cm, pairs
+let lastGeo = null, lastFr = null;
+const CAL_COL = ['rgba(255,226,90,0.95)', 'rgba(110,230,255,0.95)'];
+function calDistances() {
+  const out = [];
+  for (let p = 0; p + 1 < calipers.length; p += 2) {
+    const a = calipers[p], b = calipers[p + 1];
+    out.push(Math.hypot(b.X - a.X, b.Y - a.Y));
+  }
+  return out;
+}
+function drawCalipers(g, geo) {
+  if (!calipers.length) return;
+  const { cx, cy, scale } = geo;
+  const P = (q) => [cx + q.X * scale, cy + q.Y * scale];
+  g.save();
+  g.lineWidth = 1.5; g.font = '12px ui-monospace, monospace';
+  calipers.forEach((q, i) => {
+    const [x, y] = P(q), col = CAL_COL[(i >> 1) % 2];
+    g.strokeStyle = col;
+    g.beginPath(); g.moveTo(x - 6, y); g.lineTo(x + 6, y); g.moveTo(x, y - 6); g.lineTo(x, y + 6); g.stroke();
+    if (i % 2 === 1) {
+      const [x0, y0] = P(calipers[i - 1]);
+      g.setLineDash([4, 4]); g.beginPath(); g.moveTo(x0, y0); g.lineTo(x, y); g.stroke(); g.setLineDash([]);
+    }
+  });
+  const d = calDistances();
+  d.forEach((v, i) => { g.fillStyle = CAL_COL[i % 2]; g.fillText(`D${i + 1} ${v.toFixed(2)} cm`, 10, 20 + 16 * i); });
+  g.restore();
+}
+/* Screen point -> image cm. The B canvas is letterboxed into whichever canvas was clicked. */
+function imagePointFrom(e, cv) {
+  if (!lastGeo || !usCanvas || U.disp === 'm') return null;
+  const r = cv.getBoundingClientRect();
+  const px = (e.clientX - r.left) * cv.width / r.width, py = (e.clientY - r.top) * cv.height / r.height;
+  const s = Math.min(cv.width / usCanvas.width, cv.height / usCanvas.height);
+  const ox = (cv.width - usCanvas.width * s) / 2, oy = (cv.height - usCanvas.height * s) / 2;
+  const bx = (px - ox) / s, by = (py - oy) / s;
+  if (bx < 0 || by < 0 || bx > lastGeo.W || by > lastGeo.H) return null;
+  return { X: (bx - lastGeo.cx) / lastGeo.scale, Y: (by - lastGeo.cy) / lastGeo.scale };
+}
+function caliperClick(e, cv) {
+  if (ctx.S.mode !== 'us') return;
+  if (U.live) { setStatus('Freeze first — calipers measure a frozen frame.'); return; }
+  if (U.disp === 'm') { setStatus('Calipers measure the B image; switch the display back to B.'); return; }
+  const q = imagePointFrom(e, cv);
+  if (!q) return;
+  if (calipers.length >= 4) calipers = [];
+  calipers.push(q);
+  if (lastFr) render(lastFr);
+  const d = calDistances();
+  const el = $('usCalV');
+  if (el) el.textContent = d.length ? d.map((v, i) => `D${i + 1} ${v.toFixed(2)} cm`).join(' · ') : 'first point set';
+}
+function clearCalipers() {
+  calipers = [];
+  const el = $('usCalV'); if (el) el.textContent = '—';
+  if (lastFr) render(lastFr);
+}
+
+/* ---- exam presets ----------------------------------------------------------
+   What a sonographer selects before touching anything else: the probe and a starting point for
+   frequency, depth, focus, gain and dynamic range that suits the region. Starting points, not
+   answers — the depth still wants setting to the organ, and the focus to the lesion. */
+export const PRESETS = {
+  abdomen:  { probe: 'curvi',  freq: 3.5, depth: 16, focus: 8, gain: 0, range: 55, label: 'Abdomen' },
+  renal:    { probe: 'curvi',  freq: 4.0, depth: 14, focus: 8, gain: 2, range: 55, label: 'Renal' },
+  aorta:    { probe: 'curvi',  freq: 3.0, depth: 18, focus: 11, gain: 2, range: 50, label: 'Aorta' },
+  small:    { probe: 'linear', freq: 12, depth: 4, focus: 2, gain: 0, range: 60, label: 'Small parts' },
+  vascular: { probe: 'linear', freq: 7.5, depth: 5, focus: 3, gain: 2, range: 55, label: 'Vascular' },
+  msk:      { probe: 'linear', freq: 12, depth: 4, focus: 2, gain: 0, range: 65, label: 'MSK' },
+};
+function applyPreset(key) {
+  const p = PRESETS[key]; if (!p) return;
+  Object.assign(U, { probe: p.probe, freq: p.freq, depth: p.depth, focus: p.focus, gain: p.gain, range: p.range });
+  document.querySelectorAll('#usProbeSeg button').forEach((x) => x.classList.toggle('on', x.dataset.probe === p.probe));
+  document.querySelectorAll('#usPresetSeg button').forEach((x) => x.classList.toggle('on', x.dataset.preset === key));
+  ['usFreq:freq', 'usDepth:depth', 'usFocus:focus', 'usGain:gain', 'usRange:range'].forEach((q) => {
+    const [id, k] = q.split(':'); const el = $(id); if (el) el.value = U[k];
+  });
+  calipers = [];
+  renderReadouts(); mReset(); sweep(); usSyncScene();
+  setStatus(`${p.label} preset — ${p.probe === 'linear' ? 'linear' : 'curvilinear'} ${p.freq} MHz, depth ${p.depth} cm, focus ${p.focus} cm.`);
 }
 
 /* ---- M-mode ----------------------------------------------------------------
@@ -774,7 +898,7 @@ export function usImageToBay() {
 let liveTimer = null;
 function sweep() {
   const fr = scanFrame();
-  if (fr) render(fr);
+  if (fr) { lastFr = fr; render(fr); }
   // M-mode fires ONE line per column, so its budget is one round trip, not a whole frame
   const acq = U.disp === 'm' ? lastAcqMs / NLINE : lastAcqMs;
   const fps = 1000 / Math.max(acq, lastMs, 1);
@@ -788,6 +912,7 @@ function sweep() {
 }
 function setLive(on) {
   U.live = on;
+  if (on && calipers.length) clearCalipers();
   $('usFreeze')?.classList.toggle('on', !on);
   clearTimeout(liveTimer); liveTimer = null;
   sweep();
@@ -1015,6 +1140,10 @@ export function initUS(context) {
   // The cardiac seat was surveyed, not guessed: from below the costal margin, angled up
   // through the liver, is the one window into this subject's heart that ribs and lung do
   // not close. See docs/ultrasound.md §4.2.
+  // calipers on whichever screen is clicked: the console monitor or the bay's big view
+  for (const id of ['film', 'bigFilm']) $(id)?.addEventListener('click', (e) => caliperClick(e, $(id)));
+  $('usCalClear')?.addEventListener('click', clearCalipers);
+  document.querySelectorAll('#usPresetSeg button').forEach((b) => b.addEventListener('click', () => applyPreset(b.dataset.preset)));
   $('usCardiac')?.addEventListener('click', () => {
     Object.assign(U, CARDIAC_SEAT);
     ['usPx:px', 'usPz:pz', 'usRot:rot', 'usTilt:tilt', 'usDepth:depth', 'usFocus:focus']

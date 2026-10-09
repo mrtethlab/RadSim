@@ -1233,6 +1233,14 @@
       <div class="grp us-only">
         <div class="lab">Probe</div>
         <div class="bod">
+          <div class="seg seg3" id="usPresetSeg">
+            <button data-preset="abdomen">Abdomen</button><button data-preset="renal">Renal</button>
+            <button data-preset="aorta">Aorta</button><button data-preset="small">Small parts</button>
+            <button data-preset="vascular">Vascular</button><button data-preset="msk">MSK</button>
+          </div>
+          <div class="ctrst-note" style="margin-bottom:8px">Exam presets: the probe and a starting
+            frequency, depth, focus, gain and range for the region. Then set the depth to the
+            organ and the focus (the yellow marker on the scale) to what you are looking at.</div>
           <div class="seg" id="usProbeSeg">
             <button data-probe="curvi" class="on">Curvilinear</button>
             <button data-probe="linear">Linear</button>
@@ -1354,6 +1362,12 @@
       </div>
       <div class="expose us-only" id="usScanRow">
         <button class="flpedal" id="usFreeze">&#10074;&#10074; FREEZE</button>
+        <div class="uscal">
+          <span class="uscal-k">CALIPERS</span><span class="uscal-v" id="usCalV">&mdash;</span>
+          <button class="fldose-rst" id="usCalClear" type="button">clear</button>
+        </div>
+        <div class="note" style="margin-top:4px; text-align:center">Frozen: click two points on the
+          image to measure (a third click starts D2). Going live clears them.</div>
         <div class="note" id="usStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
       <!-- ============ DENSITOMETRY console (dx-only) ============ -->
