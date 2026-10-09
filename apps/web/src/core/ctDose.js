@@ -63,6 +63,20 @@ export function effectiveDose(dlpVal, subject) {
   if (!region) return null;
   return { mSv: dlpVal * K_FACTOR[region], k: K_FACTOR[region], region: REGION_LABEL[region] };
 }
+/* A MONITORING SERIES (bolus tracking, test bolus) is one axial slice, exposed again every ~1.5 s
+   at the same place: no table feed, so pitch does not enter, and each exposure irradiates one beam
+   width. CTDIvol is per exposure, as the console reports it; the DLP is every exposure's, added.
+   It had been left out of the study total altogether, which on a tracked CTA hides 15-20 exposures.
+   widthMM is the irradiated width: the beam collimation, except on a single-row scanner, where
+   the beam is collimated to the slice (the caller knows which). */
+export function monitorDose(g, scans, subject, widthMM = g.beamColl) {
+  const phantom = phantomFor(g.sfovMM);
+  const ctdi = ctdiVol({ kv: g.kv, ma: g.ma, rotS: g.rotSpeed, pitch: 1, phantom });
+  const perScan = ctdi * widthMM / 10;
+  const d = perScan * scans;
+  return { phantom, ctdiVol: ctdi, perScanDLP: perScan, scans, dlp: d,
+           effMAs: effectiveMAs(g.ma, g.rotSpeed, 1), effective: effectiveDose(d, subject) };
+}
 // everything the console shows for one scan group
 export function groupDose(g, { scanLenMM, feedMMPerRot, subject }) {
   const phantom = phantomFor(g.sfovMM);

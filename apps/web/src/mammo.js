@@ -445,7 +445,9 @@ function expose() {
    now counts — it used to be one fitted line in mAs, kV and thickness, so Mo/Mo and W/Rh at the
    same settings reported the same dose. */
 function dose() {
-  const thkCm = subjectH() * compCur;
+  // the thickness the image used: a rigid QC slab does not compress (thicknessMM), so the paddle
+  // drive must not thin it for the dose either — it used to, and the AGD moved with the slider
+  const thkCm = thicknessMM() / 10;
   // the mag stand halves the source-to-skin distance-ish: entrance kerma scales with
   // the inverse square, which is the dose cost every spot view pays
   const magF = M.mag ? 1.8 * 1.8 : 1;

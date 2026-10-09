@@ -14,6 +14,7 @@ import { segmentFemur, poseFemurs } from './core/limbPose.js';
 import { sizeCorrection, voiPercentile, nearestStation } from './core/technique.js';
 import { patientPrimary } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
+import { ownsSpace } from './core/keys.js';
 import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
 import { decodeGITimeline, buildGIVolume, buildBariumLUT, buildGasLUT, NS as GI_NS } from './core/gi.js';
 import { GIStudy, SEGMENTS as GI_SEGMENTS } from './core/giSolve.js';
@@ -597,7 +598,7 @@ const S = {
            // both in the beam and both saving dose. Brightness/contrast are display-side.
            shut:1.0, shutRot:0, bright:0, cont:1.0,
            lowDose:false,        // half the dose rate, and it looks like it
-           alarm:false, alarmS:300,   // the five-minute beam-on alarm every fluoro has
+           alarm:false,               // the five-minute beam-on alarm every fluoro has
            saved:[], dirOpen:false,   // the Image Directory: saved frames and loops
            ws:false, ws2:'ref',       // second screen: WORKSTATION swaps live/reference
            motions:[], fixedSeed:null },
@@ -1873,6 +1874,7 @@ function bind(){
     if(S.mode!=='xray')return;               // the rotor key belongs to the x-ray room ONLY:
                                              // fluoro's pedal owns Space, and mammo (or any
                                              // future mode) must never fire a stray radiograph
+    if(ownsSpace(document.activeElement))return;   // a focused dropdown or field keeps its Space (core/keys.js)
     e.preventDefault();
     if(spaceDown)return; spaceDown=true;
     if(!S.prepped && !S.exposing) setRotor(true);
@@ -2390,6 +2392,7 @@ function renderRadiograph(target,entry){
   const mask= entry? entry.mask: S.mask;
   const subject = entry? entry.subject : S.activeSubject;
   const rescale = entry? entry.rescale : S.rescale;   // auto-rescale VOI window for this image
+  const rightAtPlusX = entry? entry.rightAtPlusX!==false : S.imgRightAtPlusX!==false;
   if(!sig||!target) return;
   const {i0,i1,j0,j1}=computeCrop(nx,ny,mask);
   const cw=i1-i0+1, ch=j1-j0+1;
@@ -2423,7 +2426,10 @@ function renderRadiograph(target,entry){
   // the patient's left would hang on the viewer's left. Radiographs are read as if facing
   // the patient — right on the viewer's left — for both AP and PA. This is a DISPLAY
   // mirror only; it never touches the traced geometry.
-  const baseRot = 0, baseFlipH = true, baseFlipV = true;
+  // ...but only while the patient's right IS at world +x. A PA (rolled 180°) puts it at world
+  // −x, and the fixed mirror then hung every PA chest with the heart on the viewer's LEFT. The
+  // mirror follows the roll the image was taken at (laterals and obliques keep the mirror).
+  const baseRot = 0, baseFlipH = rightAtPlusX, baseFlipV = true;
   const rot=(((baseRot+S.imgRot)%360)+360)%360, rot90=(rot===90||rot===270);
   target.width  = rot90? ch: cw;
   target.height = rot90? cw: ch;
@@ -2857,7 +2863,9 @@ function buildMeta(spec){
 const IMG_HISTORY_MAX=10;
 function pushImage(signal,nx,ny,mask,meta){
   const rescale=computeRescale(signal,mask);   // auto-rescale VOI window, fixed at capture
-  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale});
+  // where the patient's RIGHT side lies after the roll, kept with the image so an older film
+  // still hangs correctly when reviewed after the patient has been turned (see renderRadiograph)
+  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, rightAtPlusX: objMat()[0] > -0.5});
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
 }
@@ -2878,6 +2886,7 @@ function setActiveImage(idx){
   const e=S.imgHistory[idx];
   S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
   S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true;
+  S.imgRightAtPlusX=e.rightAtPlusX!==false;
   reseedCurve();                     // handles land on THIS image's toe/inflection/shoulder
   drawFilm();
   updateImageMeta(); renderImageStrip(); updateScatterNote();
@@ -3042,11 +3051,14 @@ function wireBackendToggles(){
     const b=e.target.closest('button'); if(!b) return;
     S.ct.detMode=b.dataset.dm;
     [...$('ctDetModeSeg').children].forEach(x=>x.classList.toggle('on',x.dataset.dm===S.ct.detMode));
-    const v=$('ctDetModeV'); if(v) v.textContent=S.ct.detMode==='realistic'?'800 ch · 0.625 mm':'128 ch · preview';
-    // Realistic turns every physics feature ON (incl. full-resolution recon); Quick turns them
-    // all OFF for a real-time preview-quality result. Either can be overridden afterwards.
+    const v=$('ctDetModeV'); if(v) v.textContent=S.ct.detMode==='realistic'?'888 ch · 0.625 mm':'384 ch · preview';
+    // Realistic turns every physics feature ON (incl. full-resolution recon); Quick turns the
+    // EXPENSIVE ones off for a real-time result. Quantum noise is not one of them — it costs
+    // nothing measurable and is calibrated in both modes — so Quick keeps it: it used to switch
+    // it off, and a student who touched the mode buttons got noiseless images and an ROI SD of 0.
+    // Either can be overridden afterwards.
     const on=S.ct.detMode==='realistic';
-    S.ct.features={ beamHardening:on, coneBeam:on, focalBlur:on, quantumNoise:on, fullRecon:on };
+    S.ct.features={ beamHardening:on, coneBeam:on, focalBlur:on, quantumNoise:true, fullRecon:on };
     syncFeatureToggles();
     updateDetWarn();
     ctApplyAcqMode();                          // reconcile detector rows with the new SSCT/MSCT state

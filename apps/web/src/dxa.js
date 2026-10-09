@@ -802,6 +802,22 @@ export function scores(bmdVal, site, sex, age) {
 export function diagnosis(T) {
   return T >= -1 ? 'Normal' : T > -2.5 ? 'Osteopenia' : 'Osteoporosis';
 }
+/* WHICH SCORE CLASSIFIES. The WHO categories are defined on T, and ISCD applies them only to
+   postmenopausal women and men of 50 and over. Below 50 (premenopausal women, younger men) the
+   report classifies on Z: at or below -2.0 is "below the expected range for age", above it is
+   "within", and osteoporosis is not diagnosed on BMD alone. The simulation has no menopausal
+   status, so 50 stands in for it, as it does on most consoles. `by` says which score decided;
+   `cls` is the CSS suffix for the banner. */
+export const ISCD_Z_AGE = 50;
+export function classify(T, Z, age) {
+  if (age < ISCD_Z_AGE) {
+    const below = Z <= -2.0;
+    return { label: below ? 'Below expected range for age' : 'Within expected range for age',
+             by: 'Z', cls: below ? 'below' : 'within' };
+  }
+  const label = diagnosis(T);
+  return { label, by: 'T', cls: label.toLowerCase() };
+}
 
 function setStatus(t) { const el = $('dxStatus'); if (el) el.textContent = t; }
 
@@ -1030,14 +1046,16 @@ function reportNow() {
    Pure, so the rule can be tested without a scan. */
 export function hipDiagnosis(rois, sex, age) {
   const tot = rois.find((r) => r.label === 'Total') || rois[0];
-  if (!tot) return { mean: 0, T: 0, Z: 0, totT: 0, totZ: 0, area: 0, bmc: 0, site: 'total hip', dx: diagnosis(0) };
+  if (!tot) return { mean: 0, T: 0, Z: 0, totT: 0, totZ: 0, area: 0, bmc: 0, site: 'total hip', dx: classify(0, 0, age).label };
   const sT = scores(tot.bmd, 'total', sex, age);
   const neck = rois.find((r) => r.label === 'Neck');
   const sN = neck ? scores(neck.bmd, 'neck', sex, age) : null;
-  const useNeck = !!(sN && sN.T < sT.T);
+  // the lower site on whichever score classifies: Z below 50, T from 50 (classify)
+  const k = age < ISCD_Z_AGE ? 'Z' : 'T';
+  const useNeck = !!(sN && sN[k] < sT[k]);
   const s = useNeck ? sN : sT;
   return { mean: tot.bmd, T: s.T, Z: s.Z, totT: sT.T, totZ: sT.Z, area: tot.area, bmc: tot.bmc,
-           site: useNeck ? 'femoral neck' : 'total hip', dx: diagnosis(s.T) };
+           site: useNeck ? 'femoral neck' : 'total hip', dx: classify(s.T, s.Z, age).label };
 }
 const FEMUR_ORDER = ['Neck', 'Wards', 'Troch', 'Inter', 'Total'];
 export function report(sc) {
@@ -1071,7 +1089,7 @@ export function report(sc) {
     sc.areaT = h.area; sc.bmcT = h.bmc;
     sc.totT = h.totT; sc.totZ = h.totZ; sc.dxSite = h.site;
   }
-  const dx = diagnosis(s.T);
+  const cl = classify(s.T, s.Z, age), dx = cl.label;
   const line = (r) => {
     const sc2 = scores(r.bmd, siteOf(r), sex, age);
     const flag = r.label === 'Wards' ? ' title="Reported, never used for diagnosis"' : '';
@@ -1090,9 +1108,11 @@ export function report(sc) {
     + '</table>'
     + (spine ? '' : '<div class="dxnote">* Ward\'s area is reported by convention and never used for '
       + 'diagnosis. The WHO thresholds apply at the femoral neck and the total hip.</div>')
-    + `<div class="dxdx dx-${dx.toLowerCase()}">${dx} &middot; T ${s.T.toFixed(1)} &middot; Z ${s.Z.toFixed(1)}`
+    + `<div class="dxdx dx-${cl.cls}">${dx} &middot; T ${s.T.toFixed(1)} &middot; Z ${s.Z.toFixed(1)}`
     + (spine ? '' : ` <span class="dxsite">(${sc.dxSite})</span>`)
-    + `<small>WHO: normal &ge; &minus;1.0 &middot; osteopenia &minus;1.0 to &minus;2.5 &middot; osteoporosis &le; &minus;2.5</small></div>`;
+    + (cl.by === 'Z'
+      ? `<small>Under ${ISCD_Z_AGE} (ISCD): classified by Z &middot; below the expected range for age at Z &le; &minus;2.0 &middot; the WHO T-score categories do not apply</small></div>`
+      : `<small>WHO: normal &ge; &minus;1.0 &middot; osteopenia &minus;1.0 to &minus;2.5 &middot; osteoporosis &le; &minus;2.5</small></div>`);
   sc.mean = mean; sc.T = s.T; sc.Z = s.Z; sc.dx = dx;
   renderSerial();
 }
@@ -1211,14 +1231,22 @@ export function keepScan(sc) {
   if (D.scans.length > 6) D.scans.length = 6;
   renderSerial();
 }
+/* The scan a change is measured against: the next older one of the SAME site. Comparing with
+   whatever was filed just before meant a spine, a femur, then a spine again showed no change on
+   the second spine, and the serial table went blank as soon as sites were interleaved. Newest
+   first, as D.scans is kept. */
+export function priorScan(list, i) {
+  for (let j = i + 1; j < list.length; j++) if (list[j].region === list[i].region) return list[j];
+  return null;
+}
 export function renderSerial() {
   const el = $('dxSerial'); if (!el) return;
   const list = D.scans || [];
   if (!list.length) { el.innerHTML = '<div class="note">No stored scans. KEEP files the current one.</div>'; return; }
   const rows = list.map((s, i) => {
-    const prev = list[i + 1];
+    const prev = priorScan(list, i);
     let chg = '—', cls = '';
-    if (prev && prev.region === s.region) {
+    if (prev) {
       const pc = 100 * (s.mean / prev.mean - 1);
       const sig = Math.abs(pc) >= LSC_PCT;
       chg = `${pc > 0 ? '+' : ''}${pc.toFixed(1)} %`;

@@ -13,7 +13,7 @@ import { Materials, BodyMaterials } from './core/materials.js';
 import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
 import { buildConcLUT, NS as CONTRAST_NS, groupFireTime, afterGroupTime } from './core/contrast.js';
 import { Sound } from './audio/sound.js';
-import { groupDose, effectiveMAs } from './core/ctDose.js';
+import { groupDose, monitorDose, effectiveMAs, effectiveDose } from './core/ctDose.js';
 import { roiStats } from './core/ctRoi.js';
 
 let ctx = null;
@@ -1680,7 +1680,9 @@ const acqThkOf = (g) => g.beamColl / g.detRows;             // detector element 
 // table travel per rotation (mm/rot) = pitch × beam collimation. SSCT collimates the beam to
 // the ACQUIRED SLICE THICKNESS (the collimator sets slice width on a single-row detector), not
 // to the 0.625 mm element — otherwise a 240 mm scan reads 200+ s instead of a realistic ~25 s.
-const tableSpeedOf = (g) => g.pitch * (g.detRows === 1 ? Math.max(groupBaseThk(g), g.beamColl) : g.beamColl);
+// the width the beam irradiates: on a single row it is opened to the slice, not to one element
+const beamWidthOf = (g) => (g.detRows === 1 ? Math.max(groupBaseThk(g), g.beamColl) : g.beamColl);
+const tableSpeedOf = (g) => g.pitch * beamWidthOf(g);
 const validColls = (rows) => ELEMENTS.map((e) => rows * e); // beam-collimation stations for a row count
 const detConfig = (g) => g.detRows + ' × ' + fmtNum(acqThkOf(g));
 const nearestIn = (list, v) => list.reduce((a, b) => Math.abs(b - v) < Math.abs(a - v) ? b : a, list[0]);
@@ -2032,7 +2034,6 @@ function openFieldEditor(gi, act) {
   if (act === 'start') typePos('Start location (mm · S superior / I inferior)', Math.round(off + g.box.top * len), (v) => { g.box.top = clampV((v - off) / len, -0.6, g.box.bot - boxMinLenN()); });
   else if (act === 'end') typePos('End location (mm · S superior / I inferior)', Math.round(off + g.box.bot * len), (v) => { g.box.bot = clampV((v - off) / len, g.box.top + boxMinLenN(), 1.6); });
   else if (act === 'interval') type('Slice interval (mm)', fmtNum(g.interval), (v) => { g.interval = clampV(v, 0.1, 50); });
-  else if (act === 'tilt') type('Gantry tilt (degrees)', g.tilt, (v) => { g.tilt = clampV(Math.round(v), -30, 30); });
   else if (act === 'kv') type('Tube voltage (kV)', g.kv, (v) => { g.kv = clampV(Math.round(v), 70, 140); });
   else if (act === 'ma') type('Tube current (mA)', g.ma, (v) => { g.ma = clampV(Math.round(v), 10, 800); });
   else if (act === 'delay') {
@@ -2096,19 +2097,28 @@ const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff"
 /* Dose for one group, from the same geometry the scan itself uses: the planned length and the
    table feed per rotation (the overrun at each end is about one rotation's feed). */
 function doseOf(g) {
+  // the monitoring series: the exposures its last run actually made (0 until it has run)
+  if (g.monitor) return monitorDose(g, g.monScans || 0, ctx.S.subject, beamWidthOf(g));
   return groupDose(g, { scanLenMM: groupScanLenMM(g), feedMMPerRot: tableSpeedOf(g), subject: ctx.S.subject });
 }
 /* The study total the dose screen shows: DLP adds across groups (each irradiates its own
-   length), CTDIvol does not — it is a per-group intensity, so the total reports the largest. */
+   length), CTDIvol does not — it is a per-group intensity, so the total reports the largest.
+   The monitoring series counts too, by the exposures it made. */
 function studyDoseLine() {
-  const gs = ctx.S.ct.groups.filter((g) => g.on && !g.monitor);
-  if (!gs.length) return '';
+  const gs = ctx.S.ct.groups.filter((g) => g.on);
+  if (!gs.some((g) => !g.monitor)) return '';
   const ds = gs.map(doseOf);
   const totDLP = ds.reduce((a, d) => a + d.dlp, 0);
   const maxCTDI = Math.max(...ds.map((d) => d.ctdiVol));
-  const e = ds[0].effective;
+  const e = effectiveDose(totDLP, ctx.S.subject);
+  const mon = ds.filter((d) => d.perScanDLP != null);
+  const monNote = mon.length
+    ? ' <span class="sg-dose-note">(incl. monitoring: ' + mon.map((d) => d.scans
+        ? d.scans + ' × ' + d.perScanDLP.toFixed(1) + ' mGy·cm'
+        : 'not run yet, ' + d.perScanDLP.toFixed(1) + ' mGy·cm per exposure').join(', ') + ')</span>'
+    : '';
   return '<div class="sg-dose">Study: CTDIvol up to <b>' + maxCTDI.toFixed(1) + ' mGy</b> · total DLP <b>'
-    + Math.round(totDLP) + ' mGy·cm</b>'
+    + Math.round(totDLP) + ' mGy·cm</b>' + monNote
     + (e ? ' · effective dose ≈ <b>' + (totDLP * e.k).toFixed(1) + ' mSv</b> <span class="sg-dose-note">('
       + e.region + ', k = ' + e.k + ' mSv/mGy·cm, adult — a population estimate, not this patient’s dose)</span>'
       : ' <span class="sg-dose-note">(phantom — no effective dose)</span>')
@@ -2243,14 +2253,20 @@ function renderScanGroups() {
       + cell('sg-station', 'acq', fmtNum(g.pitch) + ':1')
       + cell('sg-station', 'acq', fmtNum(tableSpeedOf(g)) + ' mm/rot')
       + cell('sg-station', 'rot', g.rotSpeed.toFixed(2) + ' s')
-      + cell('sg-edit', 'tilt', g.tilt + '°')
+      // Gantry tilt is not modelled (the gantry stays upright and every slice is axial), so it is
+      // shown fixed rather than offered as an edit that would change nothing in the images.
+      + '<td><span class="sg-calc" title="Gantry tilt is not modelled in this simulator — slices are always axial">0° <small>n/a</small></span></td>'
       + cell('sg-edit', 'kv', g.kv + ' kV')
       + cell('sg-edit', 'ma', g.ma + ' mA')
       + cell('sg-calc', '', groupExpTime(g).toFixed(1) + ' s')
       + (() => { const d = doseOf(g);
           return '<td><span class="sg-calc" title="' + (d.phantom === 'head' ? '16 cm head' : '32 cm body')
             + ' CTDI phantom · effective ' + Math.round(d.effMAs) + ' mAs">' + d.ctdiVol.toFixed(1) + ' mGy</span></td>'
-            + '<td><span class="sg-calc">' + Math.round(d.dlp) + ' mGy·cm</span></td>'; })()
+            + (d.perScanDLP != null
+              ? '<td><span class="sg-calc" title="' + d.perScanDLP.toFixed(1) + ' mGy·cm per exposure · '
+                + (d.scans ? d.scans + ' exposures in the last run' : 'not run yet') + '">'
+                + (d.scans ? Math.round(d.dlp) + ' mGy·cm' : d.perScanDLP.toFixed(1) + ' /exp') + '</span></td>'
+              : '<td><span class="sg-calc">' + Math.round(d.dlp) + ' mGy·cm</span></td>'); })()
       + cell('sg-edit' + (g.delayMode === 'bolus' || g.delayMode === 'test' ? ' sg-bolus' : '')
                + (g.monitor ? ' sg-mon' : ''), 'delay',
              g.monitor ? (nextIsTest(gi) ? 'Test bolus · 0 s' : 'Tracking · 0 s')
@@ -3020,14 +3036,15 @@ function runBolusTracking(g, alive, enhanced){
 
     let timer=null, injTimer=null, raf=null;
     const finish=(how)=>{
-      if(btrkState){ btrkState.done=true; btrkLastPeak=btrkState.peakAt; }
+      // the baseline exposure plus one per sample while it ran: what the series cost (doseOf)
+      if(btrkState){ btrkState.done=true; btrkLastPeak=btrkState.peakAt; g.monScans=1+btrkState.pts.length; }
       // The measured transit time belongs to the diagnostic group, and writing it here rather
       // than in the scan loop means it lands whoever ran the series.
       if(how==='measured' && enhanced && btrkLastPeak!=null){
         enhanced.measured=Math.round(btrkLastPeak);
         enhanced.delay=enhanced.measured;
-        renderScanGroups();
       }
+      renderScanGroups();
       if(timer) clearInterval(timer);
       clearInterval(injTimer);
       clearInterval(raf);
@@ -3178,7 +3195,7 @@ function makeBolusPair(gi, auto, kind) {
   enhanced.bolus = { ...(g.bolus || {}), auto };
   enhanced.cg = gi;
   // the chosen group becomes the monitoring series: a single slice at its own centre
-  g.monitor = true; g.delayMode = 'time'; g.delay = 0; g.cg = gi;
+  g.monitor = true; g.delayMode = 'time'; g.delay = 0; g.cg = gi; g.monScans = 0;
   const mid = (g.box.top + g.box.bot) / 2;
   g.box.top = g.box.bot = mid;
   c.groups.splice(gi + 1, 0, enhanced);

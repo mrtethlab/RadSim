@@ -8,6 +8,7 @@
    readout Phase A exists to measure.
    ============================================================================ */
 import { dockConsole } from './core/paneDock.js';
+import { ownsSpace } from './core/keys.js';
 import { irisShutterArea } from './core/fieldArea.js';
 import { NR_K, recursiveStep, displayMap, edgeEnhance } from './core/fluoroDisplay.js';
 
@@ -1124,8 +1125,7 @@ export function initFluoro(context) {
   addEventListener('keydown', arrowKeys);
   wireMonitor();
   addEventListener('keydown', (e) => {
-    if (e.code === 'Space' && ctx.S.mode === 'fluoro' && !e.repeat
-        && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '')) {
+    if (e.code === 'Space' && ctx.S.mode === 'fluoro' && !e.repeat && !ownsSpace(document.activeElement)) {
       e.preventDefault(); pedalDown();
     }
   });
@@ -1253,7 +1253,10 @@ export function initFluoro(context) {
   $('flFilm')?.addEventListener('click', () => filmShot());
   // ---- ALARM: five minutes of beam-on, as the regulation requires ----
   $('flAlarmReset')?.addEventListener('click', () => {
-    F.alarm = false; F.alarmS = F.beamS + 300;
+    // acknowledging silences the flashing timer too (it kept flashing until a full dose reset);
+    // the next alarm is still due at the next five-minute mark, which is alarmAt's job
+    F.alarm = false;
+    $('flBeamV')?.classList.remove('alarm');
     panelSync();
     setStatus('Alarm reset — five more minutes.');
   });
@@ -1370,7 +1373,9 @@ export function initFluoro(context) {
   });
   $('flDoseReset')?.addEventListener('click', () => {
     F.akMGy = 0; F.dapUGym2 = 0; F.beamS = 0; alarmAt = 300;
+    F.alarm = false;                              // a new patient: nothing left to acknowledge
     $('flBeamV')?.classList.remove('alarm');
+    panelSync();
     renderReadouts();
   });
   // ABC starts ON: the sliders are the override, not the default
