@@ -243,6 +243,24 @@ export const XRAY_STEPS = [
       + 'your technique was right, independently of how the image happens to look after processing.',
   },
   {
+    sel: '#xrDose',
+    title: 'Patient dose: ESD and DAP',
+    text: 'EI is the detector’s dose; these are the <b>patient’s</b>. <b>ESD</b> is the skin dose where '
+      + 'the beam enters, backscatter included: it follows mAs, kV and how close the tube is to the skin. '
+      + '<b>DAP</b> is dose times beam area, so it is the same at any distance and collimation moves it '
+      + 'directly. <b>Σ DAP</b> keeps every exposure of this patient, repeats included. The figures use '
+      + 'a typical tube output; a department quotes its own measured one, but the ratios hold.',
+    goal: {
+      label: 'Collimate tighter and expose again: watch the DAP fall',
+      // a new exposure since the step opened, with a smaller DAP than the one before it
+      arm: () => S().doseLog.length,
+      done: (a) => {
+        const L = S().doseLog, n = L.length;
+        return n > a && n >= 2 && L[n - 1].dapUGym2 < 0.9 * L[n - 2].dapUGym2;
+      },
+    },
+  },
+  {
     sel: '.grp:has(#level)',
     title: 'Window and level',
     text: 'Post-processing: brightness and contrast applied to the stored image. The histogram '

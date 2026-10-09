@@ -11,7 +11,8 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
-import { sizeCorrection, voiPercentile, nearestStation } from './core/technique.js';
+import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
+import { radiographDose, entryDistance } from './core/patientDose.js';
 import { patientPrimary } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
 import { ownsSpace } from './core/keys.js';
@@ -398,6 +399,7 @@ async function setSubject(sub){
      per-subject state (fluoro's pulse workers) has to hear about it either way. Fired only
      once the volume is in place and the scene has been synced around it. */
   syncLegRotUI();
+  S.lastDose=null; S.doseLog=[]; updateDoseReadout();   // a new patient starts a new dose record
   window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
 /* Everything an injected study leaves behind on the model. A study belongs to one patient
@@ -537,6 +539,7 @@ const S = {
   legRot:0,                    // both legs turned about the femoral heads, deg (+ internal) — core/limbPose.js
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
+  lastDose:null, doseLog:[],          // patient dose per exposure, this subject (core/patientDose.js)
   aecOn:false, aecCells:{l:false,c:true,r:false}, aecResult:null,  // AEC: cells + achieved mAs of the last exposure
   lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
   showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
@@ -2335,9 +2338,15 @@ async function computeRadiograph(){
     S.aecResult={mas:masA, backupHit: ideal>=backup};
   }
 
+  // the patient's dose for what was actually delivered: the AEC's mAs when it terminated
+  S.lastDose=radiographDose({ kv:S.kv, mas:S.aecResult?S.aecResult.mas:S.mas, sidCm:S.sid,
+    fsdCm:entranceFsd(phantom, fsrc, fd), fieldCm2:S.collX*S.collZ });
+  S.doseLog.push(S.lastDose);
+
   const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
   pushImage(signal,nx,ny,mask,buildMeta(spectrum));   // -> active image + drawFilm + meta + strip
   updateDI(EI);
+  updateDoseReadout();
   if(S.bayContent==='image') setContent('image');
 
   $('prog').style.width='100%';
@@ -2843,6 +2852,27 @@ function updateDI(EI){
   $('eiV').className='v '+(Math.abs(DI)<=1?'ok':'');
 }
 
+/* PATIENT DOSE (core/patientDose.js). The focus-to-skin distance is found on the central ray,
+   the way the caliper finds the thickness: the first tissue the ray meets. The log is per
+   patient: a new subject starts it again, so the Σ shows what repeats cost this patient. */
+function entranceFsd(phantom, src, d){
+  if(!phantom || phantom.geometryOnly || typeof phantom.trace!=='function') return null;
+  try{
+    const tissueTo=(s)=>{ const L=phantom.trace(src, d, s);
+      return L && L.length!=null ? caliperOf(L) : ((L?.bone||0)+(L?.soft||0)+(L?.marrow||0)); };
+    return entryDistance(tissueTo, S.sid);
+  }catch(_){ return null; }
+}
+const fmtMGy=(v)=> v==null ? '—' : (v<0.1 ? v.toFixed(3) : v<10 ? v.toFixed(2) : v.toFixed(1))+'<small>mGy</small>';
+const fmtDap=(v)=> (v<10 ? v.toFixed(2) : v<100 ? v.toFixed(1) : v.toFixed(0))+'<small>µGy·m²</small>';
+function updateDoseReadout(){
+  const d=S.lastDose, set=(id,h)=>{ const el=$(id); if(el) el.innerHTML=h; };
+  if(!d){ set('esdV','—'); set('dapV','—'); set('dapSumV','—'); return; }
+  set('esdV', fmtMGy(d.esdMGy));
+  set('dapV', fmtDap(d.dapUGym2));
+  const sum=S.doseLog.reduce((a,x)=>a+x.dapUGym2,0);
+  set('dapSumV', fmtDap(sum)+(S.doseLog.length>1?'<small>×'+S.doseLog.length+'</small>':''));
+}
 /* Build the 4-corner image metadata for the CURRENT technique (shown on the big
    Image view, not the small live monitor). */
 function buildMeta(spec){
@@ -2854,7 +2884,9 @@ function buildMeta(spec){
         +' ['+['l','c','r'].filter(k=>S.aecCells[k]).join('').toUpperCase()+']'
         +(S.aecResult.backupHit?'  ⚠ BACKUP':'')
       : S.kv+' kVp  '+S.ma+' mA  '+S.mas.toFixed(S.mas<10?1:0)+' mAs',
-    bl: 'SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime((S.aecResult?S.aecResult.mas:S.mas)/S.ma)+'  Ē '+spec.meanE.toFixed(0)+'keV',
+    bl: 'SID '+S.sid+'  OID '+S.oid+'cm  '+fmtTime((S.aecResult?S.aecResult.mas:S.mas)/S.ma)+'  Ē '+spec.meanE.toFixed(0)+'keV'
+      +(S.lastDose ? '  ESD '+(S.lastDose.esdMGy!=null?S.lastDose.esdMGy.toFixed(S.lastDose.esdMGy<0.1?3:2)+' mGy':'—')
+        +'  DAP '+S.lastDose.dapUGym2.toFixed(1)+' µGy·m²' : ''),
     br: 'DR '+S.detNx+'×'+S.detNy+'  '+S.detW+'×'+S.detH+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID'),
   };
 }
