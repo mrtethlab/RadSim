@@ -8,6 +8,18 @@ handoff document and is not committed.)
 
 ## 2026-10-09
 
+### Side markers — [#54](https://github.com/mrtethlab/RadSim/pull/54), [#55](https://github.com/mrtethlab/RadSim/pull/55)
+There were no L/R markers, so neither the wrong-side error nor the collimated-off error could be
+taught. In x-ray, an R or L lead letter lies on the receptor: dropped at the field edge or dragged in
+the room, it prints white only inside the collimated field, and reads correctly on the film as hung
+whatever the roll. Each exposure is then judged: no marker, collimated off or clipped, wrong side
+on an AP or PA (from the patient's actual roll), wrong letter on a lateral (named for the side to the
+receptor), on the midline, or over the anatomy of interest. A trunk fills its field, so an edge
+marker lying on the flank is accepted; the warning needs the letter over tissue and inside the
+central part of the field. Fluoro orients its image on the display, so it gets an electronic R worked
+out from the geometry that follows every flip and turn; moving the patient toward their right
+moves the spine toward the R, flipped or not.
+
 ### X-ray patient dose — [#52](https://github.com/mrtethlab/RadSim/pull/52)
 The x-ray console showed the detector's dose (EI, DI) and nothing of the patient's. Each exposure
 now reports the entrance surface dose (skin kerma on the central ray, with backscatter), the
