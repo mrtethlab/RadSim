@@ -77,3 +77,14 @@ test('every landmark records how it was found and how sure that is', () => {
     }
   }
 });
+
+test('every gridded exam names its AEC chambers, and a PA chest meters the lungs', () => {
+  // a chest on the centre chamber sits on the mediastinum and burns the lungs out (+6.3 DI
+  // measured); the lateral pair is the right choice, and the one a protocol must preset
+  for (const p of all.filter((x) => x.grid)) {
+    assert.match(p.aec ?? '', /^[lcr]{1,3}$/, `${p.proj}: aec ${p.aec}`);
+  }
+  for (const p of all.filter((x) => !x.grid)) assert.equal(p.aec, undefined, `${p.proj}: table-top exams do not use AEC`);
+  assert.equal(all.find((p) => p.proj === 'PA chest').aec, 'lr');
+  assert.equal(all.find((p) => p.proj === 'AP lumbar').aec, 'c');
+});

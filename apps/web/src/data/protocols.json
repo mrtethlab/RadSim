@@ -1,5 +1,5 @@
 {
-  "_about": "Anatomically Programmed Radiography (APR) chart. Selecting a protocol sets technique (kVp/mAs), anti-scatter grid, display LUT, SID, collimated field, and receptor size/orientation for that projection. Grouped body part -> region -> projection. Typical adult DR values: distal extremities 50-65 kVp no grid at 100 cm SID; proximal limb/skull/spine/abdomen/pelvis 70-90 kVp with grid at 100 cm; chest high-kVp 110-125 kVp with grid at 180 cm. coll = collimated field [width_cm, length_cm]; det = receptor [short_cm, long_cm]; orient = portrait/landscape. Teaching approximations, not a facility chart. cm = the adult thickness (caliper, along the central ray) an entry is written for: the console measures the patient there and scales mAs at fixed kV (src/core/technique.js). Entries without it are used as written. mAs calibrated on this simulator (Oct 2026): each exam exposed at its chart technique on the shipped subjects, read with the exam VOI, and its mAs moved to the station that brings DI to 0 (size-corrected exams are calibrated for the chart thickness). AP/lateral cervical and lateral forearm/elbow are not: their central rays cross anatomy that is not the exam's (the C-spine landmark sits at C1; the CT has the arms raised, and the arm against the trunk).",
+  "_about": "Anatomically Programmed Radiography (APR) chart. Selecting a protocol sets technique (kVp/mAs), anti-scatter grid, display LUT, SID, collimated field, and receptor size/orientation for that projection. Grouped body part -> region -> projection. Typical adult DR values: distal extremities 50-65 kVp no grid at 100 cm SID; proximal limb/skull/spine/abdomen/pelvis 70-90 kVp with grid at 100 cm; chest high-kVp 110-125 kVp with grid at 180 cm. coll = collimated field [width_cm, length_cm]; det = receptor [short_cm, long_cm]; orient = portrait/landscape. Teaching approximations, not a facility chart. cm = the adult thickness (caliper, along the central ray) an entry is written for: the console measures the patient there and scales mAs at fixed kV (src/core/technique.js). Entries without it are used as written. mAs calibrated on this simulator (Oct 2026): each exam exposed at its chart technique on the shipped subjects, read with the exam VOI, and its mAs moved to the station that brings DI to 0 (size-corrected exams are calibrated for the chart thickness). AP/lateral cervical and lateral forearm/elbow are not: their central rays cross anatomy that is not the exam's (the C-spine landmark sits at C1; the CT has the arms raised, and the arm against the trunk). aec = the ionisation chambers the exam meters on (l/c/r), standard positioning practice: the two lateral chambers over the lungs for a PA chest, all three for abdomen and pelvis, the centre for spine, skull and the gridded limbs. A protocol selects them; whether AEC is used stays the operator's choice.",
   "_reference": "Merrill's Atlas / Bontrager positioning references for SID, receptor size, and collimation; grid + kVp per body-part attenuation.",
   "groups": [
     {
@@ -369,6 +369,7 @@
               "kv": 72,
               "mas": 12.5,
               "grid": true,
+              "aec": "c",
               "lut": "bone",
               "sid": 100,
               "coll": [
@@ -392,6 +393,7 @@
               "kv": 75,
               "mas": 5.0,
               "grid": true,
+              "aec": "c",
               "lut": "bone",
               "sid": 100,
               "coll": [
@@ -579,6 +581,7 @@
               "kv": 68,
               "mas": 6.4,
               "grid": true,
+              "aec": "c",
               "lut": "bone",
               "sid": 100,
               "coll": [
@@ -602,6 +605,7 @@
               "kv": 70,
               "mas": 16,
               "grid": true,
+              "aec": "c",
               "lut": "bone",
               "sid": 100,
               "coll": [
@@ -632,6 +636,7 @@
               "kv": 75,
               "mas": 16,
               "grid": true,
+              "aec": "c",
               "lut": "bone",
               "sid": 100,
               "coll": [
@@ -655,6 +660,7 @@
               "kv": 77,
               "mas": 32,
               "grid": true,
+              "aec": "c",
               "lut": "bone",
               "sid": 100,
               "coll": [
@@ -689,6 +695,7 @@
               "mas": 2.5,
               "cm": 22,
               "grid": true,
+              "aec": "lr",
               "lut": "chest",
               "sid": 180,
               "coll": [
@@ -712,6 +719,7 @@
               "mas": 6.4,
               "cm": 30,
               "grid": true,
+              "aec": "c",
               "lut": "chest",
               "sid": 180,
               "coll": [
@@ -768,6 +776,7 @@
               "mas": 32,
               "cm": 22,
               "grid": true,
+              "aec": "lrc",
               "lut": "abdomen",
               "sid": 100,
               "coll": [
@@ -792,6 +801,7 @@
               "mas": 25,
               "cm": 22,
               "grid": true,
+              "aec": "lrc",
               "lut": "abdomen",
               "sid": 100,
               "coll": [
@@ -821,6 +831,7 @@
               "mas": 25,
               "cm": 21,
               "grid": true,
+              "aec": "lrc",
               "lut": "bone",
               "sid": 100,
               "coll": [
@@ -855,6 +866,7 @@
               "kv": 75,
               "mas": 12.5,
               "grid": true,
+              "aec": "c",
               "lut": "spine",
               "sid": 100,
               "coll": [
@@ -878,6 +890,7 @@
               "kv": 78,
               "mas": 16.0,
               "grid": true,
+              "aec": "c",
               "lut": "spine",
               "sid": 180,
               "coll": [
@@ -909,6 +922,7 @@
               "mas": 40,
               "cm": 23,
               "grid": true,
+              "aec": "c",
               "lut": "spine",
               "sid": 100,
               "coll": [
@@ -933,6 +947,7 @@
               "mas": 100,
               "cm": 32,
               "grid": true,
+              "aec": "c",
               "lut": "spine",
               "sid": 100,
               "coll": [
@@ -962,6 +977,7 @@
               "mas": 50,
               "cm": 22,
               "grid": true,
+              "aec": "c",
               "lut": "spine",
               "sid": 100,
               "coll": [
@@ -986,6 +1002,7 @@
               "mas": 125,
               "cm": 30,
               "grid": true,
+              "aec": "c",
               "lut": "spine",
               "sid": 100,
               "coll": [
@@ -1020,6 +1037,7 @@
               "mas": 32,
               "cm": 19,
               "grid": true,
+              "aec": "c",
               "lut": "skull",
               "sid": 100,
               "coll": [
@@ -1044,6 +1062,7 @@
               "mas": 20,
               "cm": 15,
               "grid": true,
+              "aec": "c",
               "lut": "skull",
               "sid": 100,
               "coll": [
