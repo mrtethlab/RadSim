@@ -61,8 +61,15 @@ export const BodyMaterials = (()=>{
     aluminum: { rho:2.699, mr:[3.441,1.128,0.5685,0.3681,0.2778,0.2018,0.1704,0.1533,0.1385] },
     titanium: { rho:4.506, mr:[5.890,1.940,0.8983,0.5100,0.3339,0.1834,0.1314,0.1076,0.08765] },
     steel:    { rho:7.90,  mr:[25.70,8.176,3.629,1.958,1.205,0.5952,0.3717,0.2790,0.1964] },   // ~stainless (Fe)
-    lead:     { rho:11.35, mr:[86.36,30.32,14.36,8.041,5.021,2.419,5.549,3.301,1.910] },        // K-edge ~88 keV
+    /* Lead carries its own grid for the same reason iodine and barium do: its K-edge at 88.0 keV
+       falls between the shared 80 and 100 keV points, and log-log interpolation across it drew a
+       smooth RISE from 80 keV where mu/rho actually keeps falling to 1.91 and then jumps 4x to
+       7.68. (The old row also had 1.910 at 150 keV — the pre-edge 88 keV value, slipped a column;
+       NIST gives 2.014.) NIST XCOM, total with coherent, cm^2/g. */
+    lead:     { rho:11.35, E:[20,30,40,50,60,80,88.00,88.01,100,150],
+                mr:[86.36,30.32,14.36,8.041,5.021,2.419,1.910,7.683,5.549,2.014] },
   };
+  for (const m of Object.values(ELEM)) if (m.E) m.lnE = m.E.map(Math.log);
   function interp(mr, keV, grid){
     const g = grid || lnE;
     const x = Math.log(keV);
@@ -124,7 +131,7 @@ export const BodyMaterials = (()=>{
     return { dw: 1.0, db: ((hu/1000)*muw) / interp(boneMR,EREF) };   // calcified → add cortical bone
   }
   function muTissue(hu, keV){ const b=basis(hu); return b.dw*interp(waterMR,keV) + b.db*interp(boneMR,keV); }
-  function muElem(key, keV){ const m=ELEM[key]; return interp(m.mr,keV)*m.rho; }
+  function muElem(key, keV){ const m=ELEM[key]; return interp(m.mr,keV,m.lnE)*m.rho; }
 
   // ---- material legend (index = voxel id). hu is the nominal/clinical value; the
   // physics uses the derived mu(E). Colours drive the 3D organ rendering. ----
