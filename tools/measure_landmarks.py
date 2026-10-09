@@ -215,6 +215,36 @@ CAP_FROM_DXA = {
 }
 
 
+def vertebral_body_y(bone, sp, z_cm):
+    """AP depth (cm from the volume centre) of the vertebral body at z_cm. The trunk laterals need
+    it: rolled a quarter turn, a landmark's AP coordinate becomes the cross-table offset, and with
+    none the lateral lumbar was centred 4 cm in front of the spine (its central ray crossed liver
+    and kidney and no bone at all). Body = the bone between the front of the spinal canal and the
+    front of the vertebra on the midline; the canal is the largest hole enclosed by the spine's
+    island. Averaged over the slices within 1 cm where the canal is closed."""
+    nz, ny, nx = bone.shape
+    mid, out = nx // 2, []
+    k0 = int(round(z_cm / sp[2] + (nz - 1) / 2))
+    for k in range(k0 - 5, k0 + 6):
+        lab, n = ndi.label(bone[k])
+        cand = [(int(np.sum(lab == i)), i) for i in set(np.unique(lab[:ny // 2, mid - 2:mid + 3])) - {0}]
+        if not cand:
+            continue
+        isl = lab == max(cand)[1]
+        holes = ndi.binary_fill_holes(isl) & ~isl
+        hl, hn = ndi.label(holes)
+        if not hn:
+            continue
+        sizes = ndi.sum(holes, hl, range(1, hn + 1))
+        if sizes.max() * sp[0] * sp[1] < 1.0:          # no closed canal in this slice
+            continue
+        canal = hl == (int(np.argmax(sizes)) + 1)
+        ya = (np.nonzero(isl[:, mid - 2:mid + 3].any(1))[0].max() - (ny - 1) / 2) * sp[1]
+        yc = (np.nonzero(canal.any(1))[0].max() - (ny - 1) / 2) * sp[1]
+        out.append((ya + yc) / 2)
+    return round(float(np.median(out)), 2)
+
+
 def chest_abdo_pelvis():
     """Trunk centring. The crest comes from the DXA landmark finder (so the modes cannot
     disagree); the pelvis is measured here, because the first version derived it from the
@@ -265,8 +295,10 @@ def chest_abdo_pelvis():
         'pelvis': {**world, 'z': round((asis_z + sym_z) / 2, 2),
                    'how': f'midway between the ASIS ({asis[0]:.1f} / {asis[1]:.1f}, mean {asis_z:.1f}) and the pubic symphysis ({sym_z:.1f})',
                    'confidence': 'high'},
-        'lumbar': {**world, 'z': round(l3, 2), 'how': 'L3: crest (L4/L5) + 1.5 x the measured 3.6 cm lumbar period', 'confidence': 'high'},
-        'thoracic': {**world, 'z': round(t7, 2), 'how': 'T7: L1 + six thoracic bodies at ~2.6 cm (estimated, not measured)', 'confidence': 'low'},
+        'lumbar': {**world, 'y': vertebral_body_y(bone, sp, l3), 'z': round(l3, 2),
+                   'how': 'L3: crest (L4/L5) + 1.5 x the measured 3.6 cm lumbar period; AP depth = centre of the vertebral body', 'confidence': 'high'},
+        'thoracic': {**world, 'y': vertebral_body_y(bone, sp, t7), 'z': round(t7, 2),
+                     'how': 'T7: L1 + six thoracic bodies at ~2.6 cm (estimated, not measured); AP depth = centre of the vertebral body', 'confidence': 'low'},
     }
 
 

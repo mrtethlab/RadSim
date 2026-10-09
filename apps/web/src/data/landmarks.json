@@ -143,18 +143,18 @@
     },
     "lumbar": {
       "x": 0.0,
-      "y": 0.0,
+      "y": -4.3,
       "frame": "world",
       "z": -7.3,
-      "how": "L3: crest (L4/L5) + 1.5 x the measured 3.6 cm lumbar period",
+      "how": "L3: crest (L4/L5) + 1.5 x the measured 3.6 cm lumbar period; AP depth = centre of the vertebral body",
       "confidence": "high"
     },
     "thoracic": {
       "x": 0.0,
-      "y": 0.0,
+      "y": -7.1,
       "frame": "world",
       "z": 15.5,
-      "how": "T7: L1 + six thoracic bodies at ~2.6 cm (estimated, not measured)",
+      "how": "T7: L1 + six thoracic bodies at ~2.6 cm (estimated, not measured); AP depth = centre of the vertebral body",
       "confidence": "low"
     },
     "femoralHeadL": {

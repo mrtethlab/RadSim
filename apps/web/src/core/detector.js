@@ -12,23 +12,19 @@
    and stays well inside the VOI. Going below ~0.5 starts eating real lung and makes the
    abdomen read progressively low, so it is not a free parameter. */
 export const EI_K = 900;
-/* Chamber-to-VOI ratio for the reference projection (PA chest, centre cell).
+/* AEC chamber calibration: chamber dose per unit receptor dose ON A UNIFORM PHANTOM, which is
+   how a real AEC is set up — so 1. With it, the right chambers expose correctly and the wrong
+   ones do not, which is the lesson the AEC is there to teach.
 
-   An AEC meters its ION CHAMBERS, but EI is reported over the image VOI, and those are not
-   the same dose: the centre chamber sits on the mediastinum while the VOI lands on lung.
-   Targeting `eiTarget/EI_K` as a CHAMBER dose therefore keeps the tube running until the
-   mediastinum reaches a lung-level dose — measured at 7.78 mAs against the chart's 2.5, a
-   2.8x over-exposure that the EI then correctly reported as DI +4.4.
-
-   A real system is calibrated so the correct chamber yields DI 0, so this is a fixed constant
-   rather than a per-exposure fit: choosing the WRONG chamber must still mis-expose, which is
-   the entire point of the exercise.
-
-   It is simply the VOI-to-chamber ratio: solving the AEC termination shows EI_K cancels out
-   of the resulting DI, so this constant alone sets where a correct AEC lands. Re-measured at
-   6.1 after the scatter fix — scatter had been the great equaliser, lifting the mediastinum
-   toward the lung, so removing it widened the true ratio from 2.8. */
-export const AEC_CHAMBER_CAL = 6.1;
+   It was 6.1, fitted so a PA chest metered on the CENTRE chamber read DI 0: the centre chamber
+   sits on the mediastinum while the EI reads the lungs, and the constant made up the difference.
+   But the centre chamber is the wrong one for a PA chest (the two lateral chambers, over the lungs,
+   are right), and the fit broke everything else — measured with the exam VOI: lateral chambers on
+   a chest -6.6 DI, centre chamber on a KUB -5.6, AP lumbar -6.0, pelvis -8.0, skull -6.4, knee
+   -6.9, hand -7.4. At 1: chest on the lateral chambers +1.2, KUB +2.2, lumbar +1.8, pelvis -0.2,
+   skull +1.4, knee +1.0, hand 0.0 — and a chest on the centre chamber burns the lungs out at +6.3,
+   as it does on a real room. */
+export const AEC_CHAMBER_CAL = 1;
 export const DIRECT_CUT = 0.60;
 /* ADDITIVE ELECTRONIC NOISE, in quanta-equivalent RMS per pixel.
 
@@ -57,9 +53,16 @@ export const Detector = (()=>{
   function gauss(){ let u=0,v=0; while(!u)u=Math.random(); while(!v)v=Math.random();
     return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v); }
   // dose(Float32) -> {signal:Float32, ei, region-mask handled by caller}
-  function capture(dose, nx, ny, photonScale, mask){
+  // direct: optional open-beam level per pixel (what the receptor reads with nothing in the
+  // beam). With it, raw beam is recognised by TRANSMISSION, which works whether or not the
+  // field contains any; without it the brightest 2 % of the field is assumed to be raw beam.
+  // voiP: the anatomy percentile the exam is judged on (core/technique.js voiPercentile) —
+  // the lung fields for a chest, the median for everything else. Defaults to the lung VOI.
+  function capture(dose, nx, ny, photonScale, mask, direct=null, voiP=null){
     const signal=new Float32Array(nx*ny);
-    const inField=[];
+    const inField=[], anatomy=[];
+    const _t0=(typeof globalThis!=='undefined'&&globalThis.__tune)||{};
+    const cutT=_t0.C??DIRECT_CUT;
     const eVar = ELECTRONIC_NOISE*ELECTRONIC_NOISE;   // dose-independent, so it rules at low N
     for(let k=0;k<dose.length;k++){
       const N = dose[k]*photonScale;               // expected quanta
@@ -70,7 +73,11 @@ export const Detector = (()=>{
       const noisy = mask[k] ? Math.max(0, N + gauss()*Math.sqrt(N+1+eVar)) : 0;
       const s = noisy/photonScale;
       signal[k]=s;
-      if(mask[k]) inField.push(s);
+      if(mask[k]){
+        inField.push(s);
+        // classified on the noiseless dose, so the VOI does not flicker with the mottle
+        if(direct && dose[k] < cutT*direct[k]) anatomy.push(s);
+      }
     }
     // EI proportional to detector air kerma over the values-of-interest (IEC 62494).
     // Two segmentation steps mirror what a real DR EI algorithm does:
@@ -81,10 +88,15 @@ export const Detector = (()=>{
     //     well-penetrated diagnostic region (lung fields on a chest) — not the darkest
     //     tissue (mediastinum/spine).
     inField.sort((a,b)=>a-b);
-    const _t=(typeof globalThis!=='undefined'&&globalThis.__tune)||{};
+    const _t=_t0;
     const n=inField.length;
     let EI=0;
-    if(n){
+    const P=_t.P??voiP??0.90;                                       // percentile of the anatomy
+    if(direct && n){
+      // nothing attenuated at all (an empty table): the field itself is the VOI
+      const a = anatomy.length>16 ? anatomy.sort((x,y)=>x-y) : inField;
+      EI=Math.round(a[Math.min(a.length-1, Math.floor(a.length*P))]*(_t.K??EI_K));
+    } else if(n){
       const directLvl=inField[Math.floor(n*0.98)]||inField[n-1];   // ~unattenuated (direct) level
       // Anything brighter than this fraction of the direct level is treated as raw beam.
       // It is the knob that decides how much near-direct anatomy edge (thin finger margins
@@ -93,7 +105,6 @@ export const Detector = (()=>{
       const cut=directLvl*(_t.C??DIRECT_CUT);                       // anything brighter is direct exposure
       let hi=n; while(hi>0 && inField[hi-1]>=cut) hi--;             // hi = count of attenuated (anatomy) pixels
       const anat=hi>16? hi : n;                                     // fall back to the whole field if all direct
-      const P=_t.P??0.90;                                           // upper percentile of the anatomy
       const voi=inField[Math.min(anat-1, Math.floor(anat*P))];
       EI=Math.round(voi*(_t.K??EI_K));                              // detector-dose calibration (EI 100 = 1 µGy, IEC 62494-1)
     }
