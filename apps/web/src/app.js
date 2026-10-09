@@ -261,6 +261,9 @@ const VOXEL_MODELS = {
   chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
   headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
+  // the same patient's L1-to-ischium slab at 1 mm with graded bone (build_highres --graded-bone):
+  // the subject for reading a spine — pedicles, pars, facets — in fluoroscopy and radiography
+  lumbopelvis:     { title:'Lumbar spine & pelvis · 1 mm', scoutKv:120, scoutMa:200, xrayKv:85 },
   upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
   lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
   totalhipreplacement: { title:'Total Hip Replacement', scoutKv:120, scoutMa:250, xrayKv:90 },
@@ -320,7 +323,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:17, totalhipreplacement:17, lowerextremity:17};
+      const MB={chest:40, wholebody:30, headneck:17, totalhipreplacement:17, lowerextremity:17, lumbopelvis:53};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -867,7 +870,7 @@ function setGroupRot(grp,R){ const m=new THREE.Matrix4();
                       axes. (A surface-flatness test disagrees here and is WRONG: the y=0
                       face is 33.8% tissue, so that "flat surface" is the crop plane, not
                       skin. It is backend-only, but the backend is sent the same flips.) */
-const ROLLED_180 = new Set(['chestabdopelvis','headneck']);
+const ROLLED_180 = new Set(['chestabdopelvis','lumbopelvis','headneck']);
 // Anatomical axis flips for the voxel subjects (house convention: volume x=Left,
 // y=Posterior, z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first
 // (anterior up, head toward −z into the bore). X-ray = AP supine (anterior up toward the
@@ -3712,6 +3715,17 @@ window.addEventListener('load',()=>{
         ? { ba: lut, gas: S.barium.gasLut, giVol: S.barium.giVol, ns: GI_NS } : null;
     },
     bariumSwallow: () => giSip(),
+    // the fluoro monitor floats the tabletop: drag the live image and the patient follows,
+    // with the offset sliders kept in step so the two controls never disagree
+    movePatient: (dx, dz) => {
+      const lim = (v) => Math.max(-OFF_LIMIT, Math.min(OFF_LIMIT, v));
+      S.objOff.x = lim(S.objOff.x + dx); S.objOff.z = lim(S.objOff.z + dz);
+      for (const [id, ax] of [['objOffX', 'x'], ['objOffZ', 'z']]) {
+        const el = $(id); if (el) el.value = S.objOff[ax].toFixed(1);
+        const v = $(id + 'v'); if (v) v.textContent = S.objOff[ax].toFixed(1) + ' cm';
+      }
+      syncScene();
+    },
     setSubject: (s) => setSubject(s),
     // Phase E: the injector timeline rides the pulses the same way — while the run clock
     // is live, scanTime tracks it, so the fluoro image washes in and out in real time.

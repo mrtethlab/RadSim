@@ -32,7 +32,7 @@ from .build_model import (materialize, write_model, ts_class_map, _side_mask,
                           resample_iso)
 
 
-def _crop_native(hu, lab, cmap, anchors, lateral, margin_mm, native_sp):
+def _crop_native(hu, lab, cmap, anchors, lateral, margin_mm, native_sp, z_only=False):
     """Return native-index bounds of the anchor structures' 3D bbox (+margin)."""
     ids = [lid for lid, nm in cmap.items() if any(a in nm.lower() for a in anchors)]
     present = np.isin(lab, ids)
@@ -46,13 +46,18 @@ def _crop_native(hu, lab, cmap, anchors, lateral, margin_mm, native_sp):
     my = int(round(margin_mm / native_sp[1]))
     mx = int(round(margin_mm / native_sp[0]))
     zN, yN, xN = hu.shape
+    if z_only:
+        # a slab of the whole body: radiography needs every centimetre of tissue the beam
+        # crosses, not just the bones it is aimed at (exposure, scatter, the soft-tissue shadows)
+        return (max(0, zs.min() - mz), min(zN, zs.max() + mz + 1), 0, yN, 0, xN)
     return (max(0, zs.min() - mz), min(zN, zs.max() + mz + 1),
             max(0, ys.min() - my), min(yN, ys.max() + my + 1),
             max(0, xs.min() - mx), min(xN, xs.max() + mx + 1))
 
 
 def build_highres(ct_path, seg_path, out_dir, name, title, anchors, lateral,
-                  margin_mm, spacing, mesh, source, backend_only):
+                  margin_mm, spacing, mesh, source, backend_only, z_only=False, graded_bone=False,
+                  smooth_mm=0.0):
     print("[1/5] loading native CT + segmentation …")
     ct = sitk.ReadImage(ct_path)
     seg = sitk.ReadImage(seg_path)
@@ -64,7 +69,7 @@ def build_highres(ct_path, seg_path, out_dir, name, title, anchors, lateral,
     print(f"      native {hu.shape[::-1]} @ {tuple(round(s,2) for s in native_sp)} mm")
 
     print(f"[2/5] cropping to '{anchors}' at native resolution …")
-    b = _crop_native(hu, lab, cmap, anchors, lateral, margin_mm, native_sp)
+    b = _crop_native(hu, lab, cmap, anchors, lateral, margin_mm, native_sp, z_only=z_only)
     print(f"      native crop z[{b[0]}:{b[1]}] y[{b[2]}:{b[3]}] x[{b[4]}:{b[5]}]")
     ct_c = ct[b[4]:b[5], b[2]:b[3], b[0]:b[1]]   # sitk indexing is (x,y,z)
     seg_c = seg[b[4]:b[5], b[2]:b[3], b[0]:b[1]]
@@ -76,8 +81,13 @@ def build_highres(ct_path, seg_path, out_dir, name, title, anchors, lateral,
     lab_hr = sitk.GetArrayFromImage(seg_hr).astype(np.int32)
     print(f"      {hu_hr.shape[::-1]}  ({hu_hr.size/1e6:.0f} M voxels, {hu_hr.size/1e6:.0f} MB uint8)")
 
+    if smooth_mm > 0:
+        # Upsampling a 1.5 mm CT to 1 mm interpolates between slices, and the graded-bone steps
+        # turn the small slice-to-slice differences into visible bands across every vertebra.
+        # A light Gaussian on the HU (sigma in mm) takes the banding out before it is quantised.
+        hu_hr = ndi.gaussian_filter(hu_hr.astype(np.float32), smooth_mm / spacing).astype(np.int16)
     print("[4/5] materials …")
-    mat, body = materialize(hu_hr, lab_hr, spacing)
+    mat, body = materialize(hu_hr, lab_hr, spacing, graded_bone=graded_bone)
     zs, ys, xs = np.where(body)
     pad = 4
     z0, z1 = max(0, zs.min() - pad), min(mat.shape[0], zs.max() + pad + 1)
@@ -107,9 +117,16 @@ if __name__ == "__main__":
     ap.add_argument("--spacing", type=float, default=0.25)
     ap.add_argument("--source", default="3D Slicer CTChest (0.76 mm) · upscaled")
     ap.add_argument("--no-mesh", action="store_true")
+    ap.add_argument("--z-only", action="store_true",
+                    help="crop only along z: a full-width slab of the body between the anchors")
+    ap.add_argument("--graded-bone", action="store_true",
+                    help="keep labelled bone's CT density in eight steps (ids 54-61) instead of two classes")
+    ap.add_argument("--smooth-mm", type=float, default=0.0,
+                    help="Gaussian sigma (mm) on the upsampled HU before materials (de-bands graded bone)")
     ap.add_argument("--browser-loadable", action="store_true",
                     help="do NOT mark backend-only (allow the browser to fetch the volume)")
     a = ap.parse_args()
     build_highres(a.ct, a.seg, a.out, a.name, a.title or a.name, a.anchor, a.lateral,
                   a.margin, a.spacing, mesh=not a.no_mesh, source=a.source,
-                  backend_only=not a.browser_loadable)
+                  backend_only=not a.browser_loadable, z_only=a.z_only, graded_bone=a.graded_bone,
+                  smooth_mm=a.smooth_mm)

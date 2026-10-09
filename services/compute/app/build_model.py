@@ -108,6 +108,23 @@ MAMMO_LEGEND = [
     (GLAND, "Glandular", 40, 0xe4c9b0),
 ]
 
+# GRADED BONE (ids 54-61): labelled bone keeps the CT's own density in eight steps instead of
+# snapping to trabecular/cortical (materialize(graded_bone=True)). Two classes at a few mm per
+# voxel erase the cortical rings a spine is read by. Keep in step with core/materials.js.
+BONE_GRADES = [
+    (54, "Bone 200 HU", 200, 0xd8d2ba),
+    (55, "Bone 300 HU", 300, 0xdcd6be),
+    (56, "Bone 400 HU", 400, 0xe0dac2),
+    (57, "Bone 550 HU", 550, 0xe4dec6),
+    (58, "Bone 700 HU", 700, 0xe8e2ca),
+    (59, "Bone 900 HU", 900, 0xece6ce),
+    (60, "Bone 1150 HU", 1150, 0xf0ead2),
+    (61, "Bone 1500 HU", 1500, 0xf4eed6),
+]
+# bin edges between the grade centres (HU); below the first edge labelled bone is left to its
+# HU material (marrow fat / partial volume), above the last it is the densest grade
+BONE_EDGES = [120, 250, 350, 475, 625, 800, 1025, 1325]
+
 LEGEND = [
     (AIR, "Air", -1000, 0x000000), (LUNG, "Lung", -700, 0x3a4a63),
     (FAT, "Fat", -90, 0xf2e2b0), (WATER, "Water", 0, 0x2f6fb0),
@@ -124,7 +141,7 @@ LEGEND = [
     (ALUMINUM, "Aluminum", None, 0x9fb4c0), (TITANIUM, "Titanium", None, 0xb8c2cc),
     (STEEL, "Stainless steel", None, 0xd0d4d8), (LEAD, "Lead", None, 0x6a6f77),
     (PLASTIC, "Acrylic", 120, 0x9fb6a8),
-] + [(vid, nm, BLOOD_HU, 0xb23a3a) for vid, nm in VESSELS] + GI_LEGEND + MAMMO_LEGEND
+] + [(vid, nm, BLOOD_HU, 0xb23a3a) for vid, nm in VESSELS] + GI_LEGEND + MAMMO_LEGEND + BONE_GRADES
 
 BONE_PREFIX = ("vertebrae", "rib", "sternum", "scapula", "clavicula", "humerus",
                "femur", "hip", "sacrum", "skull", "costal", "radius", "ulna",
@@ -252,7 +269,7 @@ def _region_bounds(region, lab, cmap, shape, spacing):
     return (max(0, zs.min() - mg), min(zN, zs.max() + mg + 1), 0, yN, 0, xN)
 
 
-def materialize(hu, lab, spacing, body_restrict=None, overlay=None):
+def materialize(hu, lab, spacing, body_restrict=None, overlay=None, graded_bone=False):
     """Assign a body-material id to every voxel of an (already-resampled) HU + label
     volume. Returns (mat uint8, body mask). Reused by build() and build_highres.
     body_restrict: optional bool mask (e.g. TotalSegmentator's `body` task) to clip the
@@ -325,8 +342,22 @@ def materialize(hu, lab, spacing, body_restrict=None, overlay=None):
                   f"({int(mask.sum() - sel.sum())} rejected as solid anatomy)")
     if bone_ids:
         bone_mask = np.isin(lab, bone_ids)
-        mat[bone_mask & (hu >= 350)] = CORTICAL
-        mat[bone_mask & (hu < 350)] = TRABECULAR
+        if graded_bone:
+            # the CT's own density, in eight steps; below the first edge the label is left to
+            # whatever its HU says (marrow fat, a partial-volumed edge). The labels come from a
+            # coarser grid than the HU and stop a voxel short of the bone surface, leaving a rim of
+            # unlabelled bone that the HU thresholds above call trabecular or CORTICAL — a false
+            # 1200 HU edge round every bone. Bone-density voxels within 2 voxels of a label are
+            # graded with it.
+            rim = ndi.binary_dilation(bone_mask, iterations=2) & np.isin(mat, [TRABECULAR, CORTICAL])
+            bone_mask = bone_mask | rim
+            for k, (vid, _nm, _hu, _c) in enumerate(BONE_GRADES):
+                lo = BONE_EDGES[k]
+                hi = BONE_EDGES[k + 1] if k + 1 < len(BONE_EDGES) else np.inf
+                mat[bone_mask & (hu >= lo) & (hu < hi)] = vid
+        else:
+            mat[bone_mask & (hu >= 350)] = CORTICAL
+            mat[bone_mask & (hu < 350)] = TRABECULAR
     return mat, body
 
 
