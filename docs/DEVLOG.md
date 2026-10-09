@@ -8,6 +8,24 @@ handoff document and is not committed.)
 
 ## 2026-10-09
 
+### Radiograph display centred on the LUT — [#46](https://github.com/mrtethlab/RadSim/pull/46)
+Thick parts beside raw beam (AP pelvis, cervical spine, skull) displayed washed white: the
+auto-window's low end was set by the thin tissue at the edge, so the anatomy filled only the
+top fifth of the grey scale. The low end now rises just far enough for the median anatomy to sit
+on the exam LUT's centre, capped so no more than about an eighth of the anatomy burns out.
+Scored on the same exposures of all 40 protocols, the anatomy's tonal spread went from 0.62 to
+0.91 on an AP pelvis, 0.64 to 0.81 on AP cervical and 0.39 to 0.84 on a lateral skull. No exam got
+worse, and hands, feet and the chest are unchanged.
+
+### Cervical spine centred on C4 — [#45](https://github.com/mrtethlab/RadSim/pull/45)
+The cervical landmark had been sitting on C1. With the arms raised in this CT the neck's bone
+section narrows at the atlas, so both cervical views were centred 4.8 cm high. The CT's own
+vertebra labels (seven masks, about 0.4 MB, fetched with a new `--only` option) were
+registered to the model (99.8 % of label voxels land on bone), and the landmark is now the C4
+vertebral body. AP cervical is read by caliper like the trunk: this neck measures 18 cm, so mAs
+goes from 12.5 to 50 and the film reads DI −0.6 (it read −8.4 on C1). Lateral cervical stays an
+approximate view, because at C4 the beam crosses both raised arms.
+
 ### Docs — [#43](https://github.com/mrtethlab/RadSim/pull/43)
 The README was UTF-16 and described a prototype; it now covers the seven modes, the live site,
 running and testing, and where the patients come from. The DXA tutorial gained steps for
