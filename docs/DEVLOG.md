@@ -6,6 +6,45 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-09
+
+### Docs — [#43](https://github.com/mrtethlab/RadSim/pull/43)
+The README was UTF-16 and described a prototype; it now covers the seven modes, the live site,
+running and testing, and where the patients come from. The DXA tutorial gained steps for
+driving the arm to the laser and for the foot brace, and its mineral-loss figures were
+re-measured (L1–L4 T +1.6 → −1.7 at 30 % → −2.8 at 40 %).
+
+### CT quantum noise calibrated and on — [#42](https://github.com/mrtethlab/RadSim/pull/42)
+Measured with a new QC hook (the same scan with and without photon statistics, subtracted):
+the full 512² reconstruction already read a clinical 11–13 HU in a default abdomen, but the
+quick preview, which is what you see by default, read about 40. Its photon base was raised to
+match, giving 11.5–13.3 HU, with a quarter of the mAs doubling it as it should. Noise is now on by
+default.
+
+### Ultrasound measurement — [#41](https://github.com/mrtethlab/RadSim/pull/41)
+A centimetre depth scale with the focal-zone marker, calipers on the frozen image (a 3.00 cm
+separation reads 3.01 cm), and six exam presets.
+
+### Fluoroscopy workflow and a readable spine — [#40](https://github.com/mrtethlab/RadSim/pull/40)
+The live and reference monitors float over the room instead of scrolling away with the
+controls. Dragging the live image floats the table, the scroll wheel and arrow keys drive the
+C-arm, and LIVE LOCK (not a real machine feature) holds the beam on. For anatomy: a new 1 mm
+lumbar-spine-and-pelvis subject with bone kept as eight density grades instead of two, a
+flat-panel display curve, recursive noise reduction, edge enhancement, and 8× the detector
+quanta at unchanged technique and dose. An AP spot film now shows pedicles and spinous
+processes, and a 15° oblique moves the pedicle as it should. The 1.5 mm source CT still limits
+the finest posterior detail.
+
+### Dose readouts follow their controls; lead K-edge — [#39](https://github.com/mrtethlab/RadSim/pull/39)
+A FILM press that found the fluoro workers busy left every later pulse dosed and filed at 12×;
+the boost now belongs to the one pulse. DAP now counts the field the shutters leave rather than
+the whole iris. Mammography glandular dose now follows the Dance method, so the target/filter
+counts. Lead's 88 keV K-edge is modelled, and its todo test became a real one.
+
+### Protocols choose their AEC chambers — [#38](https://github.com/mrtethlab/RadSim/pull/38)
+Standard chamber choices per exam. The lateral pair over the lungs for a PA chest is the one
+that matters: on the centre chamber a chest burns out at DI +6.3.
+
 ## 2026-10-08
 
 ### Technique chart calibrated — [#36](https://github.com/mrtethlab/RadSim/pull/36)
