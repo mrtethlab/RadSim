@@ -11,6 +11,7 @@ import { dockConsole } from './core/paneDock.js';
 import { ownsSpace } from './core/keys.js';
 import { irisShutterArea } from './core/fieldArea.js';
 import { NR_K, recursiveStep, displayMap, edgeEnhance } from './core/fluoroDisplay.js';
+import { rightOnScreen } from './core/orientation.js';
 
 let ctx = null;          // { THREE, S, $, three, phantomPose, syncScene }
 let F = null;            // ctx.S.fluoro
@@ -578,6 +579,7 @@ function renderTo(cv) {
     g2.setLineDash([]);
     g2.restore();
   }
+  drawSideMarker(g2, cx, cy, s);
   if (pendShown) {
     // the content that will land at 12 o'clock after a CW rotation by pendRot currently
     // sits pendRot COUNTER-clockwise of top — mark it inside the exposure circle
@@ -593,6 +595,36 @@ function renderTo(cv) {
   }
 }
 
+
+/* THE ELECTRONIC SIDE MARKER. A fluoro image is oriented on the display, so its R is worked out
+   from the geometry (core/orientation.js) and follows every flip and turn of the pad: an image
+   flipped left-for-right that kept its R on the old side would be the wrong-side error in
+   electronic form. Drawn upright, outside the orientation transform, at the edge the patient's
+   right lies toward. A lateral has no right side on the screen, so it says LAT instead. */
+function drawSideMarker(g2, cx, cy, s) {
+  const R = ctx.phantomPose().rot;
+  const { detU, detV } = beamFrame();
+  const d = rightOnScreen([R[0], R[3], R[6]], detU, detV, F.flipH, F.flipV, F.dispRot);
+  const fs = Math.max(12, Math.round(s * 0.06));
+  g2.save();
+  g2.font = `bold ${fs}px Arial`; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+  g2.fillStyle = 'rgba(255,207,74,0.95)';
+  if (!d) { g2.fillText('LAT', cx + s / 2 - fs * 1.2, cy - s / 2 + fs); g2.restore(); return; }
+  // on the edge it points to, set back into the corner the round field leaves dark
+  const r = s / 2 - fs * 0.8;
+  const horiz = Math.abs(d[0]) >= Math.abs(d[1]);
+  const x = horiz ? cx + Math.sign(d[0]) * r : cx + d[0] * r + (Math.abs(d[0]) < 0.3 ? s * 0.36 : 0);
+  const y = horiz ? cy + d[1] * r - (Math.abs(d[1]) < 0.3 ? s * 0.36 : 0) : cy + Math.sign(d[1]) * r;
+  g2.fillText('R', x, y);
+  g2.restore();
+}
+/* QC: where the R is drawn, as a screen direction (null on a lateral) */
+function fluoroRightOnScreen() {
+  if (!ctx) return null;
+  const R = ctx.phantomPose().rot, { detU, detV } = beamFrame();
+  return rightOnScreen([R[0], R[3], R[6]], detU, detV, F.flipH, F.flipV, F.dispRot);
+}
+if (typeof window !== 'undefined') window.radsimFluoroSide = fluoroRightOnScreen;
 
 /* ---- FILM, SAVE, and the Image Directory -----------------------------------
    Three things a real console keeps apart, and so does this one.
