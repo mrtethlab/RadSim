@@ -1197,14 +1197,23 @@ export const DXA_STEPS = [
     sel: '.grp:has(#dxRegionSeg)',
     title: 'The arm sweeps a window',
     text: 'A densitometer scans a REGION, not a patient: the AP lumbar field over L1–L4, '
-      + 'or the proximal femur. The window is placed off the anatomy rather than off the '
-      + 'table — the ribcage and the iliac wings both throw bone wide of the midline, '
-      + 'and the waist between them is the lumbar spine. Watch the image build line by line; '
-      + 'that slow raster is what the exam actually looks like.',
+      + 'or the proximal femur. Pick the region and the arm parks at its landmark; watch the '
+      + 'image build line by line — that slow raster is what the exam actually looks like.',
     goal: {
       label: 'Run a scan',
       done: () => !!(window.__dxa && window.__dxa().scan && window.__dxa().scan.rois),
     },
+  },
+  {
+    sel: '.grp:has(#dxPad)',
+    title: 'Drive the arm to the mark',
+    text: 'The scan window is built around the LASER, not around the anatomy, so a scan can be '
+      + 'mispositioned exactly as a real one can. The cross marks the INFERIOR edge of the '
+      + 'sweep at both sites, because both scans run up the patient: the lumbar from the level of '
+      + 'the ASIS up to T11, the femur from two inches below the greater trochanter. Up and down '
+      + 'drive the arm along the couch; left and right slide only the laser. The note under '
+      + 'the pad says whether you are on the mark — drive off it and scan, and the wrong bones '
+      + 'land in the window.',
   },
   {
     sel: '#dxTable',
@@ -1235,13 +1244,27 @@ export const DXA_STEPS = [
     title: 'Thin the skeleton',
     text: 'This scales the mineral itself, so the attenuation and the truth move together '
       + '— scaling only the picture would be a lie the report could not catch. Drop it '
-      + 'and rescan: the same skeleton walks from <b>T +0.5 normal</b>, through <b>−2.4 '
-      + 'osteopenia</b> at 30 % loss, to <b>−3.7 osteoporosis</b> at 40 %. Thirty per cent '
+      + 'and rescan: the same L1–L4 walks from <b>T +1.6 normal</b>, through <b>−1.7 '
+      + 'osteopenia</b> at 30 % loss, to <b>−2.8 osteoporosis</b> at 40 %. Thirty per cent '
       + 'of your mineral is one diagnosis; forty is another.',
     goal: {
       label: 'Take the loss past 25 % and rescan',
       done: () => S().dxa.loss >= 0.25
         && !!(window.__dxa && window.__dxa().scan && window.__dxa().scan.loss >= 0.25),
+    },
+  },
+  {
+    sel: '.grp:has(#dxLeg)',
+    title: 'The foot brace',
+    text: 'A femur is scanned with the leg turned IN 15–25°, which lays the femoral neck flat '
+      + 'under the arm. Scan the left hip with the leg neutral and again with it in the brace: '
+      + 'the neck BMD reads about <b>8 % higher</b> neutral (0.757 against 0.701 g/cm²), and '
+      + 'turned out 20° the trochanter overlaps the neck and it reads a third higher. A '
+      + 'positioning change between visits can look exactly like a change in the bone.',
+    goal: {
+      label: 'Scan a hip with the leg out of the brace',
+      done: () => S().dxa.legRot < 10 && !!(window.__dxa && window.__dxa().scan
+        && /hip/.test(window.__dxa().scan.region || '')),
     },
   },
   {
