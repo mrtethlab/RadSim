@@ -1,5 +1,5 @@
 {
-  "_about": "Anatomically Programmed Radiography (APR) chart. Selecting a protocol sets technique (kVp/mAs), anti-scatter grid, display LUT, SID, collimated field, and receptor size/orientation for that projection. Grouped body part -> region -> projection. Typical adult DR values: distal extremities 50-65 kVp no grid at 100 cm SID; proximal limb/skull/spine/abdomen/pelvis 70-90 kVp with grid at 100 cm; chest high-kVp 110-125 kVp with grid at 180 cm. coll = collimated field [width_cm, length_cm]; det = receptor [short_cm, long_cm]; orient = portrait/landscape. Teaching approximations, not a facility chart.",
+  "_about": "Anatomically Programmed Radiography (APR) chart. Selecting a protocol sets technique (kVp/mAs), anti-scatter grid, display LUT, SID, collimated field, and receptor size/orientation for that projection. Grouped body part -> region -> projection. Typical adult DR values: distal extremities 50-65 kVp no grid at 100 cm SID; proximal limb/skull/spine/abdomen/pelvis 70-90 kVp with grid at 100 cm; chest high-kVp 110-125 kVp with grid at 180 cm. coll = collimated field [width_cm, length_cm]; det = receptor [short_cm, long_cm]; orient = portrait/landscape. Teaching approximations, not a facility chart. cm = the adult thickness (caliper, along the central ray) an entry is written for: the console measures the patient there and scales mAs at fixed kV (src/core/technique.js). Entries without it are used as written. mAs calibrated on this simulator (Oct 2026): each exam exposed at its chart technique on the shipped subjects, read with the exam VOI, and its mAs moved to the station that brings DI to 0 (size-corrected exams are calibrated for the chart thickness). AP/lateral cervical and lateral forearm/elbow are not: their central rays cross anatomy that is not the exam's (the C-spine landmark sits at C1; the CT has the arms raised, and the arm against the trunk).",
   "_reference": "Merrill's Atlas / Bontrager positioning references for SID, receptor size, and collimation; grid + kVp per body-part attenuation.",
   "groups": [
     {
@@ -11,7 +11,7 @@
             {
               "proj": "PA fingers",
               "kv": 55,
-              "mas": 1.6,
+              "mas": 1.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -34,7 +34,7 @@
             {
               "proj": "Lateral finger",
               "kv": 57,
-              "mas": 2.0,
+              "mas": 2.5,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -62,7 +62,7 @@
             {
               "proj": "PA hand",
               "kv": 55,
-              "mas": 2.0,
+              "mas": 1.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -85,7 +85,7 @@
             {
               "proj": "Oblique hand",
               "kv": 57,
-              "mas": 2.5,
+              "mas": 1.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -108,7 +108,7 @@
             {
               "proj": "Lateral hand",
               "kv": 58,
-              "mas": 3.2,
+              "mas": 2.5,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -136,7 +136,7 @@
             {
               "proj": "PA wrist",
               "kv": 58,
-              "mas": 2.5,
+              "mas": 1.25,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -159,7 +159,7 @@
             {
               "proj": "Oblique wrist",
               "kv": 60,
-              "mas": 3.0,
+              "mas": 1.6,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -182,7 +182,7 @@
             {
               "proj": "Lateral wrist",
               "kv": 60,
-              "mas": 3.2,
+              "mas": 2.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -210,7 +210,7 @@
             {
               "proj": "AP forearm",
               "kv": 62,
-              "mas": 3.2,
+              "mas": 2.5,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -250,7 +250,9 @@
               "pose": {
                 "roll": -90,
                 "cc": 0,
-                "centre": "forearm"
+                "centre": "forearm",
+                "fidelity": "approx",
+                "note": "The arm lies against the trunk in this CT, so a lateral forearm beam also crosses the flank; the film is thicker and darker than a real lateral forearm."
               }
             }
           ]
@@ -261,7 +263,7 @@
             {
               "proj": "AP elbow",
               "kv": 64,
-              "mas": 3.2,
+              "mas": 2.5,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -314,7 +316,7 @@
             {
               "proj": "AP humerus",
               "kv": 70,
-              "mas": 5.0,
+              "mas": 2.5,
               "grid": false,
               "lut": "bone",
               "sid": 100,
@@ -337,7 +339,7 @@
             {
               "proj": "Lateral humerus",
               "kv": 72,
-              "mas": 6.4,
+              "mas": 4.0,
               "grid": false,
               "lut": "bone",
               "sid": 100,
@@ -365,7 +367,7 @@
             {
               "proj": "AP shoulder",
               "kv": 72,
-              "mas": 6.4,
+              "mas": 12.5,
               "grid": true,
               "lut": "bone",
               "sid": 100,
@@ -388,7 +390,7 @@
             {
               "proj": "Y view shoulder",
               "kv": 75,
-              "mas": 8.0,
+              "mas": 5.0,
               "grid": true,
               "lut": "bone",
               "sid": 100,
@@ -448,7 +450,7 @@
             {
               "proj": "Oblique foot",
               "kv": 60,
-              "mas": 3.2,
+              "mas": 1.6,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -473,7 +475,7 @@
             {
               "proj": "Lateral foot",
               "kv": 62,
-              "mas": 4.0,
+              "mas": 2.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -501,7 +503,7 @@
             {
               "proj": "AP ankle",
               "kv": 63,
-              "mas": 3.2,
+              "mas": 4.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -524,7 +526,7 @@
             {
               "proj": "Mortise ankle",
               "kv": 64,
-              "mas": 3.6,
+              "mas": 4.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -547,7 +549,7 @@
             {
               "proj": "Lateral ankle",
               "kv": 65,
-              "mas": 4.0,
+              "mas": 2.5,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -575,7 +577,7 @@
             {
               "proj": "AP knee",
               "kv": 68,
-              "mas": 5.0,
+              "mas": 6.4,
               "grid": true,
               "lut": "bone",
               "sid": 100,
@@ -598,7 +600,7 @@
             {
               "proj": "Lateral knee",
               "kv": 70,
-              "mas": 5.6,
+              "mas": 16,
               "grid": true,
               "lut": "bone",
               "sid": 100,
@@ -628,7 +630,7 @@
             {
               "proj": "AP femur",
               "kv": 75,
-              "mas": 8.0,
+              "mas": 16,
               "grid": true,
               "lut": "bone",
               "sid": 100,
@@ -651,7 +653,7 @@
             {
               "proj": "Lateral femur",
               "kv": 77,
-              "mas": 10.0,
+              "mas": 32,
               "grid": true,
               "lut": "bone",
               "sid": 100,
@@ -685,6 +687,7 @@
               "proj": "PA chest",
               "kv": 120,
               "mas": 2.5,
+              "cm": 22,
               "grid": true,
               "lut": "chest",
               "sid": 180,
@@ -707,6 +710,7 @@
               "proj": "Lateral chest",
               "kv": 120,
               "mas": 6.4,
+              "cm": 30,
               "grid": true,
               "lut": "chest",
               "sid": 180,
@@ -728,7 +732,8 @@
             {
               "proj": "AP chest (portable)",
               "kv": 90,
-              "mas": 3.2,
+              "mas": 1.0,
+              "cm": 22,
               "grid": false,
               "lut": "chest",
               "sid": 100,
@@ -760,7 +765,8 @@
             {
               "proj": "AP abdomen (KUB)",
               "kv": 80,
-              "mas": 32.0,
+              "mas": 32,
+              "cm": 22,
               "grid": true,
               "lut": "abdomen",
               "sid": 100,
@@ -783,7 +789,8 @@
             {
               "proj": "Upright abdomen",
               "kv": 80,
-              "mas": 36.0,
+              "mas": 25,
+              "cm": 22,
               "grid": true,
               "lut": "abdomen",
               "sid": 100,
@@ -811,7 +818,8 @@
             {
               "proj": "AP pelvis",
               "kv": 80,
-              "mas": 36.0,
+              "mas": 25,
+              "cm": 21,
               "grid": true,
               "lut": "bone",
               "sid": 100,
@@ -885,7 +893,9 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "cspine"
+                "centre": "cspine",
+                "fidelity": "approx",
+                "note": "The head and neck CT was scanned with the arms raised beside the head, so a lateral beam at the cervical spine passes through both arms; expect a thick, under-penetrated film that no technique fixes."
               }
             }
           ]
@@ -896,7 +906,8 @@
             {
               "proj": "AP thoracic",
               "kv": 80,
-              "mas": 25.0,
+              "mas": 40,
+              "cm": 23,
               "grid": true,
               "lut": "spine",
               "sid": 100,
@@ -919,7 +930,8 @@
             {
               "proj": "Lateral thoracic",
               "kv": 85,
-              "mas": 50.0,
+              "mas": 100,
+              "cm": 32,
               "grid": true,
               "lut": "spine",
               "sid": 100,
@@ -947,7 +959,8 @@
             {
               "proj": "AP lumbar",
               "kv": 82,
-              "mas": 36.0,
+              "mas": 50,
+              "cm": 22,
               "grid": true,
               "lut": "spine",
               "sid": 100,
@@ -970,7 +983,8 @@
             {
               "proj": "Lateral lumbar",
               "kv": 90,
-              "mas": 64.0,
+              "mas": 125,
+              "cm": 30,
               "grid": true,
               "lut": "spine",
               "sid": 100,
@@ -1003,7 +1017,8 @@
             {
               "proj": "AP skull",
               "kv": 80,
-              "mas": 25.0,
+              "mas": 32,
+              "cm": 19,
               "grid": true,
               "lut": "skull",
               "sid": 100,
@@ -1026,7 +1041,8 @@
             {
               "proj": "Lateral skull",
               "kv": 78,
-              "mas": 20.0,
+              "mas": 20,
+              "cm": 15,
               "grid": true,
               "lut": "skull",
               "sid": 100,

@@ -11,6 +11,8 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
+import { sizeCorrection, voiPercentile, nearestStation } from './core/technique.js';
+import { patientPrimary } from './core/scatter.js';
 import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
 import { decodeGITimeline, buildGIVolume, buildBariumLUT, buildGasLUT, NS as GI_NS } from './core/gi.js';
 import { GIStudy, SEGMENTS as GI_SEGMENTS } from './core/giSolve.js';
@@ -2181,6 +2183,21 @@ async function computeRadiograph(){
     });
   }
 
+  /* THE OPEN BEAM at every pixel: what the receptor would read with nobody in the way. The EI
+     has to set aside raw beam before it measures the anatomy, and it used to find the raw
+     beam by assuming the brightest 2 % of the field WAS raw beam. Collimated inside the body
+     there is none — an AP lumbar, a KUB — and the "direct" level it found was the thinnest
+     tissue, so the cut threw the brighter anatomy away and those exams read about 1 DI low
+     for that alone. The open-beam level is known exactly from the geometry, so it is used
+     instead; the scatter reference below needs it too. The grid and the AEC scale it exactly
+     as they scale the image. */
+  const direct=new Float32Array(nx*ny);
+  for(let j=0;j<ny;j++)for(let i=0;i<nx;i++){
+    const k=j*nx+i; if(!mask[k]) continue;
+    const dx=(i-halfU)*pxU-source[0], dy=-source[1], dz=(j-halfV)*pxV-source[2];
+    direct[k]=I0*(100*100)/(dx*dx+dy*dy+dz*dz);
+  }
+
   // ---- scatter radiation reaching the detector ----
   // X-rays scattered in the patient add a diffuse fog to the receptor. The scatter-to-
   // primary ratio (SPR) grows with the irradiated field area and the patient's
@@ -2200,7 +2217,10 @@ async function computeRadiograph(){
   // chest is ~0.2-0.5. Measured in the lung field: 4.0 -> 0.54 (top of band, lung/mediastinum
   // 2.45), 2.0 -> 0.27 (mid band, 3.53), 1.5 -> 0.20 (3.53 -> 4.11). 2.0 it is. Setting it by
   // the contrast ratio instead would mean pushing residual SPR below anything defensible.
-  const SCAT_SPR_MAX=_t.spr??2.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
+  // Re-set to 3.0 when the fog was re-referenced to the MEDIAN primary (below): chosen so the PA
+  // chest lung field keeps exactly the residual scatter it was calibrated to (lung band SPR 0.14,
+  // lung/mediastinum 5.9 either way); a gridded abdomen then carries 0.42.
+  const SCAT_SPR_MAX=_t.spr??3.0, SCAT_AREA0=_t.area??900, GRID_SCATTER=_t.gridScat??0.15;
   let scatterFog=0, scatterMap=null;
   {
     const distC=Math.hypot(source[0],source[1],source[2])||100, invSqC=(100*100)/(distC*distC);
@@ -2210,11 +2230,13 @@ async function computeRadiograph(){
     // collimator that put the mediastinum at 92 % scatter and collapsed lung/mediastinum
     // contrast to 1.9x against a real 5-15x. Same error as the EI VOI: a field-wide mean that
     // silently includes direct exposure.
+    // ...and to its TYPICAL value, the median, judged against the open beam (core/scatter.js):
+    // a field-wide mean let the thinnest tissue at the edge set the fog for the whole patient.
     let maxP=0; for(let k=0;k<dose.length;k++) if(mask[k] && dose[k]>maxP) maxP=dose[k];
-    const attenCut=maxP*0.90;                       // above this the ray missed the patient
-    let sumP=0, nF=0; for(let k=0;k<dose.length;k++){ if(mask[k] && dose[k]<attenCut){ sumP+=dose[k]; nF++; } }
-    if(nF){
-      const meanP=sumP/nF, meanIncident=I0*invSqC;
+    const pp=patientPrimary(dose, direct, mask);
+    const inPatient=pp ? pp.inPatient : ()=>false;
+    if(pp){
+      const meanP=pp.median, meanIncident=I0*invSqC;
       const atten=Math.max(0,Math.min(1,1-meanP/(meanIncident||1)));     // 0 = air, ~1 = heavily attenuated
       const areaCm2=S.collX*S.collZ, areaF=areaCm2/(areaCm2+SCAT_AREA0);  // saturates with field size
       let spr=SCAT_SPR_MAX*areaF*atten*S.scatter;    // S.scatter: the console's 0-200 % dial
@@ -2237,7 +2259,7 @@ async function computeRadiograph(){
       const rPx=Math.max(1, Math.min(120, Math.round(5/Math.max(pxU,1e-6))));   // ~5 cm spread
       boxBlur2D(scatterMap, nx, ny, rPx); boxBlur2D(scatterMap, nx, ny, rPx);   // 2 passes ≈ gaussian
       let mSum=0, mN=0;
-      for(let k=0;k<dose.length;k++) if(mask[k]){ mSum+=scatterMap[k]; mN++; }
+      for(let k=0;k<dose.length;k++) if(inPatient(k)){ mSum+=scatterMap[k]; mN++; }   // mean 1 over the patient
       const mAvg=mN? mSum/mN : 0;
       if(mAvg>1e-9) for(let k=0;k<dose.length;k++) scatterMap[k]/=mAvg;         // mean 1 over the field
       else scatterMap=null;                                                     // nothing in the beam
@@ -2264,7 +2286,7 @@ async function computeRadiograph(){
       const rayAng=Math.atan2(px-sx, sy);             // incident ray tilt in x-plane
       const stripAng=Math.atan2(px, f0);              // focused strip tilt at this x
       const t=Math.max(0, 1 - r*Math.abs(Math.tan(rayAng-stripAng)));
-      dose[k]*= base*t;
+      dose[k]*= base*t; direct[k]*= base*t;
     }
   }
   // add the diffuse scatter fog (already grid-attenuated) onto the primary, shaped by where
@@ -2287,18 +2309,18 @@ async function computeRadiograph(){
   S.aecResult=null;
   if(aecActive()){
     const cd=aecCellDose(dose,nx,ny,pxU,pxV);       // mean chamber dose at backup mAs
-    // Chamber target, not VOI target — see AEC_CHAMBER_CAL. Metering the mediastinum at a
-    // lung-level dose is what made every AEC exposure read ~3x hot.
+    // The chambers are calibrated on a uniform phantom (AEC_CHAMBER_CAL): they stop the exposure
+    // when THEY reach the target. Which chambers sit under which anatomy is the operator's call.
     const target=S.eiTarget/EI_K/AEC_CHAMBER_CAL;
     const backup=S.mas;
     const ideal = cd>1e-12 ? backup*target/cd : Infinity;
     const masA=Math.max(AEC_MIN_MAS, Math.min(backup, ideal));
     const f=masA/backup;
-    if(f<1) for(let k=0;k<dose.length;k++) dose[k]*=f;
+    if(f<1) for(let k=0;k<dose.length;k++){ dose[k]*=f; direct[k]*=f; }
     S.aecResult={mas:masA, backupHit: ideal>=backup};
   }
 
-  const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask);
+  const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
   pushImage(signal,nx,ny,mask,buildMeta(spectrum));   // -> active image + drawFilm + meta + strip
   updateDI(EI);
   if(S.bayContent==='image') setContent('image');
@@ -2664,9 +2686,19 @@ function setGridFocusUI(){
   const v=$('gridFocusV'); if(v) v.textContent=S.gridFocus+' cm';
   const seg=$('gridFocusSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',+b.dataset.focus===S.gridFocus));
 }
+/* Keep a protocol's exposure short. The chart gives mAs; the generator chooses the current, and
+   a big patient's mAs at the console's 100 mA would hold the switch for seconds (motion, and a
+   very long press). Each protocol starts from 100 mA and raises it to the lowest station that
+   does the exposure in half a second — starting afresh, so a lumbar's 800 mA (and with it the
+   broad focal spot) does not follow the operator to the next skull. */
+const MAX_EXPOSURE_S=0.5, PROTOCOL_MA=100;
+function fitMa(){
+  S.ma=maSteps.find(m=>m>=PROTOCOL_MA && S.mas/m<=MAX_EXPOSURE_S) ?? maSteps[maSteps.length-1];
+  const maEl=$('ma'); if(maEl) maEl.value=nearestMaIdx();
+}
 function applyProtocol(p,part){
   S.protocol={proj:p.proj, part};
-  S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas;
+  S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas; fitMa();
   const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv;
   const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
   S.gridOn=!!p.grid; setGridUI();
@@ -2702,6 +2734,7 @@ function applyProtocol(p,part){
     // pelvis went out at 120 kVp instead of 80. The protocol's technique is the one asked for.
     S.kv=Math.max(40,Math.min(120,p.kv)); const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts();
     applyPose(p.pose);
+    applyCaliper(p);
     syncScene(); if(S.hasImage) drawFilm();
   };
   if (want !== S.subject || !S.voxelModel) setSubject(want).then(done);
@@ -2756,6 +2789,28 @@ function applyPose(pose){
     if (clamped) bits.push('Centring limited by the table travel — the landmark is not quite under the central ray.');
     note.innerHTML = bits.join(' ');
     note.classList.toggle('show', bits.length > 0);
+  }
+}
+/* READ THE CHART BY THICKNESS. Trunk, spine and skull entries say what adult they are written
+   for (p.cm); the patient is measured along the central ray, as with calipers, and the mAs is
+   scaled at fixed kV (core/technique.js). The operator sees the measurement and the change. */
+function applyCaliper(p){
+  if(!p.cm) return;
+  const ph=buildPhantom();
+  if(!ph?.voxel || ph.geometryOnly) return;
+  const {source, d}=tubeFrame();
+  const bins=Spectrum.make(S.kv).bins;
+  const r=sizeCorrection(ph.trace(source, d, S.sid+20), p.cm, muOverBins(bins), bins);
+  if(!r) return;
+  S.mas=nearestStation(p.mas*r.factor, masSteps); fitMa();
+  const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
+  refreshReadouts();
+  const note=$('protocolPose');
+  if(note){
+    const line=`Patient measures <b>${r.t.toFixed(0)} cm</b> along the central ray; the chart is written for `
+      +`${p.cm} cm. mAs ${p.mas} &rarr; <b>${S.mas}</b> (&times;${r.factor<10?r.factor.toFixed(1):r.factor.toFixed(0)}) at ${S.kv} kVp.`;
+    note.innerHTML=(note.innerHTML?note.innerHTML+'<br>':'')+line;
+    note.classList.add('show');
   }
 }
 function openProtocolPopup(){
