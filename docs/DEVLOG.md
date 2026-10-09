@@ -8,6 +8,19 @@ handoff document and is not committed.)
 
 ## 2026-10-09
 
+### Audit 2, group 1: bugs across the modes — [#50](https://github.com/mrtethlab/RadSim/pull/50)
+A PA chest hung mirrored, with the heart on the viewer's left: the display mirror now follows the
+roll each image was taken at. On a frozen ultrasound image the knobs re-scanned under the FROZEN
+label and left the calipers on new anatomy; gain, dynamic range and TGC now act on the frozen
+frame, and anything that changes the acquisition unfreezes first. DXA compares each scan with the
+previous scan of the same site, classifies under-50s by Z-score per ISCD, and its report names the
+male reference it uses for men. CT counts the bolus-tracking exposures in the study DLP, shows the
+unmodelled gantry tilt as n/a, and Quick mode keeps quantum noise on. Space on a focused dropdown
+no longer fires the rotor, a focused slider no longer swallows the fluoro pedal, and an arrow key
+no longer turns the tutorial page while it moves the table. Also: the mammo QC slab's dose, the
+fluoro alarm acknowledge, and two dead tutorial targets, now guarded by a test. Each new test was
+checked by putting its bug back.
+
 ### CT HU offset and noise floor — [#48](https://github.com/mrtethlab/RadSim/pull/48)
 The CT preview read soft tissue about 130 HU low. Checked pixel by pixel against the phantom's
 own HU, the reconstruction itself is exact: a water cylinder comes back within 0.2 % in every
