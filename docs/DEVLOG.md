@@ -8,6 +8,23 @@ handoff document and is not committed.)
 
 ## 2026-10-08
 
+### Technique chart calibrated — [#36](https://github.com/mrtethlab/RadSim/pull/36)
+At chart technique the 40 x-ray protocols read DI −7.6 to +8.8, and a KUB and an AP pelvis of
+the same patient at nearly the same mAs read 10 DI apart. Every protocol was exposed in the
+app and the same exposures re-read under each candidate fix, which found four causes. The
+exposure index took the brightest 2 % of the field to be raw beam, wrong when the field has
+none; it now compares against the open beam. The scatter fog followed the mean primary, which
+the thinnest tissue at the field edge dominates (2.5× the abdomen's own signal on an AP
+pelvis, behind a grid); it now follows the median. The EI read every exam's thinnest anatomy;
+it now reads the lung fields for chest and the median anatomy elsewhere, as DR systems do. The
+trunk subject is 31 cm thick against the chart's 22 cm adult; trunk and skull entries now
+state their thickness, and the console measures the patient along the central ray and scales
+mAs to match, on screen. The chart mAs was then calibrated per exam, the AEC re-based on a
+uniform phantom (a chest on the wrong chamber now burns out the lungs, as it should), and the
+trunk laterals re-centred on the vertebral bodies. Result: 35 of 40 exams within ±0.8 DI. Not
+calibrated, and said why: AP/lateral cervical (landmark at C1; arms raised in the CT), lateral
+forearm/elbow (arm against the trunk), lateral lumbar −1.6 (600 mAs ceiling).
+
 ### Legs turned at the hip — [#34](https://github.com/mrtethlab/RadSim/pull/34)
 The CT volume has the legs in neutral, so each femoral neck points about 20° forward of the
 table and projects foreshortened. Each femur is now cut out of the volume (a 3 cm ball
