@@ -1790,3 +1790,13 @@ body.mode-fluoro .scr2{display:block}
 .protopose{display:none; margin:4px 0 2px; font-size:10.5px; line-height:1.35; color:#ffb070}
 .protopose.show{display:block}
 .protopose b{color:#ffcf9a}
+
+/* ---- ultrasound: presets and calipers ------------------------------------------------- */
+#usPresetSeg{display:grid; grid-template-columns:repeat(3,1fr); gap:3px; margin-bottom:6px}
+#usPresetSeg button{font-size:10px; padding:5px 2px}
+.uscal{display:flex; align-items:center; gap:8px; margin-top:8px; font-family:var(--seg); font-size:10px;
+  letter-spacing:.5px; color:#9fbfd3}
+.uscal-k{color:#6f8ea2}
+.uscal-v{flex:1; color:#ffe25a}
+body.mode-us #film, body.mode-us #bigFilm{cursor:crosshair}
+
