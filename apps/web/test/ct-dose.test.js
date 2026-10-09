@@ -110,3 +110,20 @@ test('CT photons per slice scale with effective mAs, pitch included', async () =
   assert.ok(near(photonsFor({ ...g, ma: 75 }, geo), p / 4), 'a quarter of the mA, a quarter of the photons');
   assert.ok(near(photonsFor({ ...g, ma: 600, pitch: 2 }, geo), p), 'same effective mAs, same photons');
 });
+
+test('CT detector: electronic noise is fixed, so more mAs always buys less noise; the clip is relative', async () => {
+  const { detectedIntegral, SAT_P, ELEC_FLOOR } = await import('../src/ct.js');
+  let seed = 11;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const randn = () => Math.sqrt(-2 * Math.log(rnd() + 1e-12)) * Math.cos(2 * Math.PI * rnd());
+  const sdOf = (photons0, Tr) => {
+    const v = []; for (let i = 0; i < 20000; i++) v.push(detectedIntegral(photons0, Tr, ELEC_FLOOR, randn));
+    const m = v.reduce((s, x) => s + x, 0) / v.length; return Math.sqrt(v.reduce((s, x) => s + (x - m) ** 2, 0) / v.length);
+  };
+  // a starved lateral ray through a 40 cm abdomen (T ~ 1e-4): four times the photons -> half the
+  // noise. With the floor tied to the tube output, this ratio was ~1.4.
+  const r = sdOf(2e6, 1e-4) / sdOf(8e6, 1e-4);
+  assert.ok(Math.abs(r - 2) < 0.15, `quadrupling the beam cut the noise ${r.toFixed(2)}x`);
+  // the dynamic-range clip stays at e^-SAT_P of the beam, whatever the beam
+  for (const ph of [1e5, 1e7]) assert.ok(Math.abs(detectedIntegral(ph, 1e-9, ELEC_FLOOR, () => -10) - SAT_P) < 1e-9);
+});

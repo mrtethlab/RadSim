@@ -116,6 +116,7 @@ const SYM = {
 
 export function initCT(context) {
   ctx = context;
+  window.addEventListener('radsim:subject', () => fitSfovToSubject());
   buildCTScene();
   injectSymbols();
   wireModeToggle();
@@ -2140,6 +2141,27 @@ function dfovCenterStr(g) {
 // True when the DFOV disc is not fully contained by the SFOV (measured) circle → the recon will
 // have un-scanned black beyond the SFOV. GE: the off-centre box can poke past the isocentre SFOV.
 // Canon: the couch carries the offset, so only an oversized DFOV (diameter > SFOV) matters.
+/* THE PATIENT WIDER THAN THE SFOV. The rays integrate only across the scan field, so anatomy
+   outside it is never measured: every projection through the body comes up short, and the whole
+   image reads low — on a 40 cm abdomen in the 25 cm Head field, by ~130 HU with the line
+   integrals at 0.64-0.86 of their true value. Real consoles leave this to the operator; this one
+   says so beside the SFOV. Width is the subject volume's widest transverse extent. */
+function patientWiderThanSfov(g) {
+  const ext = ctx.S.voxelModel ? ctx.S.voxelModel.extentMM : null;
+  return !!ext && Math.max(ext[0], ext[1]) > (g.sfovMM || 500) + 0.5;
+}
+/* A new patient brings their own size. Groups keep the SFOV they were created with, so after a
+   hand (Head, 25 cm) a chest/abdomen/pelvis was scanned in a head field unless a protocol was
+   picked — truncated, and ~130 HU low. When the subject changes, any group whose field cannot
+   hold the new patient is widened to the default for them; a field that already fits is the
+   operator's and is left alone. */
+function fitSfovToSubject() {
+  const c = ctx.S.ct; if (!c || !c.groups) return;
+  const sf = defaultSfov();
+  let changed = 0;
+  for (const g of c.groups) if ((g.sfovMM || 500) < sf.mm) { g.sfovMM = sf.mm; g.sfovName = sf.name; changed++; }
+  if (changed) { renderScanGroups(); updateCTReadouts(); }
+}
 function dfovOutOfSfov(g) {
   const sfovR = (g.sfovMM || 500) / 2, dfovR = groupDFOV(g) / 2;
   if (ctx.S.ct.vendor === 'ge') { const o = dfovOffsetMM(g); return Math.hypot(o.ml, o.ap) + dfovR > sfovR + 0.5; }
@@ -2210,9 +2232,10 @@ function renderScanGroups() {
       + '<td><span class="sg-eye' + (g.vis ? '' : ' off') + '" title="Toggle scan lines on the scout">' + (g.vis ? EYE_OPEN : EYE_CLOSED) + '</span></td>'
       + cell('sg-edit', 'start', fmtTablePos(scanStartMM() + g.box.top * c.scanLen))
       + cell('sg-edit', 'end', fmtTablePos(scanStartMM() + g.box.bot * c.scanLen))
-      + '<td><span class="sg-station' + (dfovOutOfSfov(g) ? ' sfov-warn' : '') + '" data-act="sfov">'
+      + '<td><span class="sg-station' + (dfovOutOfSfov(g) || patientWiderThanSfov(g) ? ' sfov-warn' : '') + '" data-act="sfov">'
         + (g.sfovName || sfovName(g.sfovMM))
         + (dfovOutOfSfov(g) ? ' <span class="sfov-ico" title="DFOV extends beyond the SFOV — anatomy outside the measured field is not scanned">⚠</span>' : '')
+        + (patientWiderThanSfov(g) ? ' <span class="sfov-ico" title="The patient is wider than the SFOV — every projection is truncated and the whole image reads low (HU)">⚠</span>' : '')
         + '</span></td>'
       + '<td><span class="sg-edit" data-act="dfov">' + (groupDFOV(g) / 10).toFixed(1) + ' cm</span><span class="sg-sub">' + dfovCenterStr(g) + '</span></td>'
       + cell('sg-station', 'acq', detConfig(g))
@@ -2735,7 +2758,7 @@ const DET_MODES = {
   // photonBase: detected photons per channel per view at the reference technique —
   // clinical scale (~10^6-10^7), so the 512² image lands at a clinical ~10-15 HU noise;
   // the quick preview keeps the old (much lower) base tuned for its coarse grid.
-  realistic: { nDet: 888, nAngles: 1440, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 555, photonBase: 8e6, zSub: 7 },
+  realistic: { nDet: 888, nAngles: 1440, gridN: 512, fixedPitch: true, chanMM: 0.625, sfovMM: 555, photonBase: 9.8e7, elecFloor: 8e6 * Math.exp(-11.5), zSub: 7 },
 };
 // Selectable scan field of view (the bore reconstruction circle); the rays integrate over
 // it, so the body must sit inside it or the projections truncate (→ cupping). GE-style set.
@@ -2754,19 +2777,27 @@ function defaultSfov() {
 }
 const detMode = () => DET_MODES[ctx && ctx.S.ct.detMode] || DET_MODES.quick;
 const MAX_SLICES = 1024;          // safety cap only (the slice count follows the planned image count)
-/* Reference detected photons per ray for the QUICK preview detector. It was 1.1e5, "tuned for
-   the coarse grid", and that made the preview the noisy one: measured (the same scan with and
-   without photon statistics, subtracted, at the body centre) the default abdomen — 120 kV,
-   157 effective mAs, 5 mm — read ~40 HU in the preview against 12 HU in the realistic 512^2 recon,
-   which is the clinical figure. The preview stands in for the final image, so it now carries the
-   final image's noise: x(40/12)^2. The dose-noise lesson then reads the same in either mode. */
-const PHOTON_BASE = 1.2e6;
+/* Reference detected photons per ray for the QUICK preview detector, and (above) the realistic
+   detector's photonBase. Both are calibrated to one clinical figure: the default abdomen — 120 kV,
+   157 effective mAs, 5 mm, the 31 x 40 cm chest/abdomen/pelvis patient in a Large Body field —
+   reads ~15 HU of noise at the body centre, about what a liver of that size reads clinically.
+   Measured by scanning with and without photon statistics and subtracting. Two things had to be
+   right first: the group must be in a field that holds the patient (a first calibration was made
+   in the 25 cm Head field, whose truncated projections reached the detector with too many
+   photons), and the electronic floor must not grow with the beam (see projectSlice) — before
+   that, a quarter of the mAs raised the noise only 1.4x. Quantum-limited, it is 2.1x. The preview
+   stands in for the final image, so both carry the same noise and the dose-noise lesson reads
+   the same in either mode. */
+const PHOTON_BASE = 1.7e6;
 // Detector saturation: the largest line integral the readout can measure. Behind dense metal
 // almost no photons arrive; a real detector floors at its electronic-noise level rather than
 // reporting an ever-larger (uncapped) integral, so the projection SATURATES at this value.
 // Clipping here — instead of adding unbounded noise to p — keeps photon-starvation streaks
 // bounded and localised (strongest between metals, fading outward) like a clinical scan.
-const SAT_P = 11.5;               // ≈ e^-11.5 transmission floor
+const SAT_P = 11.5;               // ≈ e^-11.5 transmission floor at the reference photon base
+// electronic noise, quanta per sample: the original reference base x e^-SAT_P (quick 1.1e5,
+// realistic 8e6), held fixed as the photon bases were later calibrated
+const ELEC_FLOOR = 1.1e5 * Math.exp(-SAT_P);
 
 // Reconstruction display field of view for a group = the scan box diameter (the box
 // represents a cylinder). The mediolateral width on the AP scout is the cylinder
@@ -3561,14 +3592,14 @@ function projectSlice(phantom, z0, mu, photons0, geo, cone) {
       }
       let p = -Math.log(Math.max(Tr, 1e-300));
       if (photons0 > 0) {                       // detector-domain quantum + electronic noise, with saturation clipping
-        const Nfloor = photons0 * Math.exp(-SAT_P);   // detected photons at the saturation limit
-        const Nexp = photons0 * Tr;                   // expected detected photons for this ray
-        // Poisson (≈Normal for large N) quantum noise plus an electronic-noise term (Nfloor);
-        // the electronic term only matters once the ray is photon-starved.
-        let Nd = Nexp + Math.sqrt(Nexp + Nfloor * Nfloor) * gaussian();
-        if (Nd < Nfloor) Nd = Nfloor;                 // clip: can't read below the noise floor -> line integral saturates
-        p = -Math.log(Nd / photons0);                 // measured (noisy, saturated) line integral
-        if (p < 0) p = 0;
+        // Two different limits, which used to be one number. ELECTRONIC NOISE is a fixed number of
+        // quanta per sample — it does not grow with the tube output. It was photons0 x e^-SAT_P,
+        // so every mAs added raised it too: on a 40 cm abdomen the lateral rays stayed
+        // electronics-limited and a quarter of the mAs raised the image noise only 1.4x. The
+        // DYNAMIC-RANGE limit is relative — a detector's range is set against its own air signal —
+        // so the clip stays at e^-SAT_P of the unattenuated beam, which is what shapes the
+        // photon-starvation streaks behind metal (unchanged by this).
+        p = detectedIntegral(photons0, Tr, geo.m.elecFloor ?? ELEC_FLOOR, gaussian);
       }
       if (bhc) p = bhc(p);                       // water beam-hardening correction (soft tissue linearised)
       sino[base + k] = p;
@@ -3576,6 +3607,20 @@ function projectSlice(phantom, z0, mu, photons0, geo, cone) {
   }
   return sino;
 }
+
+/* One detector sample: expected photons photons0 x Tr, Poisson (Normal at these counts) quantum
+   noise plus a FIXED electronic noise sigE (quanta), clipped at the readout's dynamic range
+   e^-SAT_P of the unattenuated beam. Returns the measured line integral. (See projectSlice for
+   why the two limits are separate.) */
+export function detectedIntegral(photons0, Tr, sigE, randn = gaussian) {
+  const Nclip = photons0 * Math.exp(-SAT_P);
+  const Nexp = photons0 * Tr;
+  let Nd = Nexp + Math.sqrt(Nexp + sigE * sigE) * randn();
+  if (Nd < Nclip) Nd = Nclip;
+  const p = -Math.log(Nd / photons0);
+  return p < 0 ? 0 : p;
+}
+export { SAT_P, ELEC_FLOOR };
 
 // Sinogram band-limiting from the finite X-ray source + detector aperture. Our recon rays are
 // infinitely thin ideal samples, so metal edges are razor-sharp and the ramp filter amplifies
