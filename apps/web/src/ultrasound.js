@@ -265,7 +265,6 @@ function ensureSVol() {
     if (C) { C.sVol = sVol; C.sVolFor = ctx.S.subject; }   // share it back
     sVolLoading = false;
     setStatus('Colour box armed — flow directions from the vessel tree.');
-    if (!U.live) sweep();
   }).catch(() => {
     sVolLoading = false;
     setStatus('This subject ships no vessel tree — colour Doppler needs one.');
@@ -736,7 +735,7 @@ function caliperClick(e, cv) {
   if (!q) return;
   if (calipers.length >= 4) calipers = [];
   calipers.push(q);
-  if (lastFr) render(lastFr);
+  if (lastFr) render(lastFr, false);
   const d = calDistances();
   const el = $('usCalV');
   if (el) el.textContent = d.length ? d.map((v, i) => `D${i + 1} ${v.toFixed(2)} cm`).join(' · ') : 'first point set';
@@ -744,7 +743,7 @@ function caliperClick(e, cv) {
 function clearCalipers() {
   calipers = [];
   const el = $('usCalV'); if (el) el.textContent = '—';
-  if (lastFr) render(lastFr);
+  if (lastFr) render(lastFr, false);
 }
 
 /* ---- exam presets ----------------------------------------------------------
@@ -768,7 +767,7 @@ function applyPreset(key) {
     const [id, k] = q.split(':'); const el = $(id); if (el) el.value = U[k];
   });
   calipers = [];
-  renderReadouts(); mReset(); sweep(); usSyncScene();
+  renderReadouts(); mReset(); rescan(); usSyncScene();
   setStatus(`${p.label} preset — ${p.probe === 'linear' ? 'linear' : 'curvilinear'} ${p.freq} MHz, depth ${p.depth} cm, focus ${p.focus} cm.`);
 }
 
@@ -856,7 +855,7 @@ function drawMScreen(g, geo, fr) {
   }
 }
 
-function render(fr) {
+function render(fr, fresh = true) {
   const film = $('film'); if (!film || !fr) return;
   const env = envelope(fr);
   const { depth, freq, ds } = fr;
@@ -866,7 +865,7 @@ function render(fr) {
   const wantH = U.disp === 'm' ? 768 : 512;
   if (usCanvas.height !== wantH) usCanvas.height = wantH;
   const g = usCanvas.getContext('2d');
-  if (U.disp === 'm') { appendM(env, tgcLut); drawMScreen(g, geo, fr); }
+  if (U.disp === 'm') { if (fresh) appendM(env, tgcLut); drawMScreen(g, geo, fr); }
   else { g.drawImage(bCanvas, 0, 0); }
   const W = usCanvas.width, H = usCanvas.height;
   const f2 = film.getContext('2d');
@@ -902,7 +901,7 @@ function sweep() {
   // M-mode fires ONE line per column, so its budget is one round trip, not a whole frame
   const acq = U.disp === 'm' ? lastAcqMs / NLINE : lastAcqMs;
   const fps = 1000 / Math.max(acq, lastMs, 1);
-  setStatus(`${fps.toFixed(0)} fps · ${acq.toFixed(0)} ms acoustic · ${lastMs.toFixed(0)} ms compute`
+  if (performance.now() >= noteUntil) setStatus(`${fps.toFixed(0)} fps · ${acq.toFixed(0)} ms acoustic · ${lastMs.toFixed(0)} ms compute`
     + (U.live ? ' · LIVE' : ' · FROZEN'));
   if (U.live) {
     clearTimeout(liveTimer);
@@ -917,6 +916,23 @@ function setLive(on) {
   clearTimeout(liveTimer); liveTimer = null;
   sweep();
 }
+/* A FROZEN FRAME IS A RECORD: what it shows is what was measured on it. Gain, dynamic range and
+   TGC are applied to the stored echoes at display time (render), so on a frozen frame they act
+   on that frame and leave its calipers where they are, as post-processing does on a machine.
+   Everything else changes what is ACQUIRED (the probe, where it sits, frequency, depth, focus,
+   colour, motion, the M line) and cannot apply to a frame already taken, so it unfreezes. It used
+   to re-scan under the FROZEN label, which put the calipers from the old frame on new anatomy. */
+function redisplay() { if (U.live) return; if (lastFr) render(lastFr, false); }
+let noteUntil = 0;                    // a message the live loop's frame-rate line must not overwrite at once
+function unfreeze() {
+  if (U.live) return;
+  setLive(true);
+  setStatus('Live again — that control changes what is scanned, so the frozen frame and its measurements are gone.');
+  noteUntil = performance.now() + 3500;
+}
+/* an immediate frame for a control that moves a lot at once (probe, preset, window) */
+function rescan() { if (U.live) sweep(); else unfreeze(); }
+const DISPLAY_KEYS = new Set(['gain', 'range']);
 function setStatus(t) { const el = $('usStatus'); if (el) el.textContent = t; }
 function renderReadouts() {
   const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
@@ -1048,7 +1064,7 @@ export function usPointer(e, phase, cam, canvas) {
   const sx = $('usPx'), sz = $('usPz');
   if (sx) sx.value = U.px; if (sz) sz.value = U.pz;
   usSyncScene();
-  if (!U.live) sweep();
+  unfreeze();
   return true;
 }
 
@@ -1079,7 +1095,7 @@ export function initUS(context) {
       U[key] = parseFloat(e.target.value);
       renderReadouts();
       if (after) after();
-      if (!U.live) sweep();
+      if (DISPLAY_KEYS.has(key)) redisplay(); else unfreeze();
       usSyncScene();
     });
   };
@@ -1092,13 +1108,13 @@ export function initUS(context) {
   for (let i = 0; i < 6; i++) {
     $('usTgc' + i)?.addEventListener('input', (e) => {
       U.tgcBands[i] = +e.target.value;
-      if (!U.live) sweep();
+      redisplay();
     });
   }
   $('usTgcReset')?.addEventListener('click', () => {
     U.tgcBands = [0, 0, 0, 0, 0, 0];
     for (let i = 0; i < 6; i++) { const el = $('usTgc' + i); if (el) el.value = 0; }
-    if (!U.live) sweep();
+    redisplay();
     setStatus('TGC centred.');
   });
   slide('usRange', 'range');
@@ -1107,7 +1123,7 @@ export function initUS(context) {
     U.dop = !U.dop;
     $('usDop').classList.toggle('on', U.dop);
     if (U.dop) ensureSVol();
-    if (!U.live) sweep();
+    unfreeze();
     setStatus(U.dop ? 'Colour box on — and it costs frame rate, as it should.' : 'Colour off.');
   });
   slide('usPrf', 'prf'); slide('usDopY', 'dopY'); slide('usDopH', 'dopH'); slide('usDopW', 'dopW');
@@ -1126,15 +1142,16 @@ export function initUS(context) {
     U.motion = !U.motion;
     $('usMotion').classList.toggle('on', !U.motion);
     setStatus(U.motion ? 'Motion on.' : 'Motion off — a still patient.');
-    if (!U.live) sweep();
+    unfreeze();
   });
   document.querySelectorAll('#usDispSeg button').forEach((b) => {
     b.addEventListener('click', () => {
       U.disp = b.dataset.disp;
       document.querySelectorAll('#usDispSeg button').forEach((x) => x.classList.toggle('on', x === b));
       mReset();
-      // M-mode is one line, so it can afford a faster sweep than a whole frame can
-      if (U.live) setLive(true); else sweep();
+      // M-mode is one line, so it can afford a faster sweep than a whole frame can. A trace is
+      // recorded over time, so M starts live; back to B on a frozen frame shows that frame.
+      if (U.live || U.disp === 'm') setLive(true); else redisplay();
     });
   });
   // The cardiac seat was surveyed, not guessed: from below the costal margin, angled up
@@ -1148,7 +1165,7 @@ export function initUS(context) {
     Object.assign(U, CARDIAC_SEAT);
     ['usPx:px', 'usPz:pz', 'usRot:rot', 'usTilt:tilt', 'usDepth:depth', 'usFocus:focus']
       .forEach((p) => { const [id, k] = p.split(':'); const el = $(id); if (el) el.value = U[k]; });
-    renderReadouts(); mReset(); sweep(); usSyncScene();
+    renderReadouts(); mReset(); rescan(); usSyncScene();
     setStatus('Subcostal window — the heart is up and to the left of the fan.');
   });
   document.querySelectorAll('#usProbeSeg button').forEach((b) => {
@@ -1161,7 +1178,7 @@ export function initUS(context) {
       ['usFreq:freq', 'usDepth:depth', 'usFocus:focus'].forEach((p) => {
         const [id, k] = p.split(':'); const el = $(id); if (el) el.value = U[k];
       });
-      renderReadouts(); sweep(); usSyncScene();
+      renderReadouts(); rescan(); usSyncScene();
     });
   });
   if (typeof window !== 'undefined') window.__usProbe = () => ({

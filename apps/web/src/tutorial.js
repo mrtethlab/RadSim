@@ -60,8 +60,13 @@ export function initTutorial(context) {
     const f = document.activeElement;
     if (f && (f.matches('input, select, textarea') || f.isContentEditable)) return;
     if (openModal()) return;
-    if (e.key === 'ArrowRight') go(T.i + 1);
-    else if (e.key === 'ArrowLeft') go(T.i - 1);
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
+    // ...and to whatever room uses them: fluoro drives the table with the arrows, and the image
+    // bay steps through the image history. Both claim the key with preventDefault, but they
+    // listen after this does, so look once the event has finished dispatching. Before this, one
+    // press moved the table (or the image) AND turned the tutorial page.
+    const step = e.key === 'ArrowRight' ? 1 : -1;
+    setTimeout(() => { if (T && !e.defaultPrevented) go(T.i + step); }, 0);
   });
   addEventListener('resize', () => { if (T) paint(); });
 }

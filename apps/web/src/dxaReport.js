@@ -15,7 +15,7 @@
    than useless for teaching what a trend report is.
    ============================================================================ */
 
-import { REF, ageMean, scores, diagnosis, LSC_PCT } from './dxa.js';
+import { REF, ageMean, scores, classify, ISCD_Z_AGE, LSC_PCT } from './dxa.js';
 
 /* ---- the invented half -------------------------------------------------------
    Deterministic from a seed so a re-render of the same study produces the same
@@ -155,7 +155,7 @@ export function reportHTML(entry, history, charts) {
       + `<td>${d == null ? '—' : (d > 0 ? '+' : '') + d.toFixed(3)}</td>`
       + `<td>${pc == null ? '—' : (pc > 0 ? '+' : '') + pc.toFixed(1) + ' %' + (sig ? ' *' : '')}</td></tr>`;
   }).join('');
-  const dx = diagnosis(entry.T);
+  const cl = classify(entry.T, entry.Z, entry.age), dx = cl.label;
   return `
 <div class="dxrep-page">
   <div class="dxrep-hd">
@@ -191,7 +191,7 @@ export function reportHTML(entry, history, charts) {
       </table>
     </div>
   </div>
-  <div class="dxrep-dx dxrep-${dx.toLowerCase()}">${dx} &middot; T ${entry.T.toFixed(1)} &middot; Z ${entry.Z.toFixed(1)}${entry.dxSite ? ` &middot; ${entry.dxSite}` : ''}</div>
+  <div class="dxrep-dx dxrep-${cl.cls}">${dx} &middot; T ${entry.T.toFixed(1)} &middot; Z ${entry.Z.toFixed(1)}${entry.dxSite ? ` &middot; ${entry.dxSite}` : ''}</div>
   ${hist.length > 1 ? `
   <div class="dxrep-cap" style="margin-top:14px">Densitometry Trend: ${span}</div>
   <img class="dxrep-chart wide" src="${charts.trend}" alt="">
@@ -206,8 +206,15 @@ export function reportHTML(entry, history, charts) {
     for ${esc(label)} ${span}). USA (Combined NHANES / Lunar) Reference Population; matched for Age,
     Weight, Ethnic. World Health Organization definition of Osteoporosis and Osteopenia: Normal =
     T-score at or above &minus;1.0 SD; Osteopenia = T-score between &minus;1.0 and &minus;2.5 SD;
-    Osteoporosis = T-score at or below &minus;2.5 SD. WHO definitions only apply when a young healthy
-    Caucasian Women reference database is used to determine T-scores.
+    Osteoporosis = T-score at or below &minus;2.5 SD. ${entry.sex === 'm'
+      ? 'T-scores for this patient are against a young healthy male reference, the console default for '
+        + 'men. ISCD (2019) recommends the uniform white female reference for men of all ethnic groups, '
+        + 'which would raise these T-scores.'
+      : 'WHO definitions only apply when a young healthy Caucasian Women reference database is used '
+        + 'to determine T-scores.'}${cl.by === 'Z'
+      ? ` Patient under ${ISCD_Z_AGE}: per ISCD the WHO categories are not applied; classified by `
+        + 'Z-score (&le; &minus;2.0 = below the expected range for age).'
+      : ''}
     <br>Simulated study &mdash; RadSim densitometry. Patient identifiers are fictitious.
   </div>
 </div>`;

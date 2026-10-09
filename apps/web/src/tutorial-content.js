@@ -828,7 +828,7 @@ export const FLUORO_STEPS = [
     },
   },
   {
-    sel: '.grp:has(#flAbcSeg)',
+    sel: '.grp:has(#flAutoBtn)',
     title: 'Automatic brightness control',
     text: 'The ABC is fluoroscopy&rsquo;s AEC: a closed loop that re-meters kV and mA on '
       + 'every pulse. Pan from lung to abdomen while screening and watch the readouts climb '
@@ -855,7 +855,7 @@ export const FLUORO_STEPS = [
     },
   },
   {
-    sel: '.grp:has(#flIris)',
+    sel: '.grp:has(#flIrisOpen)',
     title: 'Iris and magnification',
     text: 'The iris is a circular collimator: close it and the DAP falls with the AREA — '
       + 'the air kerma at the centre does not move, which is exactly the difference between '

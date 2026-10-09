@@ -2,7 +2,7 @@
 // from a technologist: these tests are those corrections, written down.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scores, diagnosis, ageMean, REF, hipDiagnosis, findLevels, findFemur, measure } from '../src/dxa.js';
+import { scores, diagnosis, classify, priorScan, ageMean, REF, hipDiagnosis, findLevels, findFemur, measure } from '../src/dxa.js';
 
 // ---------------------------------------------------------------- scoring
 test('T compares against a young adult, so it does not depend on age', () => {
@@ -59,6 +59,34 @@ test('hip: the headline area and BMD stay on the total hip, whichever site decid
   const h = hipDiagnosis(hipRois(-2.0, -0.5), 'f', 62);
   assert.equal(h.area, 38);
   assert.ok(Math.abs(h.mean - bmdForT('total', -0.5)) < 1e-12);
+});
+
+test('under 50 the report classifies on Z, per ISCD; from 50 on T', () => {
+  // a 40-year-old with T -2.7 was being called osteoporotic on T alone
+  const young = classify(-2.7, -1.5, 40);
+  assert.equal(young.by, 'Z');
+  assert.equal(young.label, 'Within expected range for age');
+  assert.equal(classify(-2.7, -2.0, 40).label, 'Below expected range for age');
+  assert.equal(classify(-2.7, -1.99, 49).label, 'Within expected range for age');
+  const old = classify(-2.7, -1.5, 50);
+  assert.equal(old.by, 'T');
+  assert.equal(old.label, 'Osteoporosis');
+});
+
+test('hip under 50: the deciding site is the lower Z, and the banner is Z-based', () => {
+  const h = hipDiagnosis(hipRois(-0.5, -2.7), 'f', 35);
+  assert.equal(h.site, 'total hip');
+  assert.ok(/expected range for age/.test(h.dx), h.dx);
+});
+
+// ---------------------------------------------------------------- serial scans
+test('serial change compares with the previous scan of the same site', () => {
+  // newest first: spine, femur, spine. The newest spine was showing no change at all because
+  // the scan filed just before it was a femur.
+  const list = [{ region: 'spine', mean: 0.95 }, { region: 'femur', mean: 0.80 }, { region: 'spine', mean: 1.00 }];
+  assert.equal(priorScan(list, 0), list[2]);
+  assert.equal(priorScan(list, 1), null);
+  assert.equal(priorScan(list, 2), null);
 });
 
 // ---------------------------------------------------------------- L1-L4 on a synthetic spine

@@ -2,7 +2,7 @@
 // absolute numbers believable.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ctdiVol, dlp, effectiveMAs, phantomFor, effectiveDose, groupDose, KV_EXPONENT } from '../src/core/ctDose.js';
+import { ctdiVol, dlp, effectiveMAs, phantomFor, effectiveDose, groupDose, monitorDose, KV_EXPONENT } from '../src/core/ctDose.js';
 import { roiStats } from '../src/core/ctRoi.js';
 
 const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol * Math.max(1, Math.abs(b));
@@ -126,4 +126,17 @@ test('CT detector: electronic noise is fixed, so more mAs always buys less noise
   assert.ok(Math.abs(r - 2) < 0.15, `quadrupling the beam cut the noise ${r.toFixed(2)}x`);
   // the dynamic-range clip stays at e^-SAT_P of the beam, whatever the beam
   for (const ph of [1e5, 1e7]) assert.ok(Math.abs(detectedIntegral(ph, 1e-9, ELEC_FLOOR, () => -10) - SAT_P) < 1e-9);
+});
+
+test('a monitoring series costs one beam width per exposure, and every exposure counts', () => {
+  // it had been left out of the study DLP entirely
+  const g = { kv: 100, ma: 40, rotS: 0.5, rotSpeed: 0.5, pitch: 0.984, beamColl: 40, sfovMM: 500 };
+  const m = monitorDose(g, 12, 'chestabdopelvis');
+  const one = ctdiVol({ kv: 100, ma: 40, rotS: 0.5, pitch: 1, phantom: 'body' });
+  assert.ok(near(m.ctdiVol, one), 'axial: pitch does not enter');
+  assert.ok(near(m.perScanDLP, one * 4), '40 mm beam = 4 cm per exposure');
+  assert.ok(near(m.dlp, 12 * one * 4), 'twelve exposures, twelve times the DLP');
+  assert.equal(monitorDose(g, 0, 'chestabdopelvis').dlp, 0, 'not run, nothing delivered');
+  // single row: the beam is opened to the 5 mm slice, not one 0.625 mm element
+  assert.ok(near(monitorDose({ ...g, beamColl: 0.625 }, 1, 'chestabdopelvis', 5).perScanDLP, one * 0.5));
 });
