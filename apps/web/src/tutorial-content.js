@@ -177,6 +177,19 @@ export const XRAY_STEPS = [
     },
   },
   {
+    sel: '.grp:has(#mkSeg)',
+    title: 'Side marker',
+    text: 'A radiograph without a side marker is not a legal image. Pick R or L for the side you '
+      + 'are marking and put the lead letter <b>inside the field</b>, beside the part rather than on '
+      + 'it: drop it at the field edge with the button, or drag the yellow tile in the room. On an AP '
+      + 'or PA it goes on the side it names; on a lateral it names the side against the receptor. '
+      + 'After the exposure the line under the dose readout says whether it was right.',
+    goal: {
+      label: 'Choose a marker and place it',
+      done: () => !!S().marker && !!S().marker.side,
+    },
+  },
+  {
     sel: '.grp:has(#detSizeSeg)',
     title: 'Receptor and matrix',
     text: 'Receptor size and orientation decide how much anatomy fits. The resolution setting is a '

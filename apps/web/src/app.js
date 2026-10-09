@@ -13,6 +13,7 @@ import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
+import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict } from './sideMarker.js';
 import { patientPrimary } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
 import { ownsSpace } from './core/keys.js';
@@ -197,15 +198,19 @@ function initScene(){
     // Ultrasound: grabbing the probe drags it over the skin instead of orbiting the room.
     // The probe is the only thing in that room you can pick up, so a hit on it wins.
     if(S.mode==='us' && usPointer(e,'down',cam,canvas)){ canvas.setPointerCapture(e.pointerId); return; }
+    // x-ray: the lead side marker on the receptor can be picked up and moved
+    if(S.mode==='xray' && sideMarkerPointer(e,'down',cam,canvas)){ canvas.setPointerCapture(e.pointerId); return; }
     if(S.mode==='ct'){ if(S.ct.pov!=='orbit') return; }   // CT: only the Orbit view drags (AP/Lat are fixed)
     else if(S.viewMode!=='orbit') setCameraView('orbit');
     drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
   canvas.addEventListener('pointermove',e=>{
     if(S.mode==='us' && usPointer(e,'move',cam,canvas)) return;
+    if(S.mode==='xray' && sideMarkerPointer(e,'move',cam,canvas)) return;
     if(!drag)return;
     az+=(e.clientX-lx)*0.008; el+=(e.clientY-ly)*0.006;
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
-  canvas.addEventListener('pointerup',e=>{ if(S.mode==='us') usPointer(e,'up',cam,canvas); drag=false;});
+  canvas.addEventListener('pointerup',e=>{ if(S.mode==='us') usPointer(e,'up',cam,canvas);
+    if(S.mode==='xray') sideMarkerPointer(e,'up',cam,canvas); drag=false;});
   canvas.addEventListener('wheel',e=>{ if(!orbitActive())return;
     e.preventDefault();rad=Math.max(40,Math.min(700,rad+e.deltaY*0.25));},{passive:false});
 
@@ -400,6 +405,7 @@ async function setSubject(sub){
      once the volume is in place and the scene has been synced around it. */
   syncLegRotUI();
   S.lastDose=null; S.doseLog=[]; updateDoseReadout();   // a new patient starts a new dose record
+  S.lastMarker=null; updateMarkerNote();
   window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
 /* Everything an injected study leaves behind on the model. A study belongs to one patient
@@ -1466,6 +1472,7 @@ function syncScene(){
   mammoSyncScene();                             // mammo swaps in the upright unit + clamped breast
   usSyncScene();                                // ultrasound puts a probe on the skin
   dxaSyncScene();                               // DXA shows its own scanning arm, not the x-ray head
+  sideMarkerSync();                             // the lead R/L tile on the receptor (x-ray only)
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
@@ -2338,6 +2345,11 @@ async function computeRadiograph(){
     S.aecResult={mas:masA, backupHit: ideal>=backup};
   }
 
+  // the lead side marker prints where it lies in the field (src/sideMarker.js), laid out to read
+  // correctly on the film as hung: the same flips pushImage stores for the display
+  const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
+  S.lastMarker=sideMarkerVerdict(mkStamp); S.lastMarkerStamp=mkStamp;
+
   // the patient's dose for what was actually delivered: the AEC's mAs when it terminated
   S.lastDose=radiographDose({ kv:S.kv, mas:S.aecResult?S.aecResult.mas:S.mas, sidCm:S.sid,
     fsdCm:entranceFsd(phantom, fsrc, fd), fieldCm2:S.collX*S.collZ });
@@ -2347,6 +2359,7 @@ async function computeRadiograph(){
   pushImage(signal,nx,ny,mask,buildMeta(spectrum));   // -> active image + drawFilm + meta + strip
   updateDI(EI);
   updateDoseReadout();
+  updateMarkerNote();
   if(S.bayContent==='image') setContent('image');
 
   $('prog').style.width='100%';
@@ -2865,6 +2878,15 @@ function entranceFsd(phantom, src, d){
 }
 const fmtMGy=(v)=> v==null ? '—' : (v<0.1 ? v.toFixed(3) : v<10 ? v.toFixed(2) : v.toFixed(1))+'<small>mGy</small>';
 const fmtDap=(v)=> (v<10 ? v.toFixed(2) : v<100 ? v.toFixed(1) : v.toFixed(0))+'<small>µGy·m²</small>';
+function updateMarkerNote(){
+  const el=$('xrMarkerNote'); if(!el) return;
+  const v=S.lastMarker;
+  el.className='mknote fl-hide'+(v?' '+v.level:'');
+  el.textContent=v ? v.text : '';
+}
+/* Subjects with a midline, where the marker's letter can be checked against the side it lies on.
+   A single limb cannot be told left from right here, so only its placement is judged. */
+const BILATERAL=new Set(['chest','headneck','chestabdopelvis','lumbopelvis','totalhipreplacement','wholebody']);
 function updateDoseReadout(){
   const d=S.lastDose, set=(id,h)=>{ const el=$(id); if(el) el.innerHTML=h; };
   if(!d){ set('esdV','—'); set('dapV','—'); set('dapSumV','—'); return; }
@@ -3774,6 +3796,10 @@ window.addEventListener('load',()=>{
   initUS({ THREE, S, three, setSubject: (s) => setSubject(s),
            phantomPose: () => ({ center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1] / 2) / 10 : 5) + S.objOff.y, S.objOff.z],
                                  flip: voxelFlips(), rot: objMat() }) });
+  initSideMarker({ THREE, S, three, $, syncScene,
+    rightVec: () => { const R=objMat(); return [R[0], R[3], R[6]]; },   // the patient's right, in the room
+    bilateral: () => BILATERAL.has(S.subject),
+    midlineX: () => S.objOff.x });
   initTutorial({ applyMode: ctApplyMode });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
