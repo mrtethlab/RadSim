@@ -273,6 +273,9 @@
   .dib .v.ok{color:var(--green)} .dib .v.hi{color:var(--amber)} .dib .v.lo{color:var(--cyan)}
   .dib .v.bad{color:var(--red)}
   .di.dose .v{font-size:17px}
+  .mknote{margin:-4px 12px 12px; font-size:11px; line-height:1.4; color:var(--muted)}
+  .mknote:empty{display:none}
+  .mknote.ok{color:var(--green)} .mknote.warn{color:var(--amber)} .mknote.bad{color:var(--red)}
   .di.dose .v small{font-size:9px; margin-left:2px; color:var(--muted)}
   .di.dose .dib .k small{font-size:8px; color:var(--muted)}
 
