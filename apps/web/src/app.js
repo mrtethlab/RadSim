@@ -674,7 +674,8 @@ const S = {
     // Physics-simulation features (each adds recon cost). Default OFF (fast quick preview);
     // selecting the Realistic detector turns them all ON. fullRecon:false keeps the fast live
     // preview as the result (real-time). Toggled under Simulation settings.
-    features:{ beamHardening:false, coneBeam:false, focalBlur:false, quantumNoise:false, fullRecon:false },
+    // quantum noise is on by default now that it is calibrated (~12 HU in a default abdomen)
+    features:{ beamHardening:false, coneBeam:false, focalBlur:false, quantumNoise:true, fullRecon:false },
     pov:'ap',                  // CT camera perspective: 'ap' (top) | 'lat' (90° around the bore)
     liveView:false,            // true while a scout build mirrors tube-POV into #film
     scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
