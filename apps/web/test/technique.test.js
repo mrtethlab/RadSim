@@ -89,7 +89,7 @@ test('the chart: stations only, thicknesses where the console measures, and the 
   const STATIONS = new Set([0.5, 0.63, 0.8, 1.0, 1.25, 1.6, 2.0, 2.5, 3.2, 4.0, 5.0, 6.4, 8.0, 10, 12.5, 16, 20, 25, 32, 40, 50, 64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 600]);
   for (const p of all) assert.ok(STATIONS.has(p.mas), `${p.proj}: ${p.mas} mAs is not a console station`);
   const measured = all.filter((p) => p.cm);
-  assert.equal(measured.length, 12);
+  assert.equal(measured.length, 13);
   for (const p of measured) {
     assert.ok(['Chest', 'Abdomen / Pelvis', 'Spine', 'Head'].includes(p.part), `${p.proj}: calipers are for trunk and skull`);
     assert.ok(p.cm >= 12 && p.cm <= 35, `${p.proj}: ${p.cm} cm`);

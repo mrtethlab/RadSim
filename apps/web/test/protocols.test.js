@@ -88,3 +88,12 @@ test('every gridded exam names its AEC chambers, and a PA chest meters the lungs
   assert.equal(all.find((p) => p.proj === 'PA chest').aec, 'lr');
   assert.equal(all.find((p) => p.proj === 'AP lumbar').aec, 'c');
 });
+
+test('the cervical spine is centred on C4, measured from the CT\'s own vertebra labels', () => {
+  // the profile method put it on C1 (the neck narrows at the atlas in this arms-up CT) and both
+  // cervical views were centred 4.8 cm high, the AP through the mandible
+  const cs = landmarks.headneck.cspine;
+  assert.match(cs.how, /C4/);
+  assert.ok(cs.z < -5.5 && cs.z > -8, `C4 z ${cs.z} (C1 is at ~-1.9, C7 at ~-10.3)`);
+  assert.equal(cs.confidence, 'high');
+});
