@@ -23,6 +23,7 @@
    ============================================================================ */
 
 import { VoxelPhantom } from './core/voxelPhantom.js';
+import { agdMGy, relativeOutput } from './core/mammoDose.js';
 
 let ctx = null, M = null;
 const $ = (id) => document.getElementById(id);
@@ -345,8 +346,10 @@ function expose() {
   // Detected photons per pixel per mAs behind no tissue. 900 puts the detected count
   // behind tissue in the thousands — mammography is a HIGH-SNR modality (that is what
   // lets a wax mass at 2 % subject contrast be scored on the QC slab); the AEC target
-  // scales with it, so the mAs and AGD calibrations are untouched.
-  const photons0 = 900 * M.mas;
+  // scales with it, so the mAs and AGD calibrations are untouched. The tube's output per mAs
+  // (target/filter and kV) multiplies it, exactly as it multiplies the dose.
+  const out = relativeOutput(M.tf, M.kv);
+  const photons0 = 900 * M.mas * out;
 
   // ---- the case's findings, flattened for the march --------------------------
   const cs = caseFindings();
@@ -425,27 +428,29 @@ function expose() {
     const tMean = aecSum / aecCnt;
     const want = 4000;  // target detected photons/px behind the gland — SNR ~60, and the
                         // mAs it implies lands the AGD where a screening view really sits
-    const newMas = Math.min(400, Math.max(4, want / (900 * tMean)));
+    const newMas = Math.min(400, Math.max(4, want / (900 * out * tMean)));
     const f = newMas / M.mas;
     for (let k = 0; k < img.length; k++) img[k] *= f;
     M.mas = Math.round(newMas * 10) / 10;
   }
+  dose();                // before the film is annotated, or its corner shows the last exposure's dose
   drawMammo(img, NX, NY);
-  dose();
   renderReadouts();
   setStatus(`Exposed — ${(performance.now() - t0).toFixed(0)} ms · ${M.view.toUpperCase()} · `
     + `${{ momo: 'Mo/Mo', morh: 'Mo/Rh', wrh: 'W/Rh' }[M.tf]} ${M.kv} kV · ${M.mas} mAs`);
 }
 
-/* Average glandular dose, parameterized: rises with mAs and beam output (kV^3-ish at
-   the anode), falls as compression thins the breast. Calibrated to ~1.5 mGy at
-   28 kV / 60 mAs / 45 mm — the ballpark a screening view actually delivers. */
+/* Average glandular dose by the Dance method (core/mammoDose.js): incident kerma x g(thickness,
+   HVL) x s(target/filter). Still ~1.5 mGy at Mo/Mo 28 kV / 60 mAs / 45 mm, but the target/filter
+   now counts — it used to be one fitted line in mAs, kV and thickness, so Mo/Mo and W/Rh at the
+   same settings reported the same dose. */
 function dose() {
   const thkCm = subjectH() * compCur;
   // the mag stand halves the source-to-skin distance-ish: entrance kerma scales with
   // the inverse square, which is the dose cost every spot view pays
   const magF = M.mag ? 1.8 * 1.8 : 1;
-  M.agdMGy = M.mas * Math.pow(M.kv / 28, 3.1) * (4.5 / thkCm) * (1.5 / 60) * magF;
+  const d = agdMGy({ tf: M.tf, kv: M.kv, mas: M.mas, tCm: thkCm, magF });
+  M.agdMGy = d.agd; M.hvlMm = d.hvl; M.entranceMGy = d.K;
 }
 // the clamped subject's uncompressed height, cm (slab and breast differ)
 function subjectH() {
@@ -494,7 +499,7 @@ function drawMammo(img, nx, ny) {
   if (ctx.S.bayContent === 'image') mammoImageToBay();
   $('noexp')?.style.setProperty('display', 'none');
   const tl = $('fnTL'); if (tl) tl.textContent = `MAMMO ${M.view.toUpperCase()}`;
-  const br = $('fnBR'); if (br) br.textContent = `${M.kv} kV · ${M.mas} mAs · AGD ${M.agdMGy.toFixed(2)} mGy`;
+  const br = $('fnBR'); if (br) br.textContent = `${M.kv} kV · ${M.mas} mAs · HVL ${(M.hvlMm || 0).toFixed(2)} mm Al · AGD ${M.agdMGy.toFixed(2)} mGy`;
 }
 
 /* The bay's Image view is the READING surface: the monitor is 330 px wide and a

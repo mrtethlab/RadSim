@@ -261,6 +261,9 @@ const VOXEL_MODELS = {
   chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
   headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
+  // the same patient's L1-to-ischium slab at 1 mm with graded bone (build_highres --graded-bone):
+  // the subject for reading a spine — pedicles, pars, facets — in fluoroscopy and radiography
+  lumbopelvis:     { title:'Lumbar spine & pelvis · 1 mm', scoutKv:120, scoutMa:200, xrayKv:85 },
   upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
   lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
   totalhipreplacement: { title:'Total Hip Replacement', scoutKv:120, scoutMa:250, xrayKv:90 },
@@ -320,7 +323,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:17, totalhipreplacement:17, lowerextremity:17};
+      const MB={chest:40, wholebody:30, headneck:17, totalhipreplacement:17, lowerextremity:17, lumbopelvis:53};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -671,7 +674,8 @@ const S = {
     // Physics-simulation features (each adds recon cost). Default OFF (fast quick preview);
     // selecting the Realistic detector turns them all ON. fullRecon:false keeps the fast live
     // preview as the result (real-time). Toggled under Simulation settings.
-    features:{ beamHardening:false, coneBeam:false, focalBlur:false, quantumNoise:false, fullRecon:false },
+    // quantum noise is on by default now that it is calibrated (~12 HU in a default abdomen)
+    features:{ beamHardening:false, coneBeam:false, focalBlur:false, quantumNoise:true, fullRecon:false },
     pov:'ap',                  // CT camera perspective: 'ap' (top) | 'lat' (90° around the bore)
     liveView:false,            // true while a scout build mirrors tube-POV into #film
     scoutsReady:false,         // true once scouts exist -> shown in the bay Image view
@@ -768,14 +772,22 @@ function setAecOn(on){
   if(on===S.aecOn) return;
   S.aecOn=on;
   if(on){
-    // AEC on always means a chamber is metering. Centre is the safe default: it is the
-    // one cell that lies under the anatomy for nearly every projection.
-    S.aecCells={l:false, c:true, r:false};
+    // AEC on always means a chamber is metering: the protocol's chambers when one is loaded
+    // (S.aecPreset), otherwise the centre — the one cell under the anatomy for nearly every view.
+    S.aecCells=aecCellsFrom(S.aecPreset||'c');
     // hold the manual mAs aside and raise the backup, restoring it when AEC goes off
     S._masPreAec=S.mas;
     if(S.mas<200){ S.mas=320; $('mas').value=nearestMasIdx(); }
   } else if(S._masPreAec!=null){ S.mas=S._masPreAec; $('mas').value=nearestMasIdx(); }
   applyAecUI();
+}
+const aecCellsFrom=(s)=>({l:s.includes('l'), c:s.includes('c'), r:s.includes('r')});
+/* A protocol names the chambers its exam meters on. It does not switch AEC on or off — that is
+   the operator's choice — but when AEC is on the chambers follow the exam, and when it is off
+   they are what switching it on will select. */
+function applyAecPreset(cells){
+  S.aecPreset=cells||null;
+  if(S.aecOn && cells){ S.aecCells=aecCellsFrom(cells); applyAecUI(); }
 }
 function toggleAecCell(k){
   S.aecCells[k]=!S.aecCells[k];
@@ -867,7 +879,7 @@ function setGroupRot(grp,R){ const m=new THREE.Matrix4();
                       axes. (A surface-flatness test disagrees here and is WRONG: the y=0
                       face is 33.8% tissue, so that "flat surface" is the crop plane, not
                       skin. It is backend-only, but the backend is sent the same flips.) */
-const ROLLED_180 = new Set(['chestabdopelvis','headneck']);
+const ROLLED_180 = new Set(['chestabdopelvis','lumbopelvis','headneck']);
 // Anatomical axis flips for the voxel subjects (house convention: volume x=Left,
 // y=Posterior, z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first
 // (anterior up, head toward −z into the bore). X-ray = AP supine (anterior up toward the
@@ -2699,6 +2711,7 @@ function fitMa(){
 function applyProtocol(p,part){
   S.protocol={proj:p.proj, part};
   S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas; fitMa();
+  applyAecPreset(p.aec);
   const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv;
   const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
   S.gridOn=!!p.grid; setGridUI();
@@ -3712,6 +3725,17 @@ window.addEventListener('load',()=>{
         ? { ba: lut, gas: S.barium.gasLut, giVol: S.barium.giVol, ns: GI_NS } : null;
     },
     bariumSwallow: () => giSip(),
+    // the fluoro monitor floats the tabletop: drag the live image and the patient follows,
+    // with the offset sliders kept in step so the two controls never disagree
+    movePatient: (dx, dz) => {
+      const lim = (v) => Math.max(-OFF_LIMIT, Math.min(OFF_LIMIT, v));
+      S.objOff.x = lim(S.objOff.x + dx); S.objOff.z = lim(S.objOff.z + dz);
+      for (const [id, ax] of [['objOffX', 'x'], ['objOffZ', 'z']]) {
+        const el = $(id); if (el) el.value = S.objOff[ax].toFixed(1);
+        const v = $(id + 'v'); if (v) v.textContent = S.objOff[ax].toFixed(1) + ' cm';
+      }
+      syncScene();
+    },
     setSubject: (s) => setSubject(s),
     // Phase E: the injector timeline rides the pulses the same way — while the run clock
     // is live, scanTime tracks it, so the fluoro image washes in and out in real time.

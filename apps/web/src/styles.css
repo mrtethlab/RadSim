@@ -1799,4 +1799,36 @@ body.mode-fluoro .scr2{display:block}
 .uscal-k{color:#6f8ea2}
 .uscal-v{flex:1; color:#ffe25a}
 body.mode-us #film, body.mode-us #bigFilm{cursor:crosshair}
+/* ---- fluoro: floating monitors over the room ---------------------------------------- */
+.flmon{position:absolute; right:12px; bottom:12px; width:min(58%,760px); height:min(46%,420px);
+  min-width:300px; min-height:190px; z-index:12; background:#04070a; border:1px solid #2b3a46;
+  border-radius:6px; box-shadow:0 8px 28px rgba(0,0,0,.55); resize:both; overflow:hidden;
+  flex-direction:column}
+body.mode-fluoro .flmon{display:flex}
+body.mode-fluoro .flmon.off{display:none}
+.flmon-bar{display:flex; align-items:center; gap:10px; padding:4px 8px; cursor:move; user-select:none;
+  background:#0d151c; border-bottom:1px solid #22303b; font-family:var(--seg); font-size:9px;
+  letter-spacing:.6px; color:#8fb2c8; flex:0 0 auto}
+.flmon-t{color:#cfe6f5; font-weight:600}
+.flmon-hint{flex:1; color:#5f7c90; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.flmon-x{background:none; border:1px solid #2b3a46; color:#9fbfd3; border-radius:3px; padding:0 7px; cursor:pointer}
+.flmon-body{flex:1; display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; min-height:0}
+.flmon.tall .flmon-body{grid-template-columns:1fr; grid-template-rows:1fr 1fr}
+.flmon-scr{position:relative; background:#000; border:1px solid #182129; min-height:0; min-width:0}
+.flmon-scr canvas{position:absolute; inset:0; width:100%; height:100%}
+.flmon-live canvas{cursor:grab}
+.flmon-live canvas.dragging{cursor:grabbing}
+.flmon-lab{position:absolute; top:4px; left:6px; z-index:1; font-family:var(--seg); font-size:9px;
+  letter-spacing:.6px; color:#7fe3a4; pointer-events:none}
+.flmon-lock{position:absolute; top:4px; right:6px; z-index:1; font-family:var(--seg); font-size:9px;
+  letter-spacing:.6px; color:#ffcf5a; display:none; pointer-events:none}
+.flmon.locked .flmon-lock{display:block}
+.flmon.beam .flmon-live{border-color:#b98b19}
+.flmon-empty{position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  text-align:center; padding:12px; color:#3f5566; font-family:var(--seg); font-size:9px; letter-spacing:.5px}
+.flmon-empty.hide{display:none}
+.fllock-row{display:flex; gap:6px; margin-top:8px}
+.fllock{flex:1; font-family:var(--seg); font-size:10px; letter-spacing:.6px; padding:6px 4px; cursor:pointer;
+  background:#121a21; color:#a9c3d4; border:1px solid #2b3a46; border-radius:4px}
+.fllock.on{background:#3a2a05; color:#ffd36a; border-color:#b98b19; box-shadow:0 0 10px rgba(255,190,60,.35)}
 

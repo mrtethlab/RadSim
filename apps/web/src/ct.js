@@ -2754,7 +2754,13 @@ function defaultSfov() {
 }
 const detMode = () => DET_MODES[ctx && ctx.S.ct.detMode] || DET_MODES.quick;
 const MAX_SLICES = 1024;          // safety cap only (the slice count follows the planned image count)
-const PHOTON_BASE = 1.1e5;        // reference detected photons per ray (mA/slice/rot noise model)
+/* Reference detected photons per ray for the QUICK preview detector. It was 1.1e5, "tuned for
+   the coarse grid", and that made the preview the noisy one: measured (the same scan with and
+   without photon statistics, subtracted, at the body centre) the default abdomen — 120 kV,
+   157 effective mAs, 5 mm — read ~40 HU in the preview against 12 HU in the realistic 512^2 recon,
+   which is the clinical figure. The preview stands in for the final image, so it now carries the
+   final image's noise: x(40/12)^2. The dose-noise lesson then reads the same in either mode. */
+const PHOTON_BASE = 1.2e6;
 // Detector saturation: the largest line integral the readout can measure. Behind dense metal
 // almost no photons arrive; a real detector floors at its electronic-noise level rather than
 // reporting an ever-larger (uncapped) integral, so the projection SATURATES at this value.
@@ -3098,6 +3104,15 @@ if (typeof window !== 'undefined') window.radsimCT = {
   // tracking technique and a planned test bolus could not be exercised through it.
   bolusTracking: (gi) => runBolusTracking(grp(gi || 0), () => true, grp((gi || 0) + 1)),
   trackState: () => btrkState,
+  // Reconstruct one group with chosen physics switches (e.g. {quantumNoise:true}), without the
+  // console workflow — how image noise is measured: the same scan with and without photon
+  // statistics, subtracted, leaves only the noise.
+  recon: async (gi, feat = {}) => {
+    const S = ctx.S.ct, saved = S.features;
+    S.features = { ...saved, ...feat };
+    try { return await reconstructSlices(grp(gi || 0), () => true); }
+    finally { S.features = saved; }
+  },
 };
 
 

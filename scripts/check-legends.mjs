@@ -71,6 +71,10 @@ function pyLegend() {
   for (const m of grab('MAMMO_LEGEND = [').matchAll(/\(\s*([A-Z][A-Za-z_]*)\s*,\s*"([^"]*)"/g)) {
     out.push({ id: consts[m[1]], name: m[2], sym: m[1] });
   }
+  // ...and the graded-bone tail (ids 54+), written with literal ids
+  for (const m of grab('BONE_GRADES = [').matchAll(/\(\s*(\d+)\s*,\s*"([^"]*)"/g)) {
+    out.push({ id: +m[1], name: m[2], sym: m[1] });
+  }
   return out;
 }
 

@@ -46,6 +46,13 @@ test('HU is anchored on water: water reads 0 and air reads -1000', () => {
   assert.ok(Math.abs(BodyMaterials.huOf(BodyMaterials.idByName.Air) + 1000) <= 1);
 });
 
-test('lead K-edge at 88 keV is visible', { todo: 'grid points at 80/100 keV straddle the edge and log-log interpolation smooths it away (core/materials.js) — the same fault already fixed for iodine and barium' }, () => {
-  assert.fail('not yet modelled');
+test('lead K-edge at 88 keV is visible', () => {
+  // just below the edge lead keeps falling; just above it jumps ~4x (NIST: 1.910 -> 7.683)
+  const id = BodyMaterials.idByName.Lead ?? BodyMaterials.idByName['Lead (Pb)'];
+  assert.ok(id != null, 'lead is in the legend');
+  const mu = (e) => BodyMaterials.muById(id, e);
+  assert.ok(mu(87.9) < mu(80), 'below the edge, attenuation still falls with energy');
+  const jump = mu(88.02) / mu(87.99);
+  assert.ok(jump > 3.8 && jump < 4.2, `lead K-edge jump ${jump.toFixed(2)} (NIST 4.02)`);
+  assert.ok(Math.abs(mu(150) / 11.35 - 2.014) < 0.01, 'the 150 keV point is NIST, not the pre-edge value');
 });
