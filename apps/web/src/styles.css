@@ -272,6 +272,9 @@
   .dib .v{font-family:var(--seg); font-size:22px; margin-top:3px}
   .dib .v.ok{color:var(--green)} .dib .v.hi{color:var(--amber)} .dib .v.lo{color:var(--cyan)}
   .dib .v.bad{color:var(--red)}
+  .di.dose .v{font-size:17px}
+  .di.dose .v small{font-size:9px; margin-left:2px; color:var(--muted)}
+  .di.dose .dib .k small{font-size:8px; color:var(--muted)}
 
   .note{color:var(--muted); font-size:12px; line-height:1.5; letter-spacing:.2px}
   .note.warn{color:#ff6b6b}
