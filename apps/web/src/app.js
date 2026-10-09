@@ -597,6 +597,11 @@ const S = {
            lift:0, ext:0, wig:0,
            // Phase B: ABC curve parameter, collimator iris (fraction), mag mode, dose
            abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0,
+           // staff and skin (core/staffDose.js): tube over the table, where the operator
+           // stands, what lead they wear, and the doses those choices buy
+           over:false, opSide:1, opDist:60,
+           prot:{ apron:true, collar:true, glasses:false, ceiling:false, skirt:false },
+           staff:{ eyes:0, thyroid:0, trunk:0, gonads:0, legs:0, neckBare:0 }, skinMGy:0,
            // Phase C: motion clocks (phases accumulated here; the worker is stateless)
            hold:false, still:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
            // electronic image orientation (display-space): accumulated rotation, flips,
@@ -2868,12 +2873,12 @@ function updateDI(EI){
 /* PATIENT DOSE (core/patientDose.js). The focus-to-skin distance is found on the central ray,
    the way the caliper finds the thickness: the first tissue the ray meets. The log is per
    patient: a new subject starts it again, so the Σ shows what repeats cost this patient. */
-function entranceFsd(phantom, src, d){
+function entranceFsd(phantom, src, d, maxLen=S.sid){
   if(!phantom || phantom.geometryOnly || typeof phantom.trace!=='function') return null;
   try{
     const tissueTo=(s)=>{ const L=phantom.trace(src, d, s);
       return L && L.length!=null ? caliperOf(L) : ((L?.bone||0)+(L?.soft||0)+(L?.marrow||0)); };
-    return entryDistance(tissueTo, S.sid);
+    return entryDistance(tissueTo, maxLen);
   }catch(_){ return null; }
 }
 const fmtMGy=(v)=> v==null ? '—' : (v<0.1 ? v.toFixed(3) : v<10 ? v.toFixed(2) : v.toFixed(1))+'<small>mGy</small>';
@@ -3759,6 +3764,9 @@ window.addEventListener('load',()=>{
     phantomPose: () => ({
       center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
       flip: voxelFlips(), rot: objMat() }),
+    // where the central ray enters the patient (cm from the focus, or null): the same phantom
+    // the worker images, traced on the main thread for the skin and staff doses
+    skinEntry: (src, dir, maxLen) => entranceFsd(buildPhantom(), src, dir, maxLen),
     // Phase D: the LIVE barium study rides the pulses. bariumLUT() rebuilds only when the
     // study clock moved; null while the panel is off or the subject has no gut.
     bariumPulse: () => {
