@@ -8,6 +8,18 @@ handoff document and is not committed.)
 
 ## 2026-10-09
 
+### CT HU offset and noise floor — [#48](https://github.com/mrtethlab/RadSim/pull/48)
+The CT preview read soft tissue about 130 HU low. Checked pixel by pixel against the phantom's
+own HU, the reconstruction itself is exact: a water cylinder comes back within 0.2 % in every
+detector mode. The scan group, however, still had the 25 cm head field from the previously
+loaded patient, so on a 40 cm abdomen every projection was truncated. The SFOV now widens to fit
+a new patient, and the scan table warns when a patient is wider than the field. That exposed a
+second bug: the detector's electronic noise grew with mAs, so on thick patients a quarter of the
+mAs raised the noise only 1.4×. Electronic noise is now fixed, while the dynamic-range clip that
+draws metal streaks stays relative to the beam (streaking unchanged). Noise was recalibrated in
+the proper field: about 15 HU in the preview and 13–14 HU in the full reconstruction for the
+default abdomen. #42's figures had been measured in the truncated field.
+
 ### Radiograph display centred on the LUT — [#46](https://github.com/mrtethlab/RadSim/pull/46)
 Thick parts beside raw beam (AP pelvis, cervical spine, skull) displayed washed white: the
 auto-window's low end was set by the thin tissue at the edge, so the anatomy filled only the
