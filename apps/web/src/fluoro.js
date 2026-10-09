@@ -9,6 +9,7 @@
    ============================================================================ */
 import { dockConsole } from './core/paneDock.js';
 import { irisShutterArea } from './core/fieldArea.js';
+import { NR_K, recursiveStep, displayMap, edgeEnhance } from './core/fluoroDisplay.js';
 
 let ctx = null;          // { THREE, S, $, three, phantomPose, syncScene }
 let F = null;            // ctx.S.fluoro
@@ -227,7 +228,7 @@ function ensureWorker() {
         abcStep(m.roi, m.photons);           // the next pulse fires at the adjusted technique
         if (m.id > lastDrawn) {              // a slower older pulse never overdraws a newer one
           lastDrawn = m.id;
-          drawFrame(m.img, Math.sqrt(m.img.length) | 0);
+          drawFrame(m.img, Math.sqrt(m.img.length) | 0, !!m.film);
           if (m.film) saveToDirectory('film');
         }
         renderReadouts();
@@ -251,7 +252,7 @@ function photonsPerPulse(film = false) {
   // 10 mA) detects ~60/pixel through an adult abdomen (T ~ 0.4 %) — the thickest thing
   // the ABC must be able to serve. 400, the first guess, left the loop railed with the
   // detector still starving through any torso.
-  return 1300 * (F.ma / 2) * Math.pow(F.kv / 70, 2) * (film ? FILM_BOOST : 1);
+  return 1300 * QPIX * (F.ma / 2) * Math.pow(F.kv / 70, 2) * (film ? FILM_BOOST : 1);
 }
 
 /* ---- ABC: the fluoroscopic sibling of the AEC ----------------------------------------
@@ -270,7 +271,14 @@ function photonsPerPulse(film = false) {
 // Multiplying the photons instead — the first attempt — just made the loop put the mA
 // straight back, which is exactly what a closed loop is for and why the button read as a
 // no-op on the image while the meter claimed a saving it was not making.
-const ABC_TARGET = 45;                      // detected photons/pixel the loop defends
+/* QUANTA PER PIXEL, scaled for the pixel. 45 detected photons was chosen to make mottle visible,
+   but a pixel here is ~1.2 mm across at the 9" field — a real flat panel at a typical ~30 nGy per
+   frame collects on the order of 10^4 photons over that area. At 45 the noise buried a pedicle
+   even through a slim patient. QPIX scales the budget AND the target together, so the ABC picks
+   exactly the technique it did and the dose readouts do not move — only the quantum mottle falls,
+   by sqrt(QPIX). It is still visibly fluoroscopic, and LOW DOSE still halves it. */
+const QPIX = 8;
+const ABC_TARGET = 45 * QPIX;               // detected photons/pixel the loop defends
 const abcTarget = () => ABC_TARGET * doseFactor();
 function abcApply() {
   const q = F.q;
@@ -428,7 +436,21 @@ function paintFrame(n) {
   blitFilm();
 }
 function redrawLast() { if (lastLum && lastN) paintFrame(lastN); }
-function drawFrame(img, n) {
+
+/* Image processing (core/fluoroDisplay.js): a recursive temporal filter, a flat-panel display map
+   and a mild edge enhancement. FILM frames are single high-dose acquisitions and skip the
+   temporal filter; a new run starts it afresh. */
+let recAcc = null, recFresh = true;
+const dispScratch = {};
+let edgeTmp = null;
+function recursiveFilter(img, n, film) {
+  const k = film || recFresh ? 0 : (NR_K[F.nr ?? 2] || 0);
+  recAcc = recursiveStep(recAcc, img, k);
+  recFresh = false;
+  return recAcc;
+}
+const EDGE_AMOUNT = 0.45;
+function drawFrame(img, n, isFilm = false) {
   const film = $('film'); if (!film) return;
   lastRaw = img; lastN = n;
   if (!frameCanvas) frameCanvas = document.createElement('canvas');
@@ -475,21 +497,15 @@ function drawFrame(img, n) {
       }
     }
   } else {
-    // primitive display ABC (the technique loop is Phase B): gain the central-disc mean to
-    // mid-grey so panning stays watchable, then a gamma lift for the II look
-    let sum = 0, cnt = 0;
-    const c0 = n * 0.35 | 0, c1 = n * 0.65 | 0;
-    for (let j = c0; j < c1; j++) for (let i = c0; i < c1; i++) {
-      const t = img[j * n + i]; if (t >= 0) { sum += t; cnt++; }
-    }
-    const gain = cnt && sum > 0 ? 0.45 / (sum / cnt) : 1;
+    img = recursiveFilter(img, n, isFilm);
+    displayMap(img, n, lum, { scratch: dispScratch });
     const road = roadOn && roadmap ? roadmap : null;
     const rs = road ? roadN / n : 0;
     for (let k = 0; k < n * n; k++) {
       const t = img[k];
       let g = -1;
       if (t >= 0) {
-        g = Math.min(1, Math.sqrt(Math.min(1.6, t * gain)));
+        g = lum[k];
         if (road) {
           // the stored peak-opacification map rides under live fluoro — the navigation mode.
           // Only strong columns draw; the slope saturates a well-opacified vessel to black.
@@ -500,6 +516,8 @@ function drawFrame(img, n) {
       }
       lum[k] = g;
     }
+    if (!edgeTmp || edgeTmp.length !== n * n) edgeTmp = new Float32Array(n * n);
+    edgeEnhance(lum, n, F.edge === false ? 0 : EDGE_AMOUNT, edgeTmp);
   }
   paintFrame(n);
 }
@@ -677,6 +695,163 @@ function syncScreens() {
   const lab = $('flScr2Lab');
   if (lab) lab.textContent = liveOnMain ? (F.ws2 === 'live' ? 'LIVE (COPY)' : 'REFERENCE') : 'LIVE';
   film.parentElement?.classList.toggle('refonmain', !liveOnMain);
+  syncMonitor(haveLive);
+}
+
+/* ---- the floating monitors -------------------------------------------------
+   Live and reference side by side over the room. They used to live only in the scrolling
+   console column, so reaching for a positioning control scrolled the images away mid-run. The
+   live screen is also where the hands are: drag it and the TABLETOP floats under the beam (the
+   anatomy follows the cursor, as on a real floating-top table), the wheel swings the C-arm. */
+function fitCanvas(cv) {
+  const r = cv.getBoundingClientRect(), d = Math.min(2, window.devicePixelRatio || 1);
+  const w = Math.max(1, Math.round(r.width * d)), h = Math.max(1, Math.round(r.height * d));
+  if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+}
+function syncMonitor(haveLive) {
+  const mon = $('flMon');
+  if (!mon || mon.classList.contains('off') || ctx.S.mode !== 'fluoro') return;
+  const live = $('flMonLive'), ref = $('flMonRef');
+  if (live) {
+    fitCanvas(live);
+    if (haveLive) renderTo(live); else live.getContext('2d').clearRect(0, 0, live.width, live.height);
+  }
+  if (ref) { fitCanvas(ref); $('flMonRefEmpty')?.classList.toggle('hide', drawRefInto(ref)); }
+  mon.classList.toggle('beam', !!F.pedal);
+  mon.classList.toggle('locked', !!F.lock);
+  const r = mon.getBoundingClientRect();
+  mon.classList.toggle('tall', r.height > r.width * 1.1);
+}
+/* Screen motion on the live monitor -> patient motion in the room. Undo the display's own
+   rotation and flips, scale display pixels to detector centimetres (the frame is drawn s px
+   across for the field), shrink by the magnification at the isocentre, and lay the result along
+   the detector's own axes — so the drag is right at any C-arm angle or display orientation. */
+function screenToPatient(dxPx, dyPx, cv) {
+  const th = -F.dispRot * Math.PI / 180, c = Math.cos(th), s = Math.sin(th);
+  let x = dxPx * c - dyPx * s, y = dxPx * s + dyPx * c;
+  if (F.flipH) x = -x;
+  if (F.flipV) y = -y;
+  const d = Math.min(2, window.devicePixelRatio || 1);
+  const sPx = (Math.min(cv.width, cv.height) - 10) / d;          // the frame's size on screen
+  const cmPerPx = fieldCm() / sPx / (OEC.SID / OEC.SRC_ISO);
+  const { detU, detV } = beamFrame();
+  // image columns run along +u, rows along +v (row 0 is -v, at the top)
+  return [(x * detU[0] + y * detV[0]) * cmPerPx, (x * detU[2] + y * detV[2]) * cmPerPx,
+    (x * detU[1] + y * detV[1]) * cmPerPx];
+}
+/* Apply a patient displacement: across and along the table by floating the top; up and down
+   (which a lateral view needs, and a tabletop cannot do) by the column lift — raising the C is
+   lowering the patient in its field. */
+function floatPatient(dx, dz, dy) {
+  ctx.movePatient?.(dx, dz);
+  if (Math.abs(dy) > 1e-6) {
+    F.lift = Math.max(0, Math.min(30, F.lift - dy));
+    const el = $('flLift'); if (el) el.value = Math.round(F.lift);
+    fluoroSyncScene(); renderReadouts();
+  }
+}
+function nudgeCarm(key, d, id, lo, hi) {
+  F[key] = Math.max(lo, Math.min(hi, (F[key] || 0) + d));
+  const el = $(id); if (el) el.value = F[key];
+  fluoroSyncScene(); renderReadouts();
+}
+const MON_KEY = 'radsim.flmon';
+function wireMonitor() {
+  const mon = $('flMon'), bar = $('flMonBar'), live = $('flMonLive');
+  if (!mon) return;
+  try {
+    const st = JSON.parse(localStorage.getItem(MON_KEY) || 'null');
+    if (st) {
+      if (st.off) mon.classList.add('off');
+      if (st.w) { mon.style.width = st.w; mon.style.height = st.h; }
+      if (st.l) { mon.style.left = st.l; mon.style.top = st.t; mon.style.right = 'auto'; mon.style.bottom = 'auto'; }
+    }
+  } catch (_) { /* per-viewer convenience only */ }
+  const save = () => {
+    try {
+      localStorage.setItem(MON_KEY, JSON.stringify({ off: mon.classList.contains('off'),
+        w: mon.style.width, h: mon.style.height, l: mon.style.left || null, t: mon.style.top || null }));
+    } catch (_) { /* fine without it */ }
+  };
+  const show = (on) => { mon.classList.toggle('off', !on); $('flMonShow')?.classList.toggle('on', on); save(); syncScreens(); };
+  $('flMonHide')?.addEventListener('click', () => show(false));
+  $('flMonShow')?.addEventListener('click', () => show(mon.classList.contains('off')));
+  $('flMonShow')?.classList.toggle('on', !mon.classList.contains('off'));
+  // move by the title bar, kept inside the bay
+  bar?.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('button')) return;
+    const bay = mon.parentElement.getBoundingClientRect(), r = mon.getBoundingClientRect();
+    const ox = e.clientX - r.left, oy = e.clientY - r.top;
+    try { bar.setPointerCapture(e.pointerId); } catch (_) { /* capture is a nicety */ }
+    const mv = (ev) => {
+      const l = Math.max(0, Math.min(bay.width - r.width, ev.clientX - bay.left - ox));
+      const t = Math.max(0, Math.min(bay.height - 24, ev.clientY - bay.top - oy));
+      Object.assign(mon.style, { left: l + 'px', top: t + 'px', right: 'auto', bottom: 'auto' });
+    };
+    const up = () => { bar.removeEventListener('pointermove', mv); save(); };
+    bar.addEventListener('pointermove', mv);
+    bar.addEventListener('pointerup', up, { once: true });
+    bar.addEventListener('pointercancel', up, { once: true });
+  });
+  if (window.ResizeObserver) new ResizeObserver(() => { syncScreens(); save(); }).observe(mon);
+  if (!live) return;
+  // drag the live image: float the tabletop
+  live.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    try { live.setPointerCapture(e.pointerId); } catch (_) { /* capture is a nicety */ }
+    live.classList.add('dragging');
+    let lx = e.clientX, ly = e.clientY;
+    const mv = (ev) => {
+      const [dx, dz, dy] = screenToPatient(ev.clientX - lx, ev.clientY - ly, live);
+      lx = ev.clientX; ly = ev.clientY;
+      floatPatient(dx, dz, dy);
+    };
+    const up = () => { live.removeEventListener('pointermove', mv); live.classList.remove('dragging'); };
+    live.addEventListener('pointermove', mv);
+    live.addEventListener('pointerup', up, { once: true });
+    live.addEventListener('pointercancel', up, { once: true });
+  });
+  // the wheel swings the C: orbital, or tilt with shift
+  live.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const d = (e.deltaY > 0 ? 1 : -1) * 2;
+    if (e.shiftKey) nudgeCarm('tilt', d, 'flTilt', -45, 45);
+    else nudgeCarm('orbital', d, 'flOrb', -115, 115);
+  }, { passive: false });
+}
+/* Arrow keys while in fluoro: the table (as the drag), or with Shift the C-arm. One step is
+   1 cm of table or 2 degrees of C. They work with the pedal down, which is the point. */
+function arrowKeys(e) {
+  if (ctx.S.mode !== 'fluoro' || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '')) return;
+  const dir = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.code];
+  if (!dir) return;
+  e.preventDefault();
+  if (e.shiftKey) {
+    if (dir[0]) nudgeCarm('orbital', 2 * dir[0], 'flOrb', -115, 115);
+    else nudgeCarm('tilt', -2 * dir[1], 'flTilt', -45, 45);
+    return;
+  }
+  const mon = $('flMon');
+  const live = mon && !mon.classList.contains('off') ? $('flMonLive') : $('film');
+  if (!live) return;
+  const d = Math.min(2, window.devicePixelRatio || 1);
+  const sPx = (Math.min(live.width, live.height) - 10) / d;
+  const px = sPx / fieldCm() * (OEC.SID / OEC.SRC_ISO);          // display px per cm of table
+  const [dx, dz, dy] = screenToPatient(dir[0] * px, dir[1] * px, live);
+  floatPatient(dx, dz, dy);
+}
+
+/* LIVE LOCK. A real fluoroscope's pedal is a dead-man switch and nothing holds it down — that
+   is the point of it. In a simulator, though, leaving the beam on while both hands drive the
+   table and the C is too useful (and too much fun) not to have. Pedal-up, Space-up and losing
+   focus are all ignored while it is on; only the button (or leaving the room) ends it. */
+function setLiveLock(on) {
+  F.lock = !!on;
+  const b = $('flLiveLock');
+  if (b) { b.classList.toggle('on', F.lock); b.setAttribute('aria-pressed', String(F.lock)); }
+  if (F.lock) { pedalDown(); setStatus('LIVE LOCK — screening until you press it again. (No real machine does this.)'); }
+  else { pedalUp(true); setStatus('Live lock off.'); }
+  syncScreens();
 }
 
 /* The bay's Image view (View Options) shows the FLUORO frame while in fluoro mode.
@@ -696,6 +871,7 @@ function pedalDown() {
   if (F.pedal || ctx.S.mode !== 'fluoro') return;
   if (!ensureWorker()) { /* first press warms the worker; screening starts when ready */ }
   F.pedal = true; F.lih = false; pedalDownAt = performance.now();
+  recFresh = true;                             // a new run starts its average afresh
   // fold the pending orientation into the display: the marked direction becomes top,
   // and the first frame of this run erases the triangle
   if (pendShown) { F.dispRot = (F.dispRot + F.pendRot) % 360; F.pendRot = 0; pendShown = false; }
@@ -709,8 +885,9 @@ function pedalDown() {
   renderReadouts();
 }
 
-function pedalUp() {
+function pedalUp(force) {
   if (!F.pedal) return;
+  if (F.lock && force !== true) return;          // LIVE LOCK holds the beam (setLiveLock)
   F.pedal = false;
   F.beamS += (performance.now() - pedalDownAt) / 1000;
   clearInterval(timer); timer = null;
@@ -742,7 +919,7 @@ function renderReadouts() {
   set('flPerfV', F.msAvg ? `${F.msAvg.toFixed(0)} ms · ${F.dropped} dropped` : '—');
   set('flOrbV', F.orbital + '°');
   set('flTiltV', F.tilt + '°');
-  set('flLiftV', F.lift + ' cm');
+  set('flLiftV', (Math.round(F.lift * 10) / 10) + ' cm');
   set('flExtV', (F.ext > 0 ? '+' : '') + F.ext + ' cm');
   set('flWigV', F.wig + '°');
   set('flAkV', (F.akMGy < 10 ? F.akMGy.toFixed(2) : F.akMGy.toFixed(1)) + ' mGy');
@@ -913,6 +1090,7 @@ export function fluoroApplyMode(on) {
       ? 'Ready — hold the pedal (or Space) to screen.'
       : 'Loading the subject into the pulse workers…');
   } else {
+    if (F.lock) setLiveLock(false);
     pedalUp();
     cineStop();
     $('lihBadge')?.classList.remove('show');
@@ -931,9 +1109,20 @@ export function initFluoro(context) {
       try { ped.setPointerCapture(e.pointerId); } catch (_) { /* capture is a nicety, the pedal is not */ }
       pedalDown();
     });
-    ped.addEventListener('pointerup', pedalUp);
-    ped.addEventListener('pointercancel', pedalUp);
+    ped.addEventListener('pointerup', () => pedalUp());
+    ped.addEventListener('pointercancel', () => pedalUp());
   }
+  $('flLiveLock')?.addEventListener('click', () => setLiveLock(!F.lock));
+  document.querySelectorAll('#flNrSeg button').forEach((b) => {
+    b.addEventListener('click', () => {
+      F.nr = +b.dataset.nr;
+      document.querySelectorAll('#flNrSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      recFresh = true;
+    });
+  });
+  $('flEdge')?.addEventListener('change', (e) => { F.edge = e.target.checked; });
+  addEventListener('keydown', arrowKeys);
+  wireMonitor();
   addEventListener('keydown', (e) => {
     if (e.code === 'Space' && ctx.S.mode === 'fluoro' && !e.repeat
         && !/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || '')) {
@@ -941,6 +1130,7 @@ export function initFluoro(context) {
     }
   });
   addEventListener('keyup', (e) => { if (e.code === 'Space') pedalUp(); });
+  addEventListener('resize', () => syncScreens());
   // a Space released after focus left the window never reaches keyup, and the beam stayed on:
   // losing the window takes the foot off the pedal, as a dead-man switch should
   addEventListener('blur', () => { if (F.pedal) pedalUp(); });

@@ -67,6 +67,7 @@ export function acousticOf(id) {
   const a = ACOUSTIC[id];
   if (a) return a;
   if (id >= 29 && id <= 46) return BLOOD;
+  if (id >= 54 && id <= 61) return id <= 57 ? ACOUSTIC[17] : ACOUSTIC[18];   // graded bone
   return ACOUSTIC[10];                 // anything unlabelled behaves as soft tissue
 }
 

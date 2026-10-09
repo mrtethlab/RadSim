@@ -213,6 +213,19 @@ export const BodyMaterials = (()=>{
     // from other soft tissue — the whole point of the mammographic beam is that at
     // 26-32 kV the photoelectric term still separates it from fat.
     { id:53, name:'Glandular',        hu:40,    kind:'tissue',          color:0xe4c9b0 },
+    /* GRADED BONE (ids 54-61). Two bone classes snap every partial-volumed cortex to 300 or
+       1200 HU, and at a few mm per voxel that erases the cortical rings a radiographer reads a
+       spine by — the pedicle's ring, the pars, the facet lines. Models built with graded bone
+       (build_model.materialize(graded_bone=True)) keep the CT's own density in eight steps
+       instead. Everything downstream is per-material already, so nothing else changes. */
+    { id:54, name:'Bone 200 HU',   hu:200,   kind:'tissue',          color:0xd8d2ba },
+    { id:55, name:'Bone 300 HU',   hu:300,   kind:'tissue',          color:0xdcd6be },
+    { id:56, name:'Bone 400 HU',   hu:400,   kind:'tissue',          color:0xe0dac2 },
+    { id:57, name:'Bone 550 HU',   hu:550,   kind:'tissue',          color:0xe4dec6 },
+    { id:58, name:'Bone 700 HU',   hu:700,   kind:'tissue',          color:0xe8e2ca },
+    { id:59, name:'Bone 900 HU',   hu:900,   kind:'tissue',          color:0xece6ce },
+    { id:60, name:'Bone 1150 HU',  hu:1150,  kind:'tissue',          color:0xf0ead2 },
+    { id:61, name:'Bone 1500 HU',  hu:1500,  kind:'tissue',          color:0xf4eed6 },
   ];
   const idByName = {}; LIST.forEach(m=> idByName[m.name]=m.id);
 
