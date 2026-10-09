@@ -768,14 +768,22 @@ function setAecOn(on){
   if(on===S.aecOn) return;
   S.aecOn=on;
   if(on){
-    // AEC on always means a chamber is metering. Centre is the safe default: it is the
-    // one cell that lies under the anatomy for nearly every projection.
-    S.aecCells={l:false, c:true, r:false};
+    // AEC on always means a chamber is metering: the protocol's chambers when one is loaded
+    // (S.aecPreset), otherwise the centre — the one cell under the anatomy for nearly every view.
+    S.aecCells=aecCellsFrom(S.aecPreset||'c');
     // hold the manual mAs aside and raise the backup, restoring it when AEC goes off
     S._masPreAec=S.mas;
     if(S.mas<200){ S.mas=320; $('mas').value=nearestMasIdx(); }
   } else if(S._masPreAec!=null){ S.mas=S._masPreAec; $('mas').value=nearestMasIdx(); }
   applyAecUI();
+}
+const aecCellsFrom=(s)=>({l:s.includes('l'), c:s.includes('c'), r:s.includes('r')});
+/* A protocol names the chambers its exam meters on. It does not switch AEC on or off — that is
+   the operator's choice — but when AEC is on the chambers follow the exam, and when it is off
+   they are what switching it on will select. */
+function applyAecPreset(cells){
+  S.aecPreset=cells||null;
+  if(S.aecOn && cells){ S.aecCells=aecCellsFrom(cells); applyAecUI(); }
 }
 function toggleAecCell(k){
   S.aecCells[k]=!S.aecCells[k];
@@ -2699,6 +2707,7 @@ function fitMa(){
 function applyProtocol(p,part){
   S.protocol={proj:p.proj, part};
   S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas; fitMa();
+  applyAecPreset(p.aec);
   const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv;
   const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
   S.gridOn=!!p.grid; setGridUI();
