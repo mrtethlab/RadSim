@@ -8,6 +8,7 @@
    readout Phase A exists to measure.
    ============================================================================ */
 import { dockConsole } from './core/paneDock.js';
+import { irisShutterArea } from './core/fieldArea.js';
 
 let ctx = null;          // { THREE, S, $, three, phantomPose, syncScene }
 let F = null;            // ctx.S.fluoro
@@ -227,7 +228,7 @@ function ensureWorker() {
         if (m.id > lastDrawn) {              // a slower older pulse never overdraws a newer one
           lastDrawn = m.id;
           drawFrame(m.img, Math.sqrt(m.img.length) | 0);
-          if (m.film) { filmPending = false; saveToDirectory('film'); }
+          if (m.film) saveToDirectory('film');
         }
         renderReadouts();
       }
@@ -245,12 +246,12 @@ function ensureWorker() {
 /* Per-pulse photon budget: fluoro runs ~5-10 ms pulses at a few mA — three orders of
    magnitude under a radiograph, which is where the mottle comes from. Reference: 400
    photons/pixel at 70 kV / 2 mA / 8 ms; kV² tracks tube output. */
-function photonsPerPulse() {
+function photonsPerPulse(film = false) {
   // Reference 1300 photons/pixel at 70 kV / 2 mA: set so that RAIL technique (110 kV,
   // 10 mA) detects ~60/pixel through an adult abdomen (T ~ 0.4 %) — the thickest thing
   // the ABC must be able to serve. 400, the first guess, left the loop railed with the
   // detector still starving through any torso.
-  return 1300 * (F.ma / 2) * Math.pow(F.kv / 70, 2) * (filmPending ? FILM_BOOST : 1);
+  return 1300 * (F.ma / 2) * Math.pow(F.kv / 70, 2) * (film ? FILM_BOOST : 1);
 }
 
 /* ---- ABC: the fluoroscopic sibling of the AEC ----------------------------------------
@@ -304,17 +305,18 @@ const DSA_BOOST = 60;
 // LOW DOSE is a real button with a real bargain: half the detector dose per pulse, so
 // half the kerma AND half the quanta. The noise it buys is not a side effect to hide.
 function doseFactor() { return F.lowDose ? 0.5 : 1; }
-function akPerPulseMGy() {
+function akPerPulseMGy(film = false) {
   const mag = Math.pow(OEC.FIELD / fieldCm(), 2);
   return (12 / (60 * 15)) * (F.ma / 2) * Math.pow(F.kv / 70, 2.5) * mag
-    * (dsaOn ? DSA_BOOST : 1) * (filmPending ? FILM_BOOST : 1);
+    * (dsaOn ? DSA_BOOST : 1) * (film ? FILM_BOOST : 1);
 }
-function dosePulse() {
-  const ak = akPerPulseMGy();
+function dosePulse(film = false) {
+  const ak = akPerPulseMGy(film);
   F.akMGy += ak;
-  // field area at the patient entrance (~0.6 of the detector-plane iris), in m^2
-  const r = irisCm() * 0.6 / 100;
-  F.dapUGym2 += ak * 1000 * Math.PI * r * r;
+  // field area at the patient entrance (~0.6 of the detector plane), in m^2: the iris circle
+  // as the shutters cut it (core/fieldArea.js) — the shutters cut DAP as they cut the image
+  const k = 0.6 / 100;
+  F.dapUGym2 += ak * 1000 * irisShutterArea(irisCm() * k, shutCm() * k);
 }
 
 /* The 5-minute alarm every real machine mandates: three beeps and a flashing timer at
@@ -358,14 +360,20 @@ function animTick() {
   return { br: F.brPhase, card: F.cardPhase, peri: F.periT, sw };
 }
 
-function firePulse() {
-  if (readyCount !== workers.length || !workers.length) { ensureWorker(); return; }
+/* film: this ONE pulse is an acquisition at FILM_BOOST. It is a property of the pulse, not of
+   the machine: as a machine-wide flag it was cleared only when the film frame came back, so a
+   FILM press that found every worker busy (or whose workers were replaced mid-flight) left it
+   set, and every pulse after it was dosed — and filed — at twelve times. Returns whether the
+   pulse went out. (Takes an options object: setInterval may pass a lateness number.) */
+function firePulse(opts) {
+  const film = !!(opts && opts.film);
+  if (readyCount !== workers.length || !workers.length) { ensureWorker(); return false; }
   const slot = busy.indexOf(false);
-  if (slot < 0) { F.dropped++; tierTick(true); renderReadouts(); return; }
+  if (slot < 0) { F.dropped++; tierTick(true); renderReadouts(); return false; }
   tierTick(false);
   busy[slot] = true;
   F.pulses++;
-  dosePulse();
+  dosePulse(film);
   const g = beamFrame(), pose = ctx.phantomPose();
   // A LIVE barium study rides along: the LUT snapshot travels with every pulse (tens of
   // kB), the per-voxel arclength map once per pool (it is per-subject and megabytes).
@@ -380,13 +388,14 @@ function firePulse() {
     sVolSent = true;
   }
   workers[slot].postMessage({ type: 'pulse', id: ++pulseId, kv: F.kv,
-    photons: photonsPerPulse() * (dsaOn ? DSA_BOOST : 1),
+    photons: photonsPerPulse(film) * (dsaOn ? DSA_BOOST : 1),
     src: g.src, detC: g.detC, detU: g.detU, detV: g.detV, half: fieldCm() / 2, iris: irisCm(), shut: shutCm(), shutRot: F.shutRot * Math.PI / 180,
     n: dsaOn ? dsaN : nPx(), rot: pose.rot, center: pose.center, anim: animTick(),
     ba: bp ? bp.ba : null, gas: bp ? bp.gas : null, giNS: bp ? bp.ns : 0,
     iod: cp ? cp.iod : null, svNS: cp ? cp.ns : 0,
-    film: filmPending,
+    film,
     seed: F.fixedSeed || (Math.random() * 1e9) | 0 });
+  return true;
 }
 
 /* ---- display ------------------------------------------------------------- */
@@ -581,14 +590,13 @@ function renderTo(cv) {
    screen — which is what the second monitor is for. */
 const FILM_BOOST = 12;
 const DIR_MAX = 24;
-let filmPending = false;
 let refImg = null, refImgEl = null;
 
 function filmShot() {
   if (ctx.S.mode !== 'fluoro') return;
   if (readyCount !== workers.length || !workers.length) { ensureWorker(); setStatus('Warming up the workers…'); return; }
-  filmPending = true;                  // read by akPerPulseMGy and photonsPerPulse
-  firePulse();                         // one pulse, boosted, outside the pedal's clock
+  // one pulse, boosted, outside the pedal's clock — or none, said plainly, if the pool is busy
+  if (!firePulse({ film: true })) setStatus('Every worker is busy with a pulse — FILM not taken; press it again.');
 }
 function saveToDirectory(kind) {
   if (!frameCanvas || !frameCanvas.width) { setStatus('Nothing on the monitor to save.'); return; }
@@ -933,6 +941,10 @@ export function initFluoro(context) {
     }
   });
   addEventListener('keyup', (e) => { if (e.code === 'Space') pedalUp(); });
+  // a Space released after focus left the window never reaches keyup, and the beam stayed on:
+  // losing the window takes the foot off the pedal, as a dead-man switch should
+  addEventListener('blur', () => { if (F.pedal) pedalUp(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && F.pedal) pedalUp(); });
   document.querySelectorAll('#flPpsSeg button').forEach((b) => {
     b.addEventListener('click', () => {
       F.pps = parseFloat(b.dataset.pps);
