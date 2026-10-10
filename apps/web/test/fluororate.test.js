@@ -23,6 +23,9 @@ test('the old railed technique was illegal; the ceiling forbids it', () => {
   // 110 kV / 10 mA at 15 pps: what the ABC used to reach on a 31 cm lumbar subject
   assert.ok(akRate(110, 10, 15) > 150);
   assert.ok(maCeiling(110, 15) < 10);
+  // the legal figure itself, not just whatever the constant says: 88 mGy/min in normal mode
+  assert.equal(RATE_LIMIT, 88);
+  assert.ok(akRate(110, maCeiling(110, 15), 15) <= 88 + 1e-9);
   // halving the pulse rate doubles the mA each pulse may have
   assert.ok(near(maCeiling(110, 7.5) / maCeiling(110, 15), 2));
 });
