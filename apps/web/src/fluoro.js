@@ -13,6 +13,7 @@ import { irisShutterArea } from './core/fieldArea.js';
 import { NR_K, recursiveStep, displayMap, edgeEnhance } from './core/fluoroDisplay.js';
 import { rightOnScreen } from './core/orientation.js';
 import { staffPulse, staffEffective, skinEntranceMGy } from './core/staffDose.js';
+import { akPerPulse, maCeiling } from './core/fluoroRate.js';
 
 let ctx = null;          // { THREE, S, $, three, phantomPose, syncScene }
 let F = null;            // ctx.S.fluoro
@@ -294,7 +295,18 @@ const abcTarget = () => ABC_TARGET * doseFactor();
 function abcApply() {
   const q = F.q;
   F.kv = Math.round(52 + 58 * q);
-  F.ma = Math.round((0.5 + 9.5 * q * q) * 10) / 10;
+  F.ma = limitMa(Math.round((0.5 + 9.5 * q * q) * 10) / 10);
+}
+/* THE DOSE-RATE CEILING (core/fluoroRate.js). The generator clips the mA wherever this kV,
+   pulse rate and field would pass 88 mGy/min at the reference point; the ABC then climbs on in
+   kV alone, and a big patient gets a darker, noisier image instead of an illegal rate. Fewer
+   pulses per second buy more mA per pulse under the same ceiling. Recorded modes (spot film,
+   DSA) are exempt and never pass through here. */
+const magFactor = () => Math.pow(OEC.FIELD / fieldCm(), 2);
+function limitMa(want) {
+  const ceil = Math.floor(maCeiling(F.kv, F.pps, magFactor()) * 10) / 10;
+  F.rateLimited = want > ceil;
+  return Math.max(0.1, Math.min(want, ceil));
 }
 function abcStep(roi, photons) {
   if (dsaOn) return;              // DSA locks the technique from arming: subtraction against
@@ -325,9 +337,7 @@ const DSA_BOOST = 60;
 // half the kerma AND half the quanta. The noise it buys is not a side effect to hide.
 function doseFactor() { return F.lowDose ? 0.5 : 1; }
 function akPerPulseMGy(film = false) {
-  const mag = Math.pow(OEC.FIELD / fieldCm(), 2);
-  return (12 / (60 * 15)) * (F.ma / 2) * Math.pow(F.kv / 70, 2.5) * mag
-    * (dsaOn ? DSA_BOOST : 1) * (film ? FILM_BOOST : 1);
+  return akPerPulse(F.kv, F.ma, magFactor()) * (dsaOn ? DSA_BOOST : 1) * (film ? FILM_BOOST : 1);
 }
 function dosePulse(film = false) {
   const ak = akPerPulseMGy(film);
@@ -425,6 +435,18 @@ function firePulse(opts) {
   tierTick(false);
   busy[slot] = true;
   F.pulses++;
+  // screening is held under the rate ceiling whatever set the mA (the ABC, the slider, a
+  // change of pulse rate or field since); a spot film or DSA run is an acquisition, exempt
+  // (under the ABC the flag is the curve's — it asked for more than it got — so a re-check of
+  // the already-clipped mA must not clear it)
+  // By hand, the clip works from what the operator ASKED for (F.maWant), so the flag holds
+  // and a lower pulse rate gives the mA back.
+  if (!film && !dsaOn) {
+    const keep = F.abc && F.rateLimited;
+    const ma = limitMa(F.abc ? F.ma : (F.maWant ?? F.ma));
+    if (keep) F.rateLimited = true;
+    if (ma !== F.ma) { F.ma = ma; const el = $('flMa'); if (el) el.value = ma; }
+  }
   dosePulse(film);
   const g = beamFrame(), pose = ctx.phantomPose();
   // A LIVE barium study rides along: the LUT snapshot travels with every pulse (tens of
@@ -998,7 +1020,8 @@ function renderReadouts() {
   set('flExtV', (F.ext > 0 ? '+' : '') + F.ext + ' cm');
   set('flWigV', F.wig + '°');
   set('flAkV', (F.akMGy < 10 ? F.akMGy.toFixed(2) : F.akMGy.toFixed(1)) + ' mGy');
-  set('flAkRateV', (akPerPulseMGy() * F.pps * 60).toFixed(1) + ' mGy/min');
+  set('flAkRateV', (akPerPulseMGy() * F.pps * 60).toFixed(1) + ' mGy/min' + (F.rateLimited ? ' · LIMIT' : ''));
+  $('flAkRateV')?.classList.toggle('warn', !!F.rateLimited);
   set('flDapV', F.dapUGym2.toFixed(1) + ' uGy·m²');
   const uSv = (v) => (v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : v.toFixed(0)) + ' µSv';
   set('flStEyesV', uSv(F.staff.eyes));
@@ -1260,6 +1283,7 @@ export function initFluoro(context) {
   const slide = (id, key) => {
     $(id)?.addEventListener('input', (e) => {
       F[key] = parseFloat(e.target.value);
+      if (key === 'ma') F.maWant = F.ma;          // the operator's request, clipped per pulse
       renderReadouts();
       if (['orbital', 'tilt', 'lift', 'ext', 'wig'].includes(key)) fluoroSyncScene();
     });
