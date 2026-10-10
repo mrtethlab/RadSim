@@ -6,6 +6,19 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-10
+
+### Fluoroscopy staff dose and the tube over the table — [#57](https://github.com/mrtethlab/RadSim/pull/57)
+The fluoro room showed the patient's reference air kerma and nothing of the operator's dose. Scatter
+is now worked out from where the beam enters the patient, strongest back toward the tube and weakest
+through the patient, to the eyes, thyroid, trunk and legs of an operator who chooses a side, a distance
+and their lead (apron, collar, glasses, ceiling shield, table skirt), with an effective dose by the
+two-dosimeter (Niklason) method. The C can now be turned over the table. Measured on the lumbar
+subject: tube under the table, eyes 1.1 and legs 6.0 µSv in 3 s; over it, 6.6 and 1.1. On a lateral
+the tube side's eye dose is 6.5 times the detector side's. The patient's skin dose is taken at the
+real entrance rather than the reference point: raising the column 25 cm leaves the console's air
+kerma unchanged and multiplies the skin dose by 5.2, and the source-to-skin readout warns under 30 cm.
+
 ## 2026-10-09
 
 ### Side markers — [#54](https://github.com/mrtethlab/RadSim/pull/54), [#55](https://github.com/mrtethlab/RadSim/pull/55)
