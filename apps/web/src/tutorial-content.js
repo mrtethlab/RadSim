@@ -962,6 +962,22 @@ export const FLUORO_STEPS = [
       + 'between-patient button.',
   },
   {
+    sel: '.grp:has(#flTubeSeg)',
+    title: 'Your dose, and the patient’s skin',
+    text: 'Scatter comes from where the beam enters the patient, strongest back toward the '
+      + 'tube. With the tube <b>under</b> the table it goes at the floor and your legs (a table '
+      + 'skirt stops it); turn the tube <b>over</b> the table and it comes up at your eyes and '
+      + 'thyroid. On a lateral, stand on the <b>detector</b> side. Step back and it falls with the '
+      + 'square of the distance. The patient’s skin dose is worked out at the real entrance: '
+      + 'raise the column and the skin comes toward the tube, so it climbs while the reference '
+      + 'air kerma does not.',
+    goal: {
+      label: 'Put the tube over the table and screen: watch your eye dose climb',
+      arm: () => S().fluoro.staff.eyes,
+      done: (a) => S().fluoro.over === true && S().fluoro.staff.eyes > a,
+    },
+  },
+  {
     sel: '#giTab',
     title: 'Where barium lives now (fluoro)',
     text: 'The BARIUM panel on the left edge runs the live GI study — swallow or enema, '

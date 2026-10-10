@@ -1188,6 +1188,45 @@
         </div>
       </div>
       <div class="grp fl-only">
+        <div class="lab">Staff &amp; skin dose</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Tube</div></div>
+          <div class="seg" id="flTubeSeg">
+            <button data-over="0" class="on">Under the table</button>
+            <button data-over="1">Over the table</button>
+          </div>
+          <div class="row" style="margin-top:8px"><div class="rl">You stand <small>side of the table</small></div></div>
+          <div class="seg" id="flOpSideSeg">
+            <button data-side="1" class="on">Patient's right</button>
+            <button data-side="-1">Patient's left</button>
+          </div>
+          <div class="row" style="margin-top:8px"><div class="rl">Distance <small>from the beam</small></div>
+            <div class="valchip" id="flOpDistV">60 cm</div></div>
+          <input type="range" id="flOpDist" min="40" max="200" value="60" step="5">
+          <div class="flprot">
+            <label class="cttoggle"><input type="checkbox" id="flPApron" checked><span>Lead apron</span></label>
+            <label class="cttoggle"><input type="checkbox" id="flPCollar" checked><span>Thyroid collar</span></label>
+            <label class="cttoggle"><input type="checkbox" id="flPGlasses"><span>Lead glasses</span></label>
+            <label class="cttoggle"><input type="checkbox" id="flPCeiling"><span>Ceiling shield</span></label>
+            <label class="cttoggle"><input type="checkbox" id="flPSkirt"><span>Table skirt</span></label>
+          </div>
+          <div class="flro">
+            <div><div class="k">Eyes</div><div class="v" id="flStEyesV">0.00 µSv</div></div>
+            <div><div class="k">Thyroid</div><div class="v" id="flStThyV">0.00 µSv</div></div>
+            <div><div class="k">Trunk</div><div class="v" id="flStTrunkV">0.00 µSv</div></div>
+            <div><div class="k">Legs</div><div class="v" id="flStLegsV">0.00 µSv</div></div>
+            <div><div class="k">Effective</div><div class="v" id="flStEV">0.00 µSv</div></div>
+            <div><div class="k">Patient skin</div><div class="v" id="flSkinV">0.00 mGy</div></div>
+            <div title="Focal spot to the patient's skin on the central ray. A mobile C-arm must not bring the focus closer than 30 cm: the spacer cone is there to stop it"><div class="k">Source&ndash;skin</div><div class="v" id="flSsdV">&mdash;</div></div>
+          </div>
+          <div class="ctrst-note">Scatter comes from where the beam enters the patient, strongest
+            back toward the tube. Tube under the table sends it at the floor; on a lateral, stand
+            on the detector side. Skin dose is at the real entrance: bring the patient toward the
+            tube and it climbs, whatever the reference-point air kerma says. Doses since the last
+            reset.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
         <div class="lab">C-arm</div>
         <div class="bod">
           <div class="row"><div class="rl">Orbital <small>LAO / RAO</small></div>

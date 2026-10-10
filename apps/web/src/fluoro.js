@@ -12,6 +12,7 @@ import { ownsSpace } from './core/keys.js';
 import { irisShutterArea } from './core/fieldArea.js';
 import { NR_K, recursiveStep, displayMap, edgeEnhance } from './core/fluoroDisplay.js';
 import { rightOnScreen } from './core/orientation.js';
+import { staffPulse, staffEffective, skinEntranceMGy } from './core/staffDose.js';
 
 let ctx = null;          // { THREE, S, $, three, phantomPose, syncScene }
 let F = null;            // ctx.S.fluoro
@@ -153,9 +154,17 @@ const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] 
    tube UNDER the patient, the standard C-arm setup (scatter goes at the floor, not the
    operator's eyes). */
 // Beam direction before wig-wag: orbital about z, tilt about x, 0° = up.
-function beamDir0() {
+function beamDirC() {
   const th = F.orbital * Math.PI / 180, ti = F.tilt * Math.PI / 180;
   return [Math.sin(th) * Math.cos(ti), Math.cos(th) * Math.cos(ti), Math.sin(ti)];
+}
+/* TUBE OVER THE TABLE: the C turned half a turn about the horizontal axis through its holder
+   (the flip-flop axis, across the table). The image still works — upside down and mirrored,
+   which the orientation pad and the side marker show — but the backscatter that went at the
+   floor now comes up at the operator's eyes and thyroid (core/staffDose.js). */
+function beamDir0() {
+  const d = beamDirC();
+  return F.over ? [d[0], -d[1], -d[2]] : d;
 }
 // Wig-wag yaws the whole boom+C about the column's vertical axis.
 function beamDir() {
@@ -326,7 +335,40 @@ function dosePulse(film = false) {
   // field area at the patient entrance (~0.6 of the detector plane), in m^2: the iris circle
   // as the shutters cut it (core/fieldArea.js) — the shutters cut DAP as they cut the image
   const k = 0.6 / 100;
-  F.dapUGym2 += ak * 1000 * irisShutterArea(irisCm() * k, shutCm() * k);
+  const dap = ak * 1000 * irisShutterArea(irisCm() * k, shutCm() * k);
+  F.dapUGym2 += dap;
+  // the patient's skin at the real entrance, and the scatter that reaches the operator from it
+  const e = entranceNow();
+  F.skinMGy += skinEntranceMGy(ak, OEC.SRC_ISO - IRP_CM, e.fsd, e.dir[1] > 0.3);
+  const acc = staffPulse({ dapUGym2: dap, entry: e.point, beamDir: e.dir, op: operatorAt(),
+    floorY: FLOOR_Y, tableTopY: TABLE_TOP_Y, prot: F.prot });
+  for (const kk of Object.keys(F.staff)) F.staff[kk] += acc[kk] || 0;
+}
+/* The interventional reference point sits 15 cm from the isocentre toward the tube (IEC
+   60601-2-43): the console's air kerma is quoted there, whoever is on the table. */
+const IRP_CM = 15;
+const SSD_MIN_CM = 30;                         // minimum source-skin distance, mobile C-arm
+const FLOOR_Y = -90, TABLE_TOP_Y = 0;          // the stretcher top is the x-ray receptor plane
+/* Where the central ray enters the patient, traced on the same phantom the worker images.
+   Re-traced only when the geometry changes: at 30 pps the beam is usually standing still. */
+let entryKey = '', entryVal = null;
+function entranceNow() {
+  const g = beamFrame(), S = ctx.S, dir = beamDir();
+  const key = [g.src.map((v) => v.toFixed(1)), dir.map((v) => v.toFixed(3)), S.objOff.x, S.objOff.y, S.objOff.z,
+    S.objRot.x, S.objRot.y, S.objRot.z, S.subject].join('|');
+  if (key !== entryKey) {
+    entryKey = key;
+    const fsd = ctx.skinEntry ? ctx.skinEntry(g.src, dir, OEC.SID) : null;
+    entryVal = { fsd, dir, point: fsd ? [g.src[0] + dir[0] * fsd, g.src[1] + dir[1] * fsd, g.src[2] + dir[2] * fsd] : null };
+  }
+  return entryVal;
+}
+/* Where the operator stands: beside the beam, on the side of the table chosen, at the chosen
+   distance from the beam's axis. "Patient's right" follows the patient's actual right. */
+function operatorAt() {
+  const iso = isoPoint(), R = ctx.phantomPose().rot;
+  const rightSign = Math.sign(R[0]) || 1;
+  return { x: iso[0] + F.opSide * rightSign * F.opDist, z: iso[2] };
 }
 
 /* The 5-minute alarm every real machine mandates: three beeps and a flashing timer at
@@ -958,6 +1000,22 @@ function renderReadouts() {
   set('flAkV', (F.akMGy < 10 ? F.akMGy.toFixed(2) : F.akMGy.toFixed(1)) + ' mGy');
   set('flAkRateV', (akPerPulseMGy() * F.pps * 60).toFixed(1) + ' mGy/min');
   set('flDapV', F.dapUGym2.toFixed(1) + ' uGy·m²');
+  const uSv = (v) => (v < 10 ? v.toFixed(2) : v < 100 ? v.toFixed(1) : v.toFixed(0)) + ' µSv';
+  set('flStEyesV', uSv(F.staff.eyes));
+  set('flStThyV', uSv(F.staff.thyroid));
+  set('flStTrunkV', uSv(F.staff.trunk));
+  set('flStLegsV', uSv(F.staff.legs));
+  set('flStEV', uSv(staffEffective(F.staff, F.prot.apron)));
+  set('flSkinV', (F.skinMGy < 10 ? F.skinMGy.toFixed(2) : F.skinMGy.toFixed(1)) + ' mGy');
+  set('flOpDistV', F.opDist + ' cm');
+  // source-to-skin: below 30 cm a mobile C-arm's spacer cone would be against the patient
+  if (ctx.S.mode === 'fluoro') {
+    const e = entranceNow(), ssd = $('flSsdV');
+    if (ssd) {
+      ssd.textContent = e.fsd ? Math.round(e.fsd) + ' cm' + (e.fsd < SSD_MIN_CM ? ' ⚠' : '') : '—';
+      ssd.classList.toggle('warn', !!e.fsd && e.fsd < SSD_MIN_CM);
+    }
+  }
   set('flIrisV', Math.round(F.iris * 100) + ' %');
   set('flIrisV2', Math.round(F.iris * 100) + '%');
   set('flShutV', Math.round(F.shut * 100) + '%');
@@ -998,6 +1056,27 @@ function buildRig() {
   stretcher.position.set(0, -1.6, 0);
   stretcher.visible = false;
   rig.parent.add(stretcher);
+  // the operator: a plain figure where the staff dose is worked out, so "step back" and
+  // "the other side of the table" can be seen as well as read. Grey-blue body = apron on.
+  operator = new THREE.Group();
+  const opMat = new THREE.MeshStandardMaterial({ color: 0x4f7fa0, roughness: 0.8, transparent: true, opacity: 0.55 });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(15, 13, 140, 20), opMat);
+  body.position.y = FLOOR_Y + 70; body.name = 'body';
+  const head = new THREE.Mesh(new THREE.SphereGeometry(11, 18, 14), opMat.clone());
+  head.position.y = FLOOR_Y + 160;
+  operator.add(body, head);
+  operator.visible = false;
+  rig.parent.add(operator);
+}
+let operator = null;
+function syncOperator(on) {
+  if (!operator) return;
+  operator.visible = on;
+  if (!on) return;
+  const p = operatorAt();
+  operator.position.set(p.x, 0, p.z);
+  const body = operator.getObjectByName('body');
+  if (body) body.material.color.setHex(F.prot.apron ? 0x4f7fa0 : 0x7fa86a);
 }
 
 /* 0.54 MB of photogrammetry that only the fluoroscopy room ever shows. It used to be
@@ -1048,6 +1127,7 @@ export function fluoroSyncScene() {
   const { THREE, S, three } = ctx;
   const on = S.mode === 'fluoro';
   rig.visible = on; stretcher.visible = on;
+  syncOperator(on);
   if (oecBody) {
     oecBody.visible = on;
     // Stand the machine so its own C wraps the isocentre. From orthographic projections
@@ -1081,8 +1161,10 @@ export function fluoroSyncScene() {
     const w = F.wig * Math.PI / 180;
     const qw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), w);
     const q0 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(...beamDir0()));
-    const q = qw.clone().multiply(q0);
+      new THREE.Vector3(...beamDirC()));
+    // over the table: the half turn about the flip-flop axis comes between the yaw and the C
+    const qf = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), F.over ? Math.PI : 0);
+    const q = qw.clone().multiply(qf).multiply(q0);
     rig.quaternion.copy(q);
     // The segmented C rotates about the (moving) isocentre — its local origin was
     // pre-shifted to the throat centre at export, so position + rotate is the whole
@@ -1405,11 +1487,32 @@ export function initFluoro(context) {
   });
   $('flDoseReset')?.addEventListener('click', () => {
     F.akMGy = 0; F.dapUGym2 = 0; F.beamS = 0; alarmAt = 300;
+    F.skinMGy = 0; for (const k of Object.keys(F.staff)) F.staff[k] = 0;
     F.alarm = false;                              // a new patient: nothing left to acknowledge
     $('flBeamV')?.classList.remove('alarm');
     panelSync();
     renderReadouts();
   });
+  // ---- staff & skin (core/staffDose.js) ----
+  document.querySelectorAll('#flTubeSeg button').forEach((b) => b.addEventListener('click', () => {
+    F.over = b.dataset.over === '1';
+    document.querySelectorAll('#flTubeSeg button').forEach((x) => x.classList.toggle('on', x === b));
+    entryKey = '';
+    fluoroSyncScene(); renderReadouts();
+    setStatus(F.over
+      ? 'Tube over the table: the backscatter now comes up at your eyes and thyroid. Watch them.'
+      : 'Tube under the table: the backscatter goes at the floor, where a table skirt can stop it.');
+  }));
+  document.querySelectorAll('#flOpSideSeg button').forEach((b) => b.addEventListener('click', () => {
+    F.opSide = +b.dataset.side;
+    document.querySelectorAll('#flOpSideSeg button').forEach((x) => x.classList.toggle('on', x === b));
+    fluoroSyncScene();
+  }));
+  $('flOpDist')?.addEventListener('input', (e) => { F.opDist = +e.target.value; fluoroSyncScene(); renderReadouts(); });
+  for (const [id, k] of [['flPApron', 'apron'], ['flPCollar', 'collar'], ['flPGlasses', 'glasses'],
+    ['flPCeiling', 'ceiling'], ['flPSkirt', 'skirt']]) {
+    $(id)?.addEventListener('change', (e) => { F.prot[k] = e.target.checked; fluoroSyncScene(); renderReadouts(); });
+  }
   // ABC starts ON: the sliders are the override, not the default
   const kvEl = $('flKv'), maEl = $('flMa');
   if (kvEl) kvEl.disabled = true;

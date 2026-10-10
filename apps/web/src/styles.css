@@ -1700,6 +1700,8 @@ body.mode-mammo .fl-hide{display:none}
   background:#1a222b; color:var(--muted); border:1px solid var(--edge2); border-radius:5px;
   cursor:pointer; text-transform:uppercase}
 .fldose-rst:hover{color:var(--txt); border-color:#6b8aa4}
+.flro .v.warn{color:var(--amber)}
+.flprot{display:grid; grid-template-columns:1fr 1fr; gap:2px 8px; margin:8px 0}
 .flro .v.alarm{color:var(--red); animation:flalarm .7s ease-in-out infinite}
 @keyframes flalarm{0%,100%{opacity:1}50%{opacity:.35}}
 body.mode-fluoro .mini #flHold.on{background:#3a2a0e; border-color:#ffb23e; color:#ffd9b0}
