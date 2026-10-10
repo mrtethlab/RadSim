@@ -85,3 +85,46 @@ export function groupDose(g, { scanLenMM, feedMMPerRot, subject }) {
   return { phantom, ctdiVol: ctdi, dlp: d, effMAs: effectiveMAs(g.ma, g.rotSpeed, g.pitch),
            effective: effectiveDose(d, subject) };
 }
+
+/* SIZE-SPECIFIC DOSE ESTIMATE (AAPM Reports 204 and 220). CTDIvol is the dose to an acrylic
+   phantom, 16 or 32 cm, whoever is on the table; a small patient absorbs more of the same beam
+   than the phantom does, a large one less. SSDE corrects it by the patient's WATER-EQUIVALENT
+   DIAMETER, Dw = 2 sqrt(Aw / pi), where Aw is the slice's area weighted by attenuation relative
+   to water (so lung counts for little and bone for more). The conversion factor is Report 204's
+   exponential fit, per reference phantom:
+       f = a exp(-b Dw),   32 cm: a 3.704369, b 0.03671937;   16 cm: a 1.874799, b 0.03871313
+   (Report 293 refines the head; the 16 cm fit is kept here as the simpler, published one.) */
+const SSDE_FIT = { body: [3.704369, 0.03671937], head: [1.874799, 0.03871313] };
+export function ssdeFactor(dwCm, phantom) {
+  const [a, b] = SSDE_FIT[phantom] || SSDE_FIT.body;
+  return a * Math.exp(-b * dwCm);
+}
+export function waterEqDiameterCm(areaCm2) {
+  return 2 * Math.sqrt(Math.max(0, areaCm2) / Math.PI);
+}
+
+/* DOSE CHECK (NEMA XR 25, with the AAPM's recommended values). Before a scan the console
+   compares each series' CTDIvol with a NOTIFICATION value (adult head 80 mGy, adult body 50 mGy)
+   and the CTDIvol that would accumulate at any one location over the examination with an ALERT
+   value (1000 mGy). Either stops the scan until the operator confirms. The accumulation is what
+   catches a monitoring series fired twenty times at one level, or overlapping repeat scans.
+   series: [{ name, ctdiVol, phantom, z0, z1 (mm), exposures }] (exposures > 1 at one place). */
+export const DOSE_CHECK = { notify: { head: 80, body: 50 }, alert: 1000 };
+export function doseCheck(series) {
+  const notices = [];
+  for (const s of series) {
+    const nv = DOSE_CHECK.notify[s.phantom] ?? DOSE_CHECK.notify.body;
+    if (s.ctdiVol > nv) notices.push({ name: s.name, ctdiVol: s.ctdiVol, limit: nv });
+  }
+  // the worst location: accumulation can only change at a series' ends, so test those
+  let peak = 0, at = null;
+  const zs = [];
+  for (const s of series) zs.push(Math.min(s.z0, s.z1), Math.max(s.z0, s.z1));
+  for (const z of zs) {
+    let sum = 0;
+    for (const s of series) if (z >= Math.min(s.z0, s.z1) - 1e-6 && z <= Math.max(s.z0, s.z1) + 1e-6) sum += s.ctdiVol * (s.exposures || 1);
+    if (sum > peak) { peak = sum; at = z; }
+  }
+  const alert = peak > DOSE_CHECK.alert ? { accumulated: peak, at, limit: DOSE_CHECK.alert } : null;
+  return { notices, alert, peak };
+}
