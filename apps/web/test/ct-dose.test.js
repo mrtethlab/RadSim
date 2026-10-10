@@ -2,7 +2,8 @@
 // absolute numbers believable.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ctdiVol, dlp, effectiveMAs, phantomFor, effectiveDose, groupDose, monitorDose, KV_EXPONENT } from '../src/core/ctDose.js';
+import { ctdiVol, dlp, effectiveMAs, phantomFor, effectiveDose, groupDose, monitorDose, KV_EXPONENT,
+  ssdeFactor, waterEqDiameterCm, doseCheck, DOSE_CHECK } from '../src/core/ctDose.js';
 import { roiStats } from '../src/core/ctRoi.js';
 
 const near = (a, b, tol = 1e-9) => Math.abs(a - b) <= tol * Math.max(1, Math.abs(b));
@@ -139,4 +140,37 @@ test('a monitoring series costs one beam width per exposure, and every exposure 
   assert.equal(monitorDose(g, 0, 'chestabdopelvis').dlp, 0, 'not run, nothing delivered');
   // single row: the beam is opened to the 5 mm slice, not one 0.625 mm element
   assert.ok(near(monitorDose({ ...g, beamColl: 0.625 }, 1, 'chestabdopelvis', 5).perScanDLP, one * 0.5));
+});
+
+test('SSDE: a small patient absorbs more of the same CTDIvol than the phantom, a large one less', () => {
+  // AAPM Report 204 fits: the 16 cm factor is ~1 at 16 cm; the 32 cm factor crosses 1 near 36 cm
+  // (the acrylic phantom is more attenuating than water of the same size)
+  assert.ok(Math.abs(ssdeFactor(16, 'head') - 1.0) < 0.02);
+  assert.ok(Math.abs(ssdeFactor(36, 'body') - 1.0) < 0.05);
+  assert.ok(Math.abs(ssdeFactor(20, 'body') - 1.778) < 0.01, 'a 20 cm abdomen: x1.78');
+  assert.ok(ssdeFactor(24, 'body') > ssdeFactor(30, 'body') && ssdeFactor(30, 'body') > ssdeFactor(40, 'body'));
+});
+
+test('water-equivalent diameter is the circle of the same water-equivalent area', () => {
+  assert.ok(Math.abs(waterEqDiameterCm(Math.PI * 15 * 15) - 30) < 1e-9);
+  assert.equal(waterEqDiameterCm(0), 0);
+});
+
+test('Dose Check: notification per series, alert on what accumulates at one place', () => {
+  const body = (name, ctdiVol, z0, z1, exposures = 1) => ({ name, ctdiVol, phantom: 'body', z0, z1, exposures });
+  // an ordinary abdomen: nothing to say
+  assert.deepEqual(doseCheck([body('G1', 12, 0, 400)]).notices, []);
+  // a body series over 50 mGy notifies; a head series at 60 does not (its value is 80)
+  assert.equal(doseCheck([body('G1', 55, 0, 400)]).notices.length, 1);
+  assert.equal(doseCheck([{ name: 'H', ctdiVol: 60, phantom: 'head', z0: 0, z1: 150 }]).notices.length, 0);
+  assert.equal(DOSE_CHECK.alert, 1000);
+  // a monitoring level fired 25 times at 30 mGy, under a 40 mGy arterial phase: 790 mGy, no alert
+  const ok = doseCheck([body('mon', 30, 200, 200, 25), body('art', 40, 0, 400)]);
+  assert.equal(ok.alert, null);
+  assert.ok(Math.abs(ok.peak - 790) < 1e-9);
+  // ...the same monitoring fired 35 times, and a repeat of the arterial phase: alert
+  const bad = doseCheck([body('mon', 30, 200, 200, 35), body('art', 40, 0, 400), body('rep', 40, 100, 300)]);
+  assert.ok(bad.alert && Math.abs(bad.alert.accumulated - 1130) < 1e-9 && bad.alert.at === 200);
+  // series that do not overlap do not add
+  assert.equal(doseCheck([body('a', 600, 0, 100), body('b', 600, 200, 300)]).alert, null);
 });

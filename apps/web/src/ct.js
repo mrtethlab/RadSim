@@ -13,7 +13,7 @@ import { Materials, BodyMaterials } from './core/materials.js';
 import { muOverBins, muAtEnergy } from './core/voxelPhantom.js';
 import { buildConcLUT, NS as CONTRAST_NS, groupFireTime, afterGroupTime } from './core/contrast.js';
 import { Sound } from './audio/sound.js';
-import { groupDose, monitorDose, effectiveMAs, effectiveDose } from './core/ctDose.js';
+import { groupDose, monitorDose, effectiveMAs, effectiveDose, ssdeFactor, waterEqDiameterCm, doseCheck, DOSE_CHECK } from './core/ctDose.js';
 import { roiStats } from './core/ctRoi.js';
 
 let ctx = null;
@@ -1180,7 +1180,7 @@ function wireCTConsole() {
       if (!atMoveTarget()) { setHint('Move the table to the scout start first — press the flashing MOVE TO SCAN button.'); return; }
       acquireScouts();
     } else if (S.ct.phase === 'planning') {
-      if (ctx.$('ctStart').classList.contains('flash')) runScan();
+      if (ctx.$('ctStart').classList.contains('flash')) confirmDoseCheck(runScan);
       else if (ctx.$('ctTable').classList.contains('flash')) setHint('Reposition the table first (hold the orange TABLE button).');
       else setHint('Move the table to the scan start first — press the flashing MOVE TO SCAN button.');
     }
@@ -2098,8 +2098,99 @@ const TRASH = '<svg viewBox="0 0 24 24" width="14" height="14"><path fill="#fff"
    table feed per rotation (the overrun at each end is about one rotation's feed). */
 function doseOf(g) {
   // the monitoring series: the exposures its last run actually made (0 until it has run)
-  if (g.monitor) return monitorDose(g, g.monScans || 0, ctx.S.subject, beamWidthOf(g));
-  return groupDose(g, { scanLenMM: groupScanLenMM(g), feedMMPerRot: tableSpeedOf(g), subject: ctx.S.subject });
+  const d = g.monitor
+    ? monitorDose(g, g.monScans || 0, ctx.S.subject, beamWidthOf(g))
+    : groupDose(g, { scanLenMM: groupScanLenMM(g), feedMMPerRot: tableSpeedOf(g), subject: ctx.S.subject });
+  // size-specific: CTDIvol x the AAPM 204 factor at each sampled slice's Dw, averaged
+  const dws = groupDw(g);
+  if (dws && dws.length) {
+    d.dw = dws.reduce((a, v) => a + v, 0) / dws.length;
+    d.ssde = d.ctdiVol * dws.reduce((a, v) => a + ssdeFactor(v, d.phantom), 0) / dws.length;
+  }
+  return d;
+}
+/* WATER-EQUIVALENT DIAMETER of the planned range (AAPM Report 220), measured on the phantom the
+   scan will image: parallel rays front to back across the slice, each ray's path lengths weighted
+   by attenuation relative to water at the beam's mean energy, summed over the ray spacing. That
+   IS the water-equivalent area, exactly — the report's pixel sum, done with rays. Five slices
+   over the range (one for a single-level series); cached until the plan, the kV or the patient
+   moves. World units are centimetres. */
+const dwCache = new Map();
+function groupDw(g) {
+  const S = ctx.S, c = S.ct; if (!S.voxelModel) return null;
+  const off = scanStartMM(), len = c.scanLen;
+  const z0 = off + g.box.top * len, z1 = off + g.box.bot * len;
+  const key = [S.subject, c.patient.x, c.patient.z, c.patientY, z0.toFixed(1), z1.toFixed(1), g.kv].join('|');
+  if (dwCache.has(key)) return dwCache.get(key);
+  let out = null;
+  try {
+    const phantom = ctx.buildPhantom();
+    if (phantom.voxel) {
+      const effE = Spectrum.make(g.kv).meanE, mu = muAtEnergy(effE), muW = BodyMaterials.muWater(effE);
+      const n = Math.abs(z1 - z0) < 1 ? 1 : 5, STEP = 0.5, HALF = 35, TOP = ISO_Y + 40, SPAN = 80;
+      out = [];
+      for (let k = 0; k < n; k++) {
+        const zw = (n === 1 ? (z0 + z1) / 2 : z0 + (z1 - z0) * (k + 0.5) / n) / MM_PER_UNIT;
+        let aw = 0;
+        for (let x = -HALF; x <= HALF + 1e-9; x += STEP) {
+          const L = phantom.trace([x, TOP, zw], [0, -1, 0], SPAN);
+          let lw = 0;
+          for (let m = 1; m < L.length; m++) if (L[m]) lw += (mu[m] / muW) * L[m];
+          aw += lw * STEP;
+        }
+        out.push(waterEqDiameterCm(aw));
+      }
+      if (!out.some((v) => v > 1)) out = null;              // the range misses the patient
+    }
+  } catch (_) { out = null; }
+  if (dwCache.size > 64) dwCache.clear();
+  dwCache.set(key, out);
+  return out;
+}
+/* DOSE CHECK (core/ctDose.js, NEMA XR 25): each series' CTDIvol against the notification value,
+   and the CTDIvol accumulated at any one table position against the alert value. A monitoring
+   series counts every exposure it is planned to make at its one level (its last run's count, or
+   a typical 15 before it has run). */
+const MONITOR_EXPOSURES_PLANNED = 15;
+function studyDoseCheck() {
+  const c = ctx.S.ct, off = scanStartMM(), len = c.scanLen;
+  const series = c.groups.map((g, i) => ({ g, i })).filter((x) => x.g.on).map(({ g, i }) => {
+    const d = doseOf(g);
+    return { name: 'G' + (i + 1) + (g.monitor ? ' (monitoring)' : ''), ctdiVol: d.ctdiVol, phantom: d.phantom,
+      z0: off + g.box.top * len, z1: off + g.box.bot * len,
+      exposures: g.monitor ? (g.monScans || MONITOR_EXPOSURES_PLANNED) : 1 };
+  });
+  return doseCheck(series);
+}
+function doseCheckLine(dc) {
+  if (!dc.notices.length && !dc.alert) return '';
+  const bits = dc.notices.map((n) => n.name + ' CTDIvol ' + n.ctdiVol.toFixed(1) + ' mGy &gt; ' + n.limit + ' mGy');
+  if (dc.alert) bits.push('<b>ALERT</b>: ' + Math.round(dc.alert.accumulated) + ' mGy would accumulate at one location (&gt; ' + dc.alert.limit + ' mGy)');
+  return '<div class="sg-dosecheck' + (dc.alert ? ' alert' : '') + '">Dose Check: ' + bits.join(' · ')
+    + ' <span class="sg-dose-note">— the scan will ask you to confirm</span></div>';
+}
+/* Before the scan goes, a Dose Check finding has to be confirmed, as on every console since
+   NEMA XR 25: shown with what was exceeded, ENTER to proceed, ESC to go back and change the plan.
+   A confirmation holds until the plan changes. */
+let doseCheckAck = '';
+function confirmDoseCheck(proceed) {
+  const dc = studyDoseCheck();
+  if (!dc.notices.length && !dc.alert) { proceed(); return; }
+  const key = JSON.stringify([dc.notices.map((n) => [n.name, n.ctdiVol.toFixed(1)]), dc.alert && Math.round(dc.alert.accumulated)]);
+  if (key === doseCheckAck) { proceed(); return; }
+  const pop = ctx.$('ctPop'), inner = ctx.$('ctPopInner'); if (!pop) { proceed(); return; }
+  inner.innerHTML = '<div class="plt">Dose Check ' + (dc.alert ? 'ALERT' : 'notification') + '</div>'
+    + '<div class="pl">' + dc.notices.map((n) => n.name + ': CTDIvol <b>' + n.ctdiVol.toFixed(1) + ' mGy</b> exceeds the notification value of ' + n.limit + ' mGy (' + (n.limit === DOSE_CHECK.notify.head ? 'adult head' : 'adult body') + ').').join('<br>')
+    + (dc.alert ? (dc.notices.length ? '<br>' : '') + '<b>' + Math.round(dc.alert.accumulated) + ' mGy</b> would accumulate at one location, over the alert value of ' + dc.alert.limit + ' mGy.' : '')
+    + '<br><br>Check the technique and the plan. Proceed only if this dose is justified.</div>'
+    + '<div class="phint"><b>[ENTER]</b> confirm and scan&nbsp;&nbsp;·&nbsp;&nbsp;<b>[ESC]</b> back to the plan</div>';
+  const close = () => { pop.classList.remove('show'); document.removeEventListener('keydown', onKey, true); };
+  const onKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); close(); doseCheckAck = key; proceed(); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); setHint('Scan not started — Dose Check finding not confirmed.'); }
+  };
+  pop.classList.add('show');
+  document.addEventListener('keydown', onKey, true);
 }
 /* The study total the dose screen shows: DLP adds across groups (each irradiates its own
    length), CTDIvol does not — it is a per-group intensity, so the total reports the largest.
@@ -2111,13 +2202,19 @@ function studyDoseLine() {
   const totDLP = ds.reduce((a, d) => a + d.dlp, 0);
   const maxCTDI = Math.max(...ds.map((d) => d.ctdiVol));
   const e = effectiveDose(totDLP, ctx.S.subject);
+  const sized = ds.filter((d) => d.ssde != null);
+  const ssdeNote = sized.length
+    ? ' · SSDE up to <b>' + Math.max(...sized.map((d) => d.ssde)).toFixed(1) + ' mGy</b> <span class="sg-dose-note">(Dw '
+      + sized.map((d) => d.dw.toFixed(0)).filter((v, i, a) => a.indexOf(v) === i).join('/') + ' cm, AAPM 204/220)</span>'
+    : '';
   const mon = ds.filter((d) => d.perScanDLP != null);
   const monNote = mon.length
     ? ' <span class="sg-dose-note">(incl. monitoring: ' + mon.map((d) => d.scans
         ? d.scans + ' × ' + d.perScanDLP.toFixed(1) + ' mGy·cm'
         : 'not run yet, ' + d.perScanDLP.toFixed(1) + ' mGy·cm per exposure').join(', ') + ')</span>'
     : '';
-  return '<div class="sg-dose">Study: CTDIvol up to <b>' + maxCTDI.toFixed(1) + ' mGy</b> · total DLP <b>'
+  return doseCheckLine(studyDoseCheck())
+    + '<div class="sg-dose">Study: CTDIvol up to <b>' + maxCTDI.toFixed(1) + ' mGy</b>' + ssdeNote + ' · total DLP <b>'
     + Math.round(totDLP) + ' mGy·cm</b>' + monNote
     + (e ? ' · effective dose ≈ <b>' + (totDLP * e.k).toFixed(1) + ' mSv</b> <span class="sg-dose-note">('
       + e.region + ', k = ' + e.k + ' mSv/mGy·cm, adult — a population estimate, not this patient’s dose)</span>'
@@ -2126,7 +2223,7 @@ function studyDoseLine() {
 }
 const SG_HEADERS = ['Group', 'Show', 'Start Location', 'End Location', 'SFOV', 'DFOV', 'Detector Config',
   'Beam Collimation', 'Pitch', 'Table Speed', 'Rotation Time',
-  'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'CTDIvol', 'DLP', 'Scan Delay'];
+  'Gantry Tilt', 'Tube Voltage', 'Tube Current', 'Exposure Time', 'CTDIvol', 'SSDE', 'DLP', 'Scan Delay'];
 // DFOV-centre offset from the SFOV centre (isocentre): anteroposterior + mediolateral (mm).
 // DFOV centre offset (mm) relative to the isocentre: +ml = patient-right, +ap = posterior.
 // GE reads it off the box position (off-centred by dragging); Canon reads the un-committed
@@ -2260,8 +2357,11 @@ function renderScanGroups() {
       + cell('sg-edit', 'ma', g.ma + ' mA')
       + cell('sg-calc', '', groupExpTime(g).toFixed(1) + ' s')
       + (() => { const d = doseOf(g);
-          return '<td><span class="sg-calc" title="' + (d.phantom === 'head' ? '16 cm head' : '32 cm body')
-            + ' CTDI phantom · effective ' + Math.round(d.effMAs) + ' mAs">' + d.ctdiVol.toFixed(1) + ' mGy</span></td>'
+          const over = d.ctdiVol > (DOSE_CHECK.notify[d.phantom] ?? DOSE_CHECK.notify.body);
+          return '<td><span class="sg-calc' + (over ? ' sg-dc-over' : '') + '" title="' + (d.phantom === 'head' ? '16 cm head' : '32 cm body')
+            + ' CTDI phantom · effective ' + Math.round(d.effMAs) + ' mAs' + (over ? ' · over the Dose Check notification value' : '') + '">' + d.ctdiVol.toFixed(1) + ' mGy</span></td>'
+            + '<td><span class="sg-calc" title="' + (d.ssde != null ? 'Size-specific dose estimate: water-equivalent diameter ' + d.dw.toFixed(1) + ' cm, factor ' + (d.ssde / d.ctdiVol).toFixed(2) : 'No patient in this range') + '">'
+            + (d.ssde != null ? d.ssde.toFixed(1) + ' mGy' : '—') + '</span></td>'
             + (d.perScanDLP != null
               ? '<td><span class="sg-calc" title="' + d.perScanDLP.toFixed(1) + ' mGy·cm per exposure · '
                 + (d.scans ? d.scans + ' exposures in the last run' : 'not run yet') + '">'
