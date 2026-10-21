@@ -15,6 +15,7 @@
   "volume": "upperextremity.mat.bin",
   "dtype": "uint8",
   "mesh": "upperextremity.glb",
+  "skinMesh": "upperextremity_skin.glb",
   "materials": [
     {
       "id": 0,
