@@ -8,6 +8,35 @@ handoff document and is not committed.)
 
 ## 2026-10-21
 
+### X-ray: Palpate drawer, 43×43 receptor, resolution under Simulation — [#69](https://github.com/mrtethlab/RadSim/pull/69)
+- **Palpate drawer:** the Trainer's Palpate… menu is now in the x-ray sandbox too, as a **PALPATE** pull-out under BARIUM. Each landmark measured on the subject (ASIS, crests, jugular notch, styloids, malleoli…) toggles a red mark on the skin that follows the patient. A subject with none has the tab dimmed, with the reason on hover.
+- **43×43 receptor:** added beside 25×30 and 35×43. It takes a square matrix, so its pixels stay square.
+- **Detector resolution:** the ray-cast matrix moved from Detector to Simulation, beside the compute engine that pays for it.
+
+### Trainer: films that look like the textbook's — [#68](https://github.com/mrtethlab/RadSim/pull/68)
+**Lateral L-spine.** The ideal lateral L-spine field was 33 cm wide and the film was a flat white band:
+- *Why the field was so wide:* "midcoronal" had been measured as halfway between the skin front and back, which on this deep abdomen lies in front of the vertebral bodies.
+- *Fix:* the spine laterals now centre on the vertebral column (measured on the bone) and require only the column, from the front of the bodies to the spinous processes. The lateral lumbar field is 20 × 37 cm.
+- *Why the film was flat:* a strip of thin tissue at the back of the field pinned the auto-window.
+- *Fix:* the spine laterals take their display window from the middle of the field, as DR body-part processing does. The bodies, discs and spinous processes now read at full contrast.
+
+**Other fields fixed:**
+- the wrist (metacarpal bases, forearm along the film: the arm is turned 25° to line it up);
+- the ankle (23 cm long, not 30);
+- the AP and lateral T-spine.
+
+**Grading.** Collimation is graded per axis:
+- within the inch (and half an inch) passes;
+- open by up to half the ideal field again is marked;
+- open beyond that is a repeat.
+
+Positioning allows 2° in any axis, and the mortise takes its textbook 15–20° range.
+
+### Home card and a Contrast Tutorial — [#67](https://github.com/mrtethlab/RadSim/pull/67)
+- **Home card:** Trainer sits beside Open in its style; the amber ▶ is for tutorials only. "Barium" became "Barium Tutorial".
+- **Contrast Tutorial:** the injector steps left the CT tutorial for a 13-step Contrast Tutorial on the CT card. It covers a vascular subject, scouts, the injector, agent, site and circulation, bolus-tracked timing, the study, and reading the phase.
+- **Tutorial scrolling fix:** tutorial targets hidden in the scan-group table's horizontal scroller now scroll into view.
+
 ### Trainer mode — [#62](https://github.com/mrtethlab/RadSim/pull/62), [#63](https://github.com/mrtethlab/RadSim/pull/63), [#65](https://github.com/mrtethlab/RadSim/pull/65)
 The sandbox let a student do anything and judged only the exposure. The Trainer, entered from the X-ray
 home card, takes a routine series view by view as a practical exam does. The steps are:
