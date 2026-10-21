@@ -13,7 +13,8 @@ import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
-import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict } from './sideMarker.js';
+import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict, setSideMarker } from './sideMarker.js';
+import { initTrainer, trainerOnMode } from './trainer/trainer.js';
 import { patientPrimary } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
 import { ownsSpace } from './core/keys.js';
@@ -2120,7 +2121,10 @@ function finishExposure(success){
 }
 
 /* Compute the radiograph (unchanged physics); returns a promise. */
-async function computeRadiograph(){
+async function computeRadiograph(opts={}){
+  // opts.dry: the same exposure, returned instead of recorded — no image history, no dose log,
+  // no EI/DI or marker readouts. The Trainer's reference image is made this way.
+  const dry=!!opts.dry;
   const phantom=buildPhantom();
   const source=sourcePos();
 
@@ -2353,6 +2357,11 @@ async function computeRadiograph(){
   // the lead side marker prints where it lies in the field (src/sideMarker.js), laid out to read
   // correctly on the film as hung: the same flips pushImage stores for the display
   const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
+  if(dry){
+    const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
+    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,mask), EI,
+             rightAtPlusX: objMat()[0] > -0.5, detW, detH };
+  }
   S.lastMarker=sideMarkerVerdict(mkStamp); S.lastMarkerStamp=mkStamp;
 
   // the patient's dose for what was actually delivered: the AEC's mAs when it terminated
@@ -2468,6 +2477,35 @@ function renderRadiograph(target,entry){
   tctx.scale((baseFlipH!==S.flipH)?-1:1, (baseFlipV!==S.flipV)?-1:1);
   tctx.drawImage(crop, -cw/2, -ch/2);
   tctx.restore();
+}
+/* The film on the WHOLE receptor, not cropped to the exposed field: what lies outside the field
+   (anatomy that was collimated off, the field that should have been used) can then be drawn
+   where it belongs. Returns map(wx, wz) -> canvas px for a point on the receptor plane (world
+   cm), in the same hanging orientation renderRadiograph uses (image rotation is not applied:
+   the Trainer keeps it at 0). */
+function renderRadiographFull(target, entry, scale=2, padFrac=0){
+  if(!entry) return null;
+  const {nx, ny, mask} = entry;
+  const crop=document.createElement('canvas');
+  const saveRot=S.imgRot; S.imgRot=0;
+  renderRadiograph(crop, entry);
+  S.imgRot=saveRot;
+  const {i0,i1,j0,j1}=computeCrop(nx,ny,mask);
+  const eh=(entry.rightAtPlusX!==false)!==S.flipH, ev=true!==S.flipV;
+  // padFrac: room around the receptor (as a fraction of its larger side) for what lies beyond it
+  const pad=Math.round(padFrac*Math.max(nx,ny));
+  target.width=(nx+2*pad)*scale; target.height=(ny+2*pad)*scale;
+  const g=target.getContext('2d');
+  g.fillStyle='#0b0e12'; g.fillRect(0,0,target.width,target.height);
+  g.fillStyle='#14181d'; g.fillRect(pad*scale,pad*scale,nx*scale,ny*scale);   // the receptor
+  const I0=eh? nx-1-i1 : i0, J0=ev? ny-1-j1 : j0;
+  g.imageSmoothingEnabled=true;
+  g.drawImage(crop, (I0+pad)*scale, (J0+pad)*scale, crop.width*scale, crop.height*scale);
+  const pxU=(entry.detW||S.detW)/nx, pxV=(entry.detH||S.detH)/ny, hu=(nx-1)/2, hv=(ny-1)/2;
+  return (wx, wz) => {
+    const i=wx/pxU+hu, j=wz/pxV+hv;
+    return [((eh? nx-1-i : i)+0.5+pad)*scale, ((ev? ny-1-j : j)+0.5+pad)*scale];
+  };
 }
 function drawFilm(){
   if(S.mode==='fluoro'||S.mode==='us') return;   // those rooms own both monitors
@@ -2717,7 +2755,7 @@ function fitMa(){
   S.ma=maSteps.find(m=>m>=PROTOCOL_MA && S.mas/m<=MAX_EXPOSURE_S) ?? maSteps[maSteps.length-1];
   const maEl=$('ma'); if(maEl) maEl.value=nearestMaIdx();
 }
-function applyProtocol(p,part){
+function applyProtocol(p,part,after){
   S.protocol={proj:p.proj, part};
   S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas; fitMa();
   applyAecPreset(p.aec);
@@ -2758,6 +2796,7 @@ function applyProtocol(p,part){
     applyPose(p.pose);
     applyCaliper(p);
     syncScene(); if(S.hasImage) drawFilm();
+    after?.();                                 // e.g. the Trainer sets its own start pose
   };
   if (want !== S.subject || !S.voxelModel) setSubject(want).then(done);
   else done();
@@ -2863,6 +2902,7 @@ function updateDI(EI){
     $('timeInline').textContent = 'AEC '+fmtTime(t)+(S.aecResult.backupHit?' · BACKUP':'');
   }
   const DI = 10*Math.log10(EI/S.eiTarget);
+  S.lastDI=DI;
   $('eiV').textContent=EI;
   $('eitV').textContent=S.eiTarget;
   const diEl=$('diV'); diEl.textContent=(DI>=0?'+':'')+DI.toFixed(1);
@@ -2900,6 +2940,15 @@ function updateDoseReadout(){
   const sum=S.doseLog.reduce((a,x)=>a+x.dapUGym2,0);
   set('dapSumV', fmtDap(sum)+(S.doseLog.length>1?'<small>×'+S.doseLog.length+'</small>':''));
 }
+/* The sandbox's sliders follow state set elsewhere (the Trainer drives the same room). */
+function syncSandboxControls(){
+  const set=(id,v,label)=>{ const el=$(id); if(el) el.value=v; const t=$(id+'v'); if(t&&label!=null) t.textContent=label; };
+  set('objRotX', S.objRot.x, S.objRot.x+'°'); set('objRotY', S.objRot.y, S.objRot.y+'°'); set('objRotZ', S.objRot.z, S.objRot.z+'°');
+  set('objOffX', S.objOff.x.toFixed(1), S.objOff.x.toFixed(1)+' cm'); set('objOffZ', S.objOff.z.toFixed(1), S.objOff.z.toFixed(1)+' cm');
+  set('collX', S.collX); set('collZ', S.collZ);
+  const cc=$('angCC'); if(cc) cc.value=S.angCC;
+  updateGeomReadouts();
+}
 /* Build the 4-corner image metadata for the CURRENT technique (shown on the big
    Image view, not the small live monitor). */
 function buildMeta(spec){
@@ -2924,7 +2973,8 @@ function pushImage(signal,nx,ny,mask,meta){
   const rescale=computeRescale(signal,mask);   // auto-rescale VOI window, fixed at capture
   // where the patient's RIGHT side lies after the roll, kept with the image so an older film
   // still hangs correctly when reviewed after the patient has been turned (see renderRadiograph)
-  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, rightAtPlusX: objMat()[0] > -0.5});
+  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, rightAtPlusX: objMat()[0] > -0.5,
+                     detW:S.detW, detH:S.detH});
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
 }
@@ -3735,7 +3785,7 @@ window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
-  initCT({ THREE, S, $, three, Sound,
+  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => trainerOnMode(m),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram, contrastLatch: ctrstLatch,
@@ -3809,6 +3859,19 @@ window.addEventListener('load',()=>{
     bilateral: () => BILATERAL.has(S.subject),
     midlineX: () => S.objOff.x });
   initTutorial({ applyMode: ctApplyMode });
+  initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent,
+    tubeFrame, objMat, voxelFlips,
+    landmarkLocal: (name) => landmarkLocal(S.subject, name),
+    matFor: (r) => { const d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); },
+    modelCentreY: () => (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y,
+    modelCentre: () => [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
+    setMarker: (side, place=true) => setSideMarker(side, place),
+    syncSandbox: syncSandboxControls,
+    lastDI: () => (S.lastDI ?? null),
+    // the room's own exposure, recorded like any other; and the same physics, not recorded
+    expose: async () => { if(S.exposing) return; S.exposing=true; try { await computeRadiograph(); } finally { S.exposing=false; } },
+    exposeDry: () => computeRadiograph({ dry:true }),
+    renderFull: renderRadiographFull });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
