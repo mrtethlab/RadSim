@@ -9,6 +9,7 @@
     "abdomen":    { "label": "Abdomen / soft tissue",      "sigmoid": true,  "center": 0.50, "width": 0.90 },
     "softtissue": { "label": "Soft tissue",                "sigmoid": true,  "center": 0.50, "width": 0.95 },
     "spine":      { "label": "Spine",                      "sigmoid": true,  "center": 0.53, "width": 0.80 },
+    "spineLat":   { "label": "Spine · lateral",            "sigmoid": true,  "center": 0.53, "width": 0.80, "voiCore": 0.6 },
     "skull":      { "label": "Skull",                      "sigmoid": true,  "center": 0.55, "width": 0.75 }
   }
 }

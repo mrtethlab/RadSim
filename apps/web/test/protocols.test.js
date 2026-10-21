@@ -104,12 +104,12 @@ test('the routine views centre where the textbooks say', () => {
   // Bontrager/Lampignano, McQuillen Martensen, Radiopaedia: the 3rd MCP joint for a PA hand, the
   // 2nd for the lateral, the midcarpal area for the wrist, midway between the malleoli for the AP
   // ankle and the medial malleolus for the lateral, T7 for chest and thoracic spine, the iliac
-  // crest (L4-L5) for the lumbar spine on a 35 x 43 receptor
+  // crest (L4-L5) for the lumbar spine on a 35 x 43 receptor; the spine laterals on the column
   const want = { 'PA hand': 'mcp3Joint', 'Oblique hand': 'mcp3Joint', 'Lateral hand': 'mcp2Joint',
     'PA wrist': 'midcarpal', 'Oblique wrist': 'midcarpal', 'Lateral wrist': 'midcarpal',
     'AP ankle': 'intermalleolar', 'Mortise ankle': 'intermalleolar', 'Lateral ankle': 'medialMalleolus',
-    'PA chest': 'T7', 'Lateral chest': 'T7mc', 'AP thoracic': 'T7', 'Lateral thoracic': 'T7',
-    'AP lumbar': 'crest', 'Lateral lumbar': 'crestMc' };
+    'PA chest': 'T7', 'Lateral chest': 'T7mc', 'AP thoracic': 'T7', 'Lateral thoracic': 'T7col',
+    'AP lumbar': 'crest', 'Lateral lumbar': 'crestCol' };
   for (const [proj, c] of Object.entries(want)) {
     const p = all.find((x) => x.proj === proj);
     assert.equal(p.pose.centre, c, proj);
@@ -122,4 +122,9 @@ test('the routine views centre where the textbooks say', () => {
   // T7 lies 8-10 cm below the jugular notch, and the crest below it
   const c = centring.chestabdopelvis;
   assert.ok(c.T7.z > c.crest.z + 20);
+  // the column points sit on the spine, behind the skin's midpoint (this abdomen is deep) and in
+  // front of the back; a lateral centred on them is narrow
+  assert.equal(c.crestCol.z, c.crest.z); assert.equal(c.T7col.z, c.T7.z);
+  assert.ok(c.crestCol.y < c.crestMc.y - 4 && c.crestCol.y > -12, `crestCol y ${c.crestCol.y}`);
+  assert.ok(c.T7col.y < c.T7mc.y - 4 && c.T7col.y > -12, `T7col y ${c.T7col.y}`);
 });

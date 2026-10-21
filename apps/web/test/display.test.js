@@ -48,3 +48,26 @@ test('raw beam never sets the window, and an empty field gives none', () => {
   assert.ok(w.hi < 1 && w.lo > tone(0.9, 1), 'the window lies inside the anatomy');
   assert.equal(computeRescale(new Float32Array(10).fill(1), new Uint8Array(10).fill(1), LUT), null);
 });
+
+test('a lateral spine takes its values of interest from the middle of the field', () => {
+  // 200 x 200: the back edge (the first 15 % of columns) is thin tissue running from nearly raw
+  // beam to the body; the rest is a thick body with the column across the middle
+  const nx = 200, ny = 200, sig = new Float32Array(nx * ny), mask = new Uint8Array(nx * ny).fill(1);
+  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    const k = y * nx + x;
+    sig[k] = x < 30 ? 0.9 * Math.pow(0.02, x / 30)                 // the thin strip at the back
+      : (x > 70 && x < 130 ? 0.003 + 0.002 * ((y >> 3) & 1) : 0.012);  // column (bodies and discs), abdomen
+  }
+  const mx = 0.9;
+  const out = (w, s) => Math.min(1, Math.max(0, (tone(s, mx) - w.lo) / (w.hi - w.lo)));
+  const all = computeRescale(sig, mask, LUT, {}, nx);
+  const core = computeRescale(sig, mask, { ...LUT, voiCore: 0.6 }, {}, nx);
+  const bodies = 0.003, discs = 0.005;
+  // the whole field: the column is pushed to the white end with little between bodies and discs
+  assert.ok(out(all, bodies) > 0.85, `whole field: bodies at ${out(all, bodies).toFixed(2)}`);
+  // the middle of the field: the column spreads over the grey scale
+  assert.ok(out(core, bodies) - out(core, discs) > 2 * (out(all, bodies) - out(all, discs)),
+    `contrast bodies/discs ${(out(core, bodies) - out(core, discs)).toFixed(2)} vs ${(out(all, bodies) - out(all, discs)).toFixed(2)}`);
+  // without the image width it cannot locate the middle, and behaves as before
+  assert.deepEqual(computeRescale(sig, mask, { ...LUT, voiCore: 0.6 }), all);
+});

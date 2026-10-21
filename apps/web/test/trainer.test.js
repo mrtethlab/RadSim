@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { locToWorld, fieldCoord, analyseCoverage, crOffset, judge, angleDiff, neededHalf, filmSide,
-  fieldToReceptor, BORDER_CM } from '../src/core/trainerEval.js';
+  fieldToReceptor, idealHalf, BORDER_CM } from '../src/core/trainerEval.js';
 import { sampleRegion, cloudCentre } from '../src/trainer/regions.js';
 import { SERIES } from '../src/trainer/series.js';
 
@@ -36,16 +36,32 @@ test('a field an inch beyond the anatomy passes; wider fails; narrower cuts', ()
   const ok = judge(view, base(frame(15 + 2 * BORDER_CM, 25 + 2 * BORDER_CM), pts));
   assert.equal(level(ok, 'anatomy'), 'pass');
   assert.equal(level(ok, 'collimation'), 'pass');
-  const open = judge(view, base(frame(30, 40), pts));
+  const open = judge(view, base(frame(40, 50), pts));
   assert.equal(level(open, 'collimation'), 'fail');
-  assert.match(open.find((c) => c.id === 'collimation').detail, /too wide/);
+  assert.match(open.find((c) => c.id === 'collimation').detail, /too wide.*a repeat/);
   const cut = judge(view, base(frame(12, 25 + 2 * BORDER_CM), pts));
   assert.equal(level(cut, 'anatomy'), 'fail');
+  assert.equal(level(cut, 'collimation'), 'fail');
   assert.match(cut.find((c) => c.id === 'anatomy').detail, /cut off at the (left|right)/);
-  // flush to the skin: everything on, but no border left
+  // flush to the skin: everything on, a thin border noted but not marked down
   const tight = judge(view, base(frame(15.4, 25.4), pts));
   assert.equal(level(tight, 'anatomy'), 'pass');
-  assert.equal(level(tight, 'collimation'), 'warn');
+  assert.equal(level(tight, 'collimation'), 'pass');
+  assert.match(tight.find((c) => c.id === 'collimation').detail, /Under ¼"/);
+});
+
+test('collimation grades: within the inch passes, open by under half the ideal is marked, beyond is a repeat', () => {
+  // anatomy 14.92 cm long: the ideal field is 20 cm. 22 passes, 30 is marked, 31 is a repeat
+  const pts = slab(5, (20 - 2 * BORDER_CM) / 2);
+  const ideal = 10 + 2 * BORDER_CM;
+  const at = (len) => level(judge(view, base(frame(ideal, len), pts)), 'collimation');
+  assert.equal(at(20), 'pass');
+  assert.equal(at(22), 'pass');
+  assert.equal(at(23), 'warn');
+  assert.equal(at(30), 'warn');
+  assert.equal(at(31), 'fail');
+  // a repeat on either axis is a repeat
+  assert.equal(level(judge(view, base(frame(ideal * 1.6, 22), pts)), 'collimation'), 'fail');
 });
 
 test('the inch border is asked for only as far as the receptor allows', () => {
@@ -54,9 +70,22 @@ test('the inch border is asked for only as far as the receptor allows', () => {
   const F = frame(35, 24 + 2 * BORDER_CM);
   const m = base(F, pts, { recHalf: { w: 17.5, l: 21.5 } });
   assert.equal(level(judge(view, m), 'collimation'), 'pass', 'full width used: right, though the border is thin');
-  assert.equal(level(judge(view, base(F, pts)), 'collimation'), 'warn', 'without the receptor known, a thin border warns');
+  assert.equal(level(judge(view, base(F, pts)), 'collimation'), 'pass', 'a thin border is noted, not marked down');
   // but a field that cuts the lungs still fails
   assert.equal(level(judge(view, base(frame(30, 30), pts, { recHalf: { w: 17.5, l: 21.5 } })), 'anatomy'), 'fail');
+});
+
+test('a textbook field size is the least the ideal asks for: collimating to it is never open', () => {
+  // a slender column: 10 cm of anatomy wants 15.08 cm; the lateral lumbar's textbook field is 20 wide
+  const pts = slab(5, 12);
+  const v = { ...view, field: { w: 20 } };
+  const F = frame(20, 24 + 2 * BORDER_CM);
+  assert.ok(Math.abs(2 * idealHalf(v, analyseCoverage(pts, F)).w - 20) < 1e-9);
+  assert.equal(level(judge(v, base(F, pts)), 'collimation'), 'pass', 'the textbook 20 cm');
+  assert.equal(level(judge(view, base(F, pts)), 'collimation'), 'warn', 'without it, 20 is 5 cm open');
+  assert.equal(level(judge(v, base(frame(10 + 2 * BORDER_CM, 24 + 2 * BORDER_CM), pts)), 'collimation'), 'pass', 'the inch alone');
+  // and the receptor still caps it
+  assert.equal(idealHalf({ field: { w: 50 } }, analyseCoverage(pts, F), { w: 17.5, l: 21.5 }).w, 17.5);
 });
 
 test('the symmetric collimator: the further side decides the field', () => {
@@ -88,13 +117,29 @@ test('centring is measured perpendicular to the central ray, so an angled beam i
   assert.ok(Math.abs(crOffset([on[0] + 1.5, on[1], on[2]], F).dist - 1.5) < 1e-9);
 });
 
-test('position: rotation within tolerance, measured the short way round', () => {
+test('position: 2 degrees in any axis, measured the short way round', () => {
   assert.equal(angleDiff(179, -179), -2);
   const F = frame(), pts = slab(5, 5);
-  const v = { ...view, pose: { roll: 180, tol: 4 } };
-  assert.equal(level(judge(v, base(F, pts, { rot: { x: 0, y: 0, z: -178 } })), 'position'), 'pass');
-  assert.equal(level(judge(v, base(F, pts, { rot: { x: 0, y: 0, z: 170 } })), 'position'), 'fail');
-  assert.equal(level(judge(view, base(F, pts, { rot: { x: 8, y: 0, z: 0 } })), 'position'), 'fail');
+  const pos = (v, rot) => level(judge(v, base(F, pts, { rot })), 'position');
+  const v = { ...view, pose: { roll: 180 } };              // the default leniency
+  assert.equal(pos(v, { x: 0, y: 0, z: -178 }), 'pass');
+  assert.equal(pos(v, { x: 0, y: 0, z: 177 }), 'fail');
+  for (const ax of ['x', 'y']) {
+    assert.equal(pos(v, { x: 0, y: 0, z: 180, [ax]: 2 }), 'pass', `${ax} 2 degrees`);
+    assert.equal(pos(v, { x: 0, y: 0, z: 180, [ax]: -3 }), 'fail', `${ax} 3 degrees`);
+  }
+  // a textbook range (the mortise's 15-20) with the leniency either side
+  const m = { ...view, pose: { roll: 15, range: [15, 20], tol: 2 } };
+  for (const z of [13, 15, 18, 20, 22]) assert.equal(pos(m, { x: 0, y: 0, z }), 'pass', `mortise ${z}`);
+  for (const z of [12, 23]) assert.equal(pos(m, { x: 0, y: 0, z }), 'fail', `mortise ${z}`);
+  assert.match(judge(m, base(F, pts, { rot: { x: 0, y: 0, z: 25 } })).find((c) => c.id === 'position').detail, /want 15-20° \(\+5°\)/);
+  // a hand or wrist: the turn that counts is the forearm against the film, not the slider's zero
+  const arm = (rotY, limbTurn) => judge(view, base(F, pts, { rot: { x: 0, y: rotY, z: 0 }, limbTurn }));
+  assert.equal(level(arm(-25, 0.4), 'position'), 'pass', 'turned 25 degrees to line the forearm up');
+  assert.equal(level(arm(0, 24), 'position'), 'fail');
+  assert.match(arm(0, 24).find((c) => c.id === 'position').detail, /forearm 24° across the film/);
+  // every series view takes the 2 degrees
+  for (const s of SERIES) for (const vw of s.views) assert.equal(vw.pose.tol, 2, `${s.id} ${vw.label}`);
 });
 
 test('the film-side words follow the display mirror', () => {

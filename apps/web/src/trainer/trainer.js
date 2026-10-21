@@ -12,7 +12,7 @@
    ============================================================================ */
 import { SERIES } from './series.js';
 import { sampleRegion, cloudCentre } from './regions.js';
-import { locToWorld, analyseCoverage, crOffset, judge, neededHalf, fieldCoord, fieldToReceptor,
+import { locToWorld, analyseCoverage, crOffset, judge, idealHalf, fieldCoord, fieldToReceptor,
   BORDER_CM } from '../core/trainerEval.js';
 
 let H = null;                 // app hooks
@@ -231,6 +231,24 @@ function alignAngle() {
   return Math.atan2(cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2], r[0] * m[0] + r[1] * m[1] + r[2] * m[2]) * 180 / Math.PI;
 }
 
+/* THE FOREARM ON THE FILM: the angle in the plane of the field from its long axis to the distal
+   radius's axis (centring.json points, through the pose), folded to +-90 degrees. A hand or wrist
+   film runs the forearm down the receptor's length. This model's arm lies across it once the hand
+   is straightened on it, so the student turns the arm (in the plane of the table) to line it up;
+   an arm left across the film forces a field as wide as it is long. */
+function limbTurn(rot = H.S.objRot) {
+  const P = (n) => { const p = H.landmarkLocal(n); return p ? H.poseLoc(p) : null; };
+  const a = P('radiusProx'), b = P('radiusDistal');
+  if (!a || !b) return null;
+  const R = H.matFor(rot), d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const v = [R[0] * d[0] + R[1] * d[1] + R[2] * d[2], R[3] * d[0] + R[4] * d[1] + R[5] * d[2], R[6] * d[0] + R[7] * d[1] + R[8] * d[2]];
+  const f = H.tubeFrame(), dot = (p, q) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
+  let t = Math.atan2(dot(v, f.wAxis), dot(v, f.lAxis)) * 180 / Math.PI;
+  if (t > 90) t -= 180;
+  if (t <= -90) t += 180;
+  return t;
+}
+
 // the joints the patient on the table can bend, flattened to their motions
 function motionsOf() {
   const ch = H.jointChain();
@@ -323,7 +341,8 @@ function measure(view) {
     m: { rot: { ...S.objRot }, angCC: S.angCC, angLM: S.angLM, cr: crOffset(lmW, F), cov: analyseCoverage(pts, F),
          rightAtPlusX: R[0] > -0.5, marker: S.lastMarker || null, di: H.lastDI(),
          recHalf: { w: S.detW / 2, l: S.detH / 2 },
-         joints: { ...S.joints }, motions: motionsOf(), align: view.align ? alignAngle() : null } };
+         joints: { ...S.joints }, motions: motionsOf(), align: view.align ? alignAngle() : null,
+         limbTurn: view.align ? limbTurn() : null } };
 }
 
 async function expose(view) {
@@ -377,12 +396,23 @@ function applyIdeal(view) {
   // the hand straight on the forearm (or, for the scaphoid, deviated to the middle of its range)
   if (view.align) S.joints[view.align.motion || 'wrist.dev'] = view.align.range ? Math.round((view.align.range[0] + view.align.range[1]) / 2) : 0;
   S.objRot = { x: 0, y: 0, z: view.pose.roll };
+  // a hand or wrist: turn the arm until the forearm runs down the film (a few steps, either way)
+  if (view.align) {
+    for (let i = 0; i < 4; i++) {
+      const t = limbTurn(S.objRot);
+      if (t == null || Math.abs(t) < 0.2) break;
+      const y0 = S.objRot.y;
+      S.objRot = { ...S.objRot, y: y0 - t };
+      if (Math.abs(limbTurn(S.objRot)) > Math.abs(t)) S.objRot = { ...S.objRot, y: y0 + t };
+    }
+    S.objRot.y = Math.round(S.objRot.y);              // the Turn slider moves in whole degrees
+  }
   S.angCC = cc; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
   const off = idealOffset(view, S.objRot, cc);
   S.objOff.x = clampOff(off.x); S.objOff.z = clampOff(off.z);
   // the field the anatomy needs, at this geometry
   S.collX = S.detW; S.collZ = S.detH;
-  const need = neededHalf(measure(view).m.cov);
+  const mm = measure(view).m, need = idealHalf(view, mm.cov, mm.recHalf);
   S.collX = Math.min(S.detW, 2 * need.w); S.collZ = Math.min(S.detH, 2 * need.l);
   // pronated exactly when this film will be hung mirrored (a PA trunk or head)
   H.setMarker(idealMarker(view), true, !(H.matFor(S.objRot)[0] > -0.5));

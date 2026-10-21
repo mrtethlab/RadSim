@@ -11,8 +11,9 @@
      real beam: what fraction lies inside the collimated field, and how far any of it is cut.
    - COLLIMATION: a 1-inch (2.54 cm) border beyond the required anatomy, measured at the image
      receptor. The collimator is symmetric about the central ray, so the field each way must
-     reach the furthest anatomy that way plus the border; more than half an inch beyond that
-     is an open field.
+     reach the furthest anatomy that way plus the border. Graded per axis: within half an inch
+     of that each side passes; open by less than half the ideal field again is acceptable but
+     marked (20 cm ideal: 22 passes, up to 30 is marked); open further is a repeat.
    The geometry follows app.js tubeFrame(): src (focal spot), fd (central-ray direction),
    wAxis / lAxis (collimator width and length axes), field half-angles as tangents.
    ============================================================================ */
@@ -20,6 +21,8 @@
 export const BORDER_CM = 2.54;              // the one-inch border
 export const BORDER_TOL_CM = 1.27;          // half an inch of slack beyond it before it is "open"
 export const ANATOMY_FRAC = 0.995;          // allows the odd stray voxel at a cut edge
+export const OPEN_FRAC = 0.5;               // open by up to half the ideal field: marked, not repeated
+export const POSE_TOL = 2;                  // degrees, any axis: too little to change the image
 
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 
@@ -97,6 +100,16 @@ export function neededHalf(cov) {
   };
 }
 
+/* The ideal field's half-sizes: the inch beyond the anatomy, never smaller than a textbook field
+   the view names (view.field: { w, l } cm at the receptor — the lateral lumbar's 20 cm width fits
+   any adult, where this model's slender column alone would make 17), and never larger than the
+   receptor (recHalf): a broad chest can need more than a 35 cm receptor; then its full width is right. */
+export function idealHalf(view, cov, recHalf) {
+  const n = neededHalf(cov), f = view?.field || {};
+  const h = { w: Math.max(n.w, (f.w || 0) / 2), l: Math.max(n.l, (f.l || 0) / 2) };
+  return recHalf ? { w: Math.min(h.w, recHalf.w), l: Math.min(h.l, recHalf.l) } : h;
+}
+
 /* Words for a direction on the film as hung. +l is the patient's superior (or distal, on the
    hand) end, hung at the TOP. +w is world +x, which hangs on the LEFT when the patient's right
    is at +x (the display mirror). */
@@ -115,9 +128,16 @@ export function judge(view, m) {
   const out = [];
   const add = (id, label, level, detail) => out.push({ id, label, level, detail });
   // position
-  const tol = view.pose?.tol ?? 5;
-  const dRoll = angleDiff(m.rot.z, view.pose?.roll ?? 0);
-  const off = [Math.abs(dRoll), Math.abs(angleDiff(m.rot.x, 0)), Math.abs(angleDiff(m.rot.y, 0))];
+  const tol = view.pose?.tol ?? POSE_TOL;
+  // roll against the view's angle, or the range a textbook gives (signed: how far outside it)
+  const rng = view.pose?.range || [view.pose?.roll ?? 0, view.pose?.roll ?? 0];
+  const dLo = angleDiff(m.rot.z, rng[0]), dHi = angleDiff(m.rot.z, rng[1]);
+  const dRoll = dLo < 0 ? dLo : dHi > 0 ? dHi : 0;
+  const wantRoll = rng[0] === rng[1] ? `${rng[0]}°` : `${rng[0]}-${rng[1]}°`;
+  // the turn in the plane of the table: zero, or for a hand or wrist (m.limbTurn), whatever puts
+  // the forearm down the film's length, which is what the image shows
+  const turned = m.limbTurn != null ? m.limbTurn : angleDiff(m.rot.y, 0);
+  const off = [Math.abs(dRoll), Math.abs(angleDiff(m.rot.x, 0)), Math.abs(turned)];
   // the joints: a view that needs one bent says so (view.joints: { key: [lo, hi] }); every other
   // motion the limb has should be neutral, within 10 degrees
   const jointFaults = [], jointNotes = [];
@@ -143,9 +163,11 @@ export function judge(view, m) {
   }
   const posOk = off.every((v) => v <= tol) && !jointFaults.length;
   add('position', 'Patient position', posOk ? 'pass' : 'fail',
-    posOk ? `Rotation ${m.rot.z.toFixed(0)}° (want ${view.pose?.roll ?? 0}° ± ${tol}°)` + (jointNotes.length ? `; ${jointNotes.join(', ')}.` : '.')
-      : [Math.abs(dRoll) > tol ? `rotated ${m.rot.z.toFixed(0)}° about the long axis, want ${view.pose?.roll ?? 0}° (${dRoll > 0 ? '+' : ''}${dRoll.toFixed(0)}°)` : '',
-        off[1] > tol ? `tilted ${m.rot.x.toFixed(0)}°` : '', off[2] > tol ? `turned ${m.rot.y.toFixed(0)}°` : '', ...jointFaults]
+    posOk ? `Rotation ${m.rot.z.toFixed(0)}° (want ${wantRoll} ± ${tol}°)` + (jointNotes.length ? `; ${jointNotes.join(', ')}.` : '.')
+      : [Math.abs(dRoll) > tol ? `rotated ${m.rot.z.toFixed(0)}° about the long axis, want ${wantRoll} (${dRoll > 0 ? '+' : ''}${dRoll.toFixed(0)}°)` : '',
+        off[1] > tol ? `tilted ${m.rot.x.toFixed(0)}°` : '',
+        off[2] > tol ? (m.limbTurn != null ? `forearm ${Math.abs(turned).toFixed(0)}° across the film's long axis: turn the arm to line it up` : `turned ${m.rot.y.toFixed(0)}°`) : '',
+        ...jointFaults]
         .filter(Boolean).join('; ') + '.');
   // central-ray angle
   const ccTol = view.cr?.tol ?? 2, wantCC = view.cr?.cc ?? 0;
@@ -175,14 +197,21 @@ export function judge(view, m) {
   }
   add('anatomy', 'Required anatomy', anatOk ? 'pass' : 'fail',
     anatOk ? 'All of it is on the image.' : `${(100 * (1 - cov.inFrac)).toFixed(0)} % of it is outside the field: ${cuts.join(', ') || 'clipped at the edges'}.`);
-  // collimation: the inch border as far as the receptor allows (m.recHalf: its half-size along
-  // each field axis) — a broad chest can need more than a 35 cm receptor; then the full width is right
+  // collimation: the inch border, as far as the receptor allows (m.recHalf: its half-size along
+  // each field axis), or the textbook field where the view names one
   const need0 = neededHalf(cov);
-  const need = m.recHalf ? { w: Math.min(need0.w, m.recHalf.w), l: Math.min(need0.l, m.recHalf.l) } : need0;
-  const overW = cov.half.w - need.w, overL = cov.half.l - need.l;
-  const open = [];
-  if (overW > BORDER_TOL_CM) open.push(`${(2 * overW).toFixed(1)} cm too wide`);
-  if (overL > BORDER_TOL_CM) open.push(`${(2 * overL).toFixed(1)} cm too long`);
+  const need = idealHalf(view, cov, m.recHalf);
+  // each axis on its own: the ideal field is the anatomy and its inch; half an inch of slack each
+  // side passes, open by less than half the ideal again is marked, beyond that is a repeat
+  const open = [], levels = [];
+  for (const [ax, word] of [['w', 'wide'], ['l', 'long']]) {
+    const ideal = 2 * need[ax], over = 2 * cov.half[ax] - ideal;
+    if (over <= 2 * BORDER_TOL_CM) { levels.push('pass'); continue; }
+    const lv = over <= OPEN_FRAC * ideal ? 'warn' : 'fail';
+    levels.push(lv);
+    open.push(`${over.toFixed(1)} cm too ${word} (${Math.round(100 * over / ideal)} % over the ideal${lv === 'fail' ? ': a repeat' : ''})`);
+  }
+  // a thin border is still a border: noted, not marked down
   const tight = [];
   for (const [k, axis, sign, half] of [['lMax', 'l', 1, 'l'], ['lMin', 'l', -1, 'l'], ['wMax', 'w', 1, 'w'], ['wMin', 'w', -1, 'w']]) {
     const edge = sign > 0 ? cov.ext[k] : -cov.ext[k];
@@ -190,12 +219,13 @@ export function judge(view, m) {
     if (need0[half] > need[half]) continue;            // the receptor's edge, not the student's choice
     if (margin >= 0 && margin < 0.6) tight.push(filmSide(axis, sign, m.rightAtPlusX));
   }
-  const collLevel = !anatOk ? 'fail' : open.length ? 'fail' : tight.length ? 'warn' : 'pass';
+  const collLevel = !anatOk || levels.includes('fail') ? 'fail' : levels.includes('warn') ? 'warn' : 'pass';
   add('collimation', 'Collimation (1" border)', collLevel,
-    `Field ${(2 * cov.half.w).toFixed(1)} × ${(2 * cov.half.l).toFixed(1)} cm; needed about ${(2 * need.w).toFixed(1)} × ${(2 * need.l).toFixed(1)} cm.`
+    `Field ${(2 * cov.half.w).toFixed(1)} × ${(2 * cov.half.l).toFixed(1)} cm; ideal about ${(2 * need.w).toFixed(1)} × ${(2 * need.l).toFixed(1)} cm.`
     + (open.length ? ' Open: ' + open.join(', ') + '.' : '')
+    + (collLevel === 'warn' ? ' Acceptable, but collimate closer: the open field is dose and scatter for nothing.' : '')
     + (!anatOk ? ' The field cuts required anatomy.' : '')
-    + (tight.length ? ` Less than ¼" of border at the ${tight.join(', ')}.` : ''));
+    + (tight.length && anatOk ? ` Under ¼" of border at the ${tight.join(', ')}: close.` : ''));
   // side marker
   if (m.marker) add('marker', 'Side marker', m.marker.level === 'ok' ? 'pass' : m.marker.level, m.marker.text);
   // exposure

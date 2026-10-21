@@ -2445,7 +2445,7 @@ async function computeRadiograph(opts={}){
   const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
   if(dry){
     const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
-    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,mask), EI,
+    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,mask,nx), EI,
              rightAtPlusX: objMat()[0] > -0.5, detW, detH };
   }
   S.lastMarker=sideMarkerVerdict(mkStamp); S.lastMarkerStamp=mkStamp;
@@ -2601,9 +2601,9 @@ function drawFilm(){
 }
 
 /* Automatic rescaling (DR auto-ranging): core/displayWindow.js. */
-function computeRescale(sig,mask){
+function computeRescale(sig,mask,nx){
   const _t=(typeof window!=='undefined'&&window.__tune)||{};
-  return computeRescaleCore(sig, mask, S.lut, _t);
+  return computeRescaleCore(sig, mask, S.lut, _t, nx);
 }
 
 /* ---- DR-style detail (edge) enhancement ------------------------------------
@@ -3062,7 +3062,7 @@ function buildMeta(spec){
 /* ---- image history: keep the last 10 exposures, reviewable on the Image view ---- */
 const IMG_HISTORY_MAX=10;
 function pushImage(signal,nx,ny,mask,meta){
-  const rescale=computeRescale(signal,mask);   // auto-rescale VOI window, fixed at capture
+  const rescale=computeRescale(signal,mask,nx);   // auto-rescale VOI window, fixed at capture
   // where the patient's RIGHT side lies after the roll, kept with the image so an older film
   // still hangs correctly when reviewed after the patient has been turned (see renderRadiograph)
   S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, rightAtPlusX: objMat()[0] > -0.5,

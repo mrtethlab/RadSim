@@ -144,6 +144,20 @@ def lower_extremity():
 
 
 # ---------------------------------------------------------------- chest and spine
+def column_y(V, z):
+    """the vertebral column's depth at level z: (front of the body, tip of the spinous process),
+    from the largest piece of bone within 4 cm of the midline in a 6 cm slab, which is a whole
+    vertebra (body, pedicles and arch) rather than a stray rib, calcified vessel or the sternum"""
+    k0, k1 = V.idx(2, z - 3), V.idx(2, z + 3) + 1
+    xs = (np.arange(V.n[0]) - (V.n[0] - 1) / 2) * V.sp[0]
+    slab = V.bone[k0:k1] & (np.abs(xs) <= 4)[None, None, :]
+    lab, n = ndi.label(slab)
+    sizes = ndi.sum(slab, lab, range(1, n + 1))
+    _, jj, _ = np.nonzero(lab == int(np.argmax(sizes)) + 1)
+    ys = (jj - (V.n[1] - 1) / 2) * V.sp[1]
+    return float(np.percentile(ys, 99.5)), float(np.percentile(ys, 0.5))
+
+
 def trunk(name):
     V = Vol(name)
     out = {}
@@ -172,6 +186,23 @@ def trunk(name):
             'AP lumbar spine (35 x 43 cm): CR to the level of the iliac crest, L4-L5 (Bontrager; Radiopaedia)')
         out['crestMc'] = pt([0, midcoronal_y(V, zc), zc], 'the level of the iliac crests on the midcoronal plane',
             'Lateral lumbar spine (35 x 43 cm): CR to the level of the iliac crest (L4-L5), centred to the midcoronal plane (Bontrager)')
+        # The spine laterals centre on the column itself. On an average adult the midcoronal plane
+        # runs through the vertebral bodies; this patient's abdomen is deep enough that the skin's
+        # midpoint lies in front of them, and a field centred there must open twice as wide. The
+        # column curves (lordosis, kyphosis), so the depth is the middle of its span over the
+        # section the film shows: L1 to S1 (the crest is L4-L5; about 4 cm a level), and T3 to T12
+        # (T1-T3 hide behind the shoulders on a lateral: that is the swimmer's view).
+        for key, zz, z0, z1, lvl, guide in (
+                ('crestCol', zc, zc - 4.5, zc + 13, 'the level of the iliac crests (L4-L5)',
+                 'Lateral lumbar spine: CR to the level of the iliac crest (L4-L5), centred on the vertebral column (the midcoronal plane on an average adult); collimate to about 20 cm wide, 1" beyond the bodies and spinous processes (Bontrager; Radiopaedia)'),
+                ('T7col', z7, z7 - 13, z7 + 9.5, 'T7 (the centre of the lung fields)',
+                 'Lateral thoracic spine: CR to T7, centred on the vertebral column; collimate long and narrow to the column (Bontrager; Radiopaedia)')):
+            spans = [column_y(V, z) for z in np.arange(z0, z1 + 0.01, 1.0)]
+            front, back = max(f for f, _ in spans), min(b for _, b in spans)
+            print(f'  {name}: column {key} z {z0:.1f}..{z1:.1f}: front of the bodies y {front:.1f}, spinous tips y {back:.1f}')
+            out[key] = pt([0, round((front + back) / 2, 2), zz],
+                f'{lvl}, midsagittal, at the middle of the depth of the vertebral column from z {z0:.1f} to {z1:.1f}: '
+                f'front of the bodies y {front:.1f}, spinous tips y {back:.1f} (largest vertebra in a 6 cm slab, every 1 cm)', guide)
     return out
 
 
