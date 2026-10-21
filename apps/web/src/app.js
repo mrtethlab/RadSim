@@ -458,8 +458,9 @@ function prepSkinMesh(grp){
    Models without a skin mesh always show the plain one. */
 function applyPhotoSkin(){
   // The photo-textured skin is simply the default whenever the model ships one — there is
-  // no toggle. It is display only; the physics always reads the voxel volume. Models
-  // without a skin (all but the hand, today) show the material-shaded mesh.
+  // no toggle. It is display only; the physics always reads the voxel volume. Every body model
+  // ships one (the hand photo-coloured, the rest from services/compute/app/build_skin.py); the
+  // phantoms and editor models show the material-shaded mesh.
   for(const k in (three.voxelMeshes||{})){
     const wrap=three.voxelMeshes[k]; if(!wrap||!wrap.children) continue;
     const hasSkin=wrap.children.some(c=>c.userData&&c.userData.role==='skin');

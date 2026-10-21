@@ -15,6 +15,7 @@
   "volume": "lumbopelvis.mat.bin",
   "dtype": "uint8",
   "mesh": "lumbopelvis.glb",
+  "skinMesh": "lumbopelvis_skin.glb",
   "materials": [
     {
       "id": 0,
