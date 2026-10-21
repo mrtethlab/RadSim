@@ -196,10 +196,10 @@ export const XRAY_STEPS = [
   {
     sel: '.grp:has(#detSizeSeg)',
     title: 'Receptor and matrix',
-    text: 'Receptor size and orientation decide how much anatomy fits. The resolution setting is a '
-      + 'simulation control rather than a clinical one: it is the ray-cast matrix. Quick is a coarse '
-      + 'grid that returns in a moment; full resolution is far sharper and far slower, and is worth '
-      + 'switching to the Python GPU engine for.',
+    text: 'Receptor size and orientation decide how much anatomy fits: 25×30 for an extremity, '
+      + '35×43 for a trunk, and 43×43 for the broad ones (a large chest or abdomen, a pelvis '
+      + 'across both hips). The matrix the image is ray-cast at is a simulation control, not a '
+      + 'clinical one, so it sits under Simulation with the compute engine.',
     goal: {
       label: 'Switch the receptor between portrait and landscape',
       arm: () => S().detOrient,
@@ -226,7 +226,9 @@ export const XRAY_STEPS = [
       + 'available, and fine at quick resolution. <b>Python GPU</b> hands the projection to the '
       + 'compute backend if you have it running, which is dramatically faster and makes full '
       + 'resolution practical. Nothing about the image changes, only how long you wait for it. '
-      + 'Nothing to set here — it depends on what is installed.',
+      + 'Below it, <b>Detector resolution</b> is the ray-cast matrix: Quick is a coarse grid that '
+      + 'returns in a moment; Low, Std and High are true DR matrices, far sharper and far slower, '
+      + 'and worth the Python GPU engine.',
   },
   {
     sel: '#rotor',

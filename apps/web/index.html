@@ -336,6 +336,25 @@
       </div>
     </div>
 
+    <!-- ============ PALPATION (pull-out, left edge, x-ray, under BARIUM) ============
+         The Trainer's Palpate… menu for the sandbox: the same marks (trainer/palpate.js). -->
+    <div class="ctrst palp xray-only" id="palpPanel">
+      <button class="ctrst-tab" id="palpTab" title="Palpation landmarks"><span>PALPATE</span></button>
+      <div class="ctrst-body">
+        <div class="ctrst-hdr">
+          <div class="t"><b>PALPATE</b> / LANDMARKS</div>
+          <button class="ctrst-pow" id="palpClear">CLEAR</button>
+        </div>
+        <div class="ctrst-pad">
+          <div class="ctrst-note" style="margin-top:0">Pick a bony landmark to see where it is felt
+            on this patient's skin. The red mark follows the patient as they are rolled, tilted and
+            moved, so a centring point can be learned by sight, then by hand.</div>
+          <div class="palp-list" id="palpList"></div>
+          <div class="ctrst-status" id="palpStatus">Nothing marked.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- ============ CONTRAST INJECTOR (pull-out, left edge of the bay) ============ -->
     <div class="ctrst" id="ctrstPanel">
       <button class="ctrst-tab" id="ctrstTab" title="Contrast injector"><span>CONTRAST</span></button>
@@ -862,20 +881,12 @@
           <div class="seg" id="detSizeSeg">
             <button data-w="25" data-h="30">25×30</button>
             <button data-w="35" data-h="43" class="on">35×43</button>
+            <button data-w="43" data-h="43">43×43</button>
           </div>
           <div class="seg" id="detOrientSeg" style="margin-top:8px">
             <button data-orient="portrait" class="on">Portrait</button>
             <button data-orient="landscape">Landscape</button>
           </div>
-          <div class="row" style="margin-top:12px"><div class="rl">Resolution</div>
-            <div class="valchip" id="resV">320×400</div></div>
-          <div class="seg" id="resSeg">
-            <button data-res="quick" class="on">Quick</button>
-            <button data-res="low">Low</button>
-            <button data-res="std">Std</button>
-            <button data-res="high">High</button>
-          </div>
-          <div class="note warn" id="resWarn" style="margin-top:4px; display:none">⚠ Full-resolution ray-casting is computationally heavy — expect long processing times. A detected GPU (Python compute engine) is strongly recommended.</div>
         </div>
       </div>
 
@@ -921,6 +932,17 @@
               <button data-be="python" disabled>Python GPU</button>
             </div>
             <div class="note" id="computeNoteX" style="margin-top:4px"></div>
+            <!-- the ray-cast matrix: a simulation cost, not a clinical setting, so it sits with
+                 the engine that pays for it -->
+            <div class="row" style="margin-top:12px"><div class="rl">Detector resolution <small>ray-cast matrix</small></div>
+              <div class="valchip" id="resV">320×400</div></div>
+            <div class="seg" id="resSeg">
+              <button data-res="quick" class="on">Quick</button>
+              <button data-res="low">Low</button>
+              <button data-res="std">Std</button>
+              <button data-res="high">High</button>
+            </div>
+            <div class="note warn" id="resWarn" style="margin-top:4px; display:none">⚠ Full-resolution ray-casting is computationally heavy — expect long processing times. A detected GPU (Python compute engine) is strongly recommended.</div>
             <div class="row" style="margin-top:12px"><div class="rl">Scatter <small>veiling fog</small></div>
               <div class="val" id="scatterVal">100 %</div></div>
             <input type="range" id="scatterSld" min="0" max="200" step="5" value="100">

@@ -586,6 +586,9 @@ function applyDet(){
   S.detW = port?S.detBaseW:S.detBaseH;
   S.detH = port?S.detBaseH:S.detBaseW;
   let [nx,ny]=RES_MAP[S.resolution]||RES_MAP.std;
+  // the tiers are 4:5, near enough the 25x30 and 35x43 receptors; a square 43x43 takes a square
+  // matrix (the long side's count both ways), or its pixels would be a quarter taller than wide
+  if(S.detBaseW===S.detBaseH) nx=ny;
   if(!port){ const t=nx; nx=ny; ny=t; }
   S.detNx=nx; S.detNy=ny;
   const dv=$('detSizeV'); if(dv) dv.textContent=S.detW+'×'+S.detH+' cm';
@@ -1232,6 +1235,39 @@ async function giApply(){
     }catch(err){ B.error = 'Could not load the GI geometry: '+err.message; }
   }
   giRender();
+}
+
+/* ---- PALPATION drawer (the x-ray sandbox; the Trainer has its own menu) ------------------
+   The landmarks measured on this subject (data/palpation.json), each a toggle: on, a red mark
+   sits on the skin over the bone and follows the patient (trainer/palpate.js). A subject with
+   none measured dims the tab and says so on hover, as the other drawers do. */
+function palpRender(){
+  const host=$('palpList'), panel=$('palpPanel'); if(!host) return;
+  const list=palpationList(S.subject), on=new Set(palpatedKeys());
+  panel.classList.toggle('blocked', !list.length);
+  $('palpTab').title = list.length ? 'Palpation landmarks' : 'No palpation landmarks are measured on this subject';
+  if(!list.length && panel.classList.contains('open')){ panel.classList.remove('open'); syncFlyouts(); }
+  const q=(t)=>String(t||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  host.innerHTML=list.map(p=>`<button data-k="${q(p.key)}" class="${on.has(p.key)?'on':''}" title="${q(p.how)}">${q(p.label)}</button>`).join('');
+  $('palpStatus').textContent = !S.voxelModel ? 'Waiting for the patient to load.'
+    : on.size ? `${on.size} landmark${on.size>1?'s':''} marked on the skin.` : 'Nothing marked.';
+}
+function initPalpPanel(){
+  if(!$('palpPanel')) return;
+  $('palpTab').addEventListener('click', ()=>{
+    if($('palpPanel').classList.contains('blocked')) return;
+    $('palpPanel').classList.toggle('open');
+    syncFlyouts(); palpRender();
+  });
+  $('palpList').addEventListener('click', (e)=>{
+    const b=e.target.closest('button[data-k]'); if(!b) return;
+    setPalpated(b.dataset.k, !b.classList.contains('on'));
+    palpRender();
+  });
+  $('palpClear').addEventListener('click', ()=>{ clearPalpation(); palpRender(); });
+  // a new patient: the old marks belong to the old one
+  window.addEventListener('radsim:subject', ()=>{ clearPalpation(); palpRender(); });
+  palpRender();
 }
 
 function initGIPanel(){
@@ -3875,7 +3911,7 @@ function startComputePoll(){
 /* ---- boot ---- */
 window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
-  Sound.init(); initExtras(); initContrastPanel(); initGIPanel();
+  Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound, onModeChange: (m) => trainerOnMode(m),
            syncScene, refreshReadouts, updateGeomReadouts,
