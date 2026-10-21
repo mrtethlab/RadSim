@@ -212,7 +212,7 @@
               "kv": 62,
               "mas": 1.25,
               "grid": false,
-              "lut": "extremity",
+              "lut": "limb",
               "sid": 100,
               "coll": [
                 13,
@@ -225,10 +225,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -73,
+                "roll": 8,
                 "cc": 0,
                 "centre": "forearm",
-                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 8 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
@@ -236,7 +236,7 @@
               "kv": 64,
               "mas": 1.25,
               "grid": false,
-              "lut": "extremity",
+              "lut": "limb",
               "sid": 100,
               "coll": [
                 13,
@@ -249,10 +249,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 17,
+                "roll": 98,
                 "cc": 0,
                 "centre": "forearm",
-                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json).",
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 8 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
                 "joints": {
                   "elbow.flex": 90
                 }
@@ -266,9 +266,9 @@
             {
               "proj": "AP elbow",
               "kv": 64,
-              "mas": 1.25,
+              "mas": 1.6,
               "grid": false,
-              "lut": "extremity",
+              "lut": "limb",
               "sid": 100,
               "coll": [
                 15,
@@ -281,10 +281,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -73,
+                "roll": 8,
                 "cc": 0,
                 "centre": "elbowJoint",
-                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 8 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
@@ -292,7 +292,7 @@
               "kv": 66,
               "mas": 1.25,
               "grid": false,
-              "lut": "extremity",
+              "lut": "limb",
               "sid": 100,
               "coll": [
                 15,
@@ -305,10 +305,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 17,
+                "roll": 98,
                 "cc": 0,
                 "centre": "elbowJoint",
-                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json).",
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 8 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
                 "joints": {
                   "elbow.flex": 90
                 }
@@ -322,7 +322,7 @@
             {
               "proj": "AP humerus",
               "kv": 70,
-              "mas": 1.0,
+              "mas": 1.25,
               "grid": false,
               "lut": "bone",
               "sid": 100,
@@ -337,10 +337,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -73,
+                "roll": 8,
                 "cc": 0,
                 "centre": "humerus",
-                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 8 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
@@ -361,10 +361,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 17,
+                "roll": 98,
                 "cc": 0,
                 "centre": "humerus",
-                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 8 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             }
           ]

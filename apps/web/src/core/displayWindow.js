@@ -38,7 +38,12 @@ export function computeRescale(sig, mask, lut = null, _t = {}, nx = 0) {
     let t=Math.log(1+a*sig[k]/mx)/denom, b=Math.round((1-t)*(NB-1));
     hist[b<0?0:b>NB-1?NB-1:b]++; total++; }
   if(!total) return null;
-  const pl=_t.rlo??0.05, ph=_t.rhi??0.01;   // clip darkest pl and brightest ph of the anatomy
+  // clip the darkest pl and the brightest ph of the anatomy. A LUT may keep more of the bright end
+  // (clipHi): on a limb the brightest part of the anatomy IS the bone, and an elbow's condyles and
+  // olecranon burned to flat white at 1 %, the very detail the film is for. And one may give up
+  // more of the dark end (clipLo): an elbow's or a forearm's thin margins, a fifth of it, pulled
+  // the window down for themselves and left the muscle near white over the bone.
+  const pl=_t.rlo??lut?.clipLo??0.05, ph=_t.rhi??lut?.clipHi??0.01;
   const at=(f)=>{ let acc=0; for(let b=0;b<NB;b++){ acc+=hist[b]; if(acc>=total*f) return b; } return NB-1; };
   let lo=at(pl), hi=NB-1, acc=0;
   for(let b=NB-1;b>=0;b--){ acc+=hist[b]; if(acc>=total*ph){ hi=b; break; } }

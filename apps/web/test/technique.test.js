@@ -94,7 +94,7 @@ test('the chart: stations only, thicknesses where the console measures, and the 
     assert.ok(['Chest', 'Abdomen / Pelvis', 'Spine', 'Head'].includes(p.part), `${p.proj}: calipers are for trunk and skull`);
     assert.ok(p.cm >= 12 && p.cm <= 35, `${p.proj}: ${p.cm} cm`);
   }
-  // the head and neck (s1082) has its arms down and the arm (z033) lies clear of the trunk, so these
+  // the head and neck (s1082) has its arms down and the arm (z053) lies clear of the trunk, so these
   // are true views now; the open mouth (the model's mouth is closed) and the swimmer's lateral (its
   // arms cannot be raised) are not
   for (const n of ['Lateral cervical', 'Lateral forearm']) assert.notEqual(all.find((x) => x.proj === n).pose.fidelity, 'approx', n);

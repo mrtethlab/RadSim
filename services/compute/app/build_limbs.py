@@ -1,6 +1,6 @@
 """Clean limb and head/neck models from the head-to-toe CT (VSD z045): one patient, one part.
 
-    python -m app.build_limbs cache                  # resample + materialise z045 once (~2 min)
+    python -m app.build_limbs cache z045 z053        # resample + materialise the source CTs once
     python -m app.build_limbs lowerextremity upperextremity headneck
 
 Why. The extremity models were cut from z045 with plain boxes (build_model --box), and a box
@@ -42,15 +42,17 @@ VSD = pathlib.Path(__file__).resolve().parents[1] / 'data' / 'vsd'
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 MODELS = ROOT / 'apps' / 'web' / 'public' / 'models'
 SP = 1.5
-# z045 (45 M, extended, arms at the sides) gives the leg; z033 (87 M) the arm: z045's arms lie
-# outside its 512 mm field from shoulder to wrist (the lateral epicondyle and radial head are
-# simply not in the scan), while z033 was reconstructed over 650 mm with the arms clear of the
+# z045 (45 M, extended, arms at the sides) gives the leg; z053 (57 F) the arm (ARMS, below): z045's
+# arms lie outside its 512 mm field from shoulder to wrist (the lateral epicondyle and radial head
+# are simply not in the scan); z033 (87 M) was reconstructed over 650 mm with the arms clear of the
 # trunk, hands and all
 SUBJECTS = {
     'z045': dict(ct=VSD / 'z045' / 'ct.nii.gz',
                  source='VSD Full Body postmortem CT (z045, 45M) · HU materials · CC BY-NC-SA'),
     'z033': dict(ct=next((VSD / 'z033' / 'z033').glob('*/*.nii'), None),
                  source='VSD Full Body postmortem CT (z033, 87M) · HU materials · CC BY-NC 3.0'),
+    'z053': dict(ct=next((VSD / 'z053' / 'z053').glob('*/*.nii'), None),
+                 source='VSD Full Body postmortem CT (z053, 57F) · HU materials · CC BY-NC 3.0'),
 }
 
 
@@ -245,19 +247,38 @@ def lower_extremity(hu, mat, body):
     return smooth(keep, foot, big_bone(mat))
 
 
-# z033 at 1.5 mm (z = 0 at the shoulders, x low = the patient's RIGHT, as in z045: the liver
-# lies at low x in both)
-AXILLA_Z = 100           # the axillary fold, about 7 cm below the top of the humeral head
-ARM_X1 = 135             # how far toward the midline the shoulder keeps its girdle (spine at 221)
+# The arm's frame, per source CT at 1.5 mm (z = 0 at the shoulders, x low = the patient's RIGHT,
+# as in z045: the liver lies at low x, the stomach's gas at high x):
+#   axilla: the axillary fold (above it the shoulder keeps its girdle, out to x1)
+#   edge:   the arm's bone cluster ends short of this x; the trunk's starts beyond it
+#   wrist, end: the wrist and the fingertips
+ARMS = {
+    # 87 M: osteoporotic, its spongy bone at muscle HU; the elbow printed without its condyles
+    'z033': dict(axilla=100, x1=135, edge=120, wrist=400, end=470),
+    # 57 F: the right arm straight at the side, clear of the trunk below the axilla, its bone
+    # healthy (cortex ~1200 HU, spongy bone well above muscle). Its fingers reach the scan's edge
+    # at x = 2 and lose a few millimetres of the hand's radial side; the hand and wrist films use
+    # the hand CT, so here the hand only ends a forearm film.
+    'z053': dict(axilla=75, x1=140, edge=100, wrist=372, end=475, clear=118),
+}
+ARM = 'z053'
 
 
-def arm_bone(bone, z0, z1, gap=10, edge=120):
+def arm_bone(bone, z0, z1, gap=10, edge=120, clear=None, body=None):
     """The arm's bone, slice by slice: the lateral-most cluster of bone across x, when a gap of at
     least `gap` voxels parts it from the next. From the surgical neck down the arm's bone is always
     that cluster (measured: it ends by x 62, the trunk's bone starts at x 65 or beyond); above it
     the humeral head meets the glenoid and there is no gap."""
     out = np.zeros_like(bone)
     for z in range(z0, z1):
+        # where the arm's own tissue stands clear of the trunk's across x, its bone is all the bone
+        # in it (a hand's bones lie further apart than the gap test allows; z053's do at the wrist)
+        if body is not None:
+            bc = np.nonzero(body[z].any(0))[0]
+            parts = np.nonzero(np.diff(bc) > 1)[0] if len(bc) else []
+            if len(parts) and bc[parts[0]] <= edge:
+                out[z, :, :bc[parts[0]] + 1] = bone[z, :, :bc[parts[0]] + 1]
+                continue
         cols = np.nonzero(bone[z].any(0))[0]
         if len(cols) < 2:
             continue
@@ -265,34 +286,49 @@ def arm_bone(bone, z0, z1, gap=10, edge=120):
         if not len(g) or cols[g[0]] > edge:
             continue
         out[z, :, :cols[g[0]] + 1] = bone[z, :, :cols[g[0]] + 1]
+    # Where the humerus lies against the chest wall (z053, down to 18 cm below the shoulder) its
+    # shaft and the ribs overlap across x and the gap test finds the wrong cluster or none: above
+    # `clear`, the shaft is followed up slice by slice instead, by the bone pieces that touch the
+    # arm's bone below and lie on its side (a rib touching it lies further in).
+    if clear is not None:
+        out[z0:clear] = False
+        for z in range(clear - 1, z0 - 1, -1):
+            if not out[z + 1].any():
+                break
+            lab, n = ndi.label(bone[z])
+            near = ndi.binary_dilation(out[z + 1], iterations=2)
+            xmax = np.nonzero(out[z + 1].any(0))[0].max() + 8
+            ids = [i for i in np.unique(lab[near & (lab > 0)]) if ndi.center_of_mass(lab == i)[1] <= xmax]
+            out[z] = np.isin(lab, ids)
     return out
 
 
-def upper_extremity(hu, mat, body):
-    """The patient's right arm, shoulder to fingertips, alone (from z033: z045's arm lies outside
-    its scan field along its whole length). Above the axillary fold the shoulder keeps its girdle
-    and the upper chest wall, as a shoulder or humerus film shows them; below it the arm is parted
-    from the trunk slice by slice where they touch, and from the clutter in the bag beside the
-    hand."""
-    z1 = 470
+def upper_extremity(hu, mat, body, subj=ARM):
+    """The patient's right arm, shoulder to fingertips, alone. Above the axillary fold the shoulder
+    keeps its girdle and the upper chest wall, as a shoulder or humerus film shows them; below it
+    the arm is parted from the trunk slice by slice where they touch, and from the clutter in the
+    bag beside the hand. (z045's arm lies outside its scan field along its whole length.)"""
+    a_ = ARMS[subj]
+    z1, w, ax = a_['end'], a_['wrist'], a_['axilla']
     bone = big_bone(mat[:z1], 2000)
-    a = arm_bone(bone, AXILLA_Z - 40, z1)
+    a = arm_bone(bone, ax - 40, z1, edge=a_['edge'], clear=a_.get('clear'), body=body if a_.get('clear') else None)
     keep = np.zeros(body.shape, bool)
     xs = np.arange(body.shape[2])[None, None, :]
-    keep[:AXILLA_Z] = body[:AXILLA_Z] & (xs < ARM_X1)
-    keep[AXILLA_Z:z1] = split_slices(body[:z1], a, bone & ~a, AXILLA_Z, z1)[AXILLA_Z:]
-    keep[AXILLA_Z:z1] &= within_reach(keep[AXILLA_Z:z1], a[AXILLA_Z:z1])
-    # slice-by-slice cuts wander: a five-slice majority along the arm, down to the wrist (z 400)
-    w = 400
-    keep[AXILLA_Z:w] = ndi.median_filter(keep[AXILLA_Z:w].astype(np.uint8), size=(5, 1, 1)).astype(bool) & body[AXILLA_Z:w]
+    keep[:ax] = body[:ax] & (xs < a_['x1'])
+    keep[ax:z1] = split_slices(body[:z1], a, bone & ~a, ax, z1)[ax:]
+    # where the upper arm lies pressed against the chest over a broad face (z053, axilla to `clear`)
+    # the watershed gave the arm only its lateral half, a waist under the shoulder: halfway between
+    # the humerus and the ribs is where they meet
+    if a_.get('clear'):
+        c = a_['clear'] + 15
+        keep[ax:c] = nearest_bone(body[ax:c], a[ax:c], (bone & ~a)[ax:c])
+    keep[ax:z1] &= within_reach(keep[ax:z1], a[ax:z1])
+    # slice-by-slice cuts wander: a five-slice majority along the arm, down to the wrist
+    keep[ax:w] = ndi.median_filter(keep[ax:w].astype(np.uint8), size=(5, 1, 1)).astype(bool) & body[ax:w]
     keep[:z1] = pare(keep[:z1], r=2)
-    hand = np.zeros(keep.shape[0], bool); hand[400:] = True       # the wrist and hand (z 400 on)
-    # The 87-year-old's skin lies thin over the epicondyles and the olecranon, and the bone guard
-    # kept those bumps; the surface is grown about 5 mm (cut at 0.3, not 0.5), filled with fat,
-    # which rounds them under the skin. (Its bone stays as scanned: making it "healthy" by HU was
-    # tried and failed both ways. Its spongy bone reads 40-115 HU, the same as muscle, so taking
-    # bone down to 40 HU turned the muscle against the bone into bone and moved the epicondyles;
-    # filling each bone section made blobs of this osteoporotic elbow's fragments.)
+    hand = np.zeros(keep.shape[0], bool); hand[w:] = True       # the wrist and hand
+    # The surface is grown about 5 mm (cut at 0.3, not 0.5), filled with fat: z033's skin lay thin
+    # over the epicondyles and the olecranon, and the bone guard kept those bumps.
     return smooth(keep, hand, big_bone(mat, 2000), level=0.3)
 
 
@@ -379,17 +415,25 @@ def head_neck():
 
 
 def write(name, title, subj, mat, hu, keep):
-    if name == 'upperextremity':
+    if subj == 'z033':
         mat = healthy_arm(hu, mat, keep)
     part, sl = finish(mat, keep, limb=True)
     # house convention, as build_model --flip 1 0 0 gave the earlier z045 crops: index 0 inferior
     part, h = np.ascontiguousarray(part[::-1]), np.ascontiguousarray(hu[sl][::-1])
     write_model(str(MODELS / name), name, title, part, h, SP, mesh=True, source=SUBJECTS[subj]['source'])
+    skin(name)
+
+
+def skin(name):
+    # write_model writes a fresh header, which drops its skinMesh: the room fell back to the blocky
+    # display mesh until the smooth skin was rebuilt by hand
+    from app.build_skin import build
+    build(name)
 
 
 PARTS = {
     'lowerextremity': ('Lower extremity', 'z045', lambda hu, mat, body: lower_extremity(hu, mat, body)),
-    'upperextremity': ('Upper extremity', 'z033', lambda hu, mat, body: upper_extremity(hu, mat, body)),
+    'upperextremity': ('Upper extremity', ARM, lambda hu, mat, body: upper_extremity(hu, mat, body)),
 }
 
 
@@ -399,6 +443,7 @@ def write_headneck():
     hu = np.zeros(part.shape, np.int16) + np.int16(h['huReference'][0])
     hu.flat[0] = h['huReference'][1]                      # keeps the header's HU range
     write_model(str(MODELS / 'headneck'), 'headneck', 'Head & neck', part, hu, SP, mesh=True, source=h['source'])
+    skin('headneck')
 
 
 if __name__ == '__main__':

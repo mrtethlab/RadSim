@@ -72,15 +72,15 @@
 # other leg, the trunk an arm lies against, the scanner table); build_limbs separates the part
 # from its neighbours along the skin where they touch, pares off the bag and tubes, and lays a
 # new skin on the cut. The leg comes from z045 (the whole foot now: the old box stopped short of
-# it); the arm from z033 (87M, 650 mm field: z045's arms lie outside its 512 mm field from
-# shoulder to wrist); the head and neck from TotalSegmentator s1082 (69M, arms down, whole skull).
-#   ./.venv/Scripts/python.exe -m app.inspect_vsd data/vsd/z033.zip data/vsd/z033 z033.png   # extract z033
+# it); the arm from z053 (57F, right arm straight at the side, healthy bone: z045's arms lie
+# outside its 512 mm field from shoulder to wrist, and z033's (87M) osteoporotic elbow printed
+# without its condyles); the head and neck from TotalSegmentator s1082 (69M, arms down).
+#   ./.venv/Scripts/python.exe -m app.inspect_vsd data/vsd/z053.zip data/vsd/z053 z053.png   # extract z053
 #   ./.venv/Scripts/python.exe -m app.fetch_totalseg --subject s1082                          # ~65 MB
 #   ./.venv/Scripts/python.exe -m app.combine_seg --case data/totalseg/s1082 --out data/totalseg/s1082/seg_ml.nii.gz
-#   ./.venv/Scripts/python.exe -m app.build_limbs cache z045 z033          # resample + materialise once
+#   ./.venv/Scripts/python.exe -m app.build_limbs cache z045 z053          # resample + materialise once
 #   ./.venv/Scripts/python.exe -m app.build_limbs lowerextremity upperextremity
-#   ./.venv/Scripts/python.exe -m app.build_limbs headneck
-#   ./.venv/Scripts/python.exe -m app.build_skin lowerextremity upperextremity headneck
+#   ./.venv/Scripts/python.exe -m app.build_limbs headneck                # (each also rebuilds its smooth skin)
 # then re-measure (from the repo root; the head's labels need this venv's nibabel):
 #   services/compute/.venv/Scripts/python.exe tools/measure_landmarks.py lowerextremity upperextremity headneck
 #   python tools/measure_palpation.py && python tools/measure_centring.py && python tools/measure_joints.py

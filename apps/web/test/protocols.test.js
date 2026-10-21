@@ -28,7 +28,7 @@ test('every projection carries a pose, and every centring landmark exists for it
 });
 
 test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
-  // the arm (z033) rests turned about 90 degrees: its views are rolled by what the epicondyles
+  // the arm (z053) rests 8 degrees off the anatomical position: its views are rolled by what the epicondyles
   // measure (data/palpation.json), AP laying them parallel to the receptor and the lateral standing
   // them up, lateral epicondyle on top (+ roll turns +x toward +y, the tube)
   const pa = palpation.upperextremity;
@@ -65,10 +65,11 @@ test('the mortise is an internal rotation of the right leg, not the left', () =>
 test('landmarks sit where the traced phantom confirmed them (cm from the volume centre)', () => {
   // values validated on the posed phantom; a model rebuild that moves them should be looked at
   // (the leg and arm were rebuilt by services/compute/app/build_limbs.py: the leg re-cut from the
-  // same CT, the arm from another, so their numbers moved and were checked on bone projections)
+  // same CT, the arm from another (z033, then z053 for its healthy bone), so their numbers moved
+  // and were checked on bone projections)
   const pinned = {
-    'lowerextremity.knee': 2.48, 'lowerextremity.ankle': -36.38, 'upperextremity.elbow': 3.0,
-    'upperextremity.forearm': -8.25, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
+    'lowerextremity.knee': 2.48, 'lowerextremity.ankle': -36.38, 'upperextremity.elbow': 3.97,
+    'upperextremity.forearm': -6.82, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
     'chestabdopelvis.kub': -12.7,
   };
   for (const [k, z] of Object.entries(pinned)) {
