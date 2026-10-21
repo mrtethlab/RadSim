@@ -1020,7 +1020,7 @@
             {
               "proj": "AP thoracic",
               "kv": 80,
-              "mas": 100,
+              "mas": 32,
               "cm": 23,
               "grid": true,
               "aec": "c",
