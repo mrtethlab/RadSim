@@ -30,15 +30,17 @@ function glyph(side) {
   return (glyphs[side] = a);
 }
 
-function tileTexture(side) {
+function tileTexture(side, pronated) {
   const c = document.createElement('canvas'); c.width = c.height = 64;
   const g = c.getContext('2d');
   g.fillStyle = '#2b3036'; g.fillRect(0, 0, 64, 64);
-  g.strokeStyle = '#ffcf4a'; g.lineWidth = 4; g.strokeRect(2, 2, 60, 60);
+  g.strokeStyle = pronated ? '#9a7a2a' : '#ffcf4a'; g.lineWidth = 4; g.strokeRect(2, 2, 60, 60);
   // a plane laid flat by rotation.x = -PI/2 shows its texture upside down to a camera looking
   // down with +z up the screen (see the AEC labels in app.js): turn the canvas, not the mesh
   g.translate(32, 32); g.rotate(Math.PI); g.translate(-32, -32);
-  g.fillStyle = '#ffcf4a'; g.font = 'bold 46px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  // face down (pronated), what shows from above is the letter's back: mirrored and dimmer
+  if (pronated) { g.translate(64, 0); g.scale(-1, 1); }
+  g.fillStyle = pronated ? '#a8892e' : '#ffcf4a'; g.font = 'bold 46px Arial'; g.textAlign = 'center'; g.textBaseline = 'middle';
   g.fillText(side, 32, 35);
   return new ctx.THREE.CanvasTexture(c);
 }
@@ -46,7 +48,7 @@ function tileTexture(side) {
 export function initSideMarker(context) {
   ctx = context;
   const { THREE, three, S } = ctx;
-  S.marker = S.marker || { side: null, x: 8, z: 10 };
+  S.marker = S.marker || { side: null, x: 8, z: 10, pronated: false };
   tile = new THREE.Mesh(new THREE.BoxGeometry(SIZE, 0.2, SIZE),
     new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, emissive: 0xffffff, emissiveIntensity: 0.45 }));
   tile.position.y = TABLE_Y;
@@ -62,6 +64,7 @@ export function initSideMarker(context) {
     syncUI(); ctx.syncScene();
   }));
   $('mkPlace')?.addEventListener('click', () => { placeAtFieldEdge(); syncUI(); ctx.syncScene(); });
+  $('mkPron')?.addEventListener('change', (e) => { S.marker.pronated = e.target.checked; syncUI(); ctx.syncScene(); });
   syncUI();
 }
 
@@ -71,6 +74,7 @@ function syncUI() {
   const v = ctx.$('mkPosV');
   if (v) v.textContent = S.marker.side ? `${S.marker.x.toFixed(1)}, ${S.marker.z.toFixed(1)} cm` : 'none';
   const p = ctx.$('mkPlace'); if (p) p.disabled = !S.marker.side;
+  const pr = ctx.$('mkPron'); if (pr) pr.checked = !!S.marker.pronated;
 }
 
 /* Drop the marker just inside the field: at the head end, on the side it names for an AP or PA,
@@ -87,8 +91,9 @@ function placeAtFieldEdge() {
 }
 
 /* Set the marker from code (the Trainer): the letter, and optionally drop it at the field edge. */
-export function setSideMarker(side, place = true) {
+export function setSideMarker(side, place = true, pronated) {
   const m = ctx.S.marker; m.side = side || null;
+  if (pronated !== undefined) m.pronated = !!pronated;
   if (place && m.side) placeAtFieldEdge();
   syncUI(); sideMarkerSync();
 }
@@ -98,8 +103,9 @@ export function sideMarkerSync() {
   const S = ctx.S, m = S.marker;
   tile.visible = S.mode === 'xray' && !!m.side;
   if (!tile.visible) return;
-  if (texSide !== m.side) {
-    tex?.dispose(); tex = tileTexture(m.side); texSide = m.side;
+  const tk = m.side + (m.pronated ? '-p' : '');
+  if (texSide !== tk) {
+    tex?.dispose(); tex = tileTexture(m.side, !!m.pronated); texSide = tk;
     // self-lit a little: the room dims while the collimator lamp is on, and a marker outside the
     // light field should still be findable
     tile.material.map = tex; tile.material.emissiveMap = tex; tile.material.needsUpdate = true;
@@ -133,9 +139,16 @@ export function sideMarkerPointer(e, phase, cam, canvas) {
    beam through (the open-beam reference too, so the EI's raw-beam test is not fooled). The
    letter is laid out in DISPLAY orientation (flipH / flipV are the film's hanging flips), so
    it reads correctly as hung. Returns what the verdict needs. Call after scatter and the AEC. */
-export function stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH, flipV }) {
+/* THE LETTER IS A PHYSICAL OBJECT. Face up, it reads correctly seen from the tube; pronated (face
+   down) it is its mirror image. The film is hung either as seen from the tube (AP, laterals, and
+   hands and wrists, hung as the part was placed) or mirrored, as if facing the patient (a PA trunk).
+   So a face-up letter reads backward on a PA chest unless it is pronated, and a pronated one reads
+   backward on everything else. flipH/flipV are how THIS film will be hung; the letter is laid out
+   by its facing, and `mirrored` says whether the two disagree. */
+export function stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: hungFlipH, flipV }) {
   const S = ctx.S, m = S.marker;
   if (!m.side) return { inFrac: 0, overTissue: false };
+  const flipH = !m.pronated;                       // face up = as if hung seen from the tube
   const a = glyph(m.side);
   const halfU = (nx - 1) / 2, halfV = (ny - 1) / 2;
   const i0 = Math.max(0, Math.floor((m.x - SIZE / 2) / pxU + halfU)), i1 = Math.min(nx - 1, Math.ceil((m.x + SIZE / 2) / pxU + halfU));
@@ -164,6 +177,7 @@ export function stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH, f
     dose[k] *= t; direct[k] *= t;
   }
   return {
+    mirrored: flipH !== hungFlipH, pronated: !!m.pronated,
     inFrac: cover > 0 ? Math.min(1, inside / cover) * onReceptor : 0,
     // OVER THE ANATOMY OF INTEREST: through tissue (beside the part the beam under the letter is
     // raw) AND in the middle of the field. Tissue alone is not enough: a trunk fills its field, so
@@ -179,7 +193,7 @@ export function stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH, f
 export function sideMarkerVerdict(stamp) {
   const S = ctx.S, m = S.marker;
   return markerVerdict({
-    side: m.side, inFrac: stamp.inFrac, overTissue: stamp.overTissue,
+    side: m.side, inFrac: stamp.inFrac, overTissue: stamp.overTissue, mirrored: stamp.mirrored, pronated: stamp.pronated,
     bilateral: ctx.bilateral(), rightVec: ctx.rightVec(), dx: m.x - ctx.midlineX(),
   });
 }

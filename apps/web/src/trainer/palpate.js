@@ -60,10 +60,14 @@ export function palpationSync() {
   const R = ctx.objMat(), c = ctx.modelCentre();
   const rot = (p) => [R[0] * p[0] + R[1] * p[1] + R[2] * p[2], R[3] * p[0] + R[4] * p[1] + R[5] * p[2], R[6] * p[0] + R[7] * p[1] + R[8] * p[2]];
   for (const m of marks.values()) {
-    const p = rot([m.skin[0] + m.dir[0] * 0.4, m.skin[1] + m.dir[1] * 0.4, m.skin[2] + m.dir[2] * 0.4]);
+    // through the joints first (a bent wrist carries its styloid along), then the patient's pose
+    const s0 = ctx.poseLoc ? ctx.poseLoc(m.skin) : m.skin;
+    const s1 = ctx.poseLoc ? ctx.poseLoc([m.skin[0] + m.dir[0], m.skin[1] + m.dir[1], m.skin[2] + m.dir[2]]) : null;
+    const dl = s1 ? [s1[0] - s0[0], s1[1] - s0[1], s1[2] - s0[2]] : m.dir;
+    const p = rot([s0[0] + dl[0] * 0.4, s0[1] + dl[1] * 0.4, s0[2] + dl[2] * 0.4]);
     m.mesh.position.set(p[0] + c[0], p[1] + c[1], p[2] + c[2]);
     // the halo faces out of the skin
-    const d = rot(m.dir);
+    const d = rot(dl);
     m.halo.lookAt(m.mesh.position.x + d[0], m.mesh.position.y + d[1], m.mesh.position.z + d[2]);
   }
 }

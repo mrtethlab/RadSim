@@ -118,11 +118,34 @@ export function judge(view, m) {
   const tol = view.pose?.tol ?? 5;
   const dRoll = angleDiff(m.rot.z, view.pose?.roll ?? 0);
   const off = [Math.abs(dRoll), Math.abs(angleDiff(m.rot.x, 0)), Math.abs(angleDiff(m.rot.y, 0))];
-  const posOk = off.every((v) => v <= tol);
+  // the joints: a view that needs one bent says so (view.joints: { key: [lo, hi] }); every other
+  // motion the limb has should be neutral, within 10 degrees
+  const jointFaults = [], jointNotes = [];
+  const alignKey = view.align ? (view.align.motion || 'wrist.dev') : null;
+  for (const mo of m.motions || []) {
+    if (mo.key === alignKey) continue;                // judged on the bones, below
+    const v = (m.joints || {})[mo.key] ?? mo.rest ?? 0;
+    const r = view.joints?.[mo.key] || [-10, 10];
+    const say = (a) => (a === 0 ? 'neutral' : `${Math.abs(a)}° ${a < 0 ? mo.neg : mo.pos}`);
+    if (v < r[0] || v > r[1]) jointFaults.push(`${mo.joint.toLowerCase()} ${say(v)}, want ${view.joints?.[mo.key] ? `${say(r[0])} to ${say(r[1])}` : 'neutral'}`);
+    else if (view.joints?.[mo.key]) jointNotes.push(`${mo.joint.toLowerCase()} ${say(v)}`);
+  }
+  // the hand on the forearm, measured on the bones (m.align: degrees, + toward the ulna)
+  if (view.align && m.align != null) {
+    const a = m.align, say = (x) => (Math.abs(x) < 0.5 ? 'in line with the radius' : `${Math.abs(x).toFixed(0)}° ${x > 0 ? 'ulnar' : 'radial'}`);
+    if (view.align.range) {
+      const [r0, r1] = view.align.range;
+      if (a < r0 || a > r1) jointFaults.push(`3rd metacarpal ${say(a)} to the distal radius; want ${r0}-${r1}° ulnar deviation`);
+      else jointNotes.push(`wrist ${say(a)}`);
+    } else if (Math.abs(a) > view.align.tol) {
+      jointFaults.push(`3rd metacarpal ${say(a)} to the distal radius: ${a > 0 ? 'radially' : 'ulnarly'} deviate the wrist to bring it in line`);
+    } else jointNotes.push('3rd metacarpal in line with the radius');
+  }
+  const posOk = off.every((v) => v <= tol) && !jointFaults.length;
   add('position', 'Patient position', posOk ? 'pass' : 'fail',
-    posOk ? `Rotation ${m.rot.z.toFixed(0)}° (want ${view.pose?.roll ?? 0}° ± ${tol}°).`
+    posOk ? `Rotation ${m.rot.z.toFixed(0)}° (want ${view.pose?.roll ?? 0}° ± ${tol}°)` + (jointNotes.length ? `; ${jointNotes.join(', ')}.` : '.')
       : [Math.abs(dRoll) > tol ? `rotated ${m.rot.z.toFixed(0)}° about the long axis, want ${view.pose?.roll ?? 0}° (${dRoll > 0 ? '+' : ''}${dRoll.toFixed(0)}°)` : '',
-        off[1] > tol ? `tilted ${m.rot.x.toFixed(0)}°` : '', off[2] > tol ? `turned ${m.rot.y.toFixed(0)}°` : '']
+        off[1] > tol ? `tilted ${m.rot.x.toFixed(0)}°` : '', off[2] > tol ? `turned ${m.rot.y.toFixed(0)}°` : '', ...jointFaults]
         .filter(Boolean).join('; ') + '.');
   // central-ray angle
   const ccTol = view.cr?.tol ?? 2, wantCC = view.cr?.cc ?? 0;
@@ -152,8 +175,10 @@ export function judge(view, m) {
   }
   add('anatomy', 'Required anatomy', anatOk ? 'pass' : 'fail',
     anatOk ? 'All of it is on the image.' : `${(100 * (1 - cov.inFrac)).toFixed(0)} % of it is outside the field: ${cuts.join(', ') || 'clipped at the edges'}.`);
-  // collimation
-  const need = neededHalf(cov);
+  // collimation: the inch border as far as the receptor allows (m.recHalf: its half-size along
+  // each field axis) — a broad chest can need more than a 35 cm receptor; then the full width is right
+  const need0 = neededHalf(cov);
+  const need = m.recHalf ? { w: Math.min(need0.w, m.recHalf.w), l: Math.min(need0.l, m.recHalf.l) } : need0;
   const overW = cov.half.w - need.w, overL = cov.half.l - need.l;
   const open = [];
   if (overW > BORDER_TOL_CM) open.push(`${(2 * overW).toFixed(1)} cm too wide`);
@@ -162,6 +187,7 @@ export function judge(view, m) {
   for (const [k, axis, sign, half] of [['lMax', 'l', 1, 'l'], ['lMin', 'l', -1, 'l'], ['wMax', 'w', 1, 'w'], ['wMin', 'w', -1, 'w']]) {
     const edge = sign > 0 ? cov.ext[k] : -cov.ext[k];
     const margin = cov.half[half] - edge;
+    if (need0[half] > need[half]) continue;            // the receptor's edge, not the student's choice
     if (margin >= 0 && margin < 0.6) tight.push(filmSide(axis, sign, m.rightAtPlusX));
   }
   const collLevel = !anatOk ? 'fail' : open.length ? 'fail' : tight.length ? 'warn' : 'pass';

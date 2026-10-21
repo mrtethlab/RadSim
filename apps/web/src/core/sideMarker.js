@@ -12,6 +12,9 @@
               below (−y). Mostly ±x: an AP or PA, judged by which side of the midline the
               marker lies. Mostly ±y: a lateral, named for the side DOWN on the receptor.
    dx         marker x minus the patient's midline x, cm
+   mirrored   the letter reads backward on the film as hung (src/sideMarker.js: a face-up letter
+              on a film hung as if facing the patient, a PA trunk; a pronated one on anything
+              else); pronated says which way it was laid
 
    Returns { level: 'ok' | 'warn' | 'bad', text }. */
 const MIDLINE_CM = 2;
@@ -21,10 +24,13 @@ export function expectedLateral(rightVec) {
   return rightVec[1] < 0 ? 'R' : 'L';
 }
 
-export function markerVerdict({ side, inFrac, overTissue, bilateral, rightVec, dx }) {
+export function markerVerdict({ side, inFrac, overTissue, bilateral, rightVec, dx, mirrored, pronated }) {
   if (!side) return { level: 'warn', text: 'No side marker on this image: every radiograph needs one.' };
   const name = side === 'R' ? 'R' : 'L';
   if (!(inFrac > 0.05)) return { level: 'bad', text: `The ${name} marker is outside the collimated field, so it is not on the image.` };
+  if (mirrored) return { level: 'bad', text: pronated
+    ? `The ${name} marker reads backward: it was pronated, and this film is hung as seen from the tube. Only PA views of the trunk and head take a pronated marker.`
+    : `The ${name} marker reads backward: a PA film is hung as if facing the patient, so the marker must be pronated (laid face down).` };
   const notes = [];
   let level = 'ok';
   if (inFrac < 0.9) { notes.push(`it is cut by the collimation (${Math.round(inFrac * 100)} % on the image)`); level = 'warn'; }

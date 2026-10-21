@@ -1,0 +1,194 @@
+{
+ "_about": "Measure the JOINTS the positioning panel can bend, on each limb model.",
+ "hand": {
+  "wrist": {
+   "label": "Wrist",
+   "c": [
+    -0.6,
+    0.53,
+    -4.25
+   ],
+   "distal": [
+    0,
+    0,
+    1
+   ],
+   "blend": 1.0,
+   "how": "the head of the capitate: 1.2 cm distal of the radiocarpal joint, on the line of the 3rd metacarpal",
+   "motions": [
+    {
+     "key": "wrist.dev",
+     "label": "Deviation",
+     "neg": "radial",
+     "pos": "ulnar",
+     "toward": [
+      -1,
+      0,
+      0
+     ],
+     "range": [
+      -20,
+      35
+     ],
+     "rest": 26.1
+    },
+    {
+     "key": "wrist.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "toward": [
+      0,
+      -1,
+      0
+     ],
+     "range": [
+      -70,
+      75
+     ]
+    }
+   ]
+  }
+ },
+ "upperextremity": {
+  "elbow": {
+   "label": "Elbow",
+   "c": [
+    6.3,
+    -5.15,
+    0.52
+   ],
+   "distal": [
+    -0.089,
+    0.061,
+    -0.994
+   ],
+   "blend": 1.5,
+   "radius": 6.0,
+   "how": "the trochlea/capitulum axis, 1.5 cm distal of the widest span of the epicondyles",
+   "motions": [
+    {
+     "key": "elbow.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "toward": [
+      0,
+      1,
+      0
+     ],
+     "range": [
+      0,
+      140
+     ]
+    }
+   ]
+  },
+  "wrist": {
+   "label": "Wrist",
+   "c": [
+    4.27,
+    -3.74,
+    -21.78
+   ],
+   "distal": [
+    0,
+    0,
+    -1
+   ],
+   "blend": 1.0,
+   "radius": 6.0,
+   "how": "the carpus, 0.5 cm proximal of the carpal landmark; the radius side from the wider of the two forearm bones 3 cm above",
+   "motions": [
+    {
+     "key": "wrist.dev",
+     "label": "Deviation",
+     "neg": "radial",
+     "pos": "ulnar",
+     "toward": [
+      1,
+      0,
+      0
+     ],
+     "range": [
+      -20,
+      35
+     ]
+    }
+   ]
+  }
+ },
+ "lowerextremity": {
+  "knee": {
+   "label": "Knee",
+   "c": [
+    3.15,
+    -5.6,
+    3.68
+   ],
+   "distal": [
+    0.065,
+    -0.055,
+    -0.996
+   ],
+   "blend": 2.0,
+   "radius": 9.0,
+   "how": "the measured joint space between the femoral condyles and the tibial plateau",
+   "motions": [
+    {
+     "key": "knee.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "toward": [
+      0,
+      -1,
+      0
+     ],
+     "range": [
+      0,
+      120
+     ]
+    }
+   ]
+  },
+  "ankle": {
+   "label": "Ankle",
+   "c": [
+    5.85,
+    -7.88,
+    -37.88
+   ],
+   "distal": [
+    0,
+    0,
+    -1
+   ],
+   "blend": 1.5,
+   "radius": 14.0,
+   "how": "midway between the malleoli; dorsiflexion turns the foot (pointing [0.091, 0.448, -0.889] from the ankle) toward the shin",
+   "motions": [
+    {
+     "key": "ankle.flex",
+     "label": "Dorsiflexion",
+     "neg": "plantarflexion",
+     "pos": "dorsiflexion",
+     "from": [
+      0.091,
+      0.448,
+      -0.889
+     ],
+     "toward": [
+      0,
+      0,
+      1
+     ],
+     "range": [
+      -45,
+      30
+     ]
+    }
+   ]
+  }
+ }
+}

@@ -79,7 +79,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "hand"
+                "centre": "mcp3Joint"
               }
             },
             {
@@ -102,7 +102,7 @@
               "pose": {
                 "roll": 45,
                 "cc": 0,
-                "centre": "hand"
+                "centre": "mcp3Joint"
               }
             },
             {
@@ -125,7 +125,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "hand"
+                "centre": "mcp2Joint"
               }
             }
           ]
@@ -153,7 +153,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "wrist"
+                "centre": "midcarpal"
               }
             },
             {
@@ -176,7 +176,7 @@
               "pose": {
                 "roll": 45,
                 "cc": 0,
-                "centre": "wrist"
+                "centre": "midcarpal"
               }
             },
             {
@@ -199,7 +199,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "wrist"
+                "centre": "midcarpal"
               }
             }
           ]
@@ -305,7 +305,10 @@
                 "cc": 0,
                 "centre": "elbow",
                 "fidelity": "approx",
-                "note": "A true lateral elbow needs 90° of flexion; this arm is straight, so this is a lateral of the extended elbow."
+                "note": "Flexed 90 degrees at the elbow, as a lateral elbow needs. The arm still lies against the trunk in this CT, so the beam also crosses the flank.",
+                "joints": {
+                  "elbow.flex": 90
+                }
               }
             }
           ]
@@ -522,7 +525,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "ankle"
+                "centre": "intermalleolar"
               }
             },
             {
@@ -545,7 +548,7 @@
               "pose": {
                 "roll": 15,
                 "cc": 0,
-                "centre": "ankle"
+                "centre": "intermalleolar"
               }
             },
             {
@@ -568,7 +571,7 @@
               "pose": {
                 "roll": -90,
                 "cc": 0,
-                "centre": "ankle"
+                "centre": "medialMalleolus"
               }
             }
           ]
@@ -622,8 +625,9 @@
                 "roll": -90,
                 "cc": 0,
                 "centre": "knee",
-                "fidelity": "approx",
-                "note": "A lateral knee is taken with 20-30° of flexion; this leg is straight."
+                "joints": {
+                  "knee.flex": 25
+                }
               }
             }
           ]
@@ -710,7 +714,8 @@
               "subject": "chest",
               "pose": {
                 "roll": 180,
-                "cc": 0
+                "cc": 0,
+                "centre": "T7"
               }
             },
             {
@@ -734,7 +739,8 @@
               "subject": "chest",
               "pose": {
                 "roll": 90,
-                "cc": 0
+                "cc": 0,
+                "centre": "T7mc"
               }
             },
             {
@@ -757,7 +763,8 @@
               "subject": "chest",
               "pose": {
                 "roll": 0,
-                "cc": 0
+                "cc": 0,
+                "centre": "T7"
               }
             }
           ]
@@ -939,7 +946,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "thoracic"
+                "centre": "T7"
               }
             },
             {
@@ -964,7 +971,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "thoracic"
+                "centre": "T7"
               }
             }
           ]
@@ -994,7 +1001,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "lumbar"
+                "centre": "crest"
               }
             },
             {
@@ -1019,7 +1026,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "lumbar"
+                "centre": "crestMc"
               }
             }
           ]

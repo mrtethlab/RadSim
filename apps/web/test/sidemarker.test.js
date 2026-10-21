@@ -47,3 +47,17 @@ test('a single limb is judged on placement only', () => {
   assert.match(v.text, /not checked/);
   assert.equal(markerVerdict({ ...base, bilateral: false, side: 'L', rightVec: AP, dx: 12, inFrac: 0 }).level, 'bad');
 });
+
+test('a marker that reads backward is an error: pronate it for a PA, not for anything else', () => {
+  const b = { ...base, side: 'R', rightVec: PA, dx: -12 };
+  // on a PA trunk, a face-up letter reads backward on the film as hung
+  const up = markerVerdict({ ...b, mirrored: true, pronated: false });
+  assert.equal(up.level, 'bad');
+  assert.match(up.text, /must be pronated/);
+  // pronated where it should not be (an AP, a hand)
+  const down = markerVerdict({ ...base, side: 'R', rightVec: AP, dx: 12, mirrored: true, pronated: true });
+  assert.equal(down.level, 'bad');
+  assert.match(down.text, /was pronated/);
+  // laid right, it is judged as before
+  assert.equal(markerVerdict({ ...b, mirrored: false, pronated: true }).level, 'ok');
+});

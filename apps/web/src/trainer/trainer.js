@@ -101,6 +101,7 @@ function startView(vi) {
     S.objOff.x = clampOff(ideal.x + r * Math.cos(th));
     S.objOff.z = clampOff(ideal.z + r * Math.sin(th));
     S.collX = S.detW; S.collZ = S.detH;
+    S.joints = {}; H.renderJointUI();
     H.setMarker(null);
     H.syncSandbox();
     H.syncScene();
@@ -111,7 +112,7 @@ const clampOff = (v) => Math.max(-45, Math.min(45, v));
 
 // the centring point in the post-flip frame
 function centreLoc(view) {
-  if (view.centre.lm) return H.landmarkLocal(view.centre.lm);
+  if (view.centre.lm) { const p = H.landmarkLocal(view.centre.lm); return p ? H.poseLoc(p) : p; }
   if (view.centre.fromRequired && T.req && T.req.length) return cloudCentre(T.req);
   return [0, 0, 0];
 }
@@ -148,6 +149,7 @@ function renderPanel(msg) {
     <div class="tr-view"><b>${esc(view.label)}</b> &middot; ${esc(view.proto[1])}</div>
     <div class="tr-how">${esc(view.how)}${view.approx ? `<div class="tr-approx">${esc(view.approx)}</div>` : ''}</div>
     <div class="tr-req"><b>Required:</b> ${esc(view.require.text)}</div>
+    ${guideHTML(view)}
     ${T.step === 'results' || msg ? '' : `<div class="tr-steps">${steps}</div>`}
     <div class="tr-body">${body}</div>`;
   $('trHome').onclick = () => H.applyMode('home');
@@ -169,6 +171,10 @@ function stepHTML(view, S) {
       ${slider('trRoll', 'Rotate <small>about the long axis</small>', -180, 180, 1, S.objRot.z, '°')}
       ${slider('trTilt', 'Tilt <small>side to side</small>', -30, 30, 1, S.objRot.x, '°')}
       ${slider('trTurn', 'Turn <small>in the plane of the table</small>', -30, 30, 1, S.objRot.y, '°')}
+      ${slider('trOffZ', 'Patient <small>along the table</small>', -45, 45, 0.1, S.objOff.z, ' cm')}
+      ${slider('trOffX', 'Patient <small>across the table</small>', -45, 45, 0.1, S.objOff.x, ' cm')}
+      ${motionsOf().map((m) => slider('trJ_' + m.key.replace('.', '_'), `${esc(m.joint)} <small>${esc(m.label.toLowerCase())}: ${esc(m.neg)} &minus; / ${esc(m.pos)} +</small>`,
+        m.range[0], m.range[1], 1, Math.round(S.joints[m.key] ?? m.rest ?? 0), '°')).join('')}
       <div class="tr-tip">Watch the patient in the room: the rotation is judged against the view's,
         within ${view.pose.tol}°. The film is the only feedback after the exposure &mdash; as on the job.</div>
       ${next('centre', 'Centre')}</div>`;
@@ -177,11 +183,12 @@ function stepHTML(view, S) {
     const words = view.cr?.words || ['cephalic', 'caudal'];
     return `<div class="tr-sec">
       <div class="tr-target">Centre to: <b>${esc(view.centre.name)}</b> (&plusmn; ${view.centre.tol} cm)</div>
-      ${slider('trOffZ', 'Table <small>along the patient</small>', -45, 45, 0.1, S.objOff.z, ' cm')}
-      ${slider('trOffX', 'Table <small>across</small>', -45, 45, 0.1, S.objOff.x, ' cm')}
+      ${slider('trTubeZ', 'Field <small>along the table</small>', -18, 18, 0.1, S.tubeZ, ' cm')}
+      ${slider('trTubeX', 'Field <small>across the table</small>', -18, 18, 0.1, S.tubeX, ' cm')}
       ${slider('trCC', `Central-ray angle <small>&minus; ${esc(words[0])} / + ${esc(words[1])}</small>`, -30, 30, 1, S.angCC, '°')}
       <div class="tr-tip">The collimator light's crosshair on the skin is the central ray. Move the
-        table until it sits on the centring point.</div>
+        field (the tube) until it sits on the centring point. The receptor stays where it is, so a
+        patient placed well off it in the Position step will lose anatomy off its edge.</div>
       ${palpateHTML(S)}
       ${next('collimate', 'Collimate')}</div>`;
   }
@@ -197,6 +204,7 @@ function stepHTML(view, S) {
         <button data-side="" class="${!m.side ? 'on' : ''}">None</button>
         <button data-side="R" class="${m.side === 'R' ? 'on' : ''}">R</button>
         <button data-side="L" class="${m.side === 'L' ? 'on' : ''}">L</button></div>
+      <label class="cttoggle" style="margin-top:6px"><input type="checkbox" id="trMkPron"${m.pronated ? ' checked' : ''}><span>Pronated (face down)</span></label>
       <div class="tr-tip">The marker drops at the edge of the field on the side it names; drag the
         yellow tile in the room to move it.</div>
       ${next('expose', 'Ready')}</div>`;
@@ -206,6 +214,33 @@ function stepHTML(view, S) {
     <div class="tr-tip">Technique is set from the protocol (${S.kv} kVp, ${S.mas} mAs${S.aecOn ? ', AEC' : ''}).
       Check the patient, the centring and the field in the room, then expose.</div>
     <button class="tr-expose" id="trExpose"${T.busy ? ' disabled' : ''}>${T.busy ? 'Exposing…' : 'EXPOSE'}</button></div>`;
+}
+
+/* THE HAND ON THE FOREARM: the angle from the distal radius's axis to the 3rd metacarpal's, in the
+   plane the wrist deviates in, positive toward the ulna (data/centring.json points, through the
+   current pose). 0 is the 3rd metacarpal in line with the radius: the PA hand and wrist criterion. */
+function alignAngle() {
+  const P = (n) => { const p = H.landmarkLocal(n); return p ? H.poseLoc(p) : null; };
+  const b = P('mc3Base'), h = P('mcp3Joint'), r0 = P('radiusProx'), r1 = P('radiusDistal');
+  const dev = (H.jointChain() || []).flatMap((j) => j.motions).find((m) => m.key === 'wrist.dev');
+  if (!b || !h || !r0 || !r1 || !dev) return null;
+  const n = dev.axis;
+  const flat = (v) => { const d = v[0] * n[0] + v[1] * n[1] + v[2] * n[2]; return [v[0] - d * n[0], v[1] - d * n[1], v[2] - d * n[2]]; };
+  const m = flat([h[0] - b[0], h[1] - b[1], h[2] - b[2]]), r = flat([r1[0] - r0[0], r1[1] - r0[1], r1[2] - r0[2]]);
+  const cr = [r[1] * m[2] - r[2] * m[1], r[2] * m[0] - r[0] * m[2], r[0] * m[1] - r[1] * m[0]];
+  return Math.atan2(cr[0] * n[0] + cr[1] * n[1] + cr[2] * n[2], r[0] * m[0] + r[1] * m[1] + r[2] * m[2]) * 180 / Math.PI;
+}
+
+// the joints the patient on the table can bend, flattened to their motions
+function motionsOf() {
+  const ch = H.jointChain();
+  return ch ? ch.flatMap((j) => j.motions.map((m) => ({ ...m, joint: j.label }))) : [];
+}
+
+/* The centring rule the view is marked on, with its source (data/centring.json) */
+function guideHTML(view) {
+  const c = view.centre?.lm ? H.centring(view.centre.lm) : null;
+  return c && c.guide ? `<div class="tr-guide"><b>Centring:</b> ${esc(c.guide)}</div>` : '';
 }
 
 /* PALPATE: show where a bony landmark is felt on this patient's skin (trainer/palpate.js) */
@@ -242,11 +277,16 @@ function wireStep(col, view) {
   bind('trRoll', (v) => { S.objRot.z = v; });
   bind('trTilt', (v) => { S.objRot.x = v; });
   bind('trTurn', (v) => { S.objRot.y = v; });
+  for (const m of motionsOf()) bind('trJ_' + m.key.replace('.', '_'), (v) => { S.joints[m.key] = v; H.renderJointUI(); H.prepareJointVolume(); });
   bind('trOffZ', (v) => { S.objOff.z = v; });
   bind('trOffX', (v) => { S.objOff.x = v; });
+  bind('trTubeZ', (v) => { S.tubeZ = v; });
+  bind('trTubeX', (v) => { S.tubeX = v; });
   bind('trCC', (v) => { S.angCC = v; });
   bind('trCollX', (v) => { S.collX = v; });
   bind('trCollZ', (v) => { S.collZ = v; });
+  const pron = $('trMkPron');
+  if (pron) pron.onchange = () => { H.setMarker(S.marker.side, false, pron.checked); H.syncScene(); };
   col.querySelectorAll('#trMk button').forEach((b) => b.onclick = () => {
     H.setMarker(b.dataset.side || null);
     col.querySelectorAll('#trMk button').forEach((x) => x.classList.toggle('on', x === b));
@@ -269,7 +309,7 @@ function frameNow() {
 function worldCloud(R, centre) {
   const n = T.req.length / 3, out = new Float32Array(T.req.length);
   for (let k = 0; k < n; k++) {
-    const w = locToWorld([T.req[3 * k], T.req[3 * k + 1], T.req[3 * k + 2]], R, centre);
+    const w = locToWorld(H.poseLoc([T.req[3 * k], T.req[3 * k + 1], T.req[3 * k + 2]]), R, centre);
     out[3 * k] = w[0]; out[3 * k + 1] = w[1]; out[3 * k + 2] = w[2];
   }
   return out;
@@ -281,7 +321,9 @@ function measure(view) {
   const lmW = locToWorld(centreLoc(view), R, centre);
   return { F, pts, lmW, R,
     m: { rot: { ...S.objRot }, angCC: S.angCC, angLM: S.angLM, cr: crOffset(lmW, F), cov: analyseCoverage(pts, F),
-         rightAtPlusX: R[0] > -0.5, marker: S.lastMarker || null, di: H.lastDI() } };
+         rightAtPlusX: R[0] > -0.5, marker: S.lastMarker || null, di: H.lastDI(),
+         recHalf: { w: S.detW / 2, l: S.detH / 2 },
+         joints: { ...S.joints }, motions: motionsOf(), align: view.align ? alignAngle() : null } };
 }
 
 async function expose(view) {
@@ -311,13 +353,14 @@ async function expose(view) {
    marker — exposed with the same physics and not recorded anywhere. The room is put back. */
 async function referenceImage(view) {
   const S = H.S;
-  const save = { rot: { ...S.objRot }, off: { ...S.objOff }, cc: S.angCC, lm: S.angLM, tx: S.tubeX, tz: S.tubeZ,
+  const save = { joints: { ...S.joints }, rot: { ...S.objRot }, off: { ...S.objOff }, cc: S.angCC, lm: S.angLM, tx: S.tubeX, tz: S.tubeZ,
     collX: S.collX, collZ: S.collZ, marker: S.marker ? { ...S.marker } : null, aec: S.aecResult };
   try {
     applyIdeal(view);
     const img = await H.exposeDry();
     return { img, meas: measure(view) };
   } finally {
+    S.joints = save.joints;
     S.objRot = save.rot; S.objOff.x = save.off.x; S.objOff.z = save.off.z; S.objOff.y = save.off.y;
     S.angCC = save.cc; S.angLM = save.lm; S.tubeX = save.tx; S.tubeZ = save.tz;
     S.collX = save.collX; S.collZ = save.collZ; S.aecResult = save.aec;
@@ -328,6 +371,11 @@ async function referenceImage(view) {
 /* The ideal setup of a view, applied to the room (the reference film, and the QC hook). */
 function applyIdeal(view) {
   const S = H.S, cc = view.cr?.cc ?? 0;
+  // the joints the view asks for, at the middle of their range; everything else straight
+  S.joints = {};
+  for (const [k, r] of Object.entries(view.joints || {})) S.joints[k] = Math.round((r[0] + r[1]) / 2);
+  // the hand straight on the forearm (or, for the scaphoid, deviated to the middle of its range)
+  if (view.align) S.joints[view.align.motion || 'wrist.dev'] = view.align.range ? Math.round((view.align.range[0] + view.align.range[1]) / 2) : 0;
   S.objRot = { x: 0, y: 0, z: view.pose.roll };
   S.angCC = cc; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
   const off = idealOffset(view, S.objRot, cc);
@@ -336,7 +384,8 @@ function applyIdeal(view) {
   S.collX = S.detW; S.collZ = S.detH;
   const need = neededHalf(measure(view).m.cov);
   S.collX = Math.min(S.detW, 2 * need.w); S.collZ = Math.min(S.detH, 2 * need.l);
-  H.setMarker(idealMarker(view), true);
+  // pronated exactly when this film will be hung mirrored (a PA trunk or head)
+  H.setMarker(idealMarker(view), true, !(H.matFor(S.objRot)[0] > -0.5));
 }
 /* QC: drive the Trainer from tests — the session, and the ideal setup of the current view. */
 if (typeof window !== 'undefined') window.radsimTrainer = {

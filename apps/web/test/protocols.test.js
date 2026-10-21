@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 const load = (p) => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
 const protocols = load('../src/data/protocols.json');
 const landmarks = load('../src/data/landmarks.json');
+const centring = load('../src/data/centring.json');   // the textbook points, looked up first
 const all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections.map((p) => ({ ...p, part: g.part }))));
 const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity',
   'totalhipreplacement', 'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
@@ -20,7 +21,8 @@ test('every projection names a subject the browser can actually load', () => {
 test('every projection carries a pose, and every centring landmark exists for its subject', () => {
   for (const p of all) {
     assert.ok(p.pose && Number.isFinite(p.pose.roll) && Number.isFinite(p.pose.cc), `${p.proj}: pose`);
-    if (p.pose.centre) assert.ok(landmarks[p.subject]?.[p.pose.centre], `${p.proj}: no landmark ${p.subject}.${p.pose.centre}`);
+    if (p.pose.centre) assert.ok(centring[p.subject]?.[p.pose.centre] || landmarks[p.subject]?.[p.pose.centre],
+      `${p.proj}: no landmark ${p.subject}.${p.pose.centre}`);
   }
 });
 
@@ -96,4 +98,28 @@ test('the cervical spine is centred on C4, measured from the CT\'s own vertebra 
   assert.match(cs.how, /C4/);
   assert.ok(cs.z < -5.5 && cs.z > -8, `C4 z ${cs.z} (C1 is at ~-1.9, C7 at ~-10.3)`);
   assert.equal(cs.confidence, 'high');
+});
+
+test('the routine views centre where the textbooks say', () => {
+  // Bontrager/Lampignano, McQuillen Martensen, Radiopaedia: the 3rd MCP joint for a PA hand, the
+  // 2nd for the lateral, the midcarpal area for the wrist, midway between the malleoli for the AP
+  // ankle and the medial malleolus for the lateral, T7 for chest and thoracic spine, the iliac
+  // crest (L4-L5) for the lumbar spine on a 35 x 43 receptor
+  const want = { 'PA hand': 'mcp3Joint', 'Oblique hand': 'mcp3Joint', 'Lateral hand': 'mcp2Joint',
+    'PA wrist': 'midcarpal', 'Oblique wrist': 'midcarpal', 'Lateral wrist': 'midcarpal',
+    'AP ankle': 'intermalleolar', 'Mortise ankle': 'intermalleolar', 'Lateral ankle': 'medialMalleolus',
+    'PA chest': 'T7', 'Lateral chest': 'T7mc', 'AP thoracic': 'T7', 'Lateral thoracic': 'T7',
+    'AP lumbar': 'crest', 'Lateral lumbar': 'crestMc' };
+  for (const [proj, c] of Object.entries(want)) {
+    const p = all.find((x) => x.proj === proj);
+    assert.equal(p.pose.centre, c, proj);
+    const pt = centring[p.subject][c];
+    assert.ok(pt && /Bontrager|Radiopaedia/.test(pt.guide), `${proj}: a sourced guideline`);
+  }
+  // the 3rd MCP joint lies distal of the midcarpal point by about the metacarpal length (6-7 cm)
+  const h = centring.hand;
+  assert.ok(h.mcp3Joint.z - h.midcarpal.z > 5 && h.mcp3Joint.z - h.midcarpal.z < 8);
+  // T7 lies 8-10 cm below the jugular notch, and the crest below it
+  const c = centring.chestabdopelvis;
+  assert.ok(c.T7.z > c.crest.z + 20);
 });

@@ -90,6 +90,11 @@ export async function loadVoxelModel(baseUrl, name) {
     // the backend does the ray-casting).
     // `posed` stands in for the material volume when the patient's limbs have been turned
     // (core/limbPose.js) — same grid, same legend, different anatomy
-    makePhantom(center, flip, rot, posed = null) { return new VoxelPhantom({ dims: [nx, ny, nz], vs, data: posed || data }, center, flip, rot); },
+    // A posed volume may be { data, dims }: joint posing (core/jointPose.js) pads the grid
+    // symmetrically where a bent limb reaches past the crop, so the centre is unchanged.
+    makePhantom(center, flip, rot, posed = null) {
+      const g = posed && posed.data ? posed : { data: posed || data, dims: [nx, ny, nz] };
+      return new VoxelPhantom({ dims: g.dims, vs, data: g.data }, center, flip, rot);
+    },
   };
 }

@@ -1912,3 +1912,4 @@ body.trainer:not(.mobile) .bay{height:auto; min-height:0}
 .tr-palp-menu button{background:#1a1f25; border:1px solid var(--edge); color:var(--txt); padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11.5px}
 .tr-palp-menu button.on{background:#5a1a1a; border-color:#ff4a4a; color:#fff}
 .tr-palp-menu button.clear{color:var(--muted)}
+.tr-guide{font-size:11.5px; line-height:1.45; color:#9fd2ff; margin-bottom:8px}
