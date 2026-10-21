@@ -3,9 +3,25 @@
    and rescales those to a standard display range, so the image looks optimally exposed
    regardless of over/under-exposure (the exposure index still reports the true dose).
    Here: the anatomy's tones (raw beam excluded) are windowed onto the display LUT. Pure, so it
-   can be tested off the page; app.js passes the exam's LUT and the __tune overrides. */
-export function computeRescale(sig, mask, lut = null, _t = {}) {
+   can be tested off the page; app.js passes the exam's LUT and the __tune overrides.
+
+   A LUT with voiCore (a fraction, with nx the image width) takes its values of interest from the
+   middle of the exposed field only, as a DR system's body-part processing does for an exam whose
+   subject sits in the middle of a film with a thick body around it. A lateral spine needs it: a
+   strip of thin tissue down the back edge of the field (15 % of a 20 cm lateral lumbar) pinned
+   the window's dark end, and the column was squeezed into the top 5 % of the grey scale. */
+export function computeRescale(sig, mask, lut = null, _t = {}, nx = 0) {
   let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
+  let inVoi = null;
+  if (lut && lut.voiCore && nx) {
+    const ny = sig.length / nx; let x0 = nx, x1 = -1, y0 = ny, y1 = -1;
+    for (let k = 0; k < sig.length; k++) if (mask[k]) {
+      const x = k % nx, y = (k - x) / nx;
+      if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
+    }
+    const f = (1 - lut.voiCore) / 2, ax = x0 + f * (x1 - x0), bx = x1 - f * (x1 - x0), ay = y0 + f * (y1 - y0), by = y1 - f * (y1 - y0);
+    inVoi = (k) => { const x = k % nx, y = (k - x) / nx; return x >= ax && x <= bx && y >= ay && y <= by; };
+  }
   // EXCLUDE the directly-exposed raw beam from the VOI window. The unattenuated beam sits
   // at the dark end of the tone scale; if it is left in, its pixels pin the window's low
   // end and the whole anatomy is crammed into a bright, flat band (washed-out chest). By
@@ -18,7 +34,7 @@ export function computeRescale(sig, mask, lut = null, _t = {}) {
   // direct exposure and clipped to white, leaving the phalanges looking like bare bone.
   const cut=mx*(_t.rcut??0.95);
   const a=40, denom=Math.log(1+a), NB=1024, hist=new Uint32Array(NB); let total=0;
-  for(let k=0;k<sig.length;k++){ if(!mask[k]||sig[k]>=cut) continue;   // skip direct exposure
+  for(let k=0;k<sig.length;k++){ if(!mask[k]||sig[k]>=cut||(inVoi&&!inVoi(k))) continue;   // skip direct exposure
     let t=Math.log(1+a*sig[k]/mx)/denom, b=Math.round((1-t)*(NB-1));
     hist[b<0?0:b>NB-1?NB-1:b]++; total++; }
   if(!total) return null;

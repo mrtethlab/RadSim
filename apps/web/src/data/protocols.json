@@ -956,7 +956,7 @@
               "cm": 32,
               "grid": true,
               "aec": "c",
-              "lut": "spine",
+              "lut": "spineLat",
               "sid": 100,
               "coll": [
                 15,
@@ -971,7 +971,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "T7"
+                "centre": "T7col"
               }
             }
           ]
@@ -1006,16 +1006,16 @@
             },
             {
               "proj": "Lateral lumbar",
-              "kv": 90,
+              "kv": 95,
               "mas": 125,
               "cm": 30,
               "grid": true,
               "aec": "c",
-              "lut": "spine",
+              "lut": "spineLat",
               "sid": 100,
               "coll": [
-                18,
-                42
+                20,
+                38
               ],
               "det": [
                 35,
@@ -1026,7 +1026,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "crestMc"
+                "centre": "crestCol"
               }
             }
           ]

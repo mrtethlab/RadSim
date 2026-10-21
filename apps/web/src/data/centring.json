@@ -126,6 +126,22 @@
    "how": "the level of the iliac crests on the midcoronal plane",
    "guide": "Lateral lumbar spine (35 x 43 cm): CR to the level of the iliac crest (L4-L5), centred to the midcoronal plane (Bontrager)",
    "confidence": "medium"
+  },
+  "crestCol": {
+   "x": 0.0,
+   "y": -6.9,
+   "z": -11.2,
+   "how": "the level of the iliac crests (L4-L5), midsagittal, at the middle of the depth of the vertebral column from z -15.7 to 1.8: front of the bodies y -1.8, spinous tips y -12.0 (largest vertebra in a 6 cm slab, every 1 cm)",
+   "guide": "Lateral lumbar spine: CR to the level of the iliac crest (L4-L5), centred on the vertebral column (the midcoronal plane on an average adult); collimate to about 20 cm wide, 1\" beyond the bodies and spinous processes (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "T7col": {
+   "x": 0.0,
+   "y": -8.3,
+   "z": 16.9,
+   "how": "T7 (the centre of the lung fields), midsagittal, at the middle of the depth of the vertebral column from z 3.9 to 26.4: front of the bodies y -3.4, spinous tips y -13.2 (largest vertebra in a 6 cm slab, every 1 cm)",
+   "guide": "Lateral thoracic spine: CR to T7, centred on the vertebral column; collimate long and narrow to the column (Bontrager; Radiopaedia)",
+   "confidence": "medium"
   }
  }
 }
