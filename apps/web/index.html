@@ -88,6 +88,7 @@
           <div class="hc-acts">
             <button class="hc-open" data-mode="xray">Open</button>
             <button class="hc-tut" data-tut="xray" title="Walk through this mode control by control">&#9654; Tutorial</button>
+            <button class="hc-trainer" title="Routine series marked like a practical exam: position, centre, collimate, expose, then see what went wrong">&#9654; Trainer</button>
             <button class="hc-tut" data-tut="barium" title="Barium studies: swallow or enema, gravity, double contrast, expose on the study clock">&#9654; Barium</button>
           </div>
         </div>
@@ -194,6 +195,8 @@
   <div class="bay">
     <canvas id="view"></canvas>
     <canvas id="bigFilm"></canvas>
+    <!-- TRAINER: the marked film beside the reference film (src/trainer/trainer.js) -->
+    <div class="trcompare" id="trainerCompare"></div>
     <!-- FLUORO MONITORS over the room: live and reference side by side, where the C-arm is, so
          neither scrolls away while you drive the machine. Drag the bar to move, the corner to
          size. The live screen is also a control surface (see fluoro.js wireMonitor). -->
@@ -974,6 +977,9 @@
   </div>
 
   <!-- ============ GENERATOR CONSOLE + MONITOR ============ -->
+  <!-- TRAINER: replaces both control columns while a series is running -->
+  <div class="col trainer-col" id="trainerCol"></div>
+
   <div class="col" id="consoleCol">
     <!-- The two halves of this column are wrapped so the mobile pager can treat them as
          separate pages. On desktop the wrappers are display:contents — invisible to layout. -->

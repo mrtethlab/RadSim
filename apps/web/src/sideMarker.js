@@ -86,6 +86,13 @@ function placeAtFieldEdge() {
   m.z = S.tubeZ + S.collZ / 2 - Math.max(SIZE / 2 + 0.6, 0.2 * S.collZ);
 }
 
+/* Set the marker from code (the Trainer): the letter, and optionally drop it at the field edge. */
+export function setSideMarker(side, place = true) {
+  const m = ctx.S.marker; m.side = side || null;
+  if (place && m.side) placeAtFieldEdge();
+  syncUI(); sideMarkerSync();
+}
+
 export function sideMarkerSync() {
   if (!tile) return;
   const S = ctx.S, m = S.marker;
@@ -133,10 +140,15 @@ export function stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH, f
   const halfU = (nx - 1) / 2, halfV = (ny - 1) / 2;
   const i0 = Math.max(0, Math.floor((m.x - SIZE / 2) / pxU + halfU)), i1 = Math.min(nx - 1, Math.ceil((m.x + SIZE / 2) / pxU + halfU));
   const j0 = Math.max(0, Math.floor((m.z - SIZE / 2) / pxV + halfV)), j1 = Math.min(ny - 1, Math.ceil((m.z + SIZE / 2) / pxV + halfV));
-  let inside = 0, rel = 0, relN = 0;
-  // the letter's total coverage, so a letter partly off the receptor counts as partly missing
-  let total = 0; for (let k = 0; k < a.length; k++) total += a[k];
-  const cellArea = (pxU * pxV) / ((SIZE / G) * (SIZE / G));       // glyph cells per detector pixel
+  // Coverage is compared like with like: the letter as the detector's pixels sample it, inside
+  // the field against all of it on the receptor. (Comparing the sampled part with the glyph's
+  // exact area read a letter wholly inside the field as ~90 % — aliasing between the 0.8 mm
+  // pixels and the glyph — which sat on the warning threshold.) The part of the letter's box
+  // that falls off the receptor is counted as missing.
+  let inside = 0, cover = 0, rel = 0, relN = 0;
+  const bx0 = Math.max(m.x - SIZE / 2, -halfU * pxU - pxU / 2), bx1 = Math.min(m.x + SIZE / 2, halfU * pxU + pxU / 2);
+  const bz0 = Math.max(m.z - SIZE / 2, -halfV * pxV - pxV / 2), bz1 = Math.min(m.z + SIZE / 2, halfV * pxV + pxV / 2);
+  const onReceptor = Math.max(0, bx1 - bx0) * Math.max(0, bz1 - bz0) / (SIZE * SIZE);
   for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
     const x = (i - halfU) * pxU - m.x, z = (j - halfV) * pxV - m.z;
     const u = (flipH ? -x : x) / SIZE + 0.5, v = (flipV ? -z : z) / SIZE + 0.5;
@@ -144,14 +156,15 @@ export function stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH, f
     const w = a[Math.floor(v * G) * G + Math.floor(u * G)];
     if (!w) continue;
     const k = j * nx + i;
+    cover += w;
     if (!mask[k]) continue;
-    inside += w * cellArea;
+    inside += w;
     if (direct[k] > 0) { rel += dose[k] / direct[k]; relN++; }
     const t = 1 - w * (1 - LEAD_T);
     dose[k] *= t; direct[k] *= t;
   }
   return {
-    inFrac: total > 0 ? Math.min(1, inside / total) : 0,
+    inFrac: cover > 0 ? Math.min(1, inside / cover) * onReceptor : 0,
     // OVER THE ANATOMY OF INTEREST: through tissue (beside the part the beam under the letter is
     // raw) AND in the middle of the field. Tissue alone is not enough: a trunk fills its field, so
     // a marker at the field's edge lies on the flank or shoulder as it does clinically; measured,

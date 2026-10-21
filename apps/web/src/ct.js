@@ -939,6 +939,7 @@ function resetCTSession() {
 
 let booted = false;
 function applyMode(mode) {
+  ctx.onModeChange?.(mode);       // e.g. the Trainer ends its session when the room changes
   // Walking out of the room ends the study. The bolus, the barium and the solved timelines
   // all belong to the machine you just left, so a genuine change of modality rebuilds the
   // model clean rather than handing the next machine a patient who is still opacified.
