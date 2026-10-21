@@ -8,6 +8,21 @@ handoff document and is not committed.)
 
 ## 2026-10-10
 
+### CT size-specific dose and Dose Check — [#60](https://github.com/mrtethlab/RadSim/pull/60)
+CTDIvol is the dose to an acrylic phantom whoever is scanned. The planned range's water-equivalent
+diameter is now measured on the anatomy the scan will image (rays across five slices, weighted by
+attenuation relative to water) and CTDIvol is corrected by the AAPM Report 204 fit: the default
+chest/abdomen/pelvis measures 32 cm, so 11.0 mGy CTDIvol is 12.6 mGy SSDE. Dose Check (NEMA XR 25,
+AAPM values) flags a series over 80 mGy head or 50 mGy body CTDIvol, or over 1000 mGy accumulating at
+one level (repeat or overlapping series, a monitoring level fired many times), and START then asks
+for confirmation.
+
+### Fluoroscopy dose-rate limit — [#59](https://github.com/mrtethlab/RadSim/pull/59)
+On the large lumbar subject the automatic brightness control had railed at 110 kV / 10 mA, about
+170 mGy/min at the reference point, roughly twice the 88 mGy/min any fluoroscope may deliver in
+normal mode. The mA is now clipped at that ceiling and the control climbs in kV alone; the rate
+readout says LIMIT. A lower pulse rate buys more mA per pulse (4.7 mA at 15 pps, 9.4 at 7.5).
+
 ### Fluoroscopy staff dose and the tube over the table — [#57](https://github.com/mrtethlab/RadSim/pull/57)
 The fluoro room showed the patient's reference air kerma and nothing of the operator's dose. Scatter
 is now worked out from where the beam enters the patient, strongest back toward the tube and weakest
