@@ -336,7 +336,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:17, totalhipreplacement:17, lowerextremity:17, lumbopelvis:53};
+      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:24, lumbopelvis:53};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -530,6 +530,46 @@ function jointPosedVolume(vm){
   const key=JSON.stringify(S.joints);
   if(vm._jposed?.key!==key) vm._jposed={ key, posed: poseVolume(vm, voxelFlips(), ch, S.joints) };
   return vm._jposed.posed;
+}
+/* REST ON THE TABLE. A patient lies on the receptor whichever way they are turned. The model
+   used to stand at half its unrotated depth, so a lateral, an oblique or a tilt sank part of it
+   below the receptor plane, where the tracer stops counting: a lateral lost its dependent side,
+   and a foot tilted to lay its sole flat vanished from the film. The lowest point of the skin,
+   as the patient is now (turned, joints bent), is set on the receptor; the height slider lifts
+   from there. The skin is sampled once per subject on a 0.5 cm grid (its surface cells only). */
+let restPts=null, restFor=null, restKey='', restY=0;
+function skinSample(vm){
+  const [nx,ny,nz]=vm.dims, sp=vm.spacingMM.map(v=>v/10), d=vm.data;
+  const st=sp.map(v=>Math.max(1,Math.round(0.5/v)));
+  const gx=Math.ceil(nx/st[0]), gy=Math.ceil(ny/st[1]), gz=Math.ceil(nz/st[2]);
+  const occ=new Uint8Array(gx*gy*gz);
+  for(let c=0;c<gz;c++) for(let b=0;b<gy;b++) for(let a=0;a<gx;a++)
+    if(d[(c*st[2]*ny + b*st[1])*nx + a*st[0]]) occ[(c*gy+b)*gx+a]=1;
+  const f=voxelFlips().map(v=>v?-1:1), out=[];
+  const at=(a,b,c)=>a>=0&&b>=0&&c>=0&&a<gx&&b<gy&&c<gz&&occ[(c*gy+b)*gx+a];
+  for(let c=0;c<gz;c++) for(let b=0;b<gy;b++) for(let a=0;a<gx;a++){
+    if(!at(a,b,c)) continue;
+    if(at(a-1,b,c)&&at(a+1,b,c)&&at(a,b-1,c)&&at(a,b+1,c)&&at(a,b,c-1)&&at(a,b,c+1)) continue;
+    out.push(f[0]*(a*st[0]-(nx-1)/2)*sp[0], f[1]*(b*st[1]-(ny-1)/2)*sp[1], f[2]*(c*st[2]-(nz-1)/2)*sp[2]);
+  }
+  return Float32Array.from(out);
+}
+function restHeight(){
+  const vm=S.voxelModel;
+  if(!vm) return 5;
+  if(!vm.data) return (vm.extentMM[1]/2)/10;             // backend-only: no volume in the browser
+  if(restFor!==vm){ restPts=skinSample(vm); restFor=vm; restKey=''; }
+  const ch=jointsActive();
+  const key=JSON.stringify(S.objRot)+(ch?JSON.stringify(S.joints):'');
+  if(key===restKey) return restY;
+  const R=objMat(); let lo=Infinity;
+  for(let i=0;i<restPts.length;i+=3){
+    const p=ch ? forwardChain([restPts[i],restPts[i+1],restPts[i+2]], ch, S.joints) : [restPts[i],restPts[i+1],restPts[i+2]];
+    const y=R[3]*p[0]+R[4]*p[1]+R[5]*p[2];
+    if(y<lo) lo=y;
+  }
+  restKey=key; restY=Number.isFinite(lo) ? -lo : (vm.extentMM[1]/2)/10;
+  return restY;
 }
 /* The mesh bends with the same map: its vertices are the volume frame in mm, the rest frame is
    that flipped and in cm. The rest positions are kept, so straightening restores them exactly. */
@@ -1029,7 +1069,7 @@ function buildPhantom(){
   // x-ray: the object rests on the receptor plus the height offset — which is where OID
   // comes from. Lifting it moves the anatomy toward the source: real magnification and
   // real geometric unsharpness, because the divergent rays do the rest.
-  const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10 + S.objOff.y;
+  const cy = S.mode==='ct' ? S.ct.patientY : restHeight() + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
   const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R, jointPosedVolume(vm) || posedVolume(vm, legRotNow()));
   applyContrast(ph);
@@ -1554,7 +1594,7 @@ function syncScene(){
   three.handGroup.rotation.z = 0;
   if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);       // flips are mode-dependent
   if(S.mode!=='ct' && S.voxelModel){                // x-ray: rest the model on the detector + lift
-    three.handGroup.position.set(ox, (S.voxelModel.extentMM[1]/2)/10 + S.objOff.y, oz);
+    three.handGroup.position.set(ox, restHeight() + S.objOff.y, oz);
   }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
@@ -3114,6 +3154,14 @@ if(typeof window!=='undefined') window.radsimQC={
     return {nx:im.nx, ny:im.ny, sig:im.sig, mask:im.mask, subject:im.subject,
             pxU:S.detW*10/im.nx, pxV:S.detH*10/im.ny,    // mm per pixel
             meta:im.meta, aec:S.aecResult && {...S.aecResult}, mas:S.mas};
+  },
+  // chart calibration: set a protocol up as the sandbox would, expose it, and read the DI
+  async protocol(part, proj){
+    const p=findProtocol(part, proj); if(!p) return null;
+    await new Promise(r=>applyProtocol(p, part, r));
+    if(S.exposing) return null;
+    S.exposing=true; try { await computeRadiograph(); } finally { S.exposing=false; }
+    return { proj, kv:S.kv, mas:S.mas, di:S.lastDI, aec:!!S.aecOn };
   }
 };
 /* Point the render state at history[idx] and refresh the view + strip + meta. */
@@ -3940,7 +3988,7 @@ window.addEventListener('load',()=>{
     // the worker rebuilds the exact phantom the x-ray path traces: same centre, same
     // flips, same rotation — one geometry, two consumers
     phantomPose: () => ({
-      center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
+      center: [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
       flip: voxelFlips(), rot: objMat() }),
     // where the central ray enters the patient (cm from the focus, or null): the same phantom
     // the worker images, traced on the main thread for the skin and staff doses
@@ -3980,7 +4028,7 @@ window.addEventListener('load',()=>{
             buildPhantom: () => buildPhantom(),
             loadModelUrl, baseUrl: import.meta.env.BASE_URL });
   initUS({ THREE, S, three, setSubject: (s) => setSubject(s),
-           phantomPose: () => ({ center: [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1] / 2) / 10 : 5) + S.objOff.y, S.objOff.z],
+           phantomPose: () => ({ center: [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
                                  flip: voxelFlips(), rot: objMat() }) });
   initSideMarker({ THREE, S, three, $, syncScene,
     rightVec: () => { const R=objMat(); return [R[0], R[3], R[6]]; },   // the patient's right, in the room
@@ -3988,7 +4036,7 @@ window.addEventListener('load',()=>{
     midlineX: () => S.objOff.x });
   initTutorial({ applyMode: ctApplyMode });
   initPalpation({ THREE, three, S, voxelFlips, objMat, poseLoc,
-    modelCentre: () => [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z] });
+    modelCentre: () => [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z] });
   initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent,
     palpation: { list: palpationList, set: setPalpated, clear: clearPalpation, active: palpatedKeys },
     tubeFrame, objMat, voxelFlips,
@@ -3996,8 +4044,8 @@ window.addEventListener('load',()=>{
     centring: (name) => centringData[S.subject]?.[name] || null,
     poseLoc, jointChain: () => jointChain(S.subject), renderJointUI, prepareJointVolume,
     matFor: (r) => { const d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); },
-    modelCentreY: () => (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y,
-    modelCentre: () => [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
+    modelCentreY: () => restHeight() + S.objOff.y,
+    modelCentre: () => [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
     setMarker: (side, place=true, pronated) => setSideMarker(side, place, pronated),
     syncSandbox: syncSandboxControls,
     lastDI: () => (S.lastDI ?? null),

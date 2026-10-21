@@ -249,6 +249,20 @@ function limbTurn(rot = H.S.objRot) {
   return t;
 }
 
+/* THE SOLE ON THE RECEPTOR: the angle between the foot's long axis (the point midway between the
+   malleoli to the base of the 3rd metatarsal, centring.json, through the pose) and the receptor,
+   signed (+ toes up). An AP or oblique foot is taken with the sole flat; this leg is straight on
+   the table and its foot rests plantarflexed, toes 17 degrees up, so the student lowers them:
+   by tilting the leg (as raising the knee does) or by plantarflexing further. */
+function soleAngle(rot = H.S.objRot) {
+  const P = (n) => { const p = H.landmarkLocal(n); return p ? H.poseLoc(p) : null; };
+  const a = P('intermalleolar'), b = P('mt3Base');
+  if (!a || !b) return null;
+  const R = H.matFor(rot), d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const v = [R[0] * d[0] + R[1] * d[1] + R[2] * d[2], R[3] * d[0] + R[4] * d[1] + R[5] * d[2], R[6] * d[0] + R[7] * d[1] + R[8] * d[2]];
+  return Math.asin(v[1] / Math.hypot(...v)) * 180 / Math.PI;
+}
+
 // the joints the patient on the table can bend, flattened to their motions
 function motionsOf() {
   const ch = H.jointChain();
@@ -342,7 +356,7 @@ function measure(view) {
          rightAtPlusX: R[0] > -0.5, marker: S.lastMarker || null, di: H.lastDI(),
          recHalf: { w: S.detW / 2, l: S.detH / 2 },
          joints: { ...S.joints }, motions: motionsOf(), align: view.align ? alignAngle() : null,
-         limbTurn: view.align ? limbTurn() : null } };
+         limbTurn: view.align ? limbTurn() : null, sole: view.sole ? soleAngle() : null } };
 }
 
 async function expose(view) {
@@ -390,8 +404,11 @@ async function referenceImage(view) {
 /* The ideal setup of a view, applied to the room (the reference film, and the QC hook). */
 function applyIdeal(view) {
   const S = H.S, cc = view.cr?.cc ?? 0;
-  // the joints the view asks for, at the middle of their range; everything else straight
+  // the joints the view asks for, at the middle of their range; everything else at anatomical
+  // neutral (0), which is not always how the patient was scanned: this foot rests 75 degrees
+  // plantarflexed, and an ankle view wants it dorsiflexed to 90 degrees from the leg
   S.joints = {};
+  for (const m of (H.jointChain() || []).flatMap((j) => j.motions)) S.joints[m.key] = 0;
   for (const [k, r] of Object.entries(view.joints || {})) S.joints[k] = Math.round((r[0] + r[1]) / 2);
   // the hand straight on the forearm (or, for the scaphoid, deviated to the middle of its range)
   if (view.align) S.joints[view.align.motion || 'wrist.dev'] = view.align.range ? Math.round((view.align.range[0] + view.align.range[1]) / 2) : 0;
@@ -406,6 +423,17 @@ function applyIdeal(view) {
       if (Math.abs(limbTurn(S.objRot)) > Math.abs(t)) S.objRot = { ...S.objRot, y: y0 + t };
     }
     S.objRot.y = Math.round(S.objRot.y);              // the Turn slider moves in whole degrees
+  }
+  // a foot: tilt the leg until the sole lies flat on the receptor (as raising the knee does)
+  if (view.sole) {
+    for (let i = 0; i < 5; i++) {
+      const t = soleAngle(S.objRot);
+      if (t == null || Math.abs(t) < 0.2) break;
+      const x0 = S.objRot.x;
+      S.objRot = { ...S.objRot, x: x0 - t };
+      if (Math.abs(soleAngle(S.objRot)) > Math.abs(t)) S.objRot = { ...S.objRot, x: x0 + t };
+    }
+    S.objRot.x = Math.round(S.objRot.x);
   }
   S.angCC = cc; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
   const off = idealOffset(view, S.objRot, cc);
@@ -423,11 +451,14 @@ if (typeof window !== 'undefined') window.radsimTrainer = {
   applyIdeal: () => { if (T && T.series) { applyIdeal(T.series.views[T.vi]); H.syncSandbox(); H.syncScene(); } },
   measure: () => (T && T.series ? measure(T.series.views[T.vi]) : null),
 };
-// the marker a perfect film carries: the side down on a lateral, the patient's right otherwise
+// the marker a perfect film carries: on a limb, its side (every limb model is a right one); on the
+// trunk or head, the side down on a lateral or posterior oblique (+ roll lifts the right), the
+// patient's right otherwise
+const LIMBS = new Set(['hand', 'upperextremity', 'lowerextremity']);
 function idealMarker(view) {
-  const roll = ((view.pose.roll % 360) + 360) % 360;
-  if (roll === 90) return 'L';          // +90 lifts the right: left lateral
-  if (roll === 270) return 'R';
+  if (LIMBS.has(H.S.subject)) return 'R';
+  const roll = ((((view.pose.roll + 180) % 360) + 360) % 360) - 180;
+  if (roll > 0 && roll < 180) return 'L';
   return 'R';
 }
 

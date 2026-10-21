@@ -138,6 +138,11 @@ test('position: 2 degrees in any axis, measured the short way round', () => {
   assert.equal(level(arm(-25, 0.4), 'position'), 'pass', 'turned 25 degrees to line the forearm up');
   assert.equal(level(arm(0, 24), 'position'), 'fail');
   assert.match(arm(0, 24).find((c) => c.id === 'position').detail, /forearm 24° across the film/);
+  // a foot judged on its sole may tilt the leg to lay it flat; the sole is what is judged
+  const sv = { ...view, pose: { roll: 0 }, sole: { tol: 5 } };
+  assert.equal(level(judge(sv, base(F, pts, { rot: { x: -19, y: 0, z: 0 }, sole: 1.5 })), 'position'), 'pass');
+  assert.equal(level(judge(sv, base(F, pts, { rot: { x: 0, y: 0, z: 0 }, sole: 17 })), 'position'), 'fail');
+  assert.match(judge(sv, base(F, pts, { rot: { x: 0, y: 0, z: 0 }, sole: 17 })).find((c) => c.id === 'position').detail, /sole is 17° off the receptor \(toes up\)/);
   // every series view takes the 2 degrees
   for (const s of SERIES) for (const vw of s.views) assert.equal(vw.pose.tol, 2, `${s.id} ${vw.label}`);
 });

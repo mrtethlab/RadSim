@@ -60,20 +60,64 @@
  },
  "lowerextremity": {
   "intermalleolar": {
-   "x": 5.85,
-   "y": -7.88,
-   "z": -37.88,
+   "x": 2.93,
+   "y": -5.47,
+   "z": -37.5,
    "how": "midway between the measured medial and lateral malleoli",
    "guide": "AP, AP mortise and AP oblique ankle: CR perpendicular to a point midway between the malleoli (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "medialMalleolus": {
-   "x": 2.48,
-   "y": -9.15,
-   "z": -36.3,
+   "x": 0.45,
+   "y": -4.5,
+   "z": -35.55,
    "how": "the medial malleolus (palpation landmark)",
    "guide": "Lateral (mediolateral) ankle: CR perpendicular to the medial malleolus (Bontrager)",
    "confidence": "medium"
+  },
+  "mt3Base": {
+   "x": 4.22,
+   "y": -3.84,
+   "z": -43.9,
+   "how": "the middle third of the foot bone 43-51 % of the way from the ankle to the tip of the toes (18.1 cm): the base of the 3rd metatarsal",
+   "guide": "AP foot: CR 10 degrees toward the heel to the base of the 3rd metatarsal; AP medial oblique foot: CR perpendicular to the base of the 3rd metatarsal; lateral foot: CR to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  }
+ },
+ "upperextremity": {
+  "elbowJoint": {
+   "x": 2.7,
+   "y": -4.12,
+   "z": 1.5,
+   "how": "the elbow joint: 1.5 cm distal of the midpoint of the measured epicondyles",
+   "guide": "AP, AP obliques and lateral elbow: CR perpendicular to the mid elbow joint (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  }
+ },
+ "headneck": {
+  "C4": {
+   "x": -0.27,
+   "y": 1.56,
+   "z": -4.47,
+   "how": "the body of C4, from the vertebra labels of the CT (s1082)",
+   "guide": "AP axial cervical: CR 15-20 degrees cephalad to C4, the lower margin of the thyroid cartilage; lateral cervical: CR to C4; AP (posterior) obliques: CR 15-20 degrees cephalad to C4 (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "C1C2": {
+   "x": 0.31,
+   "y": 1.54,
+   "z": 0.79,
+   "how": "midway between the bodies of C1 and C2: the dens and the atlas",
+   "guide": "AP open mouth (C1-C2): CR perpendicular through the centre of the open mouth, to C1-C2 (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "C7T1": {
+   "x": -0.22,
+   "y": 0.07,
+   "z": -10.27,
+   "how": "midway between the bodies of C7 and T1: the cervicothoracic junction",
+   "guide": "Swimmers lateral (cervicothoracic): CR to C7-T1, about 2.5 cm above the jugular notch (Bontrager; Radiopaedia)",
+   "confidence": "high"
   }
  },
  "chest": {

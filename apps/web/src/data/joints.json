@@ -54,18 +54,17 @@
   "elbow": {
    "label": "Elbow",
    "c": [
-    6.3,
-    -5.15,
-    0.52
+    2.7,
+    -4.12,
+    1.5
    ],
    "distal": [
-    -0.089,
-    0.061,
-    -0.994
+    0.136,
+    0.115,
+    -0.984
    ],
    "blend": 1.5,
-   "radius": 6.0,
-   "how": "the trochlea/capitulum axis, 1.5 cm distal of the widest span of the epicondyles",
+   "how": "the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon",
    "motions": [
     {
      "key": "elbow.flex",
@@ -73,9 +72,9 @@
      "neg": "extension",
      "pos": "flexion",
      "toward": [
-      0,
-      1,
-      0
+      -0.969,
+      0.248,
+      -0.0
      ],
      "range": [
       0,
@@ -87,9 +86,9 @@
   "wrist": {
    "label": "Wrist",
    "c": [
-    4.27,
-    -3.74,
-    -21.78
+    5.78,
+    -1.52,
+    -20.35
    ],
    "distal": [
     0,
@@ -97,8 +96,7 @@
     -1
    ],
    "blend": 1.0,
-   "radius": 6.0,
-   "how": "the carpus, 0.5 cm proximal of the carpal landmark; the radius side from the wider of the two forearm bones 3 cm above",
+   "how": "the carpus, 0.5 cm proximal of the carpal landmark; ulnar deviation toward the ulna, measured from the radius 3 cm above",
    "motions": [
     {
      "key": "wrist.dev",
@@ -106,9 +104,9 @@
      "neg": "radial",
      "pos": "ulnar",
      "toward": [
-      1,
-      0,
-      0
+      0.748,
+      -0.664,
+      -0.0
      ],
      "range": [
       -20,
@@ -122,17 +120,16 @@
   "knee": {
    "label": "Knee",
    "c": [
-    3.15,
-    -5.6,
-    3.68
+    -1.12,
+    -5.63,
+    2.48
    ],
    "distal": [
-    0.065,
-    -0.055,
-    -0.996
+    0.101,
+    0.004,
+    -0.995
    ],
    "blend": 2.0,
-   "radius": 9.0,
    "how": "the measured joint space between the femoral condyles and the tibial plateau",
    "motions": [
     {
@@ -155,9 +152,9 @@
   "ankle": {
    "label": "Ankle",
    "c": [
-    5.85,
-    -7.88,
-    -37.88
+    2.93,
+    -5.47,
+    -37.5
    ],
    "distal": [
     0,
@@ -165,8 +162,7 @@
     -1
    ],
    "blend": 1.5,
-   "radius": 14.0,
-   "how": "midway between the malleoli; dorsiflexion turns the foot (pointing [0.091, 0.448, -0.889] from the ankle) toward the shin",
+   "how": "midway between the malleoli; dorsiflexion turns the foot (ankle to the base of the 3rd metatarsal, [0.192, 0.242, -0.951]) toward the shin; at rest it is 75 degrees plantarflexed",
    "motions": [
     {
      "key": "ankle.flex",
@@ -174,9 +170,9 @@
      "neg": "plantarflexion",
      "pos": "dorsiflexion",
      "from": [
-      0.091,
-      0.448,
-      -0.889
+      0.192,
+      0.242,
+      -0.951
      ],
      "toward": [
       0,
@@ -184,9 +180,10 @@
       1
      ],
      "range": [
-      -45,
-      30
-     ]
+      -80,
+      20
+     ],
+     "rest": -75.2
     }
    ]
   }

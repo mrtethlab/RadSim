@@ -2,9 +2,9 @@
   "name": "Lower extremity",
   "source": "VSD Full Body postmortem CT (z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
   "dims": [
-    124,
+    149,
     191,
-    697
+    713
   ],
   "spacing": [
     1.5,
@@ -184,6 +184,210 @@
       "name": "Lead",
       "hu": null,
       "color": "#6a6f77"
+    },
+    {
+      "id": 28,
+      "name": "Acrylic",
+      "hu": 120,
+      "color": "#9fb6a8"
+    },
+    {
+      "id": 29,
+      "name": "Aorta",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 30,
+      "name": "Pulmonary artery",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 31,
+      "name": "Pulmonary vein",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 32,
+      "name": "Superior vena cava",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 33,
+      "name": "Inferior vena cava",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 34,
+      "name": "Portal / splenic vein",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 35,
+      "name": "Brachiocephalic trunk",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 36,
+      "name": "Subclavian artery R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 37,
+      "name": "Subclavian artery L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 38,
+      "name": "Common carotid R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 39,
+      "name": "Common carotid L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 40,
+      "name": "Brachiocephalic vein R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 41,
+      "name": "Brachiocephalic vein L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 42,
+      "name": "Left atrial appendage",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 43,
+      "name": "Iliac artery R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 44,
+      "name": "Iliac artery L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 45,
+      "name": "Iliac vein R",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 46,
+      "name": "Iliac vein L",
+      "hu": 45,
+      "color": "#b23a3a"
+    },
+    {
+      "id": 47,
+      "name": "Bowel gas",
+      "hu": -1000,
+      "color": "#1b2129"
+    },
+    {
+      "id": 48,
+      "name": "Oesophagus lumen",
+      "hu": 15,
+      "color": "#c98f6a"
+    },
+    {
+      "id": 49,
+      "name": "Stomach lumen",
+      "hu": 15,
+      "color": "#b97f4e"
+    },
+    {
+      "id": 50,
+      "name": "Duodenum lumen",
+      "hu": 15,
+      "color": "#c59a5e"
+    },
+    {
+      "id": 51,
+      "name": "Small bowel lumen",
+      "hu": 15,
+      "color": "#d0a86a"
+    },
+    {
+      "id": 52,
+      "name": "Colon lumen",
+      "hu": 15,
+      "color": "#a8804e"
+    },
+    {
+      "id": 53,
+      "name": "Glandular",
+      "hu": 40,
+      "color": "#e4c9b0"
+    },
+    {
+      "id": 54,
+      "name": "Bone 200 HU",
+      "hu": 200,
+      "color": "#d8d2ba"
+    },
+    {
+      "id": 55,
+      "name": "Bone 300 HU",
+      "hu": 300,
+      "color": "#dcd6be"
+    },
+    {
+      "id": 56,
+      "name": "Bone 400 HU",
+      "hu": 400,
+      "color": "#e0dac2"
+    },
+    {
+      "id": 57,
+      "name": "Bone 550 HU",
+      "hu": 550,
+      "color": "#e4dec6"
+    },
+    {
+      "id": 58,
+      "name": "Bone 700 HU",
+      "hu": 700,
+      "color": "#e8e2ca"
+    },
+    {
+      "id": 59,
+      "name": "Bone 900 HU",
+      "hu": 900,
+      "color": "#ece6ce"
+    },
+    {
+      "id": 60,
+      "name": "Bone 1150 HU",
+      "hu": 1150,
+      "color": "#f0ead2"
+    },
+    {
+      "id": 61,
+      "name": "Bone 1500 HU",
+      "hu": 1500,
+      "color": "#f4eed6"
     }
   ],
   "materialsPresent": [
@@ -191,14 +395,13 @@
     1,
     2,
     7,
-    10,
     17,
     18,
     23
   ],
   "huReference": [
     -1024,
-    2988
+    3067
   ],
   "backendOnly": false
 }

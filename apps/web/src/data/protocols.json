@@ -34,7 +34,7 @@
             {
               "proj": "Lateral finger",
               "kv": 57,
-              "mas": 2.5,
+              "mas": 4.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -108,7 +108,7 @@
             {
               "proj": "Lateral hand",
               "kv": 58,
-              "mas": 2.5,
+              "mas": 3.2,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -182,7 +182,7 @@
             {
               "proj": "Lateral wrist",
               "kv": 60,
-              "mas": 2.0,
+              "mas": 3.2,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -210,7 +210,7 @@
             {
               "proj": "AP forearm",
               "kv": 62,
-              "mas": 2.5,
+              "mas": 1.25,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -225,15 +225,16 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 0,
+                "roll": -73,
                 "cc": 0,
-                "centre": "forearm"
+                "centre": "forearm",
+                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
               "proj": "Lateral forearm",
               "kv": 64,
-              "mas": 4.0,
+              "mas": 1.25,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -248,11 +249,13 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -90,
+                "roll": 17,
                 "cc": 0,
                 "centre": "forearm",
-                "fidelity": "approx",
-                "note": "The arm lies against the trunk in this CT, so a lateral forearm beam also crosses the flank; the film is thicker and darker than a real lateral forearm."
+                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json).",
+                "joints": {
+                  "elbow.flex": 90
+                }
               }
             }
           ]
@@ -263,7 +266,7 @@
             {
               "proj": "AP elbow",
               "kv": 64,
-              "mas": 2.5,
+              "mas": 1.25,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -278,15 +281,16 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 0,
+                "roll": -73,
                 "cc": 0,
-                "centre": "elbow"
+                "centre": "elbowJoint",
+                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
               "proj": "Lateral elbow",
               "kv": 66,
-              "mas": 4.0,
+              "mas": 1.25,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -301,11 +305,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -90,
+                "roll": 17,
                 "cc": 0,
-                "centre": "elbow",
-                "fidelity": "approx",
-                "note": "Flexed 90 degrees at the elbow, as a lateral elbow needs. The arm still lies against the trunk in this CT, so the beam also crosses the flank.",
+                "centre": "elbowJoint",
+                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json).",
                 "joints": {
                   "elbow.flex": 90
                 }
@@ -319,7 +322,7 @@
             {
               "proj": "AP humerus",
               "kv": 70,
-              "mas": 2.5,
+              "mas": 1.0,
               "grid": false,
               "lut": "bone",
               "sid": 100,
@@ -334,15 +337,16 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 0,
+                "roll": -73,
                 "cc": 0,
-                "centre": "humerus"
+                "centre": "humerus",
+                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
               "proj": "Lateral humerus",
               "kv": 72,
-              "mas": 4.0,
+              "mas": 1.25,
               "grid": false,
               "lut": "bone",
               "sid": 100,
@@ -357,9 +361,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -90,
+                "roll": 17,
                 "cc": 0,
-                "centre": "humerus"
+                "centre": "humerus",
+                "note": "This arm rests turned about 90 degrees in the CT (epicondyles front to back); the roll that puts the epicondyles parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             }
           ]
@@ -370,7 +375,7 @@
             {
               "proj": "AP shoulder",
               "kv": 72,
-              "mas": 12.5,
+              "mas": 6.4,
               "grid": true,
               "aec": "c",
               "lut": "bone",
@@ -388,13 +393,14 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "shoulder"
+                "centre": "shoulder",
+                "note": "The patient lies supine and this arm rests internally rotated (epicondyles front to back), so this is the AP shoulder in internal rotation: the lesser tubercle in profile medially."
               }
             },
             {
               "proj": "Y view shoulder",
               "kv": 75,
-              "mas": 5.0,
+              "mas": 2.5,
               "grid": true,
               "aec": "c",
               "lut": "bone",
@@ -447,15 +453,15 @@
               "pose": {
                 "roll": 0,
                 "cc": 10,
-                "centre": "foot",
+                "centre": "mt3Base",
                 "fidelity": "approx",
-                "note": "AP foot needs the sole flat on the receptor with the knee flexed; this leg is straight, so the beam meets the foot end-on."
+                "note": "This foot rests plantarflexed post mortem (about 75 degrees) with the leg straight, toes 17 degrees up from the table: the sole lies nearly flat, as a raised knee would put it. The Trainer asks for it flat."
               }
             },
             {
               "proj": "Oblique foot",
               "kv": 60,
-              "mas": 1.6,
+              "mas": 2.5,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -472,15 +478,15 @@
               "pose": {
                 "roll": 30,
                 "cc": 0,
-                "centre": "foot",
+                "centre": "mt3Base",
                 "fidelity": "approx",
-                "note": "A medial oblique foot needs the sole on the receptor first; with a straight leg it cannot be set up."
+                "note": "This foot rests plantarflexed post mortem (about 75 degrees) with the leg straight, toes 17 degrees up from the table: the sole lies nearly flat, as a raised knee would put it. The Trainer asks for it flat."
               }
             },
             {
               "proj": "Lateral foot",
               "kv": 62,
-              "mas": 2.0,
+              "mas": 5.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -492,12 +498,15 @@
                 25,
                 30
               ],
-              "orient": "portrait",
+              "orient": "landscape",
               "subject": "lowerextremity",
               "pose": {
                 "roll": -90,
                 "cc": 0,
-                "centre": "foot"
+                "centre": "mt3Base",
+                "joints": {
+                  "ankle.flex": 0
+                }
               }
             }
           ]
@@ -525,13 +534,16 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "intermalleolar"
+                "centre": "intermalleolar",
+                "joints": {
+                  "ankle.flex": 0
+                }
               }
             },
             {
               "proj": "Mortise ankle",
               "kv": 64,
-              "mas": 4.0,
+              "mas": 6.4,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -548,13 +560,16 @@
               "pose": {
                 "roll": 15,
                 "cc": 0,
-                "centre": "intermalleolar"
+                "centre": "intermalleolar",
+                "joints": {
+                  "ankle.flex": 0
+                }
               }
             },
             {
               "proj": "Lateral ankle",
               "kv": 65,
-              "mas": 2.5,
+              "mas": 4.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -571,7 +586,10 @@
               "pose": {
                 "roll": -90,
                 "cc": 0,
-                "centre": "medialMalleolus"
+                "centre": "medialMalleolus",
+                "joints": {
+                  "ankle.flex": 0
+                }
               }
             }
           ]
@@ -606,7 +624,7 @@
             {
               "proj": "Lateral knee",
               "kv": 70,
-              "mas": 16,
+              "mas": 12.5,
               "grid": true,
               "aec": "c",
               "lut": "bone",
@@ -662,7 +680,7 @@
             {
               "proj": "Lateral femur",
               "kv": 77,
-              "mas": 32,
+              "mas": 20,
               "grid": true,
               "aec": "c",
               "lut": "bone",
@@ -871,7 +889,7 @@
             {
               "proj": "AP cervical",
               "kv": 75,
-              "mas": 12.5,
+              "mas": 25,
               "cm": 13,
               "grid": true,
               "aec": "c",
@@ -890,13 +908,13 @@
               "pose": {
                 "roll": 0,
                 "cc": -15,
-                "centre": "cspine"
+                "centre": "C4"
               }
             },
             {
               "proj": "Lateral cervical",
               "kv": 78,
-              "mas": 16.0,
+              "mas": 50,
               "grid": true,
               "aec": "c",
               "lut": "spine",
@@ -914,9 +932,84 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "cspine",
+                "centre": "C4"
+              }
+            },
+            {
+              "proj": "AP open mouth",
+              "kv": 75,
+              "mas": 20,
+              "cm": 13,
+              "grid": true,
+              "aec": "c",
+              "lut": "spine",
+              "sid": 100,
+              "coll": [
+                12,
+                12
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "C1C2",
                 "fidelity": "approx",
-                "note": "The head and neck CT was scanned with the arms raised beside the head, so a lateral beam at the cervical spine passes through both arms; expect a thick, under-penetrated film that no technique fixes."
+                "note": "This model cannot open its mouth: the lower teeth and the mandible lie over the dens. On a patient the mouth is opened as wide as possible, with the line from the lower edge of the upper incisors to the mastoid tips perpendicular to the receptor."
+              }
+            },
+            {
+              "proj": "Oblique cervical",
+              "kv": 76,
+              "mas": 50,
+              "grid": true,
+              "aec": "c",
+              "lut": "spine",
+              "sid": 180,
+              "coll": [
+                15,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 45,
+                "cc": -15,
+                "centre": "C4"
+              }
+            },
+            {
+              "proj": "Swimmers lateral",
+              "kv": 85,
+              "mas": 40.0,
+              "grid": true,
+              "aec": "c",
+              "lut": "spine",
+              "sid": 180,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "C7T1",
+                "fidelity": "approx",
+                "note": "This patient lies with both arms at the sides. On a patient the arm nearer the receptor is raised over the head and the other shoulder depressed, to take the shoulders off C7-T1."
               }
             }
           ]
@@ -927,7 +1020,7 @@
             {
               "proj": "AP thoracic",
               "kv": 80,
-              "mas": 40,
+              "mas": 100,
               "cm": 23,
               "grid": true,
               "aec": "c",
@@ -1006,7 +1099,7 @@
             },
             {
               "proj": "Lateral lumbar",
-              "kv": 95,
+              "kv": 100,
               "mas": 125,
               "cm": 30,
               "grid": true,
@@ -1042,7 +1135,7 @@
             {
               "proj": "AP skull",
               "kv": 80,
-              "mas": 32,
+              "mas": 20,
               "cm": 19,
               "grid": true,
               "aec": "c",
@@ -1067,7 +1160,7 @@
             {
               "proj": "Lateral skull",
               "kv": 78,
-              "mas": 20,
+              "mas": 10,
               "cm": 15,
               "grid": true,
               "aec": "c",
