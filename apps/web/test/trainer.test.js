@@ -48,6 +48,17 @@ test('a field an inch beyond the anatomy passes; wider fails; narrower cuts', ()
   assert.equal(level(tight, 'collimation'), 'warn');
 });
 
+test('the inch border is asked for only as far as the receptor allows', () => {
+  // a broad chest: 34 cm of lung needs 39 cm with its border, the receptor is 35 cm wide
+  const pts = slab(17, 12);
+  const F = frame(35, 24 + 2 * BORDER_CM);
+  const m = base(F, pts, { recHalf: { w: 17.5, l: 21.5 } });
+  assert.equal(level(judge(view, m), 'collimation'), 'warn', 'full width used: right, with a thin border');
+  assert.equal(level(judge(view, base(F, pts)), 'collimation'), 'warn');
+  // but a field that cuts the lungs still fails
+  assert.equal(level(judge(view, base(frame(30, 30), pts, { recHalf: { w: 17.5, l: 21.5 } })), 'anatomy'), 'fail');
+});
+
 test('the symmetric collimator: the further side decides the field', () => {
   // anatomy from z = -5 to +15 about the central ray: needs 15 + 2.54 each way along l
   const pts = slab(5, 10, 5);

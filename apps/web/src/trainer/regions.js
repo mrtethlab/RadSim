@@ -88,6 +88,28 @@ export function sampleRegion(vm, flips, lmLoc, parts, gridCm = 0.35) {
         }
       }
     }
+    // part.largest: keep only the N largest connected pieces (the two lungs, not the stomach and
+    // bowel gas the lung-density label also covers)
+    if (part.largest) {
+      const lab = new Int32Array(keep.length), sizes = [0];
+      for (let q0 = 0; q0 < keep.length; q0++) {
+        if (!keep[q0] || lab[q0]) continue;
+        const id = sizes.length; let n = 0;
+        const stack = [q0]; lab[q0] = id;
+        while (stack.length) {
+          const q = stack.pop(); n++;
+          const a = q % gx, b = ((q / gx) | 0) % gy, c = (q / (gx * gy)) | 0;
+          const nb = [a > 0 ? q - 1 : -1, a < gx - 1 ? q + 1 : -1, b > 0 ? q - gx : -1, b < gy - 1 ? q + gx : -1,
+            c > 0 ? q - gx * gy : -1, c < gz - 1 ? q + gx * gy : -1];
+          for (const r of nb) if (r >= 0 && keep[r] && !lab[r]) { lab[r] = id; stack.push(r); }
+        }
+        sizes.push(n);
+      }
+      const top = new Set(sizes.map((n, id) => [n, id]).slice(1).sort((x, y) => y[0] - x[0]).slice(0, part.largest).map((t) => t[1]));
+      const k2 = new Uint8Array(keep.length);
+      for (let q = 0; q < keep.length; q++) if (lab[q] && top.has(lab[q])) k2[q] = 1;
+      keep = k2;
+    }
     for (let q = 0; q < keep.length; q++) {
       if (!keep[q]) continue;
       const a = q % gx, b = ((q / gx) | 0) % gy, c = (q / (gx * gy)) | 0;

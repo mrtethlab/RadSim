@@ -1,0 +1,107 @@
+{
+ "_about": "Measure the CENTRING points the textbooks name, on each model, for the Trainer. Rest-frame cm from the volume centre.",
+ "hand": {
+  "mcp3Joint": {
+   "x": -0.6,
+   "y": -0.73,
+   "z": 3.12,
+   "how": "the joint space along the 3rd ray: the deepest dip in bone between the metacarpal head and the proximal phalanx",
+   "guide": "PA and PA oblique hand: CR perpendicular to the 3rd MCP joint (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "mcp2Joint": {
+   "x": 1.55,
+   "y": -0.65,
+   "z": 3.33,
+   "how": "the joint space along the 2nd ray: the deepest dip in bone between the metacarpal head and the proximal phalanx",
+   "guide": "Lateral hand: CR perpendicular to the 2nd MCP joint (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "midcarpal": {
+   "x": -0.6,
+   "y": 0.53,
+   "z": -3.25,
+   "how": "the middle of the carpus (the midcarpal landmark: 2 cm proximal of the carpometacarpal level), on the line of the 3rd metacarpal (the capitate)",
+   "guide": "PA, PA oblique and lateral wrist: CR perpendicular to the midcarpal area (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "scaphoid": {
+   "x": 0.48,
+   "y": -0.07,
+   "z": -4.45,
+   "how": "the radial-most 1.5 cm of carpal bone 1 cm distal to the radiocarpal joint: the scaphoid",
+   "guide": "PA axial scaphoid: CR 10-15 degrees proximally, toward the elbow, to the scaphoid, hand in ulnar deviation (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  }
+ },
+ "lowerextremity": {
+  "intermalleolar": {
+   "x": 5.85,
+   "y": -7.88,
+   "z": -37.88,
+   "how": "midway between the measured medial and lateral malleoli",
+   "guide": "AP, AP mortise and AP oblique ankle: CR perpendicular to a point midway between the malleoli (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "medialMalleolus": {
+   "x": 2.48,
+   "y": -9.15,
+   "z": -36.3,
+   "how": "the medial malleolus (palpation landmark)",
+   "guide": "Lateral (mediolateral) ankle: CR perpendicular to the medial malleolus (Bontrager)",
+   "confidence": "medium"
+  }
+ },
+ "chest": {
+  "T7": {
+   "x": 0.0,
+   "y": -1.7,
+   "z": 2.4,
+   "how": "T7: the centre of the lung fields (z -11.2 to 16.0), on the midsagittal plane, at the midcoronal plane; 9 cm below the jugular notch gives 7.8",
+   "guide": "PA chest: CR to the midsagittal plane at T7, the centre of the lung fields; AP thoracic spine: CR to T7, 8-10 cm below the jugular notch (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "T7mc": {
+   "x": 0.0,
+   "y": -1.7,
+   "z": 2.4,
+   "how": "T7 (as above) on the midcoronal plane: halfway between the front and back of the body at the midline",
+   "guide": "Lateral chest: CR to the midcoronal plane at T7 (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  }
+ },
+ "chestabdopelvis": {
+  "T7": {
+   "x": 0.0,
+   "y": -7.1,
+   "z": 16.9,
+   "how": "T7: the centre of the lung fields (z 0.9 to 32.9), on the midsagittal plane, at the depth of the vertebral bodies; 9 cm below the jugular notch gives 19.1",
+   "guide": "PA chest: CR to the midsagittal plane at T7, the centre of the lung fields; AP thoracic spine: CR to T7, 8-10 cm below the jugular notch (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "T7mc": {
+   "x": 0.0,
+   "y": -1.5,
+   "z": 16.9,
+   "how": "T7 (as above) on the midcoronal plane: halfway between the front and back of the body at the midline",
+   "guide": "Lateral chest: CR to the midcoronal plane at T7 (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "crest": {
+   "x": 0.0,
+   "y": -4.3,
+   "z": -11.2,
+   "how": "the level of the iliac crests (mean of the two measured crests), midsagittal, at the depth of the vertebral bodies",
+   "guide": "AP lumbar spine (35 x 43 cm): CR to the level of the iliac crest, L4-L5 (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "crestMc": {
+   "x": 0.0,
+   "y": -0.1,
+   "z": -11.2,
+   "how": "the level of the iliac crests on the midcoronal plane",
+   "guide": "Lateral lumbar spine (35 x 43 cm): CR to the level of the iliac crest (L4-L5), centred to the midcoronal plane (Bontrager)",
+   "confidence": "medium"
+  }
+ }
+}

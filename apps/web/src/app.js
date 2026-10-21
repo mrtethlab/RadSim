@@ -11,6 +11,8 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
+import { axisToward, forwardChain, poseVolume, anyBent } from './core/jointPose.js';
+import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
 import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict, setSideMarker } from './sideMarker.js';
@@ -25,6 +27,7 @@ import { GIStudy, SEGMENTS as GI_SEGMENTS } from './core/giSolve.js';
 import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import landmarkData from './data/landmarks.json';
+import centringData from './data/centring.json';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
@@ -407,6 +410,7 @@ async function setSubject(sub){
      once the volume is in place and the scene has been synced around it. */
   syncLegRotUI();
   S.lastDose=null; S.doseLog=[]; updateDoseReadout();   // a new patient starts a new dose record
+  S.joints={}; renderJointUI();                         // and with their joints straight
   S.lastMarker=null; updateMarkerNote();
   window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
@@ -498,6 +502,82 @@ function applyVoxelMeshTransform(grp){
   grp.position.set(0,0,0); grp.rotation.set(0,0,0);
 }
 
+/* ---- JOINTS (core/jointPose.js, data/joints.json from tools/measure_joints.py) ----------------
+   The limb models can be bent at their joints: the wrist deviated or flexed, the elbow and knee
+   flexed, the ankle dorsi- or plantarflexed. One map moves everything — the voxel volume the
+   x-ray traces (resampled, cached per pose), the mesh in the room, and every landmark — so the
+   film, the room and the Trainer's marking agree. Projection only, like the leg rotation: CT,
+   fluoroscopy and the other rooms scan the patient as the volume has them, and the mesh
+   straightens there. */
+const chainCache={};
+function jointChain(subject){
+  if(chainCache[subject]!==undefined) return chainCache[subject];
+  const js=jointData[subject];
+  if(!js){ chainCache[subject]=null; return null; }
+  // proximal first, as joints.json lists them
+  return chainCache[subject]=Object.values(js).map(j=>({ ...j,
+    motions: j.motions.map(m=>({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
+}
+function jointsActive(){
+  const ch=jointChain(S.subject);
+  return S.mode==='xray' && ch && anyBent(ch, S.joints) ? ch : null;
+}
+// a rest-frame point (landmark, required anatomy, palpation) where the bent patient has it
+function poseLoc(p){ const ch=jointsActive(); return ch ? forwardChain(p, ch, S.joints) : p; }
+function jointPosedVolume(vm){
+  const ch=jointsActive(); if(!ch || !vm.data) return null;
+  const key=JSON.stringify(S.joints);
+  if(vm._jposed?.key!==key) vm._jposed={ key, posed: poseVolume(vm, voxelFlips(), ch, S.joints) };
+  return vm._jposed.posed;
+}
+/* The mesh bends with the same map: its vertices are the volume frame in mm, the rest frame is
+   that flipped and in cm. The rest positions are kept, so straightening restores them exactly. */
+let bentKey='';
+function bendVoxelMesh(){
+  const wrap=three.chestGroup; if(!wrap) return;
+  const ch=jointsActive();
+  const key=ch ? S.subject+JSON.stringify(S.joints) : '';
+  if(key===bentKey && wrap.userData.bentFor===S.subject) return;
+  bentKey=key; wrap.userData.bentFor=S.subject;
+  const f=voxelFlips().map(b=>b?-1:1);
+  wrap.traverse(o=>{
+    if(!o.isMesh || !o.geometry?.attributes?.position) return;
+    const pos=o.geometry.attributes.position;
+    if(!o.geometry.userData.rest){ if(!ch) return; o.geometry.userData.rest=Float32Array.from(pos.array); }
+    const rest=o.geometry.userData.rest, a=pos.array;
+    if(!ch){ a.set(rest); }
+    else for(let i=0;i<a.length;i+=3){
+      const q=forwardChain([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], ch, S.joints);
+      a[i]=f[0]*q[0]*10; a[i+1]=f[1]*q[1]*10; a[i+2]=f[2]*q[2]*10;
+    }
+    pos.needsUpdate=true; o.geometry.computeVertexNormals(); o.geometry.computeBoundingSphere();
+  });
+}
+/* The sandbox's joint sliders, one per motion the current subject has. */
+function renderJointUI(){
+  const host=$('jointRows'); if(!host) return;
+  const ch=jointChain(S.subject);
+  if(!ch){ host.innerHTML=''; return; }
+  host.innerHTML=ch.map(j=>j.motions.map(m=>{
+    const v=S.joints[m.key]||0;
+    return `<div class="row" style="margin-top:8px"><div class="rl">${j.label} <small>${m.label.toLowerCase()} (${m.neg} &minus; / ${m.pos} +)</small></div>`
+      +`<div class="valchip" id="jv_${m.key.replace('.','_')}">${v}°</div></div>`
+      +`<input type="range" class="jointSl" data-key="${m.key}" min="${m.range[0]}" max="${m.range[1]}" step="1" value="${v}">`;
+  }).join('')).join('');
+  host.querySelectorAll('.jointSl').forEach(el=>el.addEventListener('input',()=>{
+    S.joints[el.dataset.key]=+el.value;
+    const t=$('jv_'+el.dataset.key.replace('.','_')); if(t) t.textContent=el.value+'°';
+    resetPrep?.(); syncScene(); prepareJointVolume();
+  }));
+}
+/* Pose the volume once the slider has rested, so the exposure finds it ready (1-2 s for the
+   0.5 mm hand; it is cached per pose either way). */
+let jointPrepTimer=null;
+function prepareJointVolume(){
+  clearTimeout(jointPrepTimer);
+  jointPrepTimer=setTimeout(()=>{ if(S.voxelModel) jointPosedVolume(S.voxelModel); }, 450);
+}
+
 /* X-ray detector receptor size + orientation. The 3D receptor (modelled 24x30) scales
    to the effective W×H; computeRadiograph reads S.detW/detH + the native matrix. */
 function applyDet(){
@@ -545,6 +625,7 @@ const S = {
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
   legRot:0,                    // both legs turned about the femoral heads, deg (+ internal) — core/limbPose.js
+  joints:{},                   // bent joints of the current subject, deg by motion key — core/jointPose.js
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
   lastDose:null, doseLog:[],          // patient dose per exposure, this subject (core/patientDose.js)
@@ -946,7 +1027,7 @@ function buildPhantom(){
   // real geometric unsharpness, because the divergent rays do the rest.
   const cy = S.mode==='ct' ? S.ct.patientY : (vm.extentMM[1]/2)/10 + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
-  const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R, posedVolume(vm, legRotNow()));
+  const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R, jointPosedVolume(vm) || posedVolume(vm, legRotNow()));
   applyContrast(ph);
   applyBarium(ph);
   return ph;
@@ -1480,6 +1561,7 @@ function syncScene(){
   usSyncScene();                                // ultrasound puts a probe on the skin
   dxaSyncScene();                               // DXA shows its own scanning arm, not the x-ray head
   sideMarkerSync();                             // the lead R/L tile on the receptor (x-ray only)
+  bendVoxelMesh();                              // the mesh bends with the joints (x-ray)
   palpationSync();                              // palpated landmarks stay on the patient's skin
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
@@ -1838,7 +1920,7 @@ function bind(){
   $('legRot')?.addEventListener('input',e=>{ S.legRot=parseInt(e.target.value);
     syncLegRotUI(); resetPrep(); syncScene(); });
   $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0,y:0};
-    S.legRot=0; syncLegRotUI();
+    S.legRot=0; syncLegRotUI(); S.joints={}; renderJointUI();
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
     S.oid=0; const o=$('oidV'); if(o) o.textContent='0 cm';
@@ -2815,6 +2897,10 @@ function applyProtocol(p,part,after){
    ray, and the tube only travels a few centimetres. The landmark is rotated with the patient
    first, so a lateral is centred as well as an AP. */
 function landmarkLocal(subject, name){
+  // the textbook centring points (data/centring.json, tools/measure_centring.py: the 3rd MCP
+  // JOINT, midway between the malleoli, T7, the iliac crest) are measured in the rest frame
+  const cp = centringData[subject]?.[name];
+  if (cp) return [cp.x, cp.y, cp.z];
   const lm = landmarkData[subject]?.[name];
   if (!lm) return null;
   if (lm.frame === 'world') return [lm.x || 0, lm.y || 0, lm.z];   // measured in the x-ray world already
@@ -2827,6 +2913,7 @@ function applyPose(pose){
   if (!pose) { if (note) note.textContent = ''; return; }
   S.objRot = { x: 0, y: 0, z: pose.roll || 0 };
   S.legRot = pose.legs || 0; syncLegRotUI();
+  S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg
   S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
   let clamped = false;
   S.objOff.x = 0; S.objOff.z = 0;
@@ -3861,12 +3948,14 @@ window.addEventListener('load',()=>{
     bilateral: () => BILATERAL.has(S.subject),
     midlineX: () => S.objOff.x });
   initTutorial({ applyMode: ctApplyMode });
-  initPalpation({ THREE, three, S, voxelFlips, objMat,
+  initPalpation({ THREE, three, S, voxelFlips, objMat, poseLoc,
     modelCentre: () => [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z] });
   initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent,
     palpation: { list: palpationList, set: setPalpated, clear: clearPalpation, active: palpatedKeys },
     tubeFrame, objMat, voxelFlips,
     landmarkLocal: (name) => landmarkLocal(S.subject, name),
+    centring: (name) => centringData[S.subject]?.[name] || null,
+    poseLoc, jointChain: () => jointChain(S.subject), renderJointUI, prepareJointVolume,
     matFor: (r) => { const d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); },
     modelCentreY: () => (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y,
     modelCentre: () => [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
