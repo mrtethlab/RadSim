@@ -17,8 +17,8 @@
 //    theme) have no sensible goal at all and are explanation-only.
 // ============================================================================
 
-import { XRAY_STEPS, CT_STEPS, EDITOR_STEPS, BARIUM_STEPS, FLUORO_STEPS, MAMMO_STEPS,
-         US_STEPS, DXA_STEPS } from './tutorial-content.js';
+import { XRAY_STEPS, CT_STEPS, EDITOR_STEPS, BARIUM_STEPS, CONTRAST_STEPS, FLUORO_STEPS,
+         MAMMO_STEPS, US_STEPS, DXA_STEPS } from './tutorial-content.js';
 
 let ctx = null;
 let T = null;            // the running tutorial, or null
@@ -72,10 +72,12 @@ export function initTutorial(context) {
 }
 
 const STEPS = { xray: XRAY_STEPS, ct: CT_STEPS, editor: EDITOR_STEPS, barium: BARIUM_STEPS,
+                contrast: CONTRAST_STEPS,
                 fluoro: FLUORO_STEPS, mammo: MAMMO_STEPS, us: US_STEPS, dxa: DXA_STEPS };
 // A tutorial does not have to be a mode of its own: the barium walkthrough is a set of
-// steps that happens to run inside x-ray mode, because fluoroscopy IS x-ray with a clock.
-const TUT_MODE = { barium: 'xray' };
+// steps that happens to run inside x-ray mode, because fluoroscopy IS x-ray with a clock;
+// the contrast walkthrough likewise runs inside CT.
+const TUT_MODE = { barium: 'xray', contrast: 'ct' };
 
 export function startTutorial(mode) {
   const steps = STEPS[mode];
@@ -292,8 +294,17 @@ function scrollTargetIntoView(s) {
   window.__mobilePageFor?.(el);
   if (hadNoRect) setTimeout(paint, 60);
   const r = el.getBoundingClientRect();
-  if (r.top >= 0 && r.bottom <= innerHeight) return;
-  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  // a column of a wide table (the scan groups' delay, kV, pitch) can sit off to the side
+  // inside its own horizontal scroller, on screen vertically and still out of sight
+  let clipped = false;
+  for (let p = el.parentElement; p && p !== document.body; p = p.parentElement) {
+    if (p.scrollWidth <= p.clientWidth + 1 || getComputedStyle(p).overflowX === 'visible') continue;
+    const pr = p.getBoundingClientRect();
+    if (r.left < pr.left || r.right > pr.right) { clipped = true; break; }
+  }
+  const onScreen = r.top >= 0 && r.bottom <= innerHeight;
+  if (onScreen && !clipped) return;
+  el.scrollIntoView({ block: onScreen ? 'nearest' : 'center', inline: 'nearest', behavior: 'smooth' });
   setTimeout(paint, 380);
 }
 

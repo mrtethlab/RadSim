@@ -22,3 +22,15 @@ test('every tutorial step targets a control that exists on the page', () => {
   }
   assert.deepEqual(missing, []);
 });
+
+test('every tutorial button on the home card opens a tutorial that exists', () => {
+  const src = readFileSync(new URL('../src/tutorial.js', import.meta.url), 'utf8');
+  const map = src.slice(src.indexOf('const STEPS = {'), src.indexOf('};', src.indexOf('const STEPS = {')));
+  const tuts = [...html.matchAll(/data-tut="([^"]+)"/g)].map((m) => m[1]);
+  assert.ok(tuts.includes('contrast') && tuts.includes('barium'));
+  for (const t of tuts) {
+    const m = map.match(new RegExp(`\\b${t}: (\\w+)`));
+    assert.ok(m, `no step list for data-tut="${t}"`);
+    assert.ok(Array.isArray(T[m[1]]) && T[m[1]].length, `${m[1]} is not an exported step list`);
+  }
+});

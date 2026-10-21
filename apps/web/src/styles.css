@@ -1358,12 +1358,12 @@ body.mode-home .home{display:block}
 body.mode-home .app{visibility:hidden}
 
 /* ---- home-card actions ---------------------------------------------------------------- */
-.hc-acts{display:flex; gap:9px; margin-top:15px}
+.hc-acts{display:flex; flex-wrap:wrap; gap:9px; margin-top:15px}
 .hc-acts button{font-family:var(--disp); font-weight:600; font-size:14px; letter-spacing:.6px;
   padding:8px 15px; border-radius:7px; cursor:pointer; border:1px solid var(--edge2);
   background:#1a222b; color:#dbe6f0; transition:.14s}
 .hc-acts button:hover{background:#26313d; border-color:#6b8aa4}
-.hc-acts .hc-open{background:#2a3a4a; border-color:#4d6a86}
+.hc-acts .hc-open, .hc-acts .hc-trainer{background:#2a3a4a; border-color:#4d6a86}
 .hc-acts .hc-tut{color:var(--sub)}
 
 /* ---- tutorial ------------------------------------------------------------------------
@@ -1849,7 +1849,6 @@ body.mode-fluoro .flmon.off{display:none}
 
 
 /* ---- TRAINER (src/trainer/trainer.js) ------------------------------------------------ */
-.hc-acts .hc-trainer{color:#ffd98a; border-color:#6b5a2a}
 .trainer-col{display:none}
 body.trainer .app{grid-template-columns:1fr 380px}
 body.trainer .app > .col:not(.trainer-col){display:none}
