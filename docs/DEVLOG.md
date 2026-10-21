@@ -6,6 +6,46 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-21
+
+### Trainer mode — [#62](https://github.com/mrtethlab/RadSim/pull/62), [#63](https://github.com/mrtethlab/RadSim/pull/63), [#65](https://github.com/mrtethlab/RadSim/pull/65)
+The sandbox let a student do anything and judged only the exposure. The Trainer, entered from the X-ray
+home card, takes a routine series view by view as a practical exam does. The steps are:
+1. position the patient (roll, tilt, turn, place on the table, bend the joints);
+2. centre the field on the named point;
+3. collimate to an inch beyond the required anatomy and place the side marker;
+4. expose.
+
+Each film is then marked on position, central-ray angle, centring distance, required anatomy, collimation
+and marker. The faults are drawn on the film, and a reference film made with the ideal setup hangs beside it.
+- **Series:** hand ×3, wrist ×4, ankle ×4, chest ×2, thoracic and lumbar spine ×2: 17 views.
+- **Centring points:** measured on each model's bone where Bontrager, Lampignano and McQuillen put them, for
+  example the 3rd MCP joint for a PA hand, the midpoint of the malleoli for an AP ankle, and T7 for a PA chest.
+  T7 cross-checks against a disc count from L4–L5 at the iliac crest.
+- **Palpate…:** marks bony landmarks (ASIS, iliac crest, styloids, malleoli, jugular notch…) in red on the skin
+  over the measured bone.
+- **Joints:** the limb models now bend at the wrist, elbow, knee and ankle. One map moves the voxel volume
+  the x-ray traces, the mesh and every landmark. A hand or wrist must have its 3rd metacarpal in line with the
+  distal radius, and the scanned hand rests 26° ulnar, so the student radially deviates it. The scaphoid
+  view needs 15–35° of ulnar deviation. The lateral elbow and knee protocols now expose flexed.
+- **Side markers:** a marker can be laid face down. A PA trunk film is hung as if facing the patient, so its
+  marker must be pronated; on every other view a pronated marker reads backward and is marked wrong.
+
+Checked in the app:
+- Every ideal setup passes.
+- A face-up marker on the PA chest, a pronated one on the lateral, and the hand left at its rest deviation
+  each fail with the reason.
+
+### Smooth skin for every body model — [#64](https://github.com/mrtethlab/RadSim/pull/64)
+Every model but the hand showed the voxel staircase in its skin, because its mesh was cut from a
+0/1 mask without smoothing. The other eight models now get the hand's treatment, built from the shipped
+volumes:
+- a blurred occupancy of the patient alone;
+- marching cubes at about 2.6 mm, then Taubin smoothing;
+- one skin tone, written in linear colour as glTF expects.
+
+The physics never reads the mesh, so images and doses are unchanged.
+
 ## 2026-10-10
 
 ### CT size-specific dose and Dose Check — [#60](https://github.com/mrtethlab/RadSim/pull/60)
