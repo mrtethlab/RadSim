@@ -19,6 +19,10 @@ const S = () => window.__radsimState;
 const $ = (id) => document.getElementById(id);
 const openBayMenu = async () => { const d = $('viewDrop'); if (d && !d.classList.contains('open')) $('bayMenuBtn').click(); };
 const closeBayMenu = async () => { const d = $('viewDrop'); if (d && d.classList.contains('open')) $('bayMenuBtn').click(); };
+// the injector panel slides over the bay's left side, scan-group table included
+const injectorOpen = (open) => async () => {
+  if (!!$('ctrstPanel')?.classList.contains('open') !== open) $('ctrstTab')?.click();
+};
 const showImageView = async () => { await openBayMenu(); $('contentImageBtn')?.click(); await closeBayMenu(); };
 const customCount = () => [...($('subjectSel')?.options || [])]
   .filter((o) => /^Custom:/.test(o.textContent)).length;
@@ -307,7 +311,8 @@ export const CT_STEPS = [
       + 'CT reconstructs from projections taken all the way around '
       + 'the patient, so unlike a radiograph nothing is superimposed — but everything inside the '
       + 'scan field contributes, including the table. Chest and chest-abdomen-pelvis are the '
-      + 'subjects with vessel maps, so they are the ones that can be given contrast.',
+      + 'subjects with vessel maps, so they are the ones that can be given contrast — the '
+      + '<b>Contrast Tutorial</b> on the home card walks through the injector and its timing.',
     goal: {
       label: 'Load the chest',
       done: () => S().subject === 'chest',
@@ -456,7 +461,7 @@ export const CT_STEPS = [
       + '<b>fixed time delay</b> — simple, and wrong for any patient whose circulation is not '
       + 'average — or <b>bolus tracking</b>, which watches the contrast arrive and triggers on it. '
       + 'Choosing bolus tracking builds a second scan group automatically: a monitoring series and '
-      + 'the enhanced series it triggers.',
+      + 'the enhanced series it triggers. The Contrast Tutorial takes a study through it.',
     block: false,
   },
   {
@@ -468,94 +473,6 @@ export const CT_STEPS = [
       + 'interval, different kernel — a sharp algorithm for lung and bone, a smooth one for soft '
       + 'tissue — all from the same raw data, at no extra dose. Plan as many as the report needs.',
     block: false,
-  },
-  {
-    sel: '#ctrstTab',
-    title: 'The contrast injector',
-    text: 'Opens the power injector. Contrast needs a subject with a vessel map, so it is '
-      + 'available on the chest and CAP. The panel is a separate machine with its own interface — '
-      + 'that is why it does not follow the scanner\'s vendor colours.',
-    goal: {
-      label: 'Open the contrast panel',
-      when: () => !$('ctrstTab')?.disabled,
-      unless: 'Contrast needs a subject with a vessel map — go back and load the chest.',
-      done: () => $('ctrstPanel')?.classList.contains('open'),
-    },
-  },
-  {
-    sel: '#ctrstBar',
-    title: 'Programming the injection',
-    text: 'The bar is the injection as a timeline: contrast in green, saline in blue, drawn to '
-      + 'scale in time. Each phase carries a volume and a flow rate. Flow rate '
-      + 'sets how tight the bolus is — 4–5 mL/s for a CTA, slower for a portal-venous study. The '
-      + 'saline chaser is not padding: it pushes the tail of the contrast out of the arm veins and '
-      + 'into the circulation, so all of what you paid for is doing work. With the Python compute '
-      + 'service running, tap a phase to reprogram it on the keypad.',
-    goal: {
-      label: 'Open a phase and change a value',
-      when: () => !!S().computeInfo,
-      unless: 'Nothing to change on the browser engine: the protocol is fixed on the shipped '
-        + 'preset timeline. Programming the injector needs the Python compute service to solve '
-        + 'the haemodynamics for whatever you enter.',
-      arm: () => JSON.stringify(S().contrast.params),
-      done: (a) => JSON.stringify(S().contrast.params) !== a,
-    },
-  },
-  {
-    sel: '.grp:has(#ctrstSite)',
-    title: 'Injection site',
-    text: 'Where the needle is changes when — and how sharply — the bolus arrives. The basilic '
-      + 'vein is the reference route every timing chart assumes. A central line\'s tip already '
-      + 'sits at the cavoatrial junction, so its bolus skips the peripheral veins and arrives '
-      + 'earliest and sharpest. The arterial sites are the instructive ones: a radial or femoral '
-      + 'bolus must first cross the limb\'s capillary bed before it can return to the heart, so '
-      + 'it comes back later and flatter — the limb is not part of the segmented anatomy, so its '
-      + 'transit is estimated as a mixing bed plus a transport delay, and the note under the '
-      + 'selector says exactly what was assumed. This one works on the browser engine too: each '
-      + 'site ships its own solved timeline.',
-    goal: {
-      label: 'Switch the injection site and watch the curves move',
-      when: () => S().contrast.on,
-      unless: 'Turn the injector ON first — the power button at the top of the panel.',
-      arm: () => S().contrast.params.site,
-      done: (a) => S().contrast.params.site !== a,
-    },
-  },
-  {
-    sel: '.grp:has(#ctrstHr)',
-    title: 'The patient',
-    text: 'Cardiac output is the dominant variable in contrast timing, and this is where the '
-      + 'teaching is. Heart rate × stroke volume gives the output; a patient in failure with a low '
-      + 'output takes markedly longer to bring the bolus round and peaks higher when it arrives. '
-      + 'With the solver running you can change these and watch the predicted enhancement curve '
-      + 'move — then think about what a fixed 25-second delay would have done to that patient.',
-    goal: {
-      label: 'Change the heart rate or stroke volume',
-      when: () => !!S().computeInfo,
-      unless: 'Nothing to change on the browser engine: the preset timeline is one fixed '
-        + 'patient. Moving these needs the Python compute service, which is what re-solves the '
-        + 'circulation each time you do.',
-      arm: () => S().contrast.params.cardiac_output_l_min,
-      done: (a) => S().contrast.params.cardiac_output_l_min !== a,
-    },
-  },
-  {
-    sel: '#ctrstCurve',
-    title: 'Predicted enhancement',
-    text: 'The solved haemodynamics: iodine concentration against time in the pulmonary artery and '
-      + 'the aorta, converted to the HU they would show. The gap between the two curves is the '
-      + 'window in which you can catch the pulmonary arteries before the systemic circulation '
-      + 'fills — the PE study. The vertical line is the injector clock, so you can watch it walk '
-      + 'across the curve while the injection runs.',
-  },
-  {
-    sel: ['#ctrstGo', '#ctrstReset'],
-    title: 'Start the injection',
-    text: 'Starts the injector clock. From this moment the images the scanner reconstructs are '
-      + 'taken at whatever time the clock reads — that is the entire game. Start it, watch the '
-      + 'curve, and scan at the phase you want. On a bolus-tracked study you do not have to press '
-      + 'this at all: the tracking window has the same transport, and starting tracking starts the '
-      + 'injection with it.',
   },
   {
     // The console will not start until the couch is at the scan start, so MOVE TO SCAN has to be
@@ -609,6 +526,185 @@ export const CT_STEPS = [
     text: 'Cosmetic, but worth knowing about: CT consoles from different manufacturers look and '
       + 'read very differently, and part of being useful in a new department is not being thrown by '
       + 'that. Switching this restyles the console. Nothing in the physics changes.',
+  },
+];
+
+// ---------------------------------------------------------------- CONTRAST
+// Runs inside CT mode: an iodinated study is a CT examination with an injector clock.
+export const CONTRAST_STEPS = [
+  {
+    sel: '#subjectGrp',
+    title: 'Contrast needs vessels',
+    text: 'Iodinated contrast goes into a vein and is carried round the circulation, so the '
+      + 'subject must carry a segmented vessel map: the chest or chest / abdo / pelvis. Every '
+      + 'enhancement you will see — the pulmonary arteries, the aorta, the liver, the kidneys — is '
+      + 'worked out from where the bolus has reached in that anatomy at the moment of the scan.',
+    goal: {
+      label: 'Load the chest',
+      done: () => S().subject === 'chest' || S().subject === 'chestabdopelvis',
+    },
+  },
+  {
+    sel: ['#ctIsocentre', '#ctMoveScan', '#ctStart'],
+    title: 'Scouts first',
+    text: 'Contrast is timed against a scan plan, and the plan is drawn on the scouts. Zero the '
+      + 'table, move to scan and acquire the scouts — the CT Tutorial explains each of these; here '
+      + 'they are only the way in.',
+    goal: {
+      label: 'Zero the table, move to scan, acquire the scouts',
+      done: () => S().ct.scoutsReady === true,
+    },
+  },
+  {
+    sel: '#ctrstTab',
+    title: 'The contrast injector',
+    text: 'Opens the power injector. Contrast needs a subject with a vessel map, so it is '
+      + 'available on the chest and CAP. The panel is a separate machine with its own interface — '
+      + 'that is why it does not follow the scanner\'s vendor colours.',
+    goal: {
+      label: 'Open the contrast panel',
+      when: () => !$('ctrstTab')?.disabled,
+      unless: 'Contrast needs a subject with a vessel map — go back to the first step and load the chest.',
+      done: () => $('ctrstPanel')?.classList.contains('open'),
+    },
+  },
+  {
+    sel: '#ctrstOn',
+    title: 'Power',
+    text: 'ON arms the injector and loads the solved timeline for this patient and this '
+      + 'programme. Nothing is injected yet: the clock starts only when the injection does — '
+      + 'by hand with ▶, or with the tracking series on a bolus-tracked study.',
+    goal: {
+      label: 'Turn the injector on',
+      done: () => !!S().contrast.on,
+    },
+  },
+  {
+    sel: '#ctrstBar',
+    title: 'Programming the injection',
+    text: 'The bar is the injection as a timeline: contrast in green, saline in blue, drawn to '
+      + 'scale in time. Each phase carries a volume and a flow rate. Flow rate '
+      + 'sets how tight the bolus is — 4–5 mL/s for a CTA, slower for a portal-venous study. The '
+      + 'saline chaser is not padding: it pushes the tail of the contrast out of the arm veins and '
+      + 'into the circulation, so all of what you paid for is doing work. With the Python compute '
+      + 'service running, tap a phase to reprogram it on the keypad.',
+    goal: {
+      label: 'Open a phase and change a value',
+      when: () => !!S().computeInfo,
+      unless: 'Nothing to change on the browser engine: the protocol is fixed on the shipped '
+        + 'preset timeline. Programming the injector needs the Python compute service to solve '
+        + 'the haemodynamics for whatever you enter.',
+      arm: () => JSON.stringify(S().contrast.params),
+      done: (a) => JSON.stringify(S().contrast.params) !== a,
+    },
+  },
+  {
+    sel: '.grp:has(#ctrstConc)',
+    title: 'The agent',
+    text: 'Concentration is milligrams of iodine per millilitre. Enhancement follows the iodine '
+      + 'delivered per second — concentration × flow rate — so a 400 mgI/mL agent at 4 mL/s does '
+      + 'what 350 does at about 4.6. That iodine delivery rate, not the volume, is what sets how '
+      + 'bright the aorta gets.',
+  },
+  {
+    sel: '.grp:has(#ctrstSite)',
+    title: 'Injection site',
+    text: 'Where the needle is changes when — and how sharply — the bolus arrives. The basilic '
+      + 'vein is the reference route every timing chart assumes. A central line\'s tip already '
+      + 'sits at the cavoatrial junction, so its bolus skips the peripheral veins and arrives '
+      + 'earliest and sharpest. The arterial sites are the instructive ones: a radial or femoral '
+      + 'bolus must first cross the limb\'s capillary bed before it can return to the heart, so '
+      + 'it comes back later and flatter — the limb is not part of the segmented anatomy, so its '
+      + 'transit is estimated as a mixing bed plus a transport delay, and the note under the '
+      + 'selector says exactly what was assumed. This one works on the browser engine too: each '
+      + 'site ships its own solved timeline.',
+    goal: {
+      label: 'Switch the injection site and watch the curves move',
+      when: () => S().contrast.on,
+      unless: 'Turn the injector ON first — the power button at the top of the panel.',
+      arm: () => S().contrast.params.site,
+      done: (a) => S().contrast.params.site !== a,
+    },
+  },
+  {
+    sel: '.grp:has(#ctrstHr)',
+    title: 'The patient',
+    text: 'Cardiac output is the dominant variable in contrast timing, and this is where the '
+      + 'teaching is. Heart rate × stroke volume gives the output; a patient in failure with a low '
+      + 'output takes markedly longer to bring the bolus round and peaks higher when it arrives. '
+      + 'With the solver running you can change these and watch the predicted enhancement curve '
+      + 'move — then think about what a fixed 25-second delay would have done to that patient.',
+    goal: {
+      label: 'Change the heart rate or stroke volume',
+      when: () => !!S().computeInfo,
+      unless: 'Nothing to change on the browser engine: the preset timeline is one fixed '
+        + 'patient. Moving these needs the Python compute service, which is what re-solves the '
+        + 'circulation each time you do.',
+      arm: () => S().contrast.params.cardiac_output_l_min,
+      done: (a) => S().contrast.params.cardiac_output_l_min !== a,
+    },
+  },
+  {
+    sel: '#ctrstCurve',
+    title: 'Predicted enhancement',
+    text: 'The solved haemodynamics: iodine concentration against time in the pulmonary artery and '
+      + 'the aorta, converted to the HU they would show. The gap between the two curves is the '
+      + 'window in which you can catch the pulmonary arteries before the systemic circulation '
+      + 'fills — the PE study. The vertical line is the injector clock, so you can watch it walk '
+      + 'across the curve while the injection runs.',
+  },
+  {
+    sel: '#ctScanGroups tr.sg-row:first-child td:last-child',
+    title: 'Timing the scan',
+    before: injectorOpen(false),
+    needs: 'The scan plan appears once the scouts are on screen — go back and acquire them.',
+    text: 'A <b>fixed delay</b> assumes an average circulation; the patient you set up a few steps '
+      + 'ago may not have one. <b>Bolus tracking</b> plans a monitoring series — one low-dose slice '
+      + 'scanned every second or two with an ROI on the vessel — and fires the diagnostic scan '
+      + 'when the ROI crosses a threshold. <b>Test bolus</b> injects a small dose first and '
+      + 'measures the arrival time. Click the delay cell and choose bolus tracking.',
+    goal: {
+      label: 'Set the scan delay to bolus tracking',
+      done: () => (S().ct.groups || []).some((g) => g.delayMode === 'bolus' || g.delayMode === 'test'),
+    },
+    block: false,
+  },
+  {
+    sel: ['#ctrstGo', '#ctrstReset'],
+    title: 'Start the injection',
+    before: injectorOpen(true),
+    text: 'Starts the injector clock. From this moment the images the scanner reconstructs are '
+      + 'taken at whatever time the clock reads — that is the entire game. Start it, watch the '
+      + 'curve, and scan at the phase you want. On a bolus-tracked study you do not have to press '
+      + 'this at all: the tracking window has the same transport, and starting tracking starts the '
+      + 'injection with it.',
+  },
+  {
+    // MOVE TO SCAN has to be lit beside START: the console will not start away from the scan start
+    sel: ['#ctStart', '#ctMoveScan'],
+    title: 'Run the study',
+    before: injectorOpen(false),
+    text: 'Press <b>MOVE TO SCAN</b>, then <b>START</b>. The monitoring series opens the tracking '
+      + 'window: put the ROI in the vessel you are timing for (the main pulmonary artery for a '
+      + 'PE study, the descending aorta for an aortogram) and start tracking, which starts the '
+      + 'injection with it. The scan fires when the ROI crosses the threshold, or when you press '
+      + 'SCANNING PHASE yourself. On a fixed delay, start the injection with ▶ and scan when the '
+      + 'clock reads your delay.',
+    goal: {
+      label: 'Run the scan with contrast on board',
+      done: () => /complete/i.test($('ctHint')?.textContent || ''),
+    },
+  },
+  {
+    sel: ['#ctSliceSlider', '#ctSliceCanvas'],
+    title: 'Was it the right phase?',
+    before: injectorOpen(false),
+    needs: 'The slice viewer appears once a scan has been run.',
+    text: 'Scroll to the vessel you timed for. Arterial phase: the aorta bright, the liver barely '
+      + 'touched. Too early and the contrast is still in the right heart; too late and it has '
+      + 'washed through to everything. Run it again with a different trigger, site or cardiac '
+      + 'output and compare the series — the difference is the lesson.',
+    block: false,
   },
 ];
 
