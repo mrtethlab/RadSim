@@ -35,7 +35,7 @@ import time
 import numpy as np
 from scipy import ndimage as ndi
 
-from app.build_model import (AIR, SKIN, TRABECULAR, CORTICAL, materialize, resample_iso,
+from app.build_model import (AIR, FAT, SKIN, TRABECULAR, CORTICAL, materialize, resample_iso,
                              write_model)
 
 VSD = pathlib.Path(__file__).resolve().parents[1] / 'data' / 'vsd'
@@ -141,10 +141,44 @@ def pare(mask, r):
     return ndi.binary_fill_holes(mask)
 
 
+def smooth(keep, fine_z, bone, sigma=6.0, fine_sigma=1.5, ramp=20, ball=5):
+    """Smooth, gently curved skin: the part's mask blurred and cut again at one half. The cuts that
+    parted it from its neighbours wander a voxel or two from slice to slice, and what the bag and
+    sheet left on the side it lay on hangs off in drips and fins up to 1.5 cm across; a blur of 6
+    voxels (9 mm), after a 7.5 mm ball opening, rounds the one into curves and takes the other
+    away. The hand or the foot
+    (fine_z: a boolean per slice) takes 1.5 voxels, which keeps a finger or a toe, easing between
+    the two over `ramp` slices. Mass is kept: what the blur takes off a bump it gives to a hollow.
+    It never takes the skeleton (`bone`: the big pieces, not the dense tubes in the bag, which read
+    as bone by HU and would keep their nub) nor the 3 mm of tissue over it (a malleolus, the patella,
+    the olecranon, a knuckle lie just under the skin); what it fills in is fat (finish)."""
+    zs, ys, xs = np.nonzero(keep)
+    pad = int(3 * sigma) + 2
+    lo = [max(0, zs.min() - pad), max(0, ys.min() - pad), max(0, xs.min() - pad)]
+    hi = [min(keep.shape[0], zs.max() + pad + 1), min(keep.shape[1], ys.max() + pad + 1), min(keep.shape[2], xs.max() + pad + 1)]
+    sub = keep[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]]
+    # first a ball opening (radius `ball`, 7.5 mm): a blur alone left the tail where two calves met
+    # and the corners of the faces cut against the trunk or the other thigh, 1-2 cm across
+    g = np.arange(-ball, ball + 1)
+    sph = (g[:, None, None] ** 2 + g[None, :, None] ** 2 + g[None, None, :] ** 2) <= ball * ball
+    opened = ndi.binary_opening(sub, structure=sph)
+    coarse = ndi.gaussian_filter(opened.astype(np.float32), sigma) >= 0.5
+    sub = sub.astype(np.float32)
+    fine = ndi.gaussian_filter(sub, fine_sigma) >= 0.5
+    w = ndi.uniform_filter1d(fine_z[lo[0]:hi[0]].astype(np.float32), ramp)       # 1 in the hand or foot
+    pick = np.random.default_rng(0).random(sub.shape, dtype=np.float32) < w[:, None, None]
+    out = np.zeros_like(keep)
+    out[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]] = np.where(pick, fine, coarse)
+    out |= keep & ndi.binary_dilation(bone & keep, iterations=2)
+    return pare(out, r=0)
+
+
 def finish(mat, keep, pad=4):
     """The part alone: everything outside it is air, a one-voxel skin shell on its new surface
-    (materialize lays the same shell, 1.5 mm, on the whole body), and the tight box around it."""
+    (materialize lays the same shell, 1.5 mm, on the whole body), and the tight box around it.
+    Where smoothing filled in a hollow, the new tissue is fat, as under any skin."""
     out = np.where(keep, mat, AIR).astype(np.uint8)
+    out[keep & (out == AIR)] = FAT
     shell = keep & ~ndi.binary_erosion(keep)
     out[shell & (out != AIR)] = SKIN
     zs, ys, xs = np.nonzero(keep)
@@ -203,7 +237,8 @@ def lower_extremity(hu, mat, body):
     a = ANKLE_Z
     keep[KNEE_Z:a] = ndi.median_filter(keep[KNEE_Z:a].astype(np.uint8), size=(5, 1, 1)).astype(bool) & body[KNEE_Z:a]
     keep[z0:] = pare(keep[z0:], r=2)
-    return keep
+    foot = np.zeros(keep.shape[0], bool); foot[ANKLE_Z:] = True
+    return smooth(keep, foot, big_bone(mat))
 
 
 # z033 at 1.5 mm (z = 0 at the shoulders, x low = the patient's RIGHT, as in z045: the liver
@@ -247,7 +282,8 @@ def upper_extremity(hu, mat, body):
     w = 400
     keep[AXILLA_Z:w] = ndi.median_filter(keep[AXILLA_Z:w].astype(np.uint8), size=(5, 1, 1)).astype(bool) & body[AXILLA_Z:w]
     keep[:z1] = pare(keep[:z1], r=2)
-    return keep
+    hand = np.zeros(keep.shape[0], bool); hand[400:] = True       # the wrist and hand (z 400 on)
+    return smooth(keep, hand, big_bone(mat, 2000))
 
 
 def within_reach(part, bone, margin=2, smooth=9):

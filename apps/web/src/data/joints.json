@@ -54,13 +54,13 @@
   "elbow": {
    "label": "Elbow",
    "c": [
-    2.7,
-    -4.12,
-    1.5
+    2.77,
+    -3.45,
+    1.05
    ],
    "distal": [
-    0.136,
-    0.115,
+    0.135,
+    0.114,
     -0.984
    ],
    "blend": 1.5,
@@ -72,8 +72,8 @@
      "neg": "extension",
      "pos": "flexion",
      "toward": [
-      -0.969,
-      0.248,
+      -0.95,
+      0.312,
       -0.0
      ],
      "range": [
@@ -87,7 +87,7 @@
    "label": "Wrist",
    "c": [
     5.78,
-    -1.52,
+    -0.91,
     -20.35
    ],
    "distal": [
@@ -120,8 +120,8 @@
   "knee": {
    "label": "Knee",
    "c": [
-    -1.12,
-    -5.63,
+    -0.82,
+    -5.71,
     2.48
    ],
    "distal": [
@@ -152,8 +152,8 @@
   "ankle": {
    "label": "Ankle",
    "c": [
-    2.93,
-    -5.47,
+    3.23,
+    -5.55,
     -37.5
    ],
    "distal": [
@@ -162,7 +162,7 @@
     -1
    ],
    "blend": 1.5,
-   "how": "midway between the malleoli; dorsiflexion turns the foot (ankle to the base of the 3rd metatarsal, [0.192, 0.242, -0.951]) toward the shin; at rest it is 75 degrees plantarflexed",
+   "how": "midway between the malleoli; dorsiflexion turns the foot (ankle to the base of the 3rd metatarsal, [0.192, 0.244, -0.951]) toward the shin; at rest it is 75 degrees plantarflexed",
    "motions": [
     {
      "key": "ankle.flex",
@@ -171,7 +171,7 @@
      "pos": "dorsiflexion",
      "from": [
       0.192,
-      0.242,
+      0.244,
       -0.951
      ],
      "toward": [
@@ -183,7 +183,7 @@
       -80,
       20
      ],
-     "rest": -75.2
+     "rest": -75.1
     }
    ]
   }
