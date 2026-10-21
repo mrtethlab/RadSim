@@ -1452,6 +1452,21 @@ body.tut-on .tut{display:block}
    Shares the injector's drawer chrome, its own accent. Barium is not a vendor surface any
    more than the injector is, so it keeps its palette under every CT theme. */
 .gi .ctrst-tab{top:196px}
+/* PALPATE hangs under BARIUM (which ends at about 283px), with the same 25px gap */
+.palp .ctrst-tab{top:308px}
+.palp{--hi:#ff5a5a}
+.palp .ctrst-hdr{border-bottom-color:#4a2222}
+.palp .ctrst-hdr .t b{color:var(--hi)}
+.palp-list{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:12px 0}
+.palp-list button{font-family:var(--disp); font-weight:600; font-size:12.5px; letter-spacing:.3px;
+  text-align:left; padding:7px 9px; border-radius:6px; cursor:pointer; color:var(--txt);
+  background:#121820; border:1px solid var(--edge2); transition:.14s}
+.palp-list button:hover{border-color:#6b8aa4}
+.palp-list button.on{color:#fff; background:#4a1414; border-color:#ff5a5a;
+  box-shadow:0 0 10px rgba(255,70,70,.35)}
+.palp-list button.on::before{content:'\25CF  '; color:#ff5a5a}
+/* the Trainer has its own Palpate… menu beside the centring step */
+body.trainer #palpPanel{display:none}
 .gi{--hi:#e0a83c}
 .gi .ctrst-hdr{border-bottom-color:#4a3a1c}
 .gi .ctrst-hdr .t b{color:var(--hi)}
@@ -1562,6 +1577,7 @@ body.mobile .ctrst-tab{position:fixed; left:auto; top:auto; writing-mode:horizon
   font-size:11px; letter-spacing:2px}
 body.mobile #ctrstPanel .ctrst-tab{right:10px}
 body.mobile #giPanel .ctrst-tab{right:118px}
+body.mobile #palpPanel .ctrst-tab{right:226px}
 body.mobile .ctrst.open .ctrst-tab{left:auto}
 /* the desktop rail-slide has no meaning on sheets */
 body.mobile.lflyout .ctrst-tab{left:auto}
