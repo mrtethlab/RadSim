@@ -15,6 +15,7 @@ import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core
 import { radiographDose, entryDistance } from './core/patientDose.js';
 import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict, setSideMarker } from './sideMarker.js';
 import { initTrainer, trainerOnMode } from './trainer/trainer.js';
+import { initPalpation, palpationSync, setPalpated, palpationList, clearPalpation, palpatedKeys } from './trainer/palpate.js';
 import { patientPrimary } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
 import { ownsSpace } from './core/keys.js';
@@ -1479,6 +1480,7 @@ function syncScene(){
   usSyncScene();                                // ultrasound puts a probe on the skin
   dxaSyncScene();                               // DXA shows its own scanning arm, not the x-ray head
   sideMarkerSync();                             // the lead R/L tile on the receptor (x-ray only)
+  palpationSync();                              // palpated landmarks stay on the patient's skin
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
@@ -3859,7 +3861,10 @@ window.addEventListener('load',()=>{
     bilateral: () => BILATERAL.has(S.subject),
     midlineX: () => S.objOff.x });
   initTutorial({ applyMode: ctApplyMode });
+  initPalpation({ THREE, three, S, voxelFlips, objMat,
+    modelCentre: () => [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z] });
   initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent,
+    palpation: { list: palpationList, set: setPalpated, clear: clearPalpation, active: palpatedKeys },
     tubeFrame, objMat, voxelFlips,
     landmarkLocal: (name) => landmarkLocal(S.subject, name),
     matFor: (r) => { const d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); },

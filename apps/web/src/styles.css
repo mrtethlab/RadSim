@@ -1905,3 +1905,10 @@ i.ok{color:var(--green)} i.bad{color:var(--red)}
 body.trainer:not(.mobile) .app{height:100vh; grid-template-rows:100%}
 body.trainer:not(.mobile) .bay{height:auto; min-height:0}
 @media (max-width: 900px){ body.trainer .app{grid-template-columns:1fr} .trcompare{flex-direction:column} }
+.tr-palp{margin:8px 0}
+.tr-palp-btn{background:#3a1717; border:1px solid #a33; color:#ffb3b3; padding:6px 12px; border-radius:4px; cursor:pointer; font-size:13px}
+.tr-palp-menu{display:none; flex-wrap:wrap; gap:4px; margin-top:6px}
+.tr-palp-menu.show{display:flex}
+.tr-palp-menu button{background:#1a1f25; border:1px solid var(--edge); color:var(--txt); padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11.5px}
+.tr-palp-menu button.on{background:#5a1a1a; border-color:#ff4a4a; color:#fff}
+.tr-palp-menu button.clear{color:var(--muted)}

@@ -1,0 +1,323 @@
+{
+ "_about": "Measure the PALPATION landmarks the Trainer can show on the skin, from the voxel models. Rest-frame (x right, y anterior, z superior) cm from the volume centre, with the direction the landmark is felt from. Re-run after rebuilding a model.",
+ "hand": {
+  "radialStyloid": {
+   "label": "Radial styloid",
+   "x": 1.25,
+   "y": -0.58,
+   "z": -4.88,
+   "dir": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most radial bone within a centimetre of the radiocarpal joint (2.2 cm proximal of the midcarpal landmark)",
+   "confidence": "medium"
+  },
+  "scaphoid": {
+   "label": "Scaphoid (snuffbox)",
+   "x": 0.85,
+   "y": -0.58,
+   "z": -3.88,
+   "dir": [
+    0.928,
+    0.371,
+    0.0
+   ],
+   "how": "1 cm distal to the radial styloid, felt in the anatomical snuffbox",
+   "confidence": "medium"
+  },
+  "ulnarStyloid": {
+   "label": "Ulnar styloid",
+   "x": -4.1,
+   "y": 0.33,
+   "z": -5.93,
+   "dir": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most ulnar bone within a centimetre of the radiocarpal joint",
+   "confidence": "medium"
+  },
+  "mcp2": {
+   "label": "2nd MCP joint",
+   "x": 1.55,
+   "y": 0.23,
+   "z": 3.08,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "metacarpal head 2 counted from the radial side, 0.5 cm proximal of the MCP level; felt as the knuckle on the dorsum",
+   "confidence": "medium"
+  },
+  "mcp3": {
+   "label": "3rd MCP joint",
+   "x": -0.6,
+   "y": -0.12,
+   "z": 3.08,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "metacarpal head 3 counted from the radial side, 0.5 cm proximal of the MCP level; felt as the knuckle on the dorsum",
+   "confidence": "medium"
+  }
+ },
+ "lowerextremity": {
+  "medialMalleolus": {
+   "label": "Medial malleolus",
+   "x": 2.48,
+   "y": -9.15,
+   "z": -36.3,
+   "dir": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most medial bone within 3 cm of the ankle joint (the tibia; the fibula is lateral 6 cm above)",
+   "confidence": "medium"
+  },
+  "lateralMalleolus": {
+   "label": "Lateral malleolus",
+   "x": 9.22,
+   "y": -6.6,
+   "z": -39.45,
+   "dir": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most lateral bone within 4 cm of the ankle joint (the fibula)",
+   "confidence": "medium"
+  },
+  "base5th": {
+   "label": "Base of the 5th metatarsal",
+   "x": 9.22,
+   "y": -2.7,
+   "z": -49.2,
+   "dir": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most lateral bone of the midfoot (5-14 cm below the ankle joint): the 5th metatarsal tuberosity",
+   "confidence": "low"
+  },
+  "patella": {
+   "label": "Patella",
+   "x": 4.58,
+   "y": -0.3,
+   "z": 6.3,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the most anterior bone within 5 cm above the knee joint",
+   "confidence": "medium"
+  },
+  "tibialTuberosity": {
+   "label": "Tibial tuberosity",
+   "x": 5.77,
+   "y": -2.1,
+   "z": -1.95,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the most anterior bone 2-6 cm below the knee joint",
+   "confidence": "medium"
+  }
+ },
+ "chest": {
+  "jugularNotch": {
+   "label": "Jugular notch",
+   "x": 0.0,
+   "y": 5.7,
+   "z": 16.75,
+   "dir": [
+    0.0,
+    0.6,
+    0.8
+   ],
+   "how": "the superior end of the sternum (the most anterior midline bone standing forward of the spine)",
+   "confidence": "medium"
+  },
+  "xiphoid": {
+   "label": "Xiphoid process",
+   "x": 0.0,
+   "y": 10.7,
+   "z": -4.75,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the inferior end of the sternum",
+   "confidence": "medium"
+  },
+  "sternalAngle": {
+   "label": "Sternal angle (T4-T5)",
+   "x": 0.0,
+   "y": 8.2,
+   "z": 10.25,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the manubriosternal joint, taken 30 % of the way down the sternum",
+   "confidence": "low"
+  }
+ },
+ "chestabdopelvis": {
+  "jugularNotch": {
+   "label": "Jugular notch",
+   "x": 0.0,
+   "y": 6.0,
+   "z": 28.1,
+   "dir": [
+    0.0,
+    0.6,
+    0.8
+   ],
+   "how": "the superior end of the sternum (the most anterior midline bone standing forward of the spine)",
+   "confidence": "medium"
+  },
+  "xiphoid": {
+   "label": "Xiphoid process",
+   "x": 0.0,
+   "y": 11.4,
+   "z": 7.7,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the inferior end of the sternum",
+   "confidence": "medium"
+  },
+  "sternalAngle": {
+   "label": "Sternal angle (T4-T5)",
+   "x": 0.0,
+   "y": 8.8,
+   "z": 21.9,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the manubriosternal joint, taken 30 % of the way down the sternum",
+   "confidence": "low"
+  },
+  "iliacCrestR": {
+   "label": "Iliac crest (R)",
+   "x": 11.0,
+   "y": -6.6,
+   "z": -11.3,
+   "dir": [
+    0.857,
+    0.0,
+    0.514
+   ],
+   "how": "the highest point of the iliac crest 11-14 cm from the midline, where it is felt at the side (L4-L5)",
+   "confidence": "medium"
+  },
+  "asisR": {
+   "label": "ASIS (R)",
+   "x": 13.4,
+   "y": 2.6,
+   "z": -19.7,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the most anterior point of the pelvis 3 cm or more above the femoral head and 8-16 cm from the midline",
+   "confidence": "medium"
+  },
+  "trochanterR": {
+   "label": "Greater trochanter (R)",
+   "x": 16.0,
+   "y": -4.6,
+   "z": -30.5,
+   "dir": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most lateral bone within 4 cm below the femoral head",
+   "confidence": "medium"
+  },
+  "iliacCrestL": {
+   "label": "Iliac crest (L)",
+   "x": -11.0,
+   "y": -5.2,
+   "z": -11.1,
+   "dir": [
+    -0.857,
+    0.0,
+    0.514
+   ],
+   "how": "the highest point of the iliac crest 11-14 cm from the midline, where it is felt at the side (L4-L5)",
+   "confidence": "medium"
+  },
+  "asisL": {
+   "label": "ASIS (L)",
+   "x": -12.2,
+   "y": 4.2,
+   "z": -19.5,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the most anterior point of the pelvis 3 cm or more above the femoral head and 8-16 cm from the midline",
+   "confidence": "medium"
+  },
+  "trochanterL": {
+   "label": "Greater trochanter (L)",
+   "x": -16.0,
+   "y": -3.2,
+   "z": -29.7,
+   "dir": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most lateral bone within 4 cm below the femoral head",
+   "confidence": "medium"
+  },
+  "symphysis": {
+   "label": "Pubic symphysis",
+   "x": -1.0,
+   "y": 3.2,
+   "z": -29.1,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the most anterior midline bone of the pelvis",
+   "confidence": "medium"
+  },
+  "costalMarginR": {
+   "label": "Inferior costal margin (R)",
+   "x": 15.2,
+   "y": -4.2,
+   "z": -9.1,
+   "dir": [
+    0.894,
+    0.447,
+    0.0
+   ],
+   "how": "the lowest rib 9-18 cm from the midline, above the iliac crest (about L2-L3)",
+   "confidence": "low"
+  }
+ }
+}

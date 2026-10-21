@@ -47,6 +47,7 @@ function openTrainer() {
 
 function closeTrainer() {
   T = null;
+  H.palpation.clear();
   document.body.classList.remove('trainer');
   showCompare(false);
   const col = $('trainerCol'); if (col) col.innerHTML = '';
@@ -77,6 +78,7 @@ function startSeries(id) {
 const rnd = (a, b) => a + Math.random() * (b - a);
 function startView(vi) {
   T.vi = vi; T.step = 'position'; T.req = null;
+  H.palpation.clear();
   const view = T.series.views[vi];
   showCompare(false);
   H.setContent('3d');
@@ -180,6 +182,7 @@ function stepHTML(view, S) {
       ${slider('trCC', `Central-ray angle <small>&minus; ${esc(words[0])} / + ${esc(words[1])}</small>`, -30, 30, 1, S.angCC, '°')}
       <div class="tr-tip">The collimator light's crosshair on the skin is the central ray. Move the
         table until it sits on the centring point.</div>
+      ${palpateHTML(S)}
       ${next('collimate', 'Collimate')}</div>`;
   }
   if (T.step === 'collimate') {
@@ -205,8 +208,28 @@ function stepHTML(view, S) {
     <button class="tr-expose" id="trExpose"${T.busy ? ' disabled' : ''}>${T.busy ? 'Exposing…' : 'EXPOSE'}</button></div>`;
 }
 
+/* PALPATE: show where a bony landmark is felt on this patient's skin (trainer/palpate.js) */
+function palpateHTML(S) {
+  const list = H.palpation.list(S.subject);
+  if (!list.length) return '';
+  const on = new Set(H.palpation.active());
+  return `<div class="tr-palp"><button class="tr-palp-btn" id="trPalpBtn">Palpate&hellip;</button>
+    <div class="tr-palp-menu" id="trPalpMenu">${list.map((p) => `<button data-k="${p.key}" class="${on.has(p.key) ? 'on' : ''}"
+      title="${esc(p.how)}">${esc(p.label)}</button>`).join('')}
+      <button data-k="" class="clear">Clear</button></div></div>`;
+}
+
 function wireStep(col, view) {
   const S = H.S;
+  const pb = $('trPalpBtn');
+  if (pb) {
+    pb.onclick = () => $('trPalpMenu').classList.toggle('show');
+    col.querySelectorAll('#trPalpMenu button').forEach((b) => b.onclick = () => {
+      if (!b.dataset.k) { H.palpation.clear(); col.querySelectorAll('#trPalpMenu button').forEach((x) => x.classList.remove('on')); return; }
+      const on = !b.classList.contains('on');
+      if (H.palpation.set(b.dataset.k, on)) b.classList.toggle('on', on);
+    });
+  }
   col.querySelectorAll('.tr-next').forEach((b) => b.onclick = () => { T.step = b.dataset.to; renderPanel(); });
   const bind = (id, set) => {
     const el = $(id); if (!el) return;
