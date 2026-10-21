@@ -2,8 +2,8 @@
   "name": "Upper extremity",
   "source": "VSD Full Body postmortem CT (z033, 87M) \u00b7 HU materials \u00b7 CC BY-NC 3.0",
   "dims": [
-    133,
-    117,
+    136,
+    124,
     458
   ],
   "spacing": [
@@ -15,7 +15,6 @@
   "volume": "upperextremity.mat.bin",
   "dtype": "uint8",
   "mesh": "upperextremity.glb",
-  "skinMesh": "upperextremity_skin.glb",
   "materials": [
     {
       "id": 0,
@@ -392,7 +391,6 @@
   ],
   "materialsPresent": [
     0,
-    1,
     2,
     7,
     17,

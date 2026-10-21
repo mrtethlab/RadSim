@@ -80,6 +80,28 @@ test('only the limb moves: tissue beside it, outside its cylinder, stays (the fl
   assert.deepEqual(forwardChain([10, 0, -8], [elbow], { flex: 90 }), [10, 0, -8]);
 });
 
+test('the crook folds on the bisector: neither piece pushes into the other', () => {
+  // a thick limb, 9 x 3 x 41 at 1 cm, the upper arm (1) above an elbow at the origin and the
+  // forearm (2) below; flexed 90 degrees the forearm swings to +x, and its front corner used to
+  // rise beside the upper arm's front (a straight-edged block of doubled tissue on the film)
+  const nx = 9, ny = 3, nz = 41, data = new Uint8Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) data[(k * ny + j) * nx + i] = k >= 20 ? 1 : 2;
+  const elbow = { c: [0, 0, 0], distal: [0, 0, -1], blend: 1, motions: [{ key: 'flex', axis: axisToward([0, 0, -1], [1, 0, 0]) }] };
+  const r = poseVolume({ dims: [nx, ny, nz], spacingMM: [10, 10, 10], data }, [false, false, false], [elbow], { flex: 90 });
+  const [Nx, Ny, Nz] = r.dims;
+  const at = (x, y, z) => r.data[((Math.round(z + (Nz - 1) / 2)) * Ny + Math.round(y + (Ny - 1) / 2)) * Nx + Math.round(x + (Nx - 1) / 2)];
+  // the crook: x and z both in (0, 4]; above the diagonal is the upper arm's, below the forearm's
+  for (let x = 1; x <= 4; x++) for (let z = 1; z <= 4; z++) {
+    if (x === z) continue;
+    const v = at(x, 0, z);
+    assert.ok(v === 0 || v === (z > x ? 1 : 2), `at x ${x}, z ${z}: ${v}`);
+  }
+  assert.equal(at(1, 0, 3), 1, 'the upper arm keeps its front above the fold');
+  assert.equal(at(3, 0, 1), 2, 'the forearm fills below it');
+  assert.equal(at(0, 0, 10), 1, 'the upper arm is untouched away from the joint');
+  assert.equal(at(10, 0, 0), 2, 'and the forearm lies along +x');
+});
+
 test('angles are anatomical: unset means the model as scanned, and the turn is from its rest', () => {
   const j = { ...wrist, motions: [{ key: 'dev', axis: wrist.motions[0].axis, rest: 26 }] };
   assert.deepEqual(forwardChain([0, 0, 8], [j], {}), [0, 0, 8], 'unset: as scanned');

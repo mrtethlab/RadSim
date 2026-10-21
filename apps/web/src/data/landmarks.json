@@ -39,37 +39,37 @@
   },
   "upperextremity": {
     "elbow": {
-      "x": -3.3,
-      "y": 4.05,
-      "z": 2.55,
+      "x": -3.45,
+      "y": 4.22,
+      "z": 3.0,
       "how": "widest bone in the 8 cm below the humeral shaft (which ends at 38.1 cm): the epicondyles",
       "confidence": "high"
     },
     "forearm": {
-      "x": -5.85,
-      "y": 2.26,
-      "z": -8.4,
+      "x": -6.15,
+      "y": 2.19,
+      "z": -8.25,
       "how": "midway between the radiocarpal joint and the epicondyles",
       "confidence": "high"
     },
     "wrist": {
-      "x": -5.78,
-      "y": 0.91,
+      "x": -6.0,
+      "y": 0.84,
       "z": -20.85,
       "how": "1.5 cm past the radiocarpal joint (the thinnest bone 18-28 cm below the elbow, at 15.0 cm): the carpals",
       "confidence": "medium"
     },
     "shoulder": {
       "x": 7.65,
-      "y": 0.36,
+      "y": 0.27,
       "z": 31.95,
       "how": "biggest bone section in the 12 cm above the humeral shaft: the humeral head",
       "confidence": "medium"
     },
     "humerus": {
-      "x": 1.72,
-      "y": 0.99,
-      "z": 17.25,
+      "x": 1.58,
+      "y": 0.87,
+      "z": 17.4,
       "how": "midway between the elbow and shoulder landmarks",
       "confidence": "medium"
     }

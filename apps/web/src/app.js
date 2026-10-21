@@ -18,7 +18,7 @@ import { radiographDose, entryDistance } from './core/patientDose.js';
 import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict, setSideMarker } from './sideMarker.js';
 import { initTrainer, trainerOnMode } from './trainer/trainer.js';
 import { initPalpation, palpationSync, setPalpated, palpationList, clearPalpation, palpatedKeys } from './trainer/palpate.js';
-import { patientPrimary } from './core/scatter.js';
+import { patientPrimary, MISSED } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
 import { ownsSpace } from './core/keys.js';
 import { decodeTimeline, buildSVolume, buildConcLUT, NS as CONTRAST_NS } from './core/contrast.js';
@@ -2392,6 +2392,14 @@ async function computeRadiograph(opts={}){
     const dx=(i-halfU)*pxU-source[0], dy=-source[1], dz=(j-halfV)*pxV-source[2];
     direct[k]=I0*(100*100)/(dx*dx+dy*dy+dz*dz);
   }
+  /* The display window's values of interest: the patient's own pixels, judged from the primary
+     against the open beam before any scatter is laid over it (core/scatter.js). The window used to
+     take every pixel short of raw beam, and the scatter-lit air around an elbow or an ankle is
+     short of raw beam: half the "anatomy" of an AP elbow was air, the window ran from air to bone,
+     and the soft tissue sat at 0.7 of the grey scale, near white, over the bone it should show. */
+  const voi=new Uint8Array(nx*ny); let nVoi=0;
+  for(let k=0;k<voi.length;k++) if(mask[k] && dose[k]<MISSED*direct[k]){ voi[k]=1; nVoi++; }
+  const voiMask = nVoi>=200 ? voi : mask;          // a field with (almost) no patient: as before
 
   // ---- scatter radiation reaching the detector ----
   // X-rays scattered in the patient add a diffuse fog to the receptor. The scatter-to-
@@ -2521,7 +2529,7 @@ async function computeRadiograph(opts={}){
   const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
   if(dry){
     const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
-    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,mask,nx), EI,
+    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,voiMask,nx), EI,
              rightAtPlusX: objMat()[0] > -0.5, detW, detH };
   }
   S.lastMarker=sideMarkerVerdict(mkStamp); S.lastMarkerStamp=mkStamp;
@@ -2532,7 +2540,7 @@ async function computeRadiograph(opts={}){
   S.doseLog.push(S.lastDose);
 
   const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
-  pushImage(signal,nx,ny,mask,buildMeta(spectrum));   // -> active image + drawFilm + meta + strip
+  pushImage(signal,nx,ny,mask,buildMeta(spectrum),voiMask);   // -> active image + drawFilm + meta + strip
   updateDI(EI);
   updateDoseReadout();
   updateMarkerNote();
@@ -3137,8 +3145,8 @@ function buildMeta(spec){
 
 /* ---- image history: keep the last 10 exposures, reviewable on the Image view ---- */
 const IMG_HISTORY_MAX=10;
-function pushImage(signal,nx,ny,mask,meta){
-  const rescale=computeRescale(signal,mask,nx);   // auto-rescale VOI window, fixed at capture
+function pushImage(signal,nx,ny,mask,meta,voi){
+  const rescale=computeRescale(signal,voi||mask,nx);   // auto-rescale VOI window, fixed at capture
   // where the patient's RIGHT side lies after the roll, kept with the image so an older film
   // still hangs correctly when reviewed after the patient has been turned (see renderRadiograph)
   S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, rightAtPlusX: objMat()[0] > -0.5,
@@ -3159,6 +3167,10 @@ if(typeof window!=='undefined') window.radsimQC={
   async protocol(part, proj){
     const p=findProtocol(part, proj); if(!p) return null;
     await new Promise(r=>applyProtocol(p, part, r));
+    return this.expose(proj);
+  },
+  // expose the room as it stands
+  async expose(proj){
     if(S.exposing) return null;
     S.exposing=true; try { await computeRadiograph(); } finally { S.exposing=false; }
     return { proj, kv:S.kv, mas:S.mas, di:S.lastDI, aec:!!S.aecOn };

@@ -87,8 +87,25 @@ export function compileJoint(j, angles) {
   n = ln < 1e-9
     ? unit([Math.sqrt(Math.max(0, (R[0] + 1) / 2)), Math.sqrt(Math.max(0, (R[4] + 1) / 2)), Math.sqrt(Math.max(0, (R[8] + 1) / 2))])
     : [n[0] / ln, n[1] / ln, n[2] / ln];
-  return { c: j.c, d: j.distal, b: j.blend, n, T, R2: j.radius ? j.radius * j.radius : Infinity };
+  const f = rotate(j.distal, n, T);
+  return { c: j.c, d: j.distal, b: j.blend, n, T, R2: j.radius ? j.radius * j.radius : Infinity,
+    ins: [f[0] - j.distal[0], f[1] - j.distal[1], f[2] - j.distal[2]],
+    bis: [-f[0] - j.distal[0], -f[1] - j.distal[1], -f[2] - j.distal[2]],
+    bisL: Math.hypot(f[0] + j.distal[0], f[1] + j.distal[1], f[2] + j.distal[2]) };
 }
+/* THE CROOK. On the inside of a bend the turned part swings into the space the part above it
+   still holds: a flexed forearm's flexor mass rises beside the biceps, the two cut faces are
+   planes, and the film showed a straight-edged block of doubled muscle in the elbow's bend.
+   Real tissue there folds. So inside the bend (ins: the way the two pieces close on each
+   other) the crook is split on the bisector of the bend (bis: its normal, toward the part
+   above): the proximal side is filled only by tissue turned by up to half the bend, the
+   distal side only by tissue turned by at least half. Outside the bend the pieces part, and
+   nothing is decided. dq: the point less the joint's centre; phi: the candidate's turn. */
+function inCrook(J, dq, phi) {
+  if (dot(dq, J.ins) <= 0) return true;
+  return dot(dq, J.bis) >= 0 ? phi <= J.T / 2 : phi >= J.T / 2;
+}
+
 export function compileChain(chain, angles) {
   return chain.map((j) => compileJoint(j, angles)).filter(Boolean);
 }
@@ -125,7 +142,7 @@ function preimagesOne(q, J) {
   const s = (phi) => A * Math.cos(phi) + B * Math.sin(phi) + C * (1 - Math.cos(phi));
   const back = (phi) => { const r = rotate(dq, J.n, -phi); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
   const limb = (p) => { const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]]; return inLimb(d, J, dot(d, J.d)); };
-  if (s(J.T) >= J.b) { const p = back(J.T); if (limb(p)) out.push(p); }
+  if (s(J.T) >= J.b && inCrook(J, dq, J.T)) { const p = back(J.T); if (limb(p)) out.push(p); }
   // the crease: phi = T w(s(phi)), by bisection on g(phi) = T w(s(phi)) - phi
   const g = (phi) => J.T * blendWeight(s(phi), J.b) - phi;
   if (g(0) > 0 && g(J.T) < 0) {
@@ -134,7 +151,7 @@ function preimagesOne(q, J) {
     const phi = (a + b) / 2, w = blendWeight(s(phi), J.b);
     if (w > 0 && w < 1) { const p = back(phi); if (limb(p)) out.push(p); }
   }
-  if (A <= -J.b || !inLimb(dq, J, A)) out.push(q);
+  if ((A <= -J.b || !inLimb(dq, J, A)) && inCrook(J, dq, 0)) out.push(q);
   return out;
 }
 export function preimagesCompiled(q, cc) {
@@ -150,6 +167,56 @@ export function preimagesChain(q, chain, angles) {
 export function motionAngle(angles, m) { return angles[m.key] ?? m.rest ?? 0; }
 export function anyBent(chain, angles) {
   return chain.some((j) => j.motions.some((m) => Math.abs(motionAngle(angles, m) - (m.rest || 0)) > 0.01));
+}
+
+/* THE FOLD. Where the two sides of a crook meet on its bisector the outline is pieced together
+   from three sources (the part above, the crease band, the part below), and the joins are sharp:
+   the crease band, the elbow's own section, lay along the bisector a few millimetres proud of the
+   arm and forearm either side, and the skins left cracks of air between them. Seen edge on both
+   printed as a thin bright line across the bend. Skin over a fold is smooth: within FOLD_R of the
+   joint, on the inside of the bend and within FOLD of the bisector, the outline is smoothed by a
+   majority of its neighbourhood, 2 FOLD_W + 1 voxels a side. A voxel it adds is fat; one it takes away is air. */
+const FOLD = 2, FOLD_R = 9, FOLD_W = 4, FAT = 2;
+function smoothFold(out, N, sg, sp, cc) {
+  const C = [(N[0] - 1) / 2, (N[1] - 1) / 2, (N[2] - 1) / 2];
+  for (const J of cc) {
+    const m = [J.bis[0] / J.bisL, J.bis[1] / J.bisL, J.bis[2] / J.bisL];
+    // the subvolume around the joint
+    const lo = [0, 1, 2].map((a) => Math.max(0, Math.floor(C[a] + (sg[a] * J.c[a] - FOLD_R) / sp[a]) - 2));
+    const hi = [0, 1, 2].map((a) => Math.min(N[a] - 1, Math.ceil(C[a] + (sg[a] * J.c[a] + FOLD_R) / sp[a]) + 2));
+    const n = [0, 1, 2].map((a) => hi[a] - lo[a] + 1);
+    if (n.some((v) => v < 2 * FOLD_W + 1)) continue;
+    // tissue, then its box sums along x, y and z in turn
+    let a = new Uint16Array(n[0] * n[1] * n[2]);
+    for (let k = 0; k < n[2]; k++) for (let j = 0; j < n[1]; j++) for (let i = 0; i < n[0]; i++)
+      a[(k * n[1] + j) * n[0] + i] = out[((k + lo[2]) * N[1] + j + lo[1]) * N[0] + i + lo[0]] ? 1 : 0;
+    const strides = [1, n[0], n[0] * n[1]];
+    for (let ax = 0; ax < 3; ax++) {
+      const b = new Uint16Array(a.length), st = strides[ax];
+      for (let k = 0; k < n[2]; k++) for (let j = 0; j < n[1]; j++) for (let i = 0; i < n[0]; i++) {
+        const p = [i, j, k][ax], q = (k * n[1] + j) * n[0] + i;
+        let s = 0;
+        for (let d = -FOLD_W; d <= FOLD_W; d++) { const r = p + d; if (r >= 0 && r < n[ax]) s += a[q + d * st]; }
+        b[q] = s;
+      }
+      a = b;
+    }
+    for (let k = 0; k < n[2]; k++) {
+      const z = sg[2] * (k + lo[2] - C[2]) * sp[2] - J.c[2];
+      for (let j = 0; j < n[1]; j++) {
+        const y = sg[1] * (j + lo[1] - C[1]) * sp[1] - J.c[1];
+        for (let i = 0; i < n[0]; i++) {
+          const x = sg[0] * (i + lo[0] - C[0]) * sp[0] - J.c[0];
+          if (x * x + y * y + z * z > FOLD_R * FOLD_R || x * J.ins[0] + y * J.ins[1] + z * J.ins[2] <= 0) continue;
+          if (Math.abs(x * m[0] + y * m[1] + z * m[2]) > FOLD) continue;
+          const o = ((k + lo[2]) * N[1] + j + lo[1]) * N[0] + i + lo[0];
+          const keep = 2 * a[(k * n[1] + j) * n[0] + i] > (2 * FOLD_W + 1) ** 3;
+          if (keep && !out[o]) out[o] = FAT;
+          else if (!keep && out[o]) out[o] = 0;
+        }
+      }
+    }
+  }
 }
 
 /* ---------------------------------------------------------------- the volume
@@ -217,12 +284,14 @@ export function poseVolume(vm, flips, chain, angles) {
       const row = (k * N[1] + j) * N[0];
       for (let i = 0; i < N[0]; i++) {
         const x = sg[0] * (i - Cx) * sp[0];
-        // vacated: distal of a bent joint at rest (the moved part has left)
+        // vacated: distal of a bent joint at rest (the moved part has left), or past the crook's
+        // bisector (the part below folds against it there)
         let vac = false;
         for (let n = 0; n < cc.length; n++) {
           const J = cc[n], ex = x - J.c[0], ey = y - J.c[1], ez = z - J.c[2];
           const sd = ex * J.d[0] + ey * J.d[1] + ez * J.d[2];
           if (sd > -J.b && (J.R2 === Infinity || ex * ex + ey * ey + ez * ez - sd * sd < J.R2)) { vac = true; break; }
+          if (ex * J.ins[0] + ey * J.ins[1] + ez * J.ins[2] > 0 && ex * J.bis[0] + ey * J.bis[1] + ez * J.bis[2] < 0) { vac = true; break; }
         }
         const still = vac ? 0 : at(i - pad[0], j - pad[1], k - pad[2]);
         if (!(jin && x >= blo[0] && x <= bhi[0])) { out[row + i] = still; continue; }
@@ -231,11 +300,13 @@ export function poseVolume(vm, flips, chain, angles) {
           const dx = x - one.c[0], dy = y - one.c[1], dz = z - one.c[2];
           const rx = M[0] * dx + M[1] * dy + M[2] * dz, ry = M[3] * dx + M[4] * dy + M[5] * dz, rz = M[6] * dx + M[7] * dy + M[8] * dz;
           const rs = rx * one.d[0] + ry * one.d[1] + rz * one.d[2];
-          if (rs >= one.b && (one.R2 === Infinity || rx * rx + ry * ry + rz * rz - rs * rs < one.R2)) v = sampleRest(one.c[0] + rx, one.c[1] + ry, one.c[2] + rz);
+          const dq = [dx, dy, dz];
+          if (rs >= one.b && (one.R2 === Infinity || rx * rx + ry * ry + rz * rz - rs * rs < one.R2) && inCrook(one, dq, one.T)) v = sampleRest(one.c[0] + rx, one.c[1] + ry, one.c[2] + rz);
           if (!v) v = still;
           if (!v && dx * dx + dy * dy + dz * dz < reach2[0]) {
             for (const p of preimagesOne([x, y, z], one)) { v = sampleRest(p[0], p[1], p[2]); if (v) break; }
           }
+
         } else {
           for (const p of preimagesCompiled([x, y, z], cc)) { v = sampleRest(p[0], p[1], p[2]); if (v) break; }
         }
@@ -243,5 +314,6 @@ export function poseVolume(vm, flips, chain, angles) {
       }
     }
   }
+  smoothFold(out, N, sg, sp, cc);
   return { data: out, dims: N, pad };
 }

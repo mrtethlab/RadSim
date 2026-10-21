@@ -35,7 +35,7 @@ import time
 import numpy as np
 from scipy import ndimage as ndi
 
-from app.build_model import (AIR, FAT, SKIN, TRABECULAR, CORTICAL, materialize, resample_iso,
+from app.build_model import (AIR, LUNG, FAT, MUSCLE, SKIN, TRABECULAR, CORTICAL, materialize, resample_iso,
                              write_model)
 
 VSD = pathlib.Path(__file__).resolve().parents[1] / 'data' / 'vsd'
@@ -141,7 +141,7 @@ def pare(mask, r):
     return ndi.binary_fill_holes(mask)
 
 
-def smooth(keep, fine_z, bone, sigma=6.0, fine_sigma=1.5, ramp=20, ball=5):
+def smooth(keep, fine_z, bone, sigma=6.0, fine_sigma=1.5, ramp=20, ball=5, level=0.5):
     """Smooth, gently curved skin: the part's mask blurred and cut again at one half. The cuts that
     parted it from its neighbours wander a voxel or two from slice to slice, and what the bag and
     sheet left on the side it lay on hangs off in drips and fins up to 1.5 cm across; a blur of 6
@@ -162,7 +162,7 @@ def smooth(keep, fine_z, bone, sigma=6.0, fine_sigma=1.5, ramp=20, ball=5):
     g = np.arange(-ball, ball + 1)
     sph = (g[:, None, None] ** 2 + g[None, :, None] ** 2 + g[None, None, :] ** 2) <= ball * ball
     opened = ndi.binary_opening(sub, structure=sph)
-    coarse = ndi.gaussian_filter(opened.astype(np.float32), sigma) >= 0.5
+    coarse = ndi.gaussian_filter(opened.astype(np.float32), sigma) >= level
     sub = sub.astype(np.float32)
     fine = ndi.gaussian_filter(sub, fine_sigma) >= 0.5
     w = ndi.uniform_filter1d(fine_z[lo[0]:hi[0]].astype(np.float32), ramp)       # 1 in the hand or foot
@@ -173,12 +173,16 @@ def smooth(keep, fine_z, bone, sigma=6.0, fine_sigma=1.5, ramp=20, ball=5):
     return pare(out, r=0)
 
 
-def finish(mat, keep, pad=4):
+def finish(mat, keep, pad=4, limb=False):
     """The part alone: everything outside it is air, a one-voxel skin shell on its new surface
     (materialize lays the same shell, 1.5 mm, on the whole body), and the tight box around it.
     Where smoothing filled in a hollow, the new tissue is fat, as under any skin."""
     out = np.where(keep, mat, AIR).astype(np.uint8)
     out[keep & (out == AIR)] = FAT
+    if limb:                       # no limb holds gas: a pocket of it (post mortem) printed as a line
+        out[keep & (out == LUNG)] = FAT
+        # the scan's own skin, under the smoothing's new fat, drew a second outline inside the first
+        out[keep & (out == SKIN)] = FAT
     shell = keep & ~ndi.binary_erosion(keep)
     out[shell & (out != AIR)] = SKIN
     zs, ys, xs = np.nonzero(keep)
@@ -283,7 +287,35 @@ def upper_extremity(hu, mat, body):
     keep[AXILLA_Z:w] = ndi.median_filter(keep[AXILLA_Z:w].astype(np.uint8), size=(5, 1, 1)).astype(bool) & body[AXILLA_Z:w]
     keep[:z1] = pare(keep[:z1], r=2)
     hand = np.zeros(keep.shape[0], bool); hand[400:] = True       # the wrist and hand (z 400 on)
-    return smooth(keep, hand, big_bone(mat, 2000))
+    # The 87-year-old's skin lies thin over the epicondyles and the olecranon, and the bone guard
+    # kept those bumps; the surface is grown about 5 mm (cut at 0.3, not 0.5), filled with fat,
+    # which rounds them under the skin. (Its bone stays as scanned: making it "healthy" by HU was
+    # tried and failed both ways. Its spongy bone reads 40-115 HU, the same as muscle, so taking
+    # bone down to 40 HU turned the muscle against the bone into bone and moved the epicondyles;
+    # filling each bone section made blobs of this osteoporotic elbow's fragments.)
+    return smooth(keep, hand, big_bone(mat, 2000), level=0.3)
+
+
+def healthy_arm(hu, mat, keep, fat_mm=7.5, fat_hu=-100):
+    """A healthy arm's soft tissue on this 87-year-old's frame. Its muscle is wasted and fatty:
+    under the subcutaneous fat the forearm's deep compartment reads -60 to -110 HU, below the
+    -30 HU muscle cut, so the forearm printed as a bag of fat whose muscle came and went slice by
+    slice (a level across the forearm where the HU crossed the cut), and the bones floated in it.
+    Deeper than fat_mm under the skin, tissue is muscle unless it is plainly fat (below fat_hu, on
+    HU smoothed over a voxel so it does not speckle): intermuscular fat and the elbow's fat pads
+    stay. (Closing the osteoporotic cortex was tried too: a ball that mends the shafts' breaks also
+    bridges the radius to the ulna where they lie close, and wherever the closing stopped, short of
+    the joints, the film showed the edge as a line across the bones.)"""
+    out = mat.copy()
+    zs = np.nonzero(keep.any((1, 2)))[0]
+    z0, z1 = zs.min(), zs.max() + 1
+    k = keep[z0:z1]
+    sub = out[z0:z1]
+    soft = k & ~np.isin(sub, [TRABECULAR, CORTICAL])
+    depth = ndi.distance_transform_edt(k) * SP
+    h = ndi.gaussian_filter(hu[z0:z1].astype(np.float32), 1.0)
+    sub[soft & (depth > fat_mm) & (h > fat_hu)] = MUSCLE
+    return out
 
 
 def within_reach(part, bone, margin=2, smooth=9):
@@ -347,7 +379,9 @@ def head_neck():
 
 
 def write(name, title, subj, mat, hu, keep):
-    part, sl = finish(mat, keep)
+    if name == 'upperextremity':
+        mat = healthy_arm(hu, mat, keep)
+    part, sl = finish(mat, keep, limb=True)
     # house convention, as build_model --flip 1 0 0 gave the earlier z045 crops: index 0 inferior
     part, h = np.ascontiguousarray(part[::-1]), np.ascontiguousarray(hu[sl][::-1])
     write_model(str(MODELS / name), name, title, part, h, SP, mesh=True, source=SUBJECTS[subj]['source'])

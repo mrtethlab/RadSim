@@ -137,12 +137,12 @@
  "upperextremity": {
   "medialEpicondyle": {
    "label": "Medial epicondyle",
-   "x": 1.95,
-   "y": -6.45,
-   "z": 2.55,
+   "x": 2.02,
+   "y": -6.38,
+   "z": 3.0,
    "dir": [
-    -0.265,
-    -0.964,
+    -0.294,
+    -0.956,
     0.0
    ],
    "how": "the medial end of the distal humerus section at the elbow landmark",
@@ -150,12 +150,12 @@
   },
   "lateralEpicondyle": {
    "label": "Lateral epicondyle",
-   "x": 3.6,
-   "y": -0.45,
-   "z": 2.55,
+   "x": 3.82,
+   "y": -0.53,
+   "z": 3.0,
    "dir": [
-    0.265,
-    0.964,
+    0.294,
+    0.956,
     0.0
    ],
    "how": "the lateral end of the distal humerus section at the elbow landmark",
@@ -163,12 +163,12 @@
   },
   "olecranon": {
    "label": "Olecranon",
-   "x": 6.0,
-   "y": -5.4,
-   "z": 0.55,
+   "x": 6.08,
+   "y": -5.47,
+   "z": 1.5,
    "dir": [
-    0.95,
-    -0.312,
+    0.969,
+    -0.248,
     0.0
    ],
    "how": "the bone reaching furthest behind the epicondylar line 1-2 cm distal of it",
