@@ -4,7 +4,7 @@
   "luts": {
     "linear":     { "label": "Linear (no LUT)",            "sigmoid": false, "center": 0.50, "width": 1.00 },
     "extremity":  { "label": "Extremity · high contrast",  "sigmoid": true,  "center": 0.55, "width": 0.55, "clipHi": 0.002 },
-    "limb":       { "label": "Extremity · elbow, forearm, humerus", "sigmoid": true, "center": 0.55, "width": 0.55, "clipHi": 0.002, "clipLo": 0.2 },
+    "limb":       { "label": "Extremity · elbow, forearm, humerus", "sigmoid": true, "center": 0.55, "width": 0.55, "clipHi": 0.0005, "clipLo": 0.3, "hiPad": 0.3, "detail": false },
     "bone":       { "label": "Bone / fine detail",         "sigmoid": true,  "center": 0.55, "width": 0.62 },
     "chest":      { "label": "Chest · wide latitude",      "sigmoid": true,  "center": 0.50, "width": 1.15 },
     "abdomen":    { "label": "Abdomen / soft tissue",      "sigmoid": true,  "center": 0.50, "width": 0.90 },

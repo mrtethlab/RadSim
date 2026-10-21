@@ -28,7 +28,7 @@ test('every projection carries a pose, and every centring landmark exists for it
 });
 
 test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
-  // the arm (z053) rests 8 degrees off the anatomical position: its views are rolled by what the epicondyles
+  // the arm (z053) rests 9 degrees off the anatomical position: its views are rolled by what the epicondyles
   // measure (data/palpation.json), AP laying them parallel to the receptor and the lateral standing
   // them up, lateral epicondyle on top (+ roll turns +x toward +y, the tube)
   const pa = palpation.upperextremity;
@@ -68,8 +68,8 @@ test('landmarks sit where the traced phantom confirmed them (cm from the volume 
   // same CT, the arm from another (z033, then z053 for its healthy bone), so their numbers moved
   // and were checked on bone projections)
   const pinned = {
-    'lowerextremity.knee': 2.48, 'lowerextremity.ankle': -36.38, 'upperextremity.elbow': 3.97,
-    'upperextremity.forearm': -6.82, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
+    'lowerextremity.knee': 2.48, 'lowerextremity.ankle': -36.38, 'upperextremity.elbow': 3.68,
+    'upperextremity.forearm': -6.98, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
     'chestabdopelvis.kub': -12.7,
   };
   for (const [k, z] of Object.entries(pinned)) {

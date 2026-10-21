@@ -2529,7 +2529,7 @@ async function computeRadiograph(opts={}){
   const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
   if(dry){
     const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
-    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,voiMask,nx), EI,
+    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,voiMask,nx), EI, plain: S.lut?.detail===false,
              rightAtPlusX: objMat()[0] > -0.5, detW, detH };
   }
   S.lastMarker=sideMarkerVerdict(mkStamp); S.lastMarkerStamp=mkStamp;
@@ -2608,7 +2608,10 @@ function renderRadiograph(target,entry){
   // DR detail enhancement: use the cached enhanced base-tone map for the active full-res
   // image; thumbnails (entry passed) render the plain log tone (cheap, detail not needed).
   const _t=(typeof window!=='undefined'&&window.__tune)||{};
-  const enhOn=(_t.eOn!==undefined)?_t.eOn:S.detailEnh;
+  // a film whose LUT takes no detail processing (an elbow: its 1 cm band lit the margin inside the
+  // skin as a bright rim and laid a sheen over the bone) shows its plain tones
+  const plain = entry? entry.plain : S.imgPlain;
+  const enhOn=(_t.eOn!==undefined)?_t.eOn:(S.detailEnh && !plain);
   const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
@@ -3149,7 +3152,7 @@ function pushImage(signal,nx,ny,mask,meta,voi){
   const rescale=computeRescale(signal,voi||mask,nx);   // auto-rescale VOI window, fixed at capture
   // where the patient's RIGHT side lies after the roll, kept with the image so an older film
   // still hangs correctly when reviewed after the patient has been turned (see renderRadiograph)
-  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, rightAtPlusX: objMat()[0] > -0.5,
+  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, plain: S.lut?.detail===false, rightAtPlusX: objMat()[0] > -0.5,
                      detW:S.detW, detH:S.detH});
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
@@ -3182,7 +3185,7 @@ function setActiveImage(idx){
   idx=Math.max(0,Math.min(S.imgHistory.length-1,idx));
   const e=S.imgHistory[idx];
   S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
-  S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true;
+  S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true; S.imgPlain=!!e.plain;
   S.imgRightAtPlusX=e.rightAtPlusX!==false;
   reseedCurve();                     // handles land on THIS image's toe/inflection/shoulder
   drawFilm();

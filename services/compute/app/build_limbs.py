@@ -329,7 +329,48 @@ def upper_extremity(hu, mat, body, subj=ARM):
     hand = np.zeros(keep.shape[0], bool); hand[w:] = True       # the wrist and hand
     # The surface is grown about 5 mm (cut at 0.3, not 0.5), filled with fat: z033's skin lay thin
     # over the epicondyles and the olecranon, and the bone guard kept those bumps.
-    return smooth(keep, hand, big_bone(mat, 2000), level=0.3)
+    keep = smooth(keep, hand, big_bone(mat, 2000), level=0.3)
+    return convex_limb(keep, ax, w, mat)
+
+
+def convex_limb(keep, z0, z1, mat, span_mm=120, bins=96):
+    """A healthy limb's outline is flat or convex, along it and around it. This one dipped in a
+    waist above the humeral condyles, under the bulge of the biceps, and its skin waved: wasting and
+    the sag of a body lying dead. Per slice, the skin's distance from the limb's centre line is
+    taken in `bins` directions; along the limb each direction's distance is closed over span_mm (a
+    dip shorter than that is bridged, the bulges either side kept), and each section is made convex.
+    Only ever adds, and what it adds is fat, whatever lay there (the hull reaches toward the chest,
+    whose ribs are not the arm's): `mat` is cleared there, and finish fills it with fat."""
+    from skimage.morphology import convex_hull_image
+    n = z1 - z0
+    sub = keep[z0:z1]
+    c = np.array([ndi.center_of_mass(s) if s.any() else (np.nan, np.nan) for s in sub])
+    ok = ~np.isnan(c[:, 0])
+    for a in range(2):                                   # the centre line, filled in and smoothed
+        c[:, a] = np.interp(np.arange(n), np.nonzero(ok)[0], c[ok, a])
+        c[:, a] = ndi.gaussian_filter1d(c[:, a], 8, mode='nearest')
+    ny, nx = sub.shape[1:]
+    yy, xx = np.mgrid[:ny, :nx]
+    R = np.zeros((n, bins), np.float32)
+    for i in range(n):
+        dy, dx = yy - c[i, 0], xx - c[i, 1]
+        th = ((np.arctan2(dy, dx) + np.pi) / (2 * np.pi) * bins).astype(int) % bins
+        r = np.hypot(dy, dx)
+        m = sub[i]
+        np.maximum.at(R[i], th[m], r[m])
+    w = max(3, int(round(span_mm / SP)) | 1)
+    R = ndi.grey_closing(R, size=(w, 1), mode='nearest')
+    R = ndi.gaussian_filter(R, (2, 1), mode=('nearest', 'wrap'))
+    out = keep.copy()
+    for i in range(n):
+        dy, dx = yy - c[i, 0], xx - c[i, 1]
+        t = (np.arctan2(dy, dx) + np.pi) / (2 * np.pi) * bins - 0.5
+        lo = np.floor(t).astype(int) % bins; f = t - np.floor(t)
+        rr = R[i, lo] * (1 - f) + R[i, (lo + 1) % bins] * f
+        grown = sub[i] | (np.hypot(dy, dx) <= rr)
+        out[z0 + i] = keep[z0 + i] | convex_hull_image(grown)
+        mat[z0 + i][out[z0 + i] & ~keep[z0 + i]] = AIR
+    return out
 
 
 def healthy_arm(hu, mat, keep, fat_mm=7.5, fat_hu=-100):

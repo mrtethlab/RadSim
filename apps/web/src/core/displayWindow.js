@@ -61,5 +61,8 @@ export function computeRescale(sig, mask, lut = null, _t = {}, nx = 0) {
   const c=lut&&lut.sigmoid ? lut.center : 0.5;
   const med=at(0.5), want=(med-c*hi)/(1-c);
   lo=Math.max(lo, Math.min(want, at(0.12), med-0.02*(NB-1)));
+  // headroom (hiPad, a fraction of the window): the densest bone sits below white, not on it, so
+  // an elbow's condyles keep their trabecular grain instead of the top of the curve's sheen
+  if(lut && lut.hiPad) hi=Math.min(NB-1, Math.round(hi+lut.hiPad*(hi-lo)));
   return { lo: lo/(NB-1), hi: Math.max((lo+1)/(NB-1), hi/(NB-1)) };
 }

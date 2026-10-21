@@ -239,10 +239,10 @@ def lower_extremity():
 
 # ---------------------------------------------------------------- the arm (elbow)
 def upper_extremity():
-    """The epicondyles and the olecranon, from the bone itself: this arm (z033) rests turned about
-    90 degrees, epicondyles front to back, so no axis can be assumed.
-    - the epicondylar axis is the long axis of the bone's section at the elbow landmark (the
-      widest the distal humerus gets), and the epicondyles its two ends;
+    """The epicondyles and the olecranon, from the bone itself: no axis can be assumed (z033's arm
+    rested turned about 90 degrees; z053's, now the model, about 9).
+    - the epicondyles are the two points of the condylar region (3 cm about the elbow landmark,
+      the widest the distal humerus gets) furthest apart, seen along the arm;
     - behind the joint is the side the bone reaches furthest past the epicondylar line 1-2 cm
       distal: the olecranon (3.5 cm behind, against 1 cm in front);
     - lateral then follows from handedness: it is a RIGHT arm (the liver lies on its side of the
@@ -255,12 +255,17 @@ def upper_extremity():
     def sec(zcm):
         jj, ii = np.nonzero(V.bone[V.idx(2, zcm)])
         return np.stack([(ii - (V.n[0] - 1) / 2) * V.sp[0], (jj - (V.n[1] - 1) / 2) * V.sp[1]], 1)
-    xy = sec(el[2])
-    c = xy.mean(0)
-    w, vec = np.linalg.eigh(np.cov((xy - c).T))
-    ax = vec[:, int(np.argmax(w))]                                  # the epicondylar axis
-    proj = (xy - c) @ ax
-    e1, e2 = xy[int(np.argmin(proj))], xy[int(np.argmax(proj))]
+    # The epicondyles are the two points of the condylar region furthest apart, seen along the arm:
+    # over 3 cm about the widest section, not that section alone. The section twists through the
+    # condyles, and its long axis (the measure before) turned 16 degrees when the widest slice moved
+    # 3 mm between two builds of the same bone.
+    from scipy.spatial import ConvexHull
+    xy = np.unique(np.concatenate([sec(el[2] + dz) for dz in np.arange(-1.5, 1.51, V.sp[2])]), axis=0)
+    hv = xy[ConvexHull(xy).vertices]
+    d = np.linalg.norm(hv[:, None] - hv[None], axis=2)
+    i, j = np.unravel_index(int(np.argmax(d)), d.shape)
+    e1, e2 = hv[i], hv[j]
+    ax = (e2 - e1) / np.linalg.norm(e2 - e1)                      # the epicondylar axis
     mid = (e1 + e2) / 2
     post = np.array([-ax[1], ax[0]])
     reach = lambda d: max(((sec(el[2] - dd) - mid) @ d).max() for dd in (1.0, 1.5, 2.0))

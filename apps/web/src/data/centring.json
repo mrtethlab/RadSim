@@ -86,9 +86,9 @@
  },
  "upperextremity": {
   "elbowJoint": {
-   "x": 2.4,
-   "y": -1.57,
-   "z": 2.47,
+   "x": 2.48,
+   "y": -1.2,
+   "z": 2.18,
    "how": "the elbow joint: 1.5 cm distal of the midpoint of the measured epicondyles",
    "guide": "AP, AP obliques and lateral elbow: CR perpendicular to the mid elbow joint (Bontrager; Radiopaedia)",
    "confidence": "medium"

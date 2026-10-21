@@ -89,3 +89,13 @@ test('a limb LUT keeps its bone off the white end and its thin margins off the w
   assert.ok(limb.lo > plain.lo, `the dark end rises past the margin: ${limb.lo.toFixed(3)} vs ${plain.lo.toFixed(3)}`);
   assert.ok(anat.filter((t) => t < limb.lo).length / anat.length < 0.22, 'about a fifth of the anatomy (the margin) is given up');
 });
+
+test('a LUT with headroom sets white above the densest anatomy', () => {
+  const { sig, mask } = image({});
+  const plain = computeRescale(sig, mask, LUT);
+  const pad = computeRescale(sig, mask, { ...LUT, hiPad: 0.3 });
+  const mx = Math.max(...sig), top = Math.max(...Array.from(sig).filter((s) => s < 0.95 * mx).map((s) => tone(s, mx)));
+  assert.ok(plain.hi < top, 'without it the densest 1 % burns white');
+  assert.ok(pad.hi > top, `with it white lies past the densest: ${pad.hi.toFixed(3)} vs ${top.toFixed(3)}`);
+  assert.equal(pad.lo, plain.lo);
+});
