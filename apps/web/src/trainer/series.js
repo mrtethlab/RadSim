@@ -8,6 +8,8 @@
      centre: { lm, name, tol (cm) }  lm names a textbook centring point in data/centring.json
              (tools/measure_centring.py), whose guide text says which source and what it says
      require: { parts (trainer/regions.js), text }  the anatomy that must be on the film
+     align:  { tol } or { range }: the 3rd metacarpal against the distal radius, degrees (+ ulnar),
+             measured on the bones: in line within tol for a hand or wrist, or deviated into range
      how:    what the student is told to do
      approx: why a rigid CT model cannot fully make this view (optional)
    Rolls follow protocols.json, so the Trainer and the sandbox agree on what a view is.
@@ -38,27 +40,33 @@ const LSPINE_LAT_REQ = { parts: [{ mat: 'bone', x: [-3, 3],
 export const SERIES = [
   { id: 'hand3', name: 'Hand · 3 views', views: [
     { label: 'PA', proto: ['Upper extremity', 'PA hand'], pose: { roll: 0, tol: 5 },
+      align: { tol: 6 },
       centre: { lm: 'mcp3Joint', name: '3rd MCP joint', tol: 1.0 }, require: HAND_REQ,
       how: 'Hand pronated flat on the receptor, fingers extended and slightly spread. Central ray perpendicular to the 3rd MCP joint.' },
     { label: 'PA oblique', proto: ['Upper extremity', 'Oblique hand'], pose: { roll: 45, tol: 5 },
+      align: { tol: 6 },
       centre: { lm: 'mcp3Joint', name: '3rd MCP joint', tol: 1.0 }, require: HAND_REQ,
       how: 'From PA, rotate the hand 45° laterally (thumb side up), fingertips on the receptor. Central ray to the 3rd MCP joint.' },
     { label: 'Lateral', proto: ['Upper extremity', 'Lateral hand'], pose: { roll: 90, tol: 5 },
+      align: { tol: 6 },
       centre: { lm: 'mcp2Joint', name: '2nd MCP joint', tol: 1.0 }, require: HAND_REQ,
       how: 'Rotate to a true lateral (ulnar side down), fingers superimposed and extended. Central ray to the 2nd MCP joint.' },
   ] },
   { id: 'wrist4', name: 'Wrist · 4 views', views: [
     { label: 'PA', proto: ['Upper extremity', 'PA wrist'], pose: { roll: 0, tol: 5 },
+      align: { tol: 6 },
       centre: { lm: 'midcarpal', name: 'midcarpal area', tol: 1.0 }, require: WRIST_REQ,
       how: 'Hand pronated, fingers flexed slightly so the wrist lies flat. Central ray perpendicular to the midcarpal area.' },
     { label: 'PA oblique', proto: ['Upper extremity', 'Oblique wrist'], pose: { roll: 45, tol: 5 },
+      align: { tol: 6 },
       centre: { lm: 'midcarpal', name: 'midcarpal area', tol: 1.0 }, require: WRIST_REQ,
       how: 'From PA, rotate the wrist 45° laterally. Central ray to the midcarpal area.' },
     { label: 'Lateral', proto: ['Upper extremity', 'Lateral wrist'], pose: { roll: 90, tol: 5 },
+      align: { tol: 6 },
       centre: { lm: 'midcarpal', name: 'midcarpal area', tol: 1.0 }, require: WRIST_REQ,
       how: 'True lateral, ulnar side down: the radius and ulna superimpose. Central ray to the midcarpal area.' },
     { label: 'PA axial (scaphoid)', proto: ['Upper extremity', 'PA wrist'], pose: { roll: 0, tol: 5 },
-      joints: { 'wrist.dev': [15, 35] },
+      align: { range: [15, 35] },
       cr: { cc: 15, tol: 3, words: ['toward the fingers', 'toward the elbow'] },
       centre: { lm: 'scaphoid', name: 'scaphoid', tol: 1.0 }, require: WRIST_REQ,
       how: 'PA with the wrist in ulnar deviation, as far as the patient can (15-35 degrees): it brings the scaphoid out from under the radius. Central ray angled 10-15 degrees toward the elbow, centred to the scaphoid.' },

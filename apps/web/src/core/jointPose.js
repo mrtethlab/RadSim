@@ -15,8 +15,11 @@
      radius: (optional) only tissue within this distance of the limb's axis (the line through c
              along distal) moves — a CT of an arm against the flank carries flank in its crop,
              and flexing the elbow must not swing the flank with the forearm
-     motions: [{ key, axis }] — a positive angle turns the distal part toward the motion's
-             positive direction (ulnar deviation, flexion, ...)
+     motions: [{ key, axis, rest }] — a positive angle turns the distal part toward the motion's
+             positive direction (ulnar deviation, flexion, ...). Angles are ANATOMICAL: `rest` is
+             the angle the model already has (the hand CT lies in 26 degrees of ulnar deviation
+             against its forearm), the model is turned by (angle - rest), and an angle left unset
+             means the model as scanned.
    A joint's motions compose (in the order listed) into ONE rotation, axis n and angle T; a
    point at share w turns by w*T about n. One axis per joint is what makes the inverse cheap:
    a rest point's distance past the joint, as a function of the turn, is
@@ -68,7 +71,7 @@ export function compileJoint(j, angles) {
   let R = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   let any = false;
   for (const m of j.motions) {
-    const a = (angles[m.key] || 0) * Math.PI / 180;
+    const a = (motionAngle(angles, m) - (m.rest || 0)) * Math.PI / 180;
     if (!a) continue;
     any = true;
     const [x, y, z] = m.axis, c = Math.cos(a), s = Math.sin(a), t = 1 - c;
@@ -143,8 +146,10 @@ export function preimagesChain(q, chain, angles) {
   return preimagesCompiled(q, compileChain(chain, angles));
 }
 
+// an angle as set, or the model's own when unset
+export function motionAngle(angles, m) { return angles[m.key] ?? m.rest ?? 0; }
 export function anyBent(chain, angles) {
-  return chain.some((j) => j.motions.some((m) => Math.abs(angles[m.key] || 0) > 0.01));
+  return chain.some((j) => j.motions.some((m) => Math.abs(motionAngle(angles, m) - (m.rest || 0)) > 0.01));
 }
 
 /* ---------------------------------------------------------------- the volume

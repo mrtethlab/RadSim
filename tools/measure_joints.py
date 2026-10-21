@@ -53,11 +53,18 @@ def main():
     radial = 1 if rs['x'] > m3['x'] else -1
     wrist_z = lm('hand', 'wrist')[2]
     c = [m3['x'], CENT['hand']['midcarpal']['y'], round(wrist_z - 2.2 + 1.2, 2)]
+    # the hand as scanned is not straight on its forearm: the deviation it already has is the angle
+    # from the distal radius's axis to the 3rd metacarpal's, toward the ulna (measured: 26 degrees)
+    h = CENT['hand']
+    a_mc = np.degrees(np.arctan2(radial * (h['mcp3Joint']['x'] - h['mc3Base']['x']), h['mcp3Joint']['z'] - h['mc3Base']['z']))
+    a_ra = np.degrees(np.arctan2(radial * (h['radiusDistal']['x'] - h['radiusProx']['x']), h['radiusDistal']['z'] - h['radiusProx']['z']))
+    rest_dev = round(float(a_ra - a_mc), 1)
     out['hand'] = {'wrist': {
         'label': 'Wrist', 'c': c, 'distal': [0, 0, 1], 'blend': 1.0,
         'how': 'the head of the capitate: 1.2 cm distal of the radiocarpal joint, on the line of the 3rd metacarpal',
         'motions': [
-            {'key': 'wrist.dev', 'label': 'Deviation', 'neg': 'radial', 'pos': 'ulnar', 'toward': [-radial, 0, 0], 'range': [-20, 35]},
+            {'key': 'wrist.dev', 'label': 'Deviation', 'neg': 'radial', 'pos': 'ulnar', 'toward': [-radial, 0, 0], 'range': [-20, 35],
+             'rest': rest_dev},
             {'key': 'wrist.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': [0, -1, 0], 'range': [-70, 75]},
         ]}}
     # ---- the arm: elbow, and the wrist's deviation (forearm positioning)

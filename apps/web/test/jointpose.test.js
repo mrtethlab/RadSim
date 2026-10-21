@@ -79,3 +79,11 @@ test('only the limb moves: tissue beside it, outside its cylinder, stays (the fl
   // and a landmark on the flank does not move
   assert.deepEqual(forwardChain([10, 0, -8], [elbow], { flex: 90 }), [10, 0, -8]);
 });
+
+test('angles are anatomical: unset means the model as scanned, and the turn is from its rest', () => {
+  const j = { ...wrist, motions: [{ key: 'dev', axis: wrist.motions[0].axis, rest: 26 }] };
+  assert.deepEqual(forwardChain([0, 0, 8], [j], {}), [0, 0, 8], 'unset: as scanned');
+  assert.deepEqual(forwardChain([0, 0, 8], [j], { dev: 26 }), [0, 0, 8], 'set to its own rest: unmoved');
+  const t = forwardChain([0, 0, 8], [j], { dev: 0 });          // straightened: turned 26 deg radially
+  assert.ok(Math.abs(Math.atan2(t[0], t[2]) * 180 / Math.PI - 26) < 1e-6, `straightened ${t}`);
+});

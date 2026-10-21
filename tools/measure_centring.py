@@ -83,6 +83,33 @@ def hand():
     out['midcarpal'] = pt([m3[0], bone_centre_y(V, m3[0], zc), zc],
         'the middle of the carpus (the midcarpal landmark: 2 cm proximal of the carpometacarpal level), on the line of the 3rd metacarpal (the capitate)',
         'PA, PA oblique and lateral wrist: CR perpendicular to the midcarpal area (Bontrager; Radiopaedia)')
+    # THE ALIGNMENT AXES. A PA hand or wrist is judged on the long axis of the 3rd metacarpal lying
+    # in line with the forearm (the distal radius): McQuillen Martensen; Bontrager's evaluation
+    # criteria. The 3rd metacarpal runs from its base (the bone on its ray at the carpometacarpal
+    # level, 2 cm distal of the midcarpal landmark) to the MCP joint; the radius from the centroid
+    # of its shaft 5 cm proximal of the radiocarpal joint to 2 cm proximal of it (the radius is the
+    # larger of the two forearm bones there).
+    zb = wrist[2] + 2.0
+    kb = V.idx(2, zb)
+    jj, ii = np.nonzero(V.bone[kb])
+    if len(ii):
+        x = (ii - (V.n[0] - 1) / 2) * V.sp[0]
+        y = (jj - (V.n[1] - 1) / 2) * V.sp[1]
+        sel = np.abs(x - m3[0]) <= 0.7
+        if sel.any():
+            out['mc3Base'] = pt([float(x[sel].mean()), float(y[sel].mean()), zb],
+                'the 3rd metacarpal at the carpometacarpal level: bone within 0.7 cm of the 3rd ray',
+                '3rd metacarpal axis (base to MCP joint), for the hand/wrist alignment criterion')
+    jr = wrist[2] - 2.2
+    for key, dz in (('radiusDistal', -2.0), ('radiusProx', -5.0)):
+        k = V.idx(2, jr + dz)
+        lab, n = ndi.label(V.bone[k])
+        if n:
+            sz = ndi.sum(V.bone[k], lab, range(1, n + 1))
+            c = ndi.center_of_mass(V.bone[k], lab, int(np.argmax(sz)) + 1)
+            out[key] = pt([(c[1] - (V.n[0] - 1) / 2) * V.sp[0], (c[0] - (V.n[1] - 1) / 2) * V.sp[1], jr + dz],
+                f'the centroid of the radius (the larger forearm bone) {-dz:.0f} cm proximal of the radiocarpal joint',
+                'distal radius axis, for the hand/wrist alignment criterion')
     # the scaphoid: the radial-most bone of the proximal carpal row, about 1 cm distal to the
     # radiocarpal joint (2.2 cm proximal of the midcarpal landmark on this hand)
     joint = wrist[2] - 2.2

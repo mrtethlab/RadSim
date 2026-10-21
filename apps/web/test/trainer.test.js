@@ -53,8 +53,8 @@ test('the inch border is asked for only as far as the receptor allows', () => {
   const pts = slab(17, 12);
   const F = frame(35, 24 + 2 * BORDER_CM);
   const m = base(F, pts, { recHalf: { w: 17.5, l: 21.5 } });
-  assert.equal(level(judge(view, m), 'collimation'), 'warn', 'full width used: right, with a thin border');
-  assert.equal(level(judge(view, base(F, pts)), 'collimation'), 'warn');
+  assert.equal(level(judge(view, m), 'collimation'), 'pass', 'full width used: right, though the border is thin');
+  assert.equal(level(judge(view, base(F, pts)), 'collimation'), 'warn', 'without the receptor known, a thin border warns');
   // but a field that cuts the lungs still fails
   assert.equal(level(judge(view, base(frame(30, 30), pts, { recHalf: { w: 17.5, l: 21.5 } })), 'anatomy'), 'fail');
 });
@@ -127,4 +127,18 @@ test('every series view is complete and points at a real protocol shape', () => 
     assert.ok(v.centre && (v.centre.lm || v.centre.fromRequired) && v.centre.tol > 0, `${s.id} ${v.label}: centre`);
     assert.ok(v.require && v.require.parts.length && v.require.text, `${s.id} ${v.label}: required anatomy`);
   }
+});
+
+test('a hand is judged on the 3rd metacarpal lying in line with the radius', () => {
+  const F = frame(), pts = slab(5, 5);
+  const v = { ...view, align: { tol: 6 } };
+  const at = (a) => judge(v, base(F, pts, { align: a })).find((c) => c.id === 'position');
+  assert.equal(at(2).level, 'pass');
+  const off = at(26);
+  assert.equal(off.level, 'fail');
+  assert.match(off.detail, /26° ulnar to the distal radius: radially deviate/);
+  // the scaphoid view wants it deviated instead
+  const sc = { ...view, align: { range: [15, 35] } };
+  assert.equal(judge(sc, base(F, pts, { align: 0 })).find((c) => c.id === 'position').level, 'fail');
+  assert.equal(judge(sc, base(F, pts, { align: 25 })).find((c) => c.id === 'position').level, 'pass');
 });

@@ -559,7 +559,7 @@ function renderJointUI(){
   const ch=jointChain(S.subject);
   if(!ch){ host.innerHTML=''; return; }
   host.innerHTML=ch.map(j=>j.motions.map(m=>{
-    const v=S.joints[m.key]||0;
+    const v=Math.round(S.joints[m.key] ?? m.rest ?? 0);   // anatomical: the model as scanned when unset
     return `<div class="row" style="margin-top:8px"><div class="rl">${j.label} <small>${m.label.toLowerCase()} (${m.neg} &minus; / ${m.pos} +)</small></div>`
       +`<div class="valchip" id="jv_${m.key.replace('.','_')}">${v}°</div></div>`
       +`<input type="range" class="jointSl" data-key="${m.key}" min="${m.range[0]}" max="${m.range[1]}" step="1" value="${v}">`;
@@ -2440,6 +2440,7 @@ async function computeRadiograph(opts={}){
 
   // the lead side marker prints where it lies in the field (src/sideMarker.js), laid out to read
   // correctly on the film as hung: the same flips pushImage stores for the display
+  // (flipH/flipV: how this film will be hung; the letter itself is laid by its facing — face up or pronated)
   const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
   if(dry){
     const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
@@ -3036,6 +3037,7 @@ function syncSandboxControls(){
   set('objOffX', S.objOff.x.toFixed(1), S.objOff.x.toFixed(1)+' cm'); set('objOffZ', S.objOff.z.toFixed(1), S.objOff.z.toFixed(1)+' cm');
   set('collX', S.collX); set('collZ', S.collZ);
   const cc=$('angCC'); if(cc) cc.value=S.angCC;
+  set('tubeX', S.tubeX); set('tubeZ', S.tubeZ);
   updateGeomReadouts();
 }
 /* Build the 4-corner image metadata for the CURRENT technique (shown on the big
@@ -3959,7 +3961,7 @@ window.addEventListener('load',()=>{
     matFor: (r) => { const d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); },
     modelCentreY: () => (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y,
     modelCentre: () => [S.objOff.x, (S.voxelModel ? (S.voxelModel.extentMM[1]/2)/10 : 5) + S.objOff.y, S.objOff.z],
-    setMarker: (side, place=true) => setSideMarker(side, place),
+    setMarker: (side, place=true, pronated) => setSideMarker(side, place, pronated),
     syncSandbox: syncSandboxControls,
     lastDI: () => (S.lastDI ?? null),
     // the room's own exposure, recorded like any other; and the same physics, not recorded

@@ -25,6 +25,30 @@
    "guide": "PA, PA oblique and lateral wrist: CR perpendicular to the midcarpal area (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
+  "mc3Base": {
+   "x": -0.52,
+   "y": 0.56,
+   "z": -1.25,
+   "how": "the 3rd metacarpal at the carpometacarpal level: bone within 0.7 cm of the 3rd ray",
+   "guide": "3rd metacarpal axis (base to MCP joint), for the hand/wrist alignment criterion",
+   "confidence": "medium"
+  },
+  "radiusDistal": {
+   "x": -1.24,
+   "y": 0.94,
+   "z": -7.45,
+   "how": "the centroid of the radius (the larger forearm bone) 2 cm proximal of the radiocarpal joint",
+   "guide": "distal radius axis, for the hand/wrist alignment criterion",
+   "confidence": "medium"
+  },
+  "radiusProx": {
+   "x": -2.64,
+   "y": 0.97,
+   "z": -10.45,
+   "how": "the centroid of the radius (the larger forearm bone) 5 cm proximal of the radiocarpal joint",
+   "guide": "distal radius axis, for the hand/wrist alignment criterion",
+   "confidence": "medium"
+  },
   "scaphoid": {
    "x": 0.48,
    "y": -0.07,
