@@ -557,8 +557,11 @@ function poseCache(vm){ return vm._jcache || (vm._jcache=new Map()); }
 function poseKey(ch, angles){ return ch.flatMap(j=>j.motions.map(m=>motionAngle(angles, m))).join(','); }
 /* ...and by size: a posed leg is the 1 mm volume padded to hold the bent part, 114 MB with the
    knee at 25 degrees and 163 MB at 45, so three of them were half a gigabyte, too much for a
-   phone. The newest is always kept. */
-const poseBudget = () => (document.body.classList.contains('mobile') || (navigator.deviceMemory||8) <= 4) ? 160e6 : 480e6;
+   phone. The newest is always kept. A phone is the mobile layout, a device that says it has 4 GB
+   or less (Chromium only), or any iPhone or iPad: Safari says nothing of its memory, kills a tab
+   well short of the device's, and an iPad held landscape gets the desktop layout. */
+const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
+const poseBudget = () => (document.body.classList.contains('mobile') || IOS || (navigator.deviceMemory||8) <= 4) ? 160e6 : 480e6;
 function keepPose(vm, key, posed){
   const c=poseCache(vm); c.delete(key); c.set(key, posed);
   const bytes=()=>{ let n=0; for(const v of c.values()) n+=v.data.length; return n; };
