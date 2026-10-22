@@ -24,7 +24,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODELS = ROOT / 'apps' / 'web' / 'public' / 'models'
 OUT = ROOT / 'apps' / 'web' / 'src' / 'data' / 'palpation.json'
 LANDMARKS = json.loads((ROOT / 'apps' / 'web' / 'src' / 'data' / 'landmarks.json').read_text(encoding='utf-8'))
-ROLLED_180 = {'chestabdopelvis', 'lumbopelvis', 'headneck'}
+ROLLED_180 = {'chestabdopelvis', 'headneck'}
 
 
 class Vol:
@@ -167,6 +167,21 @@ def hand():
 
 
 # ---------------------------------------------------------------- the ankle and foot
+def foot_axis(V, ank, lateral):
+    """The foot's bone beyond the ankle, as distances t along the foot's axis (the ankle to the
+    furthest bone below it: the tip of the toes), with that length L, the axis u and the bone's
+    coordinates. None if there is no foot."""
+    x, y, z = V.coords(V.bone & zband(V, ank[2] - 40, ank[2] - 1))
+    if not len(x):
+        return None
+    p = np.stack([x, y, z], 1) - np.asarray(ank, float)
+    far = p[int(np.argmax((p ** 2).sum(1)))]
+    u = far / np.linalg.norm(far)
+    t = p @ u
+    keep = t > 0
+    return t[keep], float(t.max()), u, x[keep], y[keep], z[keep]
+
+
 def lower_extremity():
     V, out = Vol('lowerextremity').main_bone(), {}
     ank = lm('lowerextremity', 'ankle')
@@ -178,21 +193,40 @@ def lower_extremity():
         order = np.argsort(sizes)[::-1][:2]
         cents = [ndi.center_of_mass(V.bone[k], lab, int(o) + 1) for o in order]
         lateral = 1 if cents[1][1] > cents[0][1] else -1       # the fibula's side
-        near_t = zband(V, ank[2] - 3, ank[2] + 2) & V.bone
-        near_f = zband(V, ank[2] - 4, ank[2] + 1) & V.bone
+        # Each malleolus is sought only under its own bone: the tibia's and the fibula's footprints
+        # 4 cm above the ankle, grown by 1.5 cm. With the whole foot in the model (it was cut off
+        # at the box edge before), "the most medial bone near the ankle" found the heel: this leg
+        # turns outward and the calcaneus projects further medially than the tibia's tip.
+        def under(o):
+            k4 = V.idx(2, ank[2] + 4)
+            lab4, n4 = ndi.label(V.bone[k4])
+            s4 = ndi.sum(V.bone[k4], lab4, range(1, n4 + 1))
+            fp = lab4 == int(np.argsort(s4)[::-1][o]) + 1
+            fp = ndi.binary_dilation(fp, iterations=int(round(1.5 / V.sp[0])))
+            return np.broadcast_to(fp, V.bone.shape)
+        # the tips lie about 1.5 cm (medial) and 2.5 cm (lateral) below the joint: deeper than that,
+        # under a foot at 90 degrees, the talus's head and the navicular reach further medially
+        near_t = zband(V, ank[2] - 1.5, ank[2] + 2) & V.bone & under(0)
+        near_f = zband(V, ank[2] - 3, ank[2] + 1) & V.bone & under(1)
         mm = extreme(V, near_t, 0, -lateral)
         lmal = extreme(V, near_f, 0, lateral)
         if mm is not None:
             out['medialMalleolus'] = entry(mm, [-lateral, 0, 0], 'Medial malleolus',
-                'the most medial bone within 3 cm of the ankle joint (the tibia; the fibula is lateral 6 cm above)')
+                'the most medial bone within 1.5 cm below the ankle joint, under the tibia (the fibula is lateral 6 cm above)')
         if lmal is not None:
             out['lateralMalleolus'] = entry(lmal, [lateral, 0, 0], 'Lateral malleolus',
-                'the most lateral bone within 4 cm of the ankle joint (the fibula)')
-        foot = zband(V, ank[2] - 14, ank[2] - 5) & V.bone
-        b5 = extreme(V, foot, 0, lateral)
-        if b5 is not None:
-            out['base5th'] = entry(b5, [lateral, 0, 0], 'Base of the 5th metatarsal',
-                'the most lateral bone of the midfoot (5-14 cm below the ankle joint): the 5th metatarsal tuberosity', 'low')
+                'the most lateral bone within 3 cm below the ankle joint, under the fibula')
+        # The foot is measured along its own axis, ankle to the tip of the toes: this one is
+        # plantarflexed (post mortem), so "below the ankle" in z is not along the foot at all.
+        fa = foot_axis(V, ank, lateral)
+        if fa is not None:
+            t, L, u, xb, yb, zb = fa
+            band = (t > 0.30 * L) & (t < 0.50 * L)
+            if band.any():
+                i = int(np.argmax(lateral * xb[band]))
+                b5 = np.array([xb[band][i], yb[band][i], zb[band][i]])
+                out['base5th'] = entry(b5, [lateral, 0, 0], 'Base of the 5th metatarsal',
+                    f'the most lateral bone 30-50 % of the way from the ankle to the tip of the toes ({L:.1f} cm): the 5th metatarsal tuberosity', 'medium')
         # knee: the patella (anterior-most bone at the joint) and the tibial tuberosity below it
         if 'knee' in LANDMARKS['lowerextremity']:
             kn = lm('lowerextremity', 'knee')
@@ -202,6 +236,96 @@ def lower_extremity():
             tt = extreme(V, zband(V, kn[2] - 6, kn[2] - 2) & V.bone, 1, 1)
             if tt is not None:
                 out['tibialTuberosity'] = entry(tt, [0, 1, 0], 'Tibial tuberosity', 'the most anterior bone 2-6 cm below the knee joint')
+    return out
+
+
+# ---------------------------------------------------------------- the arm (elbow)
+def upper_extremity():
+    """The epicondyles and the olecranon, from the bone itself: no axis can be assumed (z033's arm
+    rested turned about 90 degrees; z053's, now the model, about 9).
+    - the epicondyles are the two points of the condylar region (3 cm about the elbow landmark,
+      the widest the distal humerus gets) furthest apart, seen along the arm;
+    - behind the joint is the side the bone reaches furthest past the epicondylar line 1-2 cm
+      distal: the olecranon (3.5 cm behind, against 1 cm in front);
+    - lateral then follows from handedness: it is a RIGHT arm (the liver lies on its side of the
+      scan), and for a right arm lateral x posterior points distally, whatever its rotation.
+    Two first attempts failed and say why this is done so: "behind is away from the radius" (the
+    radial head lies almost on the epicondylar line, so the sign came out at random) and "medial is
+    nearer the bigger forearm bone" (5-8 cm down the bigger section is not reliably the ulna)."""
+    V, out = Vol('upperextremity').main_bone(), {}
+    el = lm('upperextremity', 'elbow')
+    def sec(zcm):
+        jj, ii = np.nonzero(V.bone[V.idx(2, zcm)])
+        return np.stack([(ii - (V.n[0] - 1) / 2) * V.sp[0], (jj - (V.n[1] - 1) / 2) * V.sp[1]], 1)
+    # The epicondyles are the two points of the condylar region furthest apart, seen along the arm:
+    # over 3 cm about the widest section, not that section alone. The section twists through the
+    # condyles, and its long axis (the measure before) turned 16 degrees when the widest slice moved
+    # 3 mm between two builds of the same bone.
+    from scipy.spatial import ConvexHull
+    xy = np.unique(np.concatenate([sec(el[2] + dz) for dz in np.arange(-1.5, 1.51, V.sp[2])]), axis=0)
+    hv = xy[ConvexHull(xy).vertices]
+    d = np.linalg.norm(hv[:, None] - hv[None], axis=2)
+    i, j = np.unravel_index(int(np.argmax(d)), d.shape)
+    e1, e2 = hv[i], hv[j]
+    ax = (e2 - e1) / np.linalg.norm(e2 - e1)                      # the epicondylar axis
+    mid = (e1 + e2) / 2
+    post = np.array([-ax[1], ax[0]])
+    reach = lambda d: max(((sec(el[2] - dd) - mid) @ d).max() for dd in (1.0, 1.5, 2.0))
+    if reach(-post) > reach(post):
+        post = -post
+    # right arm: lateral x posterior = -z (distal)
+    cross = lambda u, v: u[0] * v[1] - u[1] * v[0]
+    lat, med = (e1, e2) if cross(e1 - mid, post) < 0 else (e2, e1)
+    out['medialEpicondyle'] = entry([med[0], med[1], el[2]], np.r_[med - lat, 0], 'Medial epicondyle',
+        'the medial end of the distal humerus section at the elbow landmark', 'high')
+    out['lateralEpicondyle'] = entry([lat[0], lat[1], el[2]], np.r_[lat - med, 0], 'Lateral epicondyle',
+        'the lateral end of the distal humerus section at the elbow landmark', 'high')
+    best = None
+    for d in (1.0, 1.5, 2.0):
+        pts = sec(el[2] - d)
+        i = int(np.argmax((pts - mid) @ post))
+        if best is None or (pts[i] - mid) @ post > best[0]:
+            best = ((pts[i] - mid) @ post, pts[i], d)
+    ol = best[1]
+    out['olecranon'] = entry([ol[0], ol[1], el[2] - best[2]], np.r_[post, 0], 'Olecranon',
+        'the bone reaching furthest behind the epicondylar line 1-2 cm distal of it', 'high')
+    return out
+
+
+# ---------------------------------------------------------------- the head and neck
+def head_neck():
+    """From the head CT's own labels (s1082), registered to the model (measure_landmarks.label_points).
+    The head & neck volume is already in the rest frame (x right, y anterior)."""
+    import measure_landmarks as ML
+    h, vol, bone, sp = ML.load('headneck')
+    P = lambda n: ML.label_points(n, bone, sp)
+    out = {}
+    c1, c7, skull, sternum = P('vertebrae_C1'), P('vertebrae_C7'), P('skull'), P('sternum')
+    if c1 is None or skull is None:
+        return out
+    yc1 = c1[:, 1].mean()
+    for side, sgn in (('R', 1), ('L', -1)):
+        # the mastoid tip: the lowest skull behind the atlas, 4 cm or more to the side
+        m = skull[(sgn * skull[:, 0] > 4) & (skull[:, 1] < yc1)]
+        if len(m):
+            out[f'mastoid{side}'] = entry(m[int(np.argmin(m[:, 2]))], [sgn, -0.3, -0.3], f'Mastoid tip ({side})',
+                'the lowest skull behind the atlas, 4 cm or more from the midline', 'high')
+        # the angle of the mandible: of the lowest 1.5 cm of jaw on this side, the most posterior point
+        j = skull[(sgn * skull[:, 0] > 3) & (skull[:, 1] > yc1 + 1)]
+        if len(j):
+            low = j[j[:, 2] < j[:, 2].min() + 1.5]
+            out[f'gonion{side}'] = entry(low[int(np.argmin(low[:, 1]))], [sgn, 0, -0.5], f'Angle of the mandible ({side})',
+                'the most posterior point of the lowest 1.5 cm of the jaw on this side (level with C3)', 'medium')
+    mid = skull[np.abs(skull[:, 0]) < 1.0]
+    if len(mid):
+        out['inion'] = entry(mid[int(np.argmin(mid[:, 1]))], [0, -1, 0], 'External occipital protuberance',
+            'the most posterior midline point of the skull', 'medium')
+    if c7 is not None:
+        out['vertebraProminens'] = entry(c7[int(np.argmin(c7[:, 1]))], [0, -1, 0], 'Vertebra prominens (C7)',
+            'the tip of the C7 spinous process: the most posterior point of the C7 label', 'high')
+    if sternum is not None:
+        out['jugularNotch'] = entry(sternum[int(np.argmax(sternum[:, 2]))], [0, 1, 0.3], 'Jugular notch',
+            'the top of the manubrium (the sternum label), level with T2-T3', 'high')
     return out
 
 
@@ -299,7 +423,7 @@ def trunk(name):
 def main():
     out = {'_about': __doc__.strip().splitlines()[0] + ' Rest-frame (x right, y anterior, z superior) cm from the '
            'volume centre, with the direction the landmark is felt from. Re-run after rebuilding a model.'}
-    for name, fn in (('hand', hand), ('lowerextremity', lower_extremity),
+    for name, fn in (('hand', hand), ('lowerextremity', lower_extremity), ('upperextremity', upper_extremity), ('headneck', head_neck),
                      ('chest', lambda: trunk('chest')), ('chestabdopelvis', lambda: trunk('chestabdopelvis'))):
         out[name] = fn()
         for k, v in out[name].items():

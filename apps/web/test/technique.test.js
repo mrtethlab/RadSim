@@ -89,15 +89,16 @@ test('the chart: stations only, thicknesses where the console measures, and the 
   const STATIONS = new Set([0.5, 0.63, 0.8, 1.0, 1.25, 1.6, 2.0, 2.5, 3.2, 4.0, 5.0, 6.4, 8.0, 10, 12.5, 16, 20, 25, 32, 40, 50, 64, 80, 100, 125, 160, 200, 250, 320, 400, 500, 600]);
   for (const p of all) assert.ok(STATIONS.has(p.mas), `${p.proj}: ${p.mas} mAs is not a console station`);
   const measured = all.filter((p) => p.cm);
-  assert.equal(measured.length, 13);
+  assert.equal(measured.length, 14);
   for (const p of measured) {
     assert.ok(['Chest', 'Abdomen / Pelvis', 'Spine', 'Head'].includes(p.part), `${p.proj}: calipers are for trunk and skull`);
     assert.ok(p.cm >= 12 && p.cm <= 35, `${p.proj}: ${p.cm} cm`);
   }
-  for (const n of ['Lateral cervical', 'Lateral forearm']) {
-    const p = all.find((x) => x.proj === n);
-    assert.equal(p.pose.fidelity, 'approx', `${n} cannot be a true view on this subject`);
-  }
+  // the head and neck (s1082) has its arms down and the arm (z053) lies clear of the trunk, so these
+  // are true views now; the open mouth (the model's mouth is closed) and the swimmer's lateral (its
+  // arms cannot be raised) are not
+  for (const n of ['Lateral cervical', 'Lateral forearm']) assert.notEqual(all.find((x) => x.proj === n).pose.fidelity, 'approx', n);
+  for (const n of ['AP open mouth', 'Swimmers lateral']) assert.equal(all.find((x) => x.proj === n).pose.fidelity, 'approx', n);
 });
 
 test('the AEC is calibrated the way a real one is: on a uniform phantom', () => {

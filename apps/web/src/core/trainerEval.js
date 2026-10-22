@@ -137,7 +137,9 @@ export function judge(view, m) {
   // the turn in the plane of the table: zero, or for a hand or wrist (m.limbTurn), whatever puts
   // the forearm down the film's length, which is what the image shows
   const turned = m.limbTurn != null ? m.limbTurn : angleDiff(m.rot.y, 0);
-  const off = [Math.abs(dRoll), Math.abs(angleDiff(m.rot.x, 0)), Math.abs(turned)];
+  // a foot taken sole-flat tilts the leg to get there (as raising the knee does): there the tilt is
+  // judged on the sole itself, below, not against zero
+  const off = [Math.abs(dRoll), view.sole ? 0 : Math.abs(angleDiff(m.rot.x, 0)), Math.abs(turned)];
   // the joints: a view that needs one bent says so (view.joints: { key: [lo, hi] }); every other
   // motion the limb has should be neutral, within 10 degrees
   const jointFaults = [], jointNotes = [];
@@ -160,6 +162,11 @@ export function judge(view, m) {
     } else if (Math.abs(a) > view.align.tol) {
       jointFaults.push(`3rd metacarpal ${say(a)} to the distal radius: ${a > 0 ? 'radially' : 'ulnarly'} deviate the wrist to bring it in line`);
     } else jointNotes.push('3rd metacarpal in line with the radius');
+  }
+  // the sole on the receptor (m.sole: the foot's long axis against it, + toes up)
+  if (view.sole && m.sole != null) {
+    if (Math.abs(m.sole) > view.sole.tol) jointFaults.push(`the sole is ${Math.abs(m.sole).toFixed(0)}° off the receptor (toes ${m.sole > 0 ? 'up' : 'down'}): ${m.sole > 0 ? 'lower the toes: tilt the leg, as raising the knee does, or plantarflex' : 'raise the toes'}`);
+    else jointNotes.push('sole flat on the receptor');
   }
   const posOk = off.every((v) => v <= tol) && !jointFaults.length;
   add('position', 'Patient position', posOk ? 'pass' : 'fail',

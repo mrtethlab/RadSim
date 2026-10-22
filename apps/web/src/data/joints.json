@@ -54,18 +54,18 @@
   "elbow": {
    "label": "Elbow",
    "c": [
-    6.3,
-    -5.15,
-    0.52
+    0.6,
+    -3.97,
+    0.38
    ],
    "distal": [
-    -0.089,
-    0.061,
-    -0.994
+    0.277,
+    0.167,
+    -0.946
    ],
    "blend": 1.5,
-   "radius": 6.0,
-   "how": "the trochlea/capitulum axis, 1.5 cm distal of the widest span of the epicondyles",
+   "spread": 19.0,
+   "how": "the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon; the forearm pronates over its 19.0 cm",
    "motions": [
     {
      "key": "elbow.flex",
@@ -73,23 +73,45 @@
      "neg": "extension",
      "pos": "flexion",
      "toward": [
-      0,
-      1,
-      0
+      -0.152,
+      0.988,
+      -0.0
      ],
      "range": [
       0,
       140
      ]
+    },
+    {
+     "key": "elbow.roll",
+     "label": "Forearm rotation",
+     "neg": "pronation",
+     "pos": "supination",
+     "roll": true,
+     "from": [
+      -0.188,
+      0.975,
+      0.117
+     ],
+     "toward": [
+      0.949,
+      0.107,
+      0.297
+     ],
+     "range": [
+      -180,
+      10
+     ],
+     "rest": -3.4
     }
    ]
   },
   "wrist": {
    "label": "Wrist",
    "c": [
-    4.27,
-    -3.74,
-    -21.78
+    6.98,
+    -0.14,
+    -20.88
    ],
    "distal": [
     0,
@@ -97,8 +119,7 @@
     -1
    ],
    "blend": 1.0,
-   "radius": 6.0,
-   "how": "the carpus, 0.5 cm proximal of the carpal landmark; the radius side from the wider of the two forearm bones 3 cm above",
+   "how": "the carpus, 0.5 cm proximal of the carpal landmark; ulnar deviation toward the ulna, measured from the radius 3 cm above",
    "motions": [
     {
      "key": "wrist.dev",
@@ -106,13 +127,34 @@
      "neg": "radial",
      "pos": "ulnar",
      "toward": [
-      1,
-      0,
-      0
+      -0.978,
+      -0.209,
+      -0.0
      ],
      "range": [
       -20,
       35
+     ]
+    },
+    {
+     "key": "wrist.roll",
+     "label": "Hand roll",
+     "neg": "pronation",
+     "pos": "supination",
+     "roll": true,
+     "from": [
+      -0.188,
+      0.975,
+      0.117
+     ],
+     "toward": [
+      0.949,
+      0.107,
+      0.297
+     ],
+     "range": [
+      -30,
+      30
      ]
     }
    ]
@@ -122,17 +164,16 @@
   "knee": {
    "label": "Knee",
    "c": [
-    3.15,
-    -5.6,
-    3.68
+    1.1,
+    -4.79,
+    -2.3
    ],
    "distal": [
-    0.065,
-    -0.055,
-    -0.996
+    0.008,
+    -0.02,
+    -1.0
    ],
    "blend": 2.0,
-   "radius": 9.0,
    "how": "the measured joint space between the femoral condyles and the tibial plateau",
    "motions": [
     {
@@ -149,24 +190,44 @@
       0,
       120
      ]
+    },
+    {
+     "key": "knee.roll",
+     "label": "Rotation",
+     "neg": "external",
+     "pos": "internal",
+     "roll": true,
+     "from": [
+      0,
+      1,
+      0
+     ],
+     "toward": [
+      -1,
+      0,
+      0
+     ],
+     "range": [
+      -40,
+      40
+     ]
     }
    ]
   },
   "ankle": {
    "label": "Ankle",
    "c": [
-    5.85,
-    -7.88,
-    -37.88
+    1.45,
+    -5.65,
+    -46.05
    ],
    "distal": [
-    0,
-    0,
-    -1
+    0.018,
+    0.351,
+    -0.936
    ],
    "blend": 1.5,
-   "radius": 14.0,
-   "how": "midway between the malleoli; dorsiflexion turns the foot (pointing [0.091, 0.448, -0.889] from the ankle) toward the shin",
+   "how": "midway between the malleoli; dorsiflexion turns the foot (its long axis, [0.029, 0.999, -0.028]) toward the shin; at rest it is 0 degrees plantarflexed, turned -2 degrees (internal +) and inverted -6 degrees",
    "motions": [
     {
      "key": "ankle.flex",
@@ -174,9 +235,9 @@
      "neg": "plantarflexion",
      "pos": "dorsiflexion",
      "from": [
-      0.091,
-      0.448,
-      -0.889
+      0.029,
+      0.999,
+      -0.028
      ],
      "toward": [
       0,
@@ -184,8 +245,136 @@
       1
      ],
      "range": [
-      -45,
-      30
+      -80,
+      20
+     ],
+     "rest": -0.4
+    },
+    {
+     "key": "ankle.roll",
+     "label": "Rotation",
+     "neg": "external",
+     "pos": "internal",
+     "roll": true,
+     "from": [
+      0,
+      1,
+      0
+     ],
+     "toward": [
+      -1,
+      0,
+      0
+     ],
+     "range": [
+      -40,
+      40
+     ],
+     "rest": -1.6
+    },
+    {
+     "key": "ankle.invert",
+     "label": "Inversion",
+     "neg": "eversion",
+     "pos": "inversion",
+     "from": [
+      0.001,
+      0.028,
+      1.0
+     ],
+     "toward": [
+      1.0,
+      -0.029,
+      0.001
+     ],
+     "range": [
+      -20,
+      35
+     ],
+     "rest": -6.4
+    }
+   ]
+  }
+ },
+ "headneck": {
+  "neck": {
+   "label": "Neck",
+   "c": [
+    -0.27,
+    0.56,
+    -4.47
+   ],
+   "distal": [
+    0.047,
+    0.132,
+    0.99
+   ],
+   "blend": 0,
+   "field": {
+    "file": "headneck.neckw.bin",
+    "dims": [
+     118,
+     71,
+     93
+    ],
+    "sp": 0.4,
+    "origin": [
+     -23.25,
+     -13.875,
+     -18.225
+    ]
+   },
+   "how": "the cervical spine, a field joint: the head turns whole, C1 to C6 by their share, C7 and below stay; about C4, 1 cm behind its body",
+   "motions": [
+    {
+     "key": "neck.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "toward": [
+      0,
+      1,
+      0
+     ],
+     "range": [
+      -60,
+      50
+     ]
+    },
+    {
+     "key": "neck.tilt",
+     "label": "Lateral flexion",
+     "neg": "left lateral flexion",
+     "pos": "right lateral flexion",
+     "toward": [
+      1,
+      0,
+      0
+     ],
+     "range": [
+      -40,
+      40
+     ]
+    },
+    {
+     "key": "neck.rot",
+     "label": "Rotation",
+     "neg": "left rotation",
+     "pos": "right rotation",
+     "roll": true,
+     "from": [
+      -0.006,
+      0.991,
+      -0.131
+     ],
+     "toward": [
+      0.999,
+      -0.006,
+      -0.047
+     ],
+     "range": [
+      -70,
+      70
      ]
     }
    ]

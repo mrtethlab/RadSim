@@ -647,16 +647,13 @@
         <div class="bod">
           <select id="subjectSel" class="subjectsel" style="width:100%">
             <option value="hand" selected>Hand</option>
-            <option value="hand_hires">Hand · 0.2 mm (GPU)</option>
             <option value="chest">Chest</option>
             <option value="headneck">Head &amp; neck</option>
             <option value="chestabdopelvis">Chest / abdo / pelvis</option>
-            <option value="lumbopelvis">Lumbar spine &amp; pelvis &middot; 1 mm</option>
             <option value="upperextremity">Upper extremity</option>
             <option value="lowerextremity">Lower extremity</option>
             <option value="totalhipreplacement">Total Hip Replacement</option>
             <option value="wholebody">Whole body</option>
-            <option value="hires_shoulder">Shoulder · 0.25 mm (GPU)</option>
             <option value="metalphantom">Metal Test Phantom</option>
             <option value="linepair">Line-pair test pattern (QC)</option>
             <option value="breast">Breast &middot; 0.4 mm</option>
@@ -682,10 +679,10 @@
           <div class="xray-only flkeep">
             <div class="row" style="margin-top:8px"><div class="rl">Offset <small>long axis</small></div>
               <div class="valchip" id="objOffZv">0 cm</div></div>
-            <input type="range" id="objOffZ" min="-45" max="45" value="0" step="0.5">
+            <input type="range" id="objOffZ" min="-55" max="55" value="0" step="0.5">
             <div class="row" style="margin-top:8px"><div class="rl">Offset <small>cross axis</small></div>
               <div class="valchip" id="objOffXv">0 cm</div></div>
-            <input type="range" id="objOffX" min="-45" max="45" value="0" step="0.5">
+            <input type="range" id="objOffX" min="-55" max="55" value="0" step="0.5">
             <div class="row" style="margin-top:8px"><div class="rl">Height <small>off receptor</small></div>
               <div class="valchip" id="objOffYv">0 cm</div></div>
             <input type="range" id="objOffY" min="0" max="20" value="0" step="0.5">

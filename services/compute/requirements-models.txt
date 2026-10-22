@@ -65,8 +65,28 @@
 #   $B --out ../../apps/web/public/models/wholebody       --name wholebody       --region wholebody --spacing 2.0
 #   $B --out ../../apps/web/public/models/chestabdopelvis  --name chestabdopelvis --spacing 2.0 --box 0.04 0.46 0 1 0.16 0.84
 #   $B --out ../../apps/web/public/models/lowerextremity   --name lowerextremity  --spacing 1.5 --box 0.33 1.00 0 1 0.19 0.55
-#   $B --out ../../apps/web/public/models/upperextremity   --name upperextremity  --spacing 1.5 --box 0.00 0.44 0 1 0.00 0.29
+#   (the box-built lowerextremity / upperextremity are SUPERSEDED: see build_limbs below)
 #   # eyeball any crop:  ./.venv/Scripts/python.exe -m app.mip_model ../../apps/web/public/models/<r> <r> out.png
+#
+# LIMBS AND HEAD/NECK, one part alone: app/build_limbs.py. A box takes whatever lies in it (the
+# other leg, the trunk an arm lies against, the scanner table); build_limbs separates the part
+# from its neighbours along the skin where they touch, pares off the bag and tubes, and lays a
+# new skin on the cut. The leg comes from z045 (the whole foot now: the old box stopped short of
+# it); the arm from z053 (57F, right arm straight at the side, healthy bone: z045's arms lie
+# outside its 512 mm field from shoulder to wrist, and z033's (87M) osteoporotic elbow printed
+# without its condyles); the head and neck from TotalSegmentator s1082 (69M, arms down).
+#   ./.venv/Scripts/python.exe -m app.inspect_vsd data/vsd/z053.zip data/vsd/z053 z053.png   # extract z053
+#   ./.venv/Scripts/python.exe -m app.fetch_totalseg --subject s1082                          # ~65 MB
+#   ./.venv/Scripts/python.exe -m app.combine_seg --case data/totalseg/s1082 --out data/totalseg/s1082/seg_ml.nii.gz
+#   ./.venv/Scripts/python.exe -m app.build_limbs cache z045 z053          # resample + materialise once
+#   ./.venv/Scripts/python.exe -m app.build_limbs lowerextremity upperextremity
+#   ./.venv/Scripts/python.exe -m app.build_limbs headneck                # (each also rebuilds its smooth skin)
+#   ./.venv/Scripts/python.exe -m app.bake_pose lowerextremity upperextremity   # foot at 90 degrees, palm up
+#     (measures the joints on the scan, poses each limb into the anatomical position with the app's
+#      own joint code through node, and measures everything again on the baked model)
+# then re-measure (from the repo root; the head's labels need this venv's nibabel):
+#   services/compute/.venv/Scripts/python.exe tools/measure_landmarks.py lowerextremity upperextremity headneck
+#   python tools/measure_palpation.py && python tools/measure_centring.py && python tools/measure_joints.py
 #
 # torch is installed separately (CPU wheel above) to avoid the CUDA build.
 #

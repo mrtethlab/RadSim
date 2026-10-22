@@ -57,6 +57,37 @@ const LSPINE_LAT_REQ = { parts: [{ mat: 'bone', x: [-3, 3],
   z: [{ lm: 'crestCol', add: -8 }, { lm: 'crestCol', add: 13 }] }],
   text: 'L1 to the upper sacrum, from the front of the bodies to the spinous processes: the bodies, disc spaces, foramina and L5-S1' };
 
+// the foot, measured from the malleoli (it points down, plantarflexed, so "below the ankle" in z is
+// the foot): the AP and oblique take the toes back to the talus, the lateral the whole foot with
+// the heel and 2.5 cm of the leg
+const FOOT_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [null, { lm: 'intermalleolar', add: -1 }] }],
+  text: 'the toes, metatarsals and tarsals, to the talus' };
+const FOOT_LAT_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [null, { lm: 'intermalleolar', add: 2.5 }] }],
+  text: 'the whole foot, heel to toes, with about 2.5 cm of the distal tibia and fibula' };
+// the elbow: the distal humerus and the proximal forearm, 7 cm either side of the joint
+const ELBOW_REQ = { parts: [{ mat: 'tissue', connect: 'elbow', z: [{ lm: 'elbowJoint', add: -7 }, { lm: 'elbowJoint', add: 7 }] }],
+  text: 'the distal humerus, the elbow joint and the proximal radius and ulna, with their soft tissue' };
+/* The cervical spine is bone only, hung off the vertebral bodies the CT's own labels place (C4,
+   C1-C2, C7-T1). Every window is wide enough for the transverse processes on the AP and the
+   spinous processes on the lateral, and keeps the mandible and the skull out. */
+/* The head on the neck (the neck joint, joints.json). As scanned, the line from the lower margin of
+   the upper incisors (y 11.6, z -0.1 cm, the most anterior midline bone of the closed mouth) to the
+   mastoid tips (y 0.75, z 2.0, measure_palpation) dips 11 degrees toward the chin: the AP views,
+   which want that line perpendicular to the receptor, raise the chin about 10 degrees. The lateral
+   and the obliques raise it a little, to keep the rami of the mandible off C1-C2. */
+const CS_CHIN_AP = { 'neck.flex': [-15, -5] };
+const CS_CHIN_LAT = { 'neck.flex': [-20, 0] };
+const CS_AP_REQ = { parts: [{ mat: 'bone', x: [-3.5, 3.5], y: [{ lm: 'C4', axis: 'y', add: -6 }, { lm: 'C4', axis: 'y', add: 1.5 }],
+  z: [{ lm: 'C7T1', add: -4 }, { lm: 'C4', add: 2 }] }], text: 'C3 to T2: the bodies, the intervertebral spaces and the uncovertebral joints' };
+const CS_OM_REQ = { parts: [{ mat: 'bone', x: [-4, 4], y: [{ lm: 'C1C2', axis: 'y', add: -2.5 }, { lm: 'C1C2', axis: 'y', add: 1.5 }],
+  z: [{ lm: 'C1C2', add: -2.5 }, { lm: 'C1C2', add: 1.5 }] }], text: 'C1 and C2: the dens, the lateral masses of the atlas and the atlantoaxial joints' };
+const CS_LAT_REQ = { parts: [{ mat: 'bone', x: [-2.5, 2.5], y: [{ lm: 'C4', axis: 'y', add: -7 }, { lm: 'C4', axis: 'y', add: 2 }],
+  z: [{ lm: 'C7T1', add: -1.5 }, { lm: 'C1C2', add: 2.5 }] }], text: 'C1 to T1: the bodies, disc spaces, articular pillars and spinous processes' };
+const CS_OBL_REQ = { parts: [{ mat: 'bone', x: [-3.5, 3.5], y: [{ lm: 'C4', axis: 'y', add: -5 }, { lm: 'C4', axis: 'y', add: 2 }],
+  z: [{ lm: 'C7T1', add: -1.5 }, { lm: 'C1C2', add: 2.5 }] }], text: 'C1 to T1, with the intervertebral foramina open' };
+const CS_SW_REQ = { parts: [{ mat: 'bone', x: [-3, 3], y: [{ lm: 'C7T1', axis: 'y', add: -6 }, { lm: 'C7T1', axis: 'y', add: 2 }],
+  z: [{ lm: 'C7T1', add: -6 }, { lm: 'C7T1', add: 4 }] }], text: 'C5 to T3: the cervicothoracic junction' };
+
 export const SERIES = [
   { id: 'hand3', name: 'Hand · 3 views', views: [
     { label: 'PA', proto: ['Upper extremity', 'PA hand'], pose: { roll: 0, tol: 2 },
@@ -105,6 +136,37 @@ export const SERIES = [
       centre: { lm: 'medialMalleolus', name: 'medial malleolus', tol: 1.0 }, require: ANKLE_LAT_REQ,
       how: 'Mediolateral: lateral side of the ankle to the receptor, malleoli superimposed. Central ray to the medial malleolus.' },
   ] },
+  { id: 'foot3', name: 'Foot · 3 views', views: [
+    { label: 'AP (dorsoplantar)', proto: ['Lower extremity', 'AP foot'], pose: { roll: 0, tol: 2 },
+      joints: { 'ankle.flex': [-80, -60] }, sole: { tol: 5 },
+      cr: { cc: -10, tol: 3, words: ['toward the heel', 'toward the toes'] },
+      centre: { lm: 'mt3Base', name: 'base of the 3rd metatarsal', tol: 1.0 }, require: FOOT_REQ,
+      how: 'Knee flexed, sole flat on the receptor. Central ray 10 degrees toward the heel (perpendicular to the metatarsals), to the base of the 3rd metatarsal. This leg is straight: plantarflex the foot, and tilt the leg until the sole lies flat.' },
+    { label: 'AP oblique (medial)', proto: ['Lower extremity', 'Oblique foot'], pose: { roll: 30, tol: 2 },
+      joints: { 'ankle.flex': [-80, -60] }, sole: { tol: 5 },
+      centre: { lm: 'mt3Base', name: 'base of the 3rd metatarsal', tol: 1.0 }, require: FOOT_REQ,
+      how: 'From the AP, rotate the leg and foot 30 degrees medially, sole flat. Central ray perpendicular to the base of the 3rd metatarsal.' },
+    { label: 'Lateral (mediolateral)', proto: ['Lower extremity', 'Lateral foot'], pose: { roll: -90, tol: 2 },
+      joints: { 'ankle.flex': [-10, 10] },
+      centre: { lm: 'medialCuneiform', name: 'medial cuneiform, at the level of the base of the 3rd metatarsal', tol: 1.0 }, require: FOOT_LAT_REQ,
+      how: 'Lateral side down, foot dorsiflexed to 90 degrees to the leg, plantar surface perpendicular to the receptor. Central ray to the medial cuneiform, at the level of the base of the 3rd metatarsal.' },
+  ] },
+  { id: 'elbow4', name: 'Elbow · 4 views', views: [
+    { label: 'AP', proto: ['Upper extremity', 'AP elbow'], pose: { roll: -9, tol: 2 },
+      centre: { lm: 'elbowJoint', name: 'mid elbow joint', tol: 1.0 }, require: ELBOW_REQ,
+      how: 'Elbow fully extended, hand supinated, epicondyles parallel to the receptor. Central ray perpendicular to the mid elbow joint.' },
+    { label: 'AP oblique (medial)', proto: ['Upper extremity', 'AP elbow'], pose: { roll: 36, tol: 2 },
+      joints: { 'elbow.roll': [-180, -140] },
+      centre: { lm: 'elbowJoint', name: 'mid elbow joint', tol: 1.0 }, require: ELBOW_REQ,
+      how: 'From the AP, rotate the arm 45 degrees medially (pronate the hand): the coronoid process in profile. Central ray to the mid elbow joint.' },
+    { label: 'AP oblique (lateral)', proto: ['Upper extremity', 'AP elbow'], pose: { roll: -54, tol: 2 },
+      centre: { lm: 'elbowJoint', name: 'mid elbow joint', tol: 1.0 }, require: ELBOW_REQ,
+      how: 'From the AP, rotate the arm 45 degrees laterally: the radial head and neck free of the ulna. Central ray to the mid elbow joint.' },
+    { label: 'Lateral', proto: ['Upper extremity', 'Lateral elbow'], pose: { roll: 81, tol: 2 },
+      joints: { 'elbow.flex': [85, 95], 'elbow.roll': [-110, -70] },
+      centre: { lm: 'elbowJoint', name: 'mid elbow joint', tol: 1.0 }, require: ELBOW_REQ,
+      how: 'Elbow flexed 90 degrees, humerus and forearm on the receptor, epicondyles perpendicular to it (lateral epicondyle up), hand lateral (the forearm turned thumb up). Central ray to the mid elbow joint.' },
+  ] },
   { id: 'chest2', name: 'Chest · 2 views', views: [
     { label: 'PA', proto: ['Chest', 'PA chest'], pose: { roll: 180, tol: 2 },
       centre: { lm: 'T7', name: 'midsagittal plane at T7', tol: 2.5 }, require: CHEST_REQ,
@@ -112,6 +174,31 @@ export const SERIES = [
     { label: 'Lateral', proto: ['Chest', 'Lateral chest'], pose: { roll: 90, tol: 2 },
       centre: { lm: 'T7mc', name: 'midcoronal plane at T7', tol: 2.5 }, require: CHEST_REQ,
       how: 'Left lateral: left side to the receptor, arms raised, no rotation. Central ray to T7 at the mid-coronal plane.' },
+  ] },
+  { id: 'cspine6', name: 'Cervical spine · 6 views', views: [
+    { label: 'AP axial', proto: ['Spine', 'AP cervical'], pose: { roll: 0, tol: 2 }, joints: CS_CHIN_AP,
+      cr: { cc: -15, tol: 3, words: ['cephalad', 'caudad'] },
+      centre: { lm: 'C4', name: 'C4 (the lower margin of the thyroid cartilage)', tol: 1.5 }, require: CS_AP_REQ,
+      how: 'Supine, no rotation, chin raised so the line from the upper incisors to the mastoid tips is perpendicular to the receptor (about 10 degrees of extension on this patient). Central ray 15-20 degrees cephalad, to C4.' },
+    { label: 'AP open mouth (C1-C2)', proto: ['Spine', 'AP open mouth'], pose: { roll: 0, tol: 2 }, joints: CS_CHIN_AP,
+      centre: { lm: 'C1C2', name: 'C1-C2, through the open mouth', tol: 1.5 }, require: CS_OM_REQ,
+      approx: 'This model cannot open its mouth: the lower teeth and the mandible lie over the dens.',
+      how: 'Supine, mouth open as wide as possible, the line from the upper incisors to the mastoid tips perpendicular to the receptor. Central ray perpendicular through the centre of the open mouth, to C1-C2.' },
+    { label: 'Lateral', proto: ['Spine', 'Lateral cervical'], pose: { roll: 90, tol: 2 }, joints: CS_CHIN_LAT,
+      centre: { lm: 'C4', name: 'C4', tol: 1.5 }, require: CS_LAT_REQ,
+      how: 'True lateral at 150-180 cm, shoulders depressed, chin slightly raised (the mandible off C1-C2). Central ray horizontal to C4.' },
+    { label: 'Right posterior oblique', proto: ['Spine', 'Oblique cervical'], pose: { roll: -45, tol: 2 }, joints: CS_CHIN_LAT,
+      cr: { cc: -15, tol: 3, words: ['cephalad', 'caudad'] },
+      centre: { lm: 'C4', name: 'C4', tol: 1.5 }, require: CS_OBL_REQ,
+      how: 'Rotate the body 45 degrees, right side down (RPO), chin slightly raised: the left intervertebral foramina open. Central ray 15-20 degrees cephalad, to C4.' },
+    { label: 'Left posterior oblique', proto: ['Spine', 'Oblique cervical'], pose: { roll: 45, tol: 2 }, joints: CS_CHIN_LAT,
+      cr: { cc: -15, tol: 3, words: ['cephalad', 'caudad'] },
+      centre: { lm: 'C4', name: 'C4', tol: 1.5 }, require: CS_OBL_REQ,
+      how: 'Rotate the body 45 degrees, left side down (LPO), chin slightly raised: the right intervertebral foramina open. Central ray 15-20 degrees cephalad, to C4.' },
+    { label: 'Swimmers lateral', proto: ['Spine', 'Swimmers lateral'], pose: { roll: 90, tol: 2 },
+      centre: { lm: 'C7T1', name: 'C7-T1', tol: 1.5 }, require: CS_SW_REQ,
+      approx: 'This patient lies with both arms at the sides; the arm nearer the receptor cannot be raised.',
+      how: 'Lateral with the arm nearer the receptor raised over the head and the other shoulder depressed. Central ray to C7-T1, about 2.5 cm above the jugular notch.' },
   ] },
   { id: 'tspine2', name: 'Thoracic spine · 2 views', views: [
     { label: 'AP', proto: ['Spine', 'AP thoracic'], pose: { roll: 0, tol: 2 },

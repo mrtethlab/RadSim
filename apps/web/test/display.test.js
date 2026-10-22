@@ -71,3 +71,31 @@ test('a lateral spine takes its values of interest from the middle of the field'
   // without the image width it cannot locate the middle, and behaves as before
   assert.deepEqual(computeRescale(sig, mask, { ...LUT, voiCore: 0.6 }), all);
 });
+
+test('a limb LUT keeps its bone off the white end and its thin margins off the window', () => {
+  // an elbow: a thin margin (a fifth), muscle, and 3 % bone a little denser than the muscle
+  const n = 40000, sig = new Float32Array(n), mask = new Uint8Array(n).fill(1);
+  for (let i = 0; i < n; i++) {
+    const u = i / n;
+    sig[i] = u < 0.2 ? 0.3 * (1 - u / 0.2) + 0.05 : u < 0.97 ? 0.03 + 0.01 * ((i * 7919) % 100) / 100 : 0.012 + 0.004 * ((i * 104729) % 100) / 100;
+  }
+  const mx = Math.max(...sig);                    // the window's tones are relative to the image's maximum
+  const anat = Array.from(sig).filter((s) => s < 0.95 * mx).map((s) => tone(s, mx)).sort((x, y) => x - y);
+  const bone = Array.from(sig.slice(Math.floor(0.97 * n))).map((s) => tone(s, mx));
+  const plain = computeRescale(sig, mask, LUT);
+  const limb = computeRescale(sig, mask, { ...LUT, clipHi: 0.002, clipLo: 0.2 });
+  const burned = (w) => bone.filter((t) => t > w.hi).length / bone.length;
+  assert.ok(burned(limb) < burned(plain) / 2, `bone above the window: ${burned(limb).toFixed(2)} vs ${burned(plain).toFixed(2)}`);
+  assert.ok(limb.lo > plain.lo, `the dark end rises past the margin: ${limb.lo.toFixed(3)} vs ${plain.lo.toFixed(3)}`);
+  assert.ok(anat.filter((t) => t < limb.lo).length / anat.length < 0.22, 'about a fifth of the anatomy (the margin) is given up');
+});
+
+test('a LUT with headroom sets white above the densest anatomy', () => {
+  const { sig, mask } = image({});
+  const plain = computeRescale(sig, mask, LUT);
+  const pad = computeRescale(sig, mask, { ...LUT, hiPad: 0.3 });
+  const mx = Math.max(...sig), top = Math.max(...Array.from(sig).filter((s) => s < 0.95 * mx).map((s) => tone(s, mx)));
+  assert.ok(plain.hi < top, 'without it the densest 1 % burns white');
+  assert.ok(pad.hi > top, `with it white lies past the densest: ${pad.hi.toFixed(3)} vs ${top.toFixed(3)}`);
+  assert.equal(pad.lo, plain.lo);
+});

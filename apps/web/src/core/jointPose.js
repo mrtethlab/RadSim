@@ -65,29 +65,85 @@ function mul3(a, b) {
   return r;
 }
 /* A joint at given angles, as one rotation: { c, d (distal), b (blend), n (axis), T (radians) },
-   or null when it is straight. The motions compose in order (the first, then the next about its
-   fixed axis); the composite's axis-angle is read off its matrix. */
+   and a roll: { tw (radians), sp }, or null when it is straight. The bending motions compose in
+   order (the first, then the next about its fixed axis); the composite's axis-angle is read off its
+   matrix.
+
+   A ROLL (a motion with roll: true) turns the distal part about its own long axis — the line
+   through c along `distal` — before the bend: pronation of the forearm, rotation of the leg at
+   the knee, of the foot at the ankle. It does not change how far a point lies along the limb, so
+   its inverse is exact and the bend's crease solve is untouched. Its share rises like the bend's
+   across the crease, or, with `spread` (cm past the joint), linearly from the crease's far edge
+   to there: a forearm pronates along its length, the radius turning round the ulna, not at the
+   elbow, whose bones keep still.
+
+   A FIELD JOINT (j.field: { data: Uint8Array 0-255, dims, sp (cm), origin (cm) }, a weight per
+   rest-frame cell) is not cut by a plane at all: each point turns about c by its own share of the
+   joint's one rotation, read from the field. The neck is one: the skull and mandible take all of
+   it, each cervical vertebra less, C7 and the shoulders none, the soft tissue between them a smooth
+   blend — no plane through the neck can tell the jaw (in front of C1-C3) from the spine. Its rolls
+   are plain rotations (no exactness to keep: the inverse is solved, fieldInverse). */
 export function compileJoint(j, angles) {
   let R = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-  let any = false;
+  let any = false, tw = 0;
+  const field = j.field || null;
   for (const m of j.motions) {
     const a = (motionAngle(angles, m) - (m.rest || 0)) * Math.PI / 180;
     if (!a) continue;
+    if (m.roll && !field) { tw += dot(m.axis, j.distal) < 0 ? -a : a; continue; }
     any = true;
     const [x, y, z] = m.axis, c = Math.cos(a), s = Math.sin(a), t = 1 - c;
     R = mul3([t * x * x + c, t * x * y - s * z, t * x * z + s * y,
               t * x * y + s * z, t * y * y + c, t * y * z - s * x,
               t * x * z - s * y, t * y * z + s * x, t * z * z + c], R);
   }
-  if (!any) return null;
-  const T = Math.acos(Math.max(-1, Math.min(1, (R[0] + R[4] + R[8] - 1) / 2)));
-  if (T < 1e-9) return null;
-  let n = [R[7] - R[5], R[2] - R[6], R[3] - R[1]];
-  const ln = Math.hypot(n[0], n[1], n[2]);
-  n = ln < 1e-9
-    ? unit([Math.sqrt(Math.max(0, (R[0] + 1) / 2)), Math.sqrt(Math.max(0, (R[4] + 1) / 2)), Math.sqrt(Math.max(0, (R[8] + 1) / 2))])
-    : [n[0] / ln, n[1] / ln, n[2] / ln];
-  return { c: j.c, d: j.distal, b: j.blend, n, T, R2: j.radius ? j.radius * j.radius : Infinity };
+  let T = any ? Math.acos(Math.max(-1, Math.min(1, (R[0] + R[4] + R[8] - 1) / 2))) : 0;
+  if (T < 1e-9) T = 0;
+  if (!T && Math.abs(tw) < 1e-9) return null;
+  let n = [1, 0, 0];
+  if (T) {
+    n = [R[7] - R[5], R[2] - R[6], R[3] - R[1]];
+    const ln = Math.hypot(n[0], n[1], n[2]);
+    n = ln < 1e-9
+      ? unit([Math.sqrt(Math.max(0, (R[0] + 1) / 2)), Math.sqrt(Math.max(0, (R[4] + 1) / 2)), Math.sqrt(Math.max(0, (R[8] + 1) / 2))])
+      : [n[0] / ln, n[1] / ln, n[2] / ln];
+  }
+  if (field) {
+    if (!T) return null;
+    return { c: j.c, d: j.distal, b: j.blend, n, T, tw: 0, sp: 0, R2: Infinity, wf: field,
+      ins: [0, 0, 0], bis: [0, 0, 1], bisL: 1 };                  // (no crook: the field decides)
+  }
+  const f = rotate(j.distal, n, T);
+  return { c: j.c, d: j.distal, b: j.blend, n, T, tw, sp: j.spread || 0, R2: j.radius ? j.radius * j.radius : Infinity,
+    ins: [f[0] - j.distal[0], f[1] - j.distal[1], f[2] - j.distal[2]],
+    bis: [-f[0] - j.distal[0], -f[1] - j.distal[1], -f[2] - j.distal[2]],
+    bisL: Math.hypot(f[0] + j.distal[0], f[1] + j.distal[1], f[2] + j.distal[2]) };
+}
+/* THE CROOK. On the inside of a bend the turned part swings into the space the part above it
+   still holds: a flexed forearm's flexor mass rises beside the biceps, the two cut faces are
+   planes, and the film showed a straight-edged block of doubled muscle in the elbow's bend.
+   Real tissue there folds. So inside the bend (ins: the way the two pieces close on each
+   other) the crook is split on the bisector of the bend (bis: its normal, toward the part
+   above): the proximal side is filled only by tissue turned by up to half the bend, the
+   distal side only by tissue turned by at least half. Outside the bend the pieces part, and
+   nothing is decided. dq: the point less the joint's centre; phi: the candidate's turn. */
+function inCrook(J, dq, phi) {
+  if (dot(dq, J.ins) <= 0) return true;
+  return dot(dq, J.bis) >= 0 ? phi <= J.T / 2 : phi >= J.T / 2;
+}
+
+// the share of a joint's roll a point gets, by its distance s past the joint
+function twistWeight(s, J) {
+  // spread: from the far edge of the crease, so the joint itself (the humerus's condyles, the
+  // olecranon) does not turn; the forearm then turns evenly to `spread`
+  if (J.sp > J.b) return Math.max(0, Math.min(1, (s - J.b) / (J.sp - J.b)));
+  return blendWeight(s, J.b);
+}
+// a point relative to the joint's centre, rolled (sign +1) or unrolled (-1) about the limb's axis
+function roll(r, J, sign) {
+  if (!J.tw) return r;
+  const w = twistWeight(dot(r, J.d), J);
+  return w ? rotate(r, J.d, sign * w * J.tw) : r;
 }
 export function compileChain(chain, angles) {
   return chain.map((j) => compileJoint(j, angles)).filter(Boolean);
@@ -95,18 +151,109 @@ export function compileChain(chain, angles) {
 
 // within the limb's cylinder (rest frame)
 function inLimb(d, J, s) { return J.R2 === Infinity || dot(d, d) - s * s < J.R2; }
+// a field joint's share at a rest-frame point: trilinear in the field, 0 outside it
+export function fieldWeight(F, p) {
+  const gx = (p[0] - F.origin[0]) / F.sp, gy = (p[1] - F.origin[1]) / F.sp, gz = (p[2] - F.origin[2]) / F.sp;
+  const [nx, ny, nz] = F.dims;
+  if (!(gx >= 0 && gy >= 0 && gz >= 0 && gx <= nx - 1 && gy <= ny - 1 && gz <= nz - 1)) return 0;
+  const i = Math.min(nx - 2, Math.floor(gx)), j = Math.min(ny - 2, Math.floor(gy)), k = Math.min(nz - 2, Math.floor(gz));
+  const fx = gx - i, fy = gy - j, fz = gz - k, D = F.data, row = nx, sl = nx * ny;
+  const o = (k * ny + j) * nx + i;
+  const c00 = D[o] * (1 - fx) + D[o + 1] * fx, c10 = D[o + row] * (1 - fx) + D[o + row + 1] * fx;
+  const c01 = D[o + sl] * (1 - fx) + D[o + sl + 1] * fx, c11 = D[o + sl + row] * (1 - fx) + D[o + sl + row + 1] * fx;
+  return ((c00 * (1 - fy) + c10 * fy) * (1 - fz) + (c01 * (1 - fy) + c11 * fy) * fz) / 255;
+}
+/* Which rest points a field joint carries to q. A rest point p goes to q when p = c + R(-w T)(q - c)
+   with w = W(p): along that one arc of candidates, parametrised by w, it is a root of
+   g(w) = W(p(w)) - w, and as g(0) >= 0 and g(1) <= 0 there is always one. (Iterating p = c +
+   R(-W(p) T)(q - c) instead diverged in front of the face: 20 cm from c, a weight that falls over
+   3 cm and half a radian of turn make the step longer than the error.) Several roots are a fold:
+   tissue pressed together, as behind the neck in extension; all are returned. Rigid places (the
+   head, the shoulders: g flat at 1 or 0) cost the two ends. */
+const FIELD_SCAN = 8;
+function fieldInverse(q, J) {
+  const dq = [q[0] - J.c[0], q[1] - J.c[1], q[2] - J.c[2]];
+  const at = (w) => { const r = rotate(dq, J.n, -w * J.T); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
+  const W = (w) => fieldWeight(J.wf, at(w));
+  const g0 = W(0), g1 = W(1) - 1;
+  const out = g0 === 0 ? [q] : [];                             // unmoved, where nothing turns
+  if (g1 === 0) { out.push(at(1)); return out; }               // a point of the head, turned whole
+  let wa = 0, ga = g0;
+  for (let i = 1; i <= FIELD_SCAN; i++) {
+    const wb = i / FIELD_SCAN, gb = i === FIELD_SCAN ? g1 : W(wb) - wb;
+    if (ga > 0 && gb <= 0) {
+      let lo = wa, hi = wb;
+      for (let k = 0; k < 8; k++) { const m = (lo + hi) / 2; if (W(m) - m > 0) lo = m; else hi = m; }
+      out.push(at((lo + hi) / 2));
+    }
+    wa = wb; ga = gb;
+  }
+  return out;
+}
 function forwardOne(p, J) {
-  const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
+  if (J.wf) {
+    const w = fieldWeight(J.wf, p);
+    if (!w) return p;
+    const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, w * J.T);
+    return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
+  }
+  let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
   const s = dot(d, J.d);
-  const w = blendWeight(s, J.b);
-  if (!w || !inLimb(d, J, s)) return p;
-  const r = rotate(d, J.n, w * J.T);
+  if (!inLimb(d, J, s)) return p;
+  d = roll(d, J, 1);
+  const w = J.T ? blendWeight(s, J.b) : 0;
+  const r = w ? rotate(d, J.n, w * J.T) : d;
   return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
 }
 // a compiled chain, most proximal first: the most distal joint applies first
 export function forwardCompiled(p, cc) {
   let q = p;
   for (let i = cc.length - 1; i >= 0; i--) q = forwardOne(q, cc[i]);
+  return q;
+}
+/* THE SKIN in the room. Turned by its share of the bend, a point in the crease sweeps an arc at its
+   own distance from the joint: on the outside of a bend that rounded the front of a plantarflexed
+   ankle into a dome 2 cm proud of the shin, and on the inside the heel swung up through the back
+   of the calf. Real skin goes taut over the outside of a bend and folds on the inside. So, for
+   the mesh:
+   - outside the bend, beyond SKIN_CORE cm from the joint's axis (the bone near the joint keeps its
+     arc), a crease point's distance from the axis shrinks as a linear blend of the unmoved and
+     the fully turned point would have it, |(1 - w) + w e^iT|, and a little more (to the power
+     1.5): a chord, not the arc, where the ankle's front then runs on from the shin to the dorsum;
+   - inside the bend, neither piece crosses the bisector (the volume's crook rule): a point of the
+     part above that lies past it, or of the part below short of it, is laid onto it, a fold.
+   The volume the film is traced through is posed by the map above; this only shapes the outline
+   the room shows. */
+const SKIN_CORE = 1;
+function skinOne(p, J) {
+  if (J.wf) return forwardOne(p, J);                 // (a field bends smoothly already)
+  let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
+  const s = dot(d, J.d);
+  if (!inLimb(d, J, s)) return p;
+  const outside = dot(d, J.ins) < 0;
+  d = roll(d, J, 1);
+  const w = J.T ? blendWeight(s, J.b) : 0;
+  let r = w ? rotate(d, J.n, w * J.T) : d;
+  if (w > 0 && w < 1 && outside) {
+    const ax = dot(r, J.n), rp = [r[0] - ax * J.n[0], r[1] - ax * J.n[1], r[2] - ax * J.n[2]];
+    const len = Math.hypot(rp[0], rp[1], rp[2]);
+    if (len > SKIN_CORE) {
+      const rho = Math.pow(Math.max(0, 1 - 2 * w * (1 - w) * (1 - Math.cos(J.T))), 0.75);
+      const k = (SKIN_CORE + (len - SKIN_CORE) * rho) / len;
+      r = [ax * J.n[0] + rp[0] * k, ax * J.n[1] + rp[1] * k, ax * J.n[2] + rp[2] * k];
+    }
+  }
+  if (J.T && dot(r, J.ins) > 0) {
+    const h = (r[0] * J.bis[0] + r[1] * J.bis[1] + r[2] * J.bis[2]) / J.bisL;   // + toward the part above
+    if ((w < 0.5 && h < 0) || (w >= 0.5 && h > 0)) {
+      r = [r[0] - h * J.bis[0] / J.bisL, r[1] - h * J.bis[1] / J.bisL, r[2] - h * J.bis[2] / J.bisL];
+    }
+  }
+  return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
+}
+export function forwardSkin(p, cc) {
+  let q = p;
+  for (let i = cc.length - 1; i >= 0; i--) q = skinOne(q, cc[i]);
   return q;
 }
 export function forwardChain(p, chain, angles) {
@@ -118,14 +265,18 @@ export function forwardChain(p, chain, angles) {
    is returned, the moved part first: fully turned, then in the crease, then unmoved. The volume
    resampler takes the first that lands on tissue. */
 function preimagesOne(q, J) {
-  const out = [];
+  if (J.wf) return fieldInverse(q, J);
   const dq = [q[0] - J.c[0], q[1] - J.c[1], q[2] - J.c[2]];
+  // the roll is undone last: it keeps a point's distance along the limb, which the bend's solve uses
+  const unroll = (p) => { const r = roll([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J, -1); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
+  if (!J.T) return [unroll(q)];
+  const out = [];
   // s(phi): how far past the joint q lies once turned BACK by phi
   const A = dot(J.d, dq), B = -dot(J.d, cross(J.n, dq)), C = dot(J.d, J.n) * dot(J.n, dq);
   const s = (phi) => A * Math.cos(phi) + B * Math.sin(phi) + C * (1 - Math.cos(phi));
   const back = (phi) => { const r = rotate(dq, J.n, -phi); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
   const limb = (p) => { const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]]; return inLimb(d, J, dot(d, J.d)); };
-  if (s(J.T) >= J.b) { const p = back(J.T); if (limb(p)) out.push(p); }
+  if (s(J.T) >= J.b && inCrook(J, dq, J.T)) { const p = back(J.T); if (limb(p)) out.push(p); }
   // the crease: phi = T w(s(phi)), by bisection on g(phi) = T w(s(phi)) - phi
   const g = (phi) => J.T * blendWeight(s(phi), J.b) - phi;
   if (g(0) > 0 && g(J.T) < 0) {
@@ -134,8 +285,8 @@ function preimagesOne(q, J) {
     const phi = (a + b) / 2, w = blendWeight(s(phi), J.b);
     if (w > 0 && w < 1) { const p = back(phi); if (limb(p)) out.push(p); }
   }
-  if (A <= -J.b || !inLimb(dq, J, A)) out.push(q);
-  return out;
+  if ((A <= -J.b || !inLimb(dq, J, A)) && inCrook(J, dq, 0)) out.push(q);
+  return J.tw ? out.map(unroll) : out;
 }
 export function preimagesCompiled(q, cc) {
   let cands = [q];
@@ -150,6 +301,57 @@ export function preimagesChain(q, chain, angles) {
 export function motionAngle(angles, m) { return angles[m.key] ?? m.rest ?? 0; }
 export function anyBent(chain, angles) {
   return chain.some((j) => j.motions.some((m) => Math.abs(motionAngle(angles, m) - (m.rest || 0)) > 0.01));
+}
+
+/* THE FOLD. Where the two sides of a crook meet on its bisector the outline is pieced together
+   from three sources (the part above, the crease band, the part below), and the joins are sharp:
+   the crease band, the elbow's own section, lay along the bisector a few millimetres proud of the
+   arm and forearm either side, and the skins left cracks of air between them. Seen edge on both
+   printed as a thin bright line across the bend. Skin over a fold is smooth: within FOLD_R of the
+   joint, on the inside of the bend and within FOLD of the bisector, the outline is smoothed by a
+   majority of its neighbourhood, 2 FOLD_W + 1 voxels a side. A voxel it adds is fat; one it takes away is air. */
+const FOLD = 2, FOLD_R = 9, FOLD_W = 4, FAT = 2;
+function smoothFold(out, N, sg, sp, cc) {
+  const C = [(N[0] - 1) / 2, (N[1] - 1) / 2, (N[2] - 1) / 2];
+  for (const J of cc) {
+    if (J.wf) continue;                               // (a field joint has no crook to fold)
+    const m = [J.bis[0] / J.bisL, J.bis[1] / J.bisL, J.bis[2] / J.bisL];
+    // the subvolume around the joint
+    const lo = [0, 1, 2].map((a) => Math.max(0, Math.floor(C[a] + (sg[a] * J.c[a] - FOLD_R) / sp[a]) - 2));
+    const hi = [0, 1, 2].map((a) => Math.min(N[a] - 1, Math.ceil(C[a] + (sg[a] * J.c[a] + FOLD_R) / sp[a]) + 2));
+    const n = [0, 1, 2].map((a) => hi[a] - lo[a] + 1);
+    if (n.some((v) => v < 2 * FOLD_W + 1)) continue;
+    // tissue, then its box sums along x, y and z in turn
+    let a = new Uint16Array(n[0] * n[1] * n[2]);
+    for (let k = 0; k < n[2]; k++) for (let j = 0; j < n[1]; j++) for (let i = 0; i < n[0]; i++)
+      a[(k * n[1] + j) * n[0] + i] = out[((k + lo[2]) * N[1] + j + lo[1]) * N[0] + i + lo[0]] ? 1 : 0;
+    const strides = [1, n[0], n[0] * n[1]];
+    for (let ax = 0; ax < 3; ax++) {
+      const b = new Uint16Array(a.length), st = strides[ax];
+      for (let k = 0; k < n[2]; k++) for (let j = 0; j < n[1]; j++) for (let i = 0; i < n[0]; i++) {
+        const p = [i, j, k][ax], q = (k * n[1] + j) * n[0] + i;
+        let s = 0;
+        for (let d = -FOLD_W; d <= FOLD_W; d++) { const r = p + d; if (r >= 0 && r < n[ax]) s += a[q + d * st]; }
+        b[q] = s;
+      }
+      a = b;
+    }
+    for (let k = 0; k < n[2]; k++) {
+      const z = sg[2] * (k + lo[2] - C[2]) * sp[2] - J.c[2];
+      for (let j = 0; j < n[1]; j++) {
+        const y = sg[1] * (j + lo[1] - C[1]) * sp[1] - J.c[1];
+        for (let i = 0; i < n[0]; i++) {
+          const x = sg[0] * (i + lo[0] - C[0]) * sp[0] - J.c[0];
+          if (x * x + y * y + z * z > FOLD_R * FOLD_R || x * J.ins[0] + y * J.ins[1] + z * J.ins[2] <= 0) continue;
+          if (Math.abs(x * m[0] + y * m[1] + z * m[2]) > FOLD) continue;
+          const o = ((k + lo[2]) * N[1] + j + lo[1]) * N[0] + i + lo[0];
+          const keep = 2 * a[(k * n[1] + j) * n[0] + i] > (2 * FOLD_W + 1) ** 3;
+          if (keep && !out[o]) out[o] = FAT;
+          else if (!keep && out[o]) out[o] = 0;
+        }
+      }
+    }
+  }
 }
 
 /* ---------------------------------------------------------------- the volume
@@ -181,6 +383,7 @@ export function poseVolume(vm, flips, chain, angles) {
     const p = [sg[0] * (i - cx) * sp[0], sg[1] * (j - cy) * sp[1], sg[2] * (k - cz) * sp[2]];
     for (let n = 0; n < cc.length; n++) {
       const J = cc[n], d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], sd = dot(d, J.d);
+      if (J.wf) continue;
       if (Math.abs(sd) < J.b + 2 * st * sp[2] && inLimb(d, J, sd)) creaseR2[n] = Math.max(creaseR2[n], dot(d, d));
     }
     const q = forwardCompiled(p, cc);
@@ -200,7 +403,7 @@ export function poseVolume(vm, flips, chain, angles) {
   const out = new Uint8Array(N[0] * N[1] * N[2]);
   const at = (i, j, k) => (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz ? 0 : data[(k * ny + j) * nx + i]);
   const sampleRest = (x, y, z) => at(Math.round(sg[0] * x / sp[0] + cx), Math.round(sg[1] * y / sp[1] + cy), Math.round(sg[2] * z / sp[2] + cz));
-  const one = cc.length === 1 ? cc[0] : null;
+  const one = cc.length === 1 && !cc[0].wf ? cc[0] : null;
   // the full inverse turn of the one joint, as a matrix
   let M = null;
   if (one) {
@@ -217,12 +420,16 @@ export function poseVolume(vm, flips, chain, angles) {
       const row = (k * N[1] + j) * N[0];
       for (let i = 0; i < N[0]; i++) {
         const x = sg[0] * (i - Cx) * sp[0];
-        // vacated: distal of a bent joint at rest (the moved part has left)
+        // vacated: distal of a bent joint at rest (the moved part has left), or past the crook's
+        // bisector (the part below folds against it there)
         let vac = false;
         for (let n = 0; n < cc.length; n++) {
           const J = cc[n], ex = x - J.c[0], ey = y - J.c[1], ez = z - J.c[2];
+          // a field joint: whatever it moves at all has left its rest place
+          if (J.wf) { if (fieldWeight(J.wf, [x, y, z]) > 0) { vac = true; break; } continue; }
           const sd = ex * J.d[0] + ey * J.d[1] + ez * J.d[2];
           if (sd > -J.b && (J.R2 === Infinity || ex * ex + ey * ey + ez * ez - sd * sd < J.R2)) { vac = true; break; }
+          if (ex * J.ins[0] + ey * J.ins[1] + ez * J.ins[2] > 0 && ex * J.bis[0] + ey * J.bis[1] + ez * J.bis[2] < 0) { vac = true; break; }
         }
         const still = vac ? 0 : at(i - pad[0], j - pad[1], k - pad[2]);
         if (!(jin && x >= blo[0] && x <= bhi[0])) { out[row + i] = still; continue; }
@@ -231,11 +438,16 @@ export function poseVolume(vm, flips, chain, angles) {
           const dx = x - one.c[0], dy = y - one.c[1], dz = z - one.c[2];
           const rx = M[0] * dx + M[1] * dy + M[2] * dz, ry = M[3] * dx + M[4] * dy + M[5] * dz, rz = M[6] * dx + M[7] * dy + M[8] * dz;
           const rs = rx * one.d[0] + ry * one.d[1] + rz * one.d[2];
-          if (rs >= one.b && (one.R2 === Infinity || rx * rx + ry * ry + rz * rz - rs * rs < one.R2)) v = sampleRest(one.c[0] + rx, one.c[1] + ry, one.c[2] + rz);
+          const dq = [dx, dy, dz];
+          if (rs >= one.b && (one.R2 === Infinity || rx * rx + ry * ry + rz * rz - rs * rs < one.R2) && inCrook(one, dq, one.T)) {
+            const u = roll([rx, ry, rz], one, -1);
+            v = sampleRest(one.c[0] + u[0], one.c[1] + u[1], one.c[2] + u[2]);
+          }
           if (!v) v = still;
           if (!v && dx * dx + dy * dy + dz * dz < reach2[0]) {
             for (const p of preimagesOne([x, y, z], one)) { v = sampleRest(p[0], p[1], p[2]); if (v) break; }
           }
+
         } else {
           for (const p of preimagesCompiled([x, y, z], cc)) { v = sampleRest(p[0], p[1], p[2]); if (v) break; }
         }
@@ -243,5 +455,6 @@ export function poseVolume(vm, flips, chain, angles) {
       }
     }
   }
+  smoothFold(out, N, sg, sp, cc);
   return { data: out, dims: N, pad };
 }

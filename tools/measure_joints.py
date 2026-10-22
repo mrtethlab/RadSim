@@ -15,6 +15,22 @@ Centres of rotation, from the anatomy rather than the bone surface:
 - elbow: the trochlea/capitulum axis, 1.5 cm distal of the widest span of the epicondyles;
 - knee: the measured joint space between the condyles and the plateau;
 - ankle: midway between the malleoli (the talocrural axis passes just below their tips).
+
+ROLLS (roll: true) turn the distal part about the limb's own axis (core/jointPose.js): the
+forearm's pronation and supination, spread along it (`spread`, cm past the elbow: the radius
+turns round the ulna over the forearm's length); the hand's roll at the wrist; the leg's rotation
+at the knee; the foot's at the ankle. Positive turns `from` toward `toward`. The forearm's roll
+is anatomical: 0 is supination (palm up, the radius beside the ulna laterally), -90 the thumb up,
+-180 the palm down; its `rest` is measured from where the radius lies round the ulna.
+
+THE NECK is a FIELD joint (core/jointPose.js): no plane through the neck parts the head from the
+trunk (the jaw hangs in front of C1-C3), so each point turns by its own share of the one rotation,
+a weight read from a grid written beside the model (headneck.neckw.bin). The skull and mandible
+take all of it, each cervical vertebra less (cervical motion is shared down the segments), C7 and
+everything below none; the soft tissue between takes the weights of the bones nearest it, blended
+(a soft minimum of the distances) and smoothed. Its rotation is about C4, 1 cm behind the body
+(the facets), with the neck's own axis from C7-T1 to C1-C2. Needs the head CT's labels and nibabel
+(the compute venv: services/compute/.venv).
 """
 import json, pathlib, sys
 import numpy as np
@@ -33,17 +49,120 @@ def v3(d):
     return [round(float(d['x']), 2), round(float(d['y']), 2), round(float(d['z']), 2)]
 
 
-def radial_side(V, z):
-    """+1 or -1: which way (x) the radius lies from the ulna, from the two forearm bones at level z
-    (the radius is the wider bone toward the wrist)"""
+def radial_dir(V, z):
+    """The direction from the ulna to the radius at level z, in the rest frame's x-y: the radius
+    is the bigger of the two bones toward the wrist. A vector, not a sign: the arm may rest turned
+    (z033's lies about 90 degrees round, radius in front of the ulna)."""
     k = V.idx(2, z)
     lab, n = ndi.label(V.bone[k])
     if n < 2:
         return None
     sizes = ndi.sum(V.bone[k], lab, range(1, n + 1))
     order = np.argsort(sizes)[::-1][:2]
-    cs = [ndi.center_of_mass(V.bone[k], lab, int(o) + 1) for o in order]
-    return 1 if cs[0][1] > cs[1][1] else -1
+    cs = [np.array(ndi.center_of_mass(V.bone[k], lab, int(o) + 1)) for o in order]
+    d = np.array([(cs[0][1] - cs[1][1]) * V.sp[0], (cs[0][0] - cs[1][0]) * V.sp[1], 0.0])
+    return d / np.linalg.norm(d)
+
+
+def perp(v, axis):
+    v = np.asarray(v, float) - (np.asarray(v, float) @ axis) * axis
+    return v / np.linalg.norm(v)
+
+
+def perp_none(v):
+    v = np.asarray(v, float)
+    return (v / np.linalg.norm(v)).round(3).tolist()
+
+
+def angle_about(a, b, axis):
+    """The angle (degrees) turning a to b about axis."""
+    return float(np.degrees(np.arctan2(np.cross(a, b) @ axis, a @ b)))
+
+
+def foot_axis(ank, leg):
+    """The foot's long axis, heel to toes: the principal axis of all the bone more than 2 cm past
+    the ankle along the leg. Parallel to the sole, near enough, so 90 degrees to the leg is the
+    neutral ankle. (The line from the ankle's centre to the base of the 3rd metatarsal, used before,
+    starts up between the malleoli and points down even at neutral: a foot baked square to the leg
+    by it read 17 degrees plantarflexed.)"""
+    V = Vol('lowerextremity')
+    P = np.stack(V.coords(V.bone), 1)[::3]
+    rel = P - ank
+    f = P[rel @ leg > 2.0]
+    c = f.mean(0)
+    w, vec = np.linalg.eigh(np.cov((f - c).T))
+    ax = vec[:, int(np.argmax(w))]
+    # toward the toes: the far end (by its bone, the dense calcaneus behind outweighed the slim toes,
+    # and a foot square to the leg was read backwards)
+    t = (f - ank) @ ax
+    return ax if t.max() > -t.min() else -ax
+
+
+def foot_inversion(ank, leg, fa):
+    """How far the foot is rolled about its own long axis (inversion +: the dorsum turned toward
+    the lateral side, the sole toward the midline): the metatarsals' width axis, the middle principal
+    axis of the bone 35-70 % of the way along the foot, measured from the lateral about the foot's
+    axis. z053's right foot lay inverted some 60 degrees under the crossed left leg, and its
+    lateral film showed the five metatarsals fanned out as on a dorsoplantar."""
+    V = Vol('lowerextremity')
+    P = np.stack(V.coords(V.bone), 1)
+    f = P[(P - ank) @ leg > 1.0]
+    t = (f - ank) @ fa
+    g = f[(t > 0.35 * t.max()) & (t < 0.70 * t.max())]
+    # the width in the plane square to the foot (in 3-D the middle axis took in the metatarsals'
+    # divergence along the foot, and read an upright foot as 44 degrees inverted)
+    e1 = perp([1, 0, 0], fa); e2 = np.cross(fa, e1)
+    q = np.stack([(g - g.mean(0)) @ e1, (g - g.mean(0)) @ e2], 1)
+    w, vec = np.linalg.eigh(np.cov(q.T))
+    wid = vec[0, 1] * e1 + vec[1, 1] * e2
+    a = angle_about(e1, wid, fa)
+    return ((a + 90) % 180) - 90                              # a width axis is a line: within +-90
+
+
+# the share of the neck's rotation each bone takes (cumulative from below: what lies above the
+# segment). Flexion-extension and lateral flexion spread over the column; axial rotation is half
+# at C1-C2, which a single field cannot also carry — C1 and C2 stand apart a little for it.
+NECK_W = {'skull': 1.0, 'vertebrae_C1': 0.95, 'vertebrae_C2': 0.8, 'vertebrae_C3': 0.62, 'vertebrae_C4': 0.45,
+          'vertebrae_C5': 0.28, 'vertebrae_C6': 0.12}
+NECK_STILL = ['vertebrae_C7'] + [f'vertebrae_T{k}' for k in range(1, 13)] + [f'rib_{s}_{k}' for s in ('left', 'right') for k in range(1, 13)]     + [f'{b}_{s}' for b in ('clavicula', 'scapula', 'humerus') for s in ('left', 'right')] + ['sternum', 'costal_cartilages']
+FIELD_SP = 0.4          # cm, the weight grid
+FIELD_LAMBDA = 1.2      # cm, how far a bone's weight reaches into the tissue beside it
+FIELD_SIGMA = 0.8       # cm, the smoothing after
+
+
+def neck_field(name='headneck'):
+    """The neck's weight grid (uint8, 255 = the whole turn) over the model, in its rest frame; and
+    its header for joints.json. None without the labels."""
+    import measure_landmarks as ML
+    h, vol, bone, sp = ML.load(name)
+    nz, ny, nx = bone.shape
+    o = -(np.array([nx, ny, nz]) - 1) / 2 * sp                     # the model's corner, cm
+    dims = (np.ceil((np.array([nx, ny, nz]) - 1) * sp / FIELD_SP) + 1).astype(int)
+    groups = [(k, w) for k, w in NECK_W.items()] + [(k, 0.0) for k in NECK_STILL]
+    num = np.zeros(dims[::-1], np.float64); den = np.zeros(dims[::-1], np.float64)
+    still = np.zeros(dims[::-1], bool)
+    for k, w in groups:
+        P = ML.label_points(k, bone, sp)
+        if P is None or not len(P):
+            if k in NECK_W:
+                return None
+            continue
+        g = np.round((P - o) / FIELD_SP).astype(int)
+        g = g[(g >= 0).all(1) & (g < dims).all(1)]
+        m = np.zeros(dims[::-1], bool)
+        m[g[:, 2], g[:, 1], g[:, 0]] = True
+        if w == 0:
+            still |= m
+            continue
+        e = np.exp(-ndi.distance_transform_edt(~m, sampling=FIELD_SP) / FIELD_LAMBDA)
+        num += w * e; den += e
+    e = np.exp(-ndi.distance_transform_edt(~still, sampling=FIELD_SP) / FIELD_LAMBDA)
+    den += e
+    W = ndi.gaussian_filter(num / np.maximum(den, 1e-300), FIELD_SIGMA / FIELD_SP)
+    W = np.where(W < 0.02, 0, np.where(W > 0.98, 1, W))
+    q = np.round(W * 255).astype(np.uint8)
+    (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f'{name}.neckw.bin').write_bytes(q.tobytes())
+    return {'file': f'{name}.neckw.bin', 'dims': dims.tolist(), 'sp': FIELD_SP, 'origin': o.round(4).tolist()}
 
 
 def main():
@@ -70,41 +189,105 @@ def main():
     # ---- the arm: elbow, and the wrist's deviation (forearm positioning)
     V = Vol('upperextremity').main_bone()
     el, wr = lm('upperextremity', 'elbow'), lm('upperextremity', 'wrist')
-    rad = radial_side(V, wr[2] + 3.0)
-    ec = np.array([el[0], el[1], el[2] - 1.5])
-    fore = np.array(wr) - ec                                    # the forearm's axis, elbow to wrist
+    pa = PALP['upperextremity']
+    me, le = (np.array([pa[k]['x'], pa[k]['y'], pa[k]['z']]) for k in ('medialEpicondyle', 'lateralEpicondyle'))
+    mid = (me + le) / 2
+    ec = np.array([mid[0], mid[1], el[2] - 1.5])                 # the trochlea / capitulum axis
+    fore = np.array(wr) - ec                                      # the forearm's axis, elbow to wrist
     fore = (fore / np.linalg.norm(fore)).round(3).tolist()
+    # flexion carries the forearm forward: away from the olecranon, whichever way this arm is turned
+    ant = (-np.array(pa['olecranon']['dir'])).round(3).tolist()
+    # No limb cylinder ('radius') on any joint: the old arm lay against the flank and the old leg
+    # touched the other one, so a joint could move only what lay near its own axis; the rebuilt
+    # models (build_limbs.py) carry one limb alone, and a broad hand outside the 6 cm cylinder
+    # stayed behind while its neighbours moved: the skin stretched into a rod.
+    # pronation and supination: about the forearm, anterior toward lateral is supination (the radius
+    # comes round to lie beside the ulna); its rest is where the radius lies now, 3 cm above the wrist
+    fa = np.array(fore)
+    lat = perp(le - me, fa)
+    antp = perp(ant, fa)
+    rad = radial_dir(V, wr[2] + 3.0)
+    sup = round(angle_about(lat, perp(rad, fa), np.cross(antp, lat) / np.linalg.norm(np.cross(antp, lat))), 1) if rad is not None else 0.0
+    # the forearm is fully turned 4 cm above the wrist, where the radius is found (3 cm above it)
+    spread = round(float(np.linalg.norm(np.array(wr) - ec)) - 4.0, 1)
+    roll = lambda key, label, rng, rest=None: dict({'key': key, 'label': label, 'neg': 'pronation', 'pos': 'supination', 'roll': True,
+                                                 'from': antp.round(3).tolist(), 'toward': lat.round(3).tolist(), 'range': rng},
+                                                **({'rest': rest} if rest else {}))
     arm = {'elbow': {
         'label': 'Elbow', 'c': [round(float(c), 2) for c in ec],
-        # only the forearm moves: the arm lies against the flank in this CT, and the crop carries it
-        'distal': fore, 'blend': 1.5, 'radius': 6.0,
-        'how': 'the trochlea/capitulum axis, 1.5 cm distal of the widest span of the epicondyles',
-        'motions': [{'key': 'elbow.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': [0, 1, 0], 'range': [0, 140]}]}}
+        'distal': fore, 'blend': 1.5, 'spread': spread,
+        'how': f'the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon; the forearm pronates over its {spread} cm',
+        'motions': [{'key': 'elbow.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': ant, 'range': [0, 140]},
+                    roll('elbow.roll', 'Forearm rotation', [-180, 10], sup)]}}
     if rad is not None:
         arm['wrist'] = {
             'label': 'Wrist', 'c': [round(float(wr[0]), 2), round(float(wr[1]), 2), round(float(wr[2] + 0.5), 2)],
-            'distal': [0, 0, -1], 'blend': 1.0, 'radius': 6.0,
-            'how': 'the carpus, 0.5 cm proximal of the carpal landmark; the radius side from the wider of the two forearm bones 3 cm above',
-            'motions': [{'key': 'wrist.dev', 'label': 'Deviation', 'neg': 'radial', 'pos': 'ulnar', 'toward': [-rad, 0, 0], 'range': [-20, 35]}]}
+            'distal': [0, 0, -1], 'blend': 1.0,
+            'how': 'the carpus, 0.5 cm proximal of the carpal landmark; ulnar deviation toward the ulna, measured from the radius 3 cm above',
+            'motions': [{'key': 'wrist.dev', 'label': 'Deviation', 'neg': 'radial', 'pos': 'ulnar', 'toward': (-rad).round(3).tolist(), 'range': [-20, 35]},
+                        roll('wrist.roll', 'Hand roll', [-30, 30])]}
     out['upperextremity'] = arm
     # ---- the leg: knee and ankle
     kn = lm('lowerextremity', 'knee')
     im = CENT['lowerextremity']['intermalleolar']
     leg = np.array(v3(im)) - np.array(kn)                        # the leg's axis, knee to ankle
     leg = (leg / np.linalg.norm(leg)).round(3).tolist()
-    foot = lm('lowerextremity', 'foot')
-    toes = np.array(foot) - np.array(v3(im))
-    toes = (toes / np.linalg.norm(toes)).round(3).tolist()
+    # the foot's axis: the ankle to the base of the 3rd metatarsal (measure_centring); the angle it
+    # makes with the leg says how far the foot rests from neutral (90 degrees to the leg). This foot
+    # lies post mortem almost in line with the leg: about 73 degrees of plantarflexion. The ankle's
+    # angle is anatomical, 0 at neutral, so an ankle view (Bontrager: foot dorsiflexed to 90
+    # degrees) asks for dorsiflexion and a foot view can leave it plantarflexed.
+    toes = foot_axis(np.array(v3(im)), np.array(leg))
+    rest = -round(float(90 - np.degrees(np.arccos(np.clip(toes @ np.array(leg), -1, 1)))), 1)
+    # and how far the foot is turned about the leg: internal (toward the midline, -x) positive
+    lg = np.array(leg)
+    antl, medl = perp([0, 1, 0], lg), perp([-1, 0, 0], lg)
+    turn = round(angle_about(antl, perp(toes, lg), np.cross(antl, medl) / np.linalg.norm(np.cross(antl, medl))), 1)
+    inv = round(foot_inversion(np.array(v3(im)), lg, toes), 1)
+    up, latf = perp([0, 0, 1], toes), perp([1, 0, 0], toes)
+    toes = toes.round(3).tolist()
     out['lowerextremity'] = {
         'knee': {'label': 'Knee', 'c': [round(float(kn[0]), 2), round(float(kn[1]), 2), round(float(kn[2]), 2)],
-                 'distal': leg, 'blend': 2.0, 'radius': 9.0,
+                 'distal': leg, 'blend': 2.0,
                  'how': 'the measured joint space between the femoral condyles and the tibial plateau',
-                 'motions': [{'key': 'knee.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': [0, -1, 0], 'range': [0, 120]}]},
-        'ankle': {'label': 'Ankle', 'c': v3(im), 'distal': [0, 0, -1], 'blend': 1.5, 'radius': 14.0,
-                  'how': 'midway between the malleoli; dorsiflexion turns the foot (pointing ' + str(toes) + ' from the ankle) toward the shin',
+                 'motions': [{'key': 'knee.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': [0, -1, 0], 'range': [0, 120]},
+                             # internal rotation turns the front of the leg toward the midline (-x: a right leg)
+                             {'key': 'knee.roll', 'label': 'Rotation', 'neg': 'external', 'pos': 'internal', 'roll': True,
+                              'from': [0, 1, 0], 'toward': [-1, 0, 0], 'range': [-40, 40]}]},
+        # the foot is the part past a plane through the ankle tilted toward it (down the leg, and 0.4
+        # of the way along the foot): a plane square to the leg did for a foot hanging down it, but a
+        # foot at 90 degrees reaches forward at the ankle's own height, half of it inside the crease,
+        # and a bend fanned it out by height
+        'ankle': {'label': 'Ankle', 'c': v3(im), 'distal': perp_none(lg + 0.4 * np.array(toes)), 'blend': 1.5,
+                  'how': f'midway between the malleoli; dorsiflexion turns the foot (its long axis, {toes}) toward the shin; at rest it is {-rest:.0f} degrees plantarflexed, turned {turn:.0f} degrees (internal +) and inverted {inv:.0f} degrees',
                   'motions': [{'key': 'ankle.flex', 'label': 'Dorsiflexion', 'neg': 'plantarflexion', 'pos': 'dorsiflexion',
-                               'from': toes, 'toward': [0, 0, 1], 'range': [-45, 30]}]},
+                               'from': toes, 'toward': [0, 0, 1], 'range': [-80, 20], 'rest': rest},
+                              dict({'key': 'ankle.roll', 'label': 'Rotation', 'neg': 'external', 'pos': 'internal', 'roll': True,
+                                    'from': [0, 1, 0], 'toward': [-1, 0, 0], 'range': [-40, 40]}, **({'rest': turn} if abs(turn) > 0.5 else {})),
+                              # about the foot's own axis: inversion turns the dorsum toward the lateral
+                              dict({'key': 'ankle.invert', 'label': 'Inversion', 'neg': 'eversion', 'pos': 'inversion',
+                                    'from': up.round(3).tolist(), 'toward': latf.round(3).tolist(), 'range': [-20, 35]},
+                                   **({'rest': inv} if abs(inv) > 0.5 else {}))]},
     }
+    # ---- the head and neck: one field joint
+    field = neck_field()
+    if field:
+        hc = CENT['headneck']
+        c4, top, bot = (np.array(v3(hc[k])) for k in ('C4', 'C1C2', 'C7T1'))
+        ax = (top - bot) / np.linalg.norm(top - bot)
+        c = c4 + np.array([0, -1.0, 0])                          # behind the body: the facets
+        out['headneck'] = {'neck': {
+            'label': 'Neck', 'c': c.round(2).tolist(), 'distal': ax.round(3).tolist(), 'blend': 0, 'field': field,
+            'how': 'the cervical spine, a field joint: the head turns whole, C1 to C6 by their share, C7 and below stay; about C4, 1 cm behind its body',
+            'motions': [{'key': 'neck.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': [0, 1, 0], 'range': [-60, 50]},
+                        {'key': 'neck.tilt', 'label': 'Lateral flexion', 'neg': 'left lateral flexion', 'pos': 'right lateral flexion', 'toward': [1, 0, 0], 'range': [-40, 40]},
+                        {'key': 'neck.rot', 'label': 'Rotation', 'neg': 'left rotation', 'pos': 'right rotation', 'roll': True,
+                         'from': perp([0, 1, 0], ax).round(3).tolist(), 'toward': perp([1, 0, 0], ax).round(3).tolist(), 'range': [-70, 70]}]}}
+    else:
+        print('  no head CT labels (or nibabel): the neck keeps its old joints.json entry')
+        old = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else {}
+        if 'headneck' in old:
+            out['headneck'] = old['headneck']
     OUT.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     for s, js in out.items():
         if s.startswith('_'): continue

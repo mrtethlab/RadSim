@@ -103,18 +103,24 @@ def mark(mask, z, sp, how, sure, prefer='largest'):
 def lower_extremity():
     h, vol, bone, sp = load('lowerextremity')
     m = main_component(bone); p = profile(m, sp)
-    knee, prom = valley(p, sp, 50, 63)
-    ankle = bulge(p, sp, 9, 21)
-    hip = bulge(p, sp, 92, 103)
+    # windows from the TOP (the hip): the foot, baked to 90 degrees (services/compute/app/bake_pose.py),
+    # no longer reaches down along the leg, and the volume's lower end moved up 6.5 cm with it
+    top = m.shape[0] * sp[2]
+    knee, prom = valley(p, sp, top - 57, top - 44)
+    ankle = bulge(p, sp, top - 98, top - 86)
+    # the femoral head 33-47 cm above the knee (a femur's length; from the top, the iliac wing's
+    # bulge stood in for it on a shorter patient)
+    kz = knee * sp[2]
+    hip = bulge(p, sp, kz + 33, min(kz + 47, top - 1))
     femur = (knee + hip) // 2
-    foot = int(5.0 / sp[2])
+    foot = int(3.0 / sp[2])
     return {
         'knee': mark(m, knee, sp, f'joint-space valley between the condyles and the plateau (prominence {prom:.1f} cm2)', 'high'),
         'ankle': mark(m, ankle, sp, 'peak of the malleolar bulge — the clinical centring point, midway between the malleoli; '
                                      'tibia and talus are fused in the segmentation, so there is no joint-space dip to find', 'medium'),
         'hip': mark(m, hip, sp, 'peak of the proximal bulge: femoral head and trochanters', 'medium'),
         'femur': mark(m, femur, sp, 'midway between the knee and hip landmarks', 'medium'),
-        'foot': mark(m, foot, sp, 'tarsals, 5 cm above the inferior end — the foot points anteriorly in this supine leg', 'low'),
+        'foot': mark(m, foot, sp, 'tarsals, 3 cm above the inferior end (the sole of the foot at 90 degrees)', 'low'),
     }
 
 
@@ -131,38 +137,44 @@ def bones_per_slice(mask, sp, min_cm2=0.15):
 
 
 def upper_extremity():
-    """The arm is counted too. The forearm is the one stretch where every slice cuts exactly TWO
-    bones — radius and ulna — and it is bounded by one-bone zones: the carpals distally and the
-    condyles and olecranon proximally. The area profile alone put the elbow 8.5 cm too high, on
-    the distal humeral shaft; the count puts it where the two forearm bones end."""
+    """The arm (z033 since the rebuild: services/compute/app/build_limbs.py), measured by its
+    anatomy rather than by where along the crop things fell in the previous model:
+    - the humeral shaft is the longest run of slices that cut ONE bone of shaft size;
+    - the elbow is the widest the bone gets in the 8 cm below it: the epicondyles. Widest in either
+      direction: this arm rests rotated, its epicondyles front to back;
+    - the radiocarpal joint is the thinnest bone between 18 and 28 cm below the elbow (the forearm is
+      22-25 cm), and the wrist landmark sits 1.5 cm past it, on the carpals;
+    - the humeral head is the biggest bone section in the 12 cm above the shaft.
+    The two-bone count used before cannot find this forearm: it is pronated, and where the radius
+    crosses the ulna the two read as one; and the fingers are not joined to the rest at 1.5 mm."""
     h, vol, bone, sp = load('upperextremity')
-    m = main_component(bone); p = profile(m, sp)
-    counts = ndi.median_filter(bones_per_slice(m, sp), size=5)       # ignore single-slice glitches
-    best, cur = (0, 0), None
-    for z, c in enumerate(list(counts) + [0]):
-        if c == 2 and cur is None:
-            cur = z
-        elif c != 2 and cur is not None:
-            if z - cur > best[1] - best[0]:
-                best = (cur, z - 1)
-            cur = None
-    f0, f1 = best                                                    # the forearm (two-bone) zone
-    # The elbow is centred at the EPICONDYLES, the widest the distal humerus gets — not where the
-    # forearm bones end, which is the radial head and measured ~3 cm low on the rendered film.
-    # Search the 8 cm above the forearm for the slice with the widest mediolateral bone span.
+    n = bone.shape[0]
+    area = bone.sum(axis=(1, 2)) * sp[0] * sp[1]
+    def pieces(z):
+        lab, k = ndi.label(bone[z])
+        return (np.asarray(ndi.sum(bone[z], lab, range(1, k + 1))) * sp[0] * sp[1]) if k else np.zeros(0)
+    one = np.array([(lambda p: (p > 0.5).sum() == 1 and 1.5 < p.max() < 5.5)(pieces(z)) for z in range(n)])
+    one = ndi.median_filter(one.astype(np.uint8), size=5).astype(bool)
+    runs, cur = [], None
+    for z, v in enumerate(list(one) + [False]):
+        if v and cur is None: cur = z
+        elif not v and cur is not None: runs.append((cur, z - 1)); cur = None
+    h0, h1 = max((r for r in runs if r[0] > 0.25 * n), key=lambda r: r[1] - r[0])
     def span(z):
-        xs = np.nonzero(m[z].any(axis=0))[0]
-        return (xs.max() - xs.min()) if len(xs) else 0
-    zr = range(f1, min(m.shape[0], f1 + int(8.0 / sp[2])))
-    elbow = max(zr, key=span)
-    wrist = max(0, f0 - int(1.5 / sp[2]))
-    shoulder = bulge(p, sp, 58, 67)
+        ys, xs = np.nonzero(bone[z])
+        return max(xs.max() - xs.min(), ys.max() - ys.min()) if len(xs) else 0
+    elbow = max(range(max(0, h0 - int(8 / sp[2])), h0 + int(1 / sp[2])), key=span)
+    lo, hi = max(0, elbow - int(28 / sp[2])), max(1, elbow - int(18 / sp[2]))
+    rc = lo + int(np.argmin(ndi.uniform_filter1d(area, 3)[lo:hi]))
+    wrist = max(0, rc - int(1.5 / sp[2]))
+    top = min(n, h1 + int(12 / sp[2]))
+    shoulder = h1 + int(np.argmax(area[h1:top]))
     return {
-        'elbow': mark(m, elbow, sp, f'widest mediolateral span of the distal humerus within 8 cm above the forearm (which ends at {f1 * sp[2]:.1f} cm): the epicondyles', 'high'),
-        'forearm': mark(m, (f0 + f1) // 2, sp, 'middle of the two-bone (radius + ulna) zone', 'high'),
-        'wrist': mark(m, wrist, sp, '1.5 cm distal of where the two forearm bones begin: the carpals', 'medium'),
-        'shoulder': mark(m, shoulder, sp, 'peak of the proximal bulge: humeral head', 'medium'),
-        'humerus': mark(m, (elbow + shoulder) // 2, sp, 'midway between the elbow and shoulder landmarks', 'medium'),
+        'elbow': mark(bone, elbow, sp, f'widest bone in the 8 cm below the humeral shaft (which ends at {h0 * sp[2]:.1f} cm): the epicondyles', 'high'),
+        'forearm': mark(bone, (rc + elbow) // 2, sp, 'midway between the radiocarpal joint and the epicondyles', 'high'),
+        'wrist': mark(bone, wrist, sp, f'1.5 cm past the radiocarpal joint (the thinnest bone 18-28 cm below the elbow, at {rc * sp[2]:.1f} cm): the carpals', 'medium'),
+        'shoulder': mark(bone, shoulder, sp, 'biggest bone section in the 12 cm above the humeral shaft: the humeral head', 'medium'),
+        'humerus': mark(bone, (elbow + shoulder) // 2, sp, 'midway between the elbow and shoulder landmarks', 'medium'),
     }
 
 
@@ -189,33 +201,32 @@ def hand():
     }
 
 
-HEADNECK_LABELS = ROOT / 'services' / 'compute' / 'data' / 'totalseg' / 's1397' / 'segmentations'
+HEADNECK_LABELS = ROOT / 'services' / 'compute' / 'data' / 'totalseg' / 's1082' / 'segmentations'
+HEADNECK_CT = 's1082'
 
 
-def cervical_from_labels(bone, sp, level=4):
-    """The cervical landmark from the CT's own vertebra labels, when they are on disk.
+def vertebrae_from_labels(bone, sp, levels=('C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'T1')):
+    """Vertebral bodies from the CT's own vertebra labels, registered to the model: {level: point}.
 
-    Fetch them with  services/compute: python -m app.fetch_totalseg --subject s1397 --only vertebrae_C
-    (seven masks, ~0.4 MB). The head & neck model was built from that CT at its native 1.5 mm, so
-    the labels and the model differ only by the builder's crop: the offset is found by sliding the
-    union of the masks over the model's bone (FFT cross-correlation) and is accepted only if the
-    masks then sit on bone. Measured: 99.8 % of label voxels land on bone.
+    The head & neck model is built from that CT (services/compute/app/build_limbs.py headneck) at
+    its native 1.5 mm, so the labels and the model differ only by the builder's crop: the offset is
+    found by sliding the union of the masks over the model's bone (FFT cross-correlation) and is
+    accepted only if the masks then sit on bone. The body is the anterior 40 % of each vertebra
+    (anterior is +y in this volume); the centroid of the whole bone sits back in the posterior arch.
 
-    Why it matters: the profile method below took 'the narrowest bone section between the skull and
-    the shoulders' — which in this CT is C1, not C4. The patient was scanned with the arms raised
-    beside the head, so the neck's bone section narrows at the atlas, and both cervical views were
-    centred 4.8 cm high, the AP through the mandible. Returns None when the labels or nibabel are
-    missing, and the caller falls back to the profile."""
+    Why labels: the profile method took 'the narrowest bone section between the skull and the
+    shoulders', which in the first head CT (s1397, arms raised) was C1, not C4, and both cervical
+    views were centred 4.8 cm high. Returns None when the labels or nibabel are missing."""
     try:
         import nibabel as nib
         from scipy.signal import fftconvolve
     except ImportError:
         return None
-    files = {k: HEADNECK_LABELS / f'vertebrae_C{k}.nii.gz' for k in range(1, 8)}
+    files = {k: HEADNECK_LABELS / f'vertebrae_{k}.nii.gz' for k in levels}
     if not all(f.exists() for f in files.values()):
         return None
     labs = {k: np.asarray(nib.load(str(f)).dataobj) > 0 for k, f in files.items()}   # [i, j, k] = [x, y, z]
-    union = np.zeros_like(labs[1])
+    union = np.zeros_like(labs[levels[0]])
     for a in labs.values():
         union |= a
     idx = np.argwhere(union)
@@ -226,21 +237,75 @@ def cervical_from_labels(bone, sp, level=4):
     at = np.array(np.unravel_index(int(np.argmax(corr)), corr.shape))
     on_bone = float(corr[tuple(at)] / tmpl.sum())
     if on_bone < 0.95:
-        print(f'  cervical labels did not register (only {on_bone:.1%} on bone) — using the profile')
+        print(f'  vertebra labels did not register (only {on_bone:.1%} on bone) — using the profile')
         return None
     off = at - lo
     nx, ny, nz = bxyz.shape
-    v = np.argwhere(labs[level]) + off
-    ys = v[:, 1]
-    # the vertebral BODY: the anterior 40 % of the vertebra (anterior is +y in this volume); the
-    # centroid of the whole bone sits back in the posterior arch
-    body = v[ys >= ys.max() - 0.4 * (ys.max() - ys.min())]
-    cx, cy, cz = body.mean(0)
     cm = lambda i, n, s: round(float((i - (n - 1) / 2) * s), 2)
-    return {'x': cm(cx, nx, sp[0]), 'y': cm(cy, ny, sp[1]), 'z': cm(cz, nz, sp[2]),
-            'how': f'C{level} vertebral body, from the CT\'s own vertebra labels (s1397), registered to the model '
-                   f'({on_bone:.1%} of label voxels on bone)',
-            'confidence': 'high'}
+    out = {}
+    for k in levels:
+        v = np.argwhere(labs[k]) + off
+        ys = v[:, 1]
+        body = v[ys >= ys.max() - 0.4 * (ys.max() - ys.min())]
+        cx, cy, cz = body.mean(0)
+        out[k] = {'x': cm(cx, nx, sp[0]), 'y': cm(cy, ny, sp[1]), 'z': cm(cz, nz, sp[2]),
+                  'zTop': cm(v[:, 2].max(), nz, sp[2]), 'zBottom': cm(v[:, 2].min(), nz, sp[2]),
+                  'how': f'{k} vertebral body, from the vertebra labels of the CT ({HEADNECK_CT}), registered to the model '
+                         f'({on_bone:.1%} of label voxels on bone)', 'confidence': 'high'}
+    return out
+
+
+_REG = {}
+
+
+def label_offset(bone):
+    """The offset from the head CT's label grid to the model's (the builder's crop), registered on
+    the cervical vertebrae as vertebrae_from_labels does; cached. None when it cannot be found."""
+    if 'off' in _REG:
+        return _REG['off']
+    try:
+        import nibabel as nib
+        from scipy.signal import fftconvolve
+    except ImportError:
+        _REG['off'] = None
+        return None
+    files = [HEADNECK_LABELS / f'vertebrae_C{k}.nii.gz' for k in range(1, 8)]
+    if not all(f.exists() for f in files):
+        _REG['off'] = None
+        return None
+    union = None
+    for f in files:
+        a = np.asarray(nib.load(str(f)).dataobj) > 0
+        union = a if union is None else (union | a)
+    idx = np.argwhere(union)
+    lo, hi = idx.min(0), idx.max(0) + 1
+    tmpl = union[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]].astype(np.float32)
+    corr = fftconvolve(bone.transpose(2, 1, 0).astype(np.float32), tmpl[::-1, ::-1, ::-1], mode='valid')
+    at = np.array(np.unravel_index(int(np.argmax(corr)), corr.shape))
+    _REG['off'] = (at - lo) if corr[tuple(at)] / tmpl.sum() >= 0.95 else None
+    return _REG['off']
+
+
+def label_points(name, bone, sp):
+    """A label of the head CT as model-frame points in cm from the volume centre ([N, 3] x y z), or
+    None."""
+    import nibabel as nib
+    off = label_offset(bone)
+    f = HEADNECK_LABELS / f'{name}.nii.gz'
+    if off is None or not f.exists():
+        return None
+    v = np.argwhere(np.asarray(nib.load(str(f)).dataobj) > 0) + off
+    n = np.array(bone.shape[::-1])
+    return (v - (n - 1) / 2) * np.asarray(sp)
+
+
+def cervical_from_labels(bone, sp, level=4):
+    v = vertebrae_from_labels(bone, sp)
+    if not v:
+        return None
+    c = dict(v[f'C{level}'])
+    c.pop('zTop'); c.pop('zBottom')
+    return c
 
 
 def head_neck():
@@ -402,27 +467,35 @@ def femoral_heads(vol, sp):
     return out
 
 
-def main():
-    out = {
-        '_about': ('Anatomical centring landmarks for the x-ray protocols, measured by tools/measure_landmarks.py. '
-                   'Volume-frame entries are cm from the volume centre (x, y, z; +z superior) and are mapped to the '
-                   'world through the same flips and rotation as the phantom. Entries marked frame:"world" are '
-                   'already in the x-ray world frame. Re-run the tool after rebuilding a model.'),
-        'lowerextremity': lower_extremity(),
-        'upperextremity': upper_extremity(),
-        'hand': hand(),
-        'headneck': head_neck(),
-        'chestabdopelvis': {**chest_abdo_pelvis(), **femoral_heads(*load('chestabdopelvis')[1::2])},
-    }
+MEASURE = {
+    'lowerextremity': lambda: lower_extremity(),
+    'upperextremity': lambda: upper_extremity(),
+    'hand': lambda: hand(),
+    'headneck': lambda: head_neck(),
+    'chestabdopelvis': lambda: {**chest_abdo_pelvis(), **femoral_heads(*load('chestabdopelvis')[1::2])},
+}
+
+
+def main(only=None):
+    """Every model, or only those named; the others keep what the file already has (the head and
+    neck's C4 comes from the CT's own vertebra labels, which are not always on the machine)."""
+    old = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else {}
+    out = {'_about': ('Anatomical centring landmarks for the x-ray protocols, measured by tools/measure_landmarks.py. '
+                      'Volume-frame entries are cm from the volume centre (x, y, z; +z superior) and are mapped to the '
+                      'world through the same flips and rotation as the phantom. Entries marked frame:"world" are '
+                      'already in the x-ray world frame. Re-run the tool after rebuilding a model.')}
+    for name, fn in MEASURE.items():
+        out[name] = fn() if (not only or name in only) else old[name]
     OUT.write_text(json.dumps(out, indent=2) + '\n', encoding='utf-8')
     for model, lm in out.items():
-        if model.startswith('_'):
+        if model.startswith('_') or (only and model not in only):
             continue
         for k, v in lm.items():
             if not k.startswith('_'):
-                print(f'{model:16} {k:13} z {v["z"]:+7.2f}  x {v.get("x", 0):+6.2f}  [{v.get("confidence", "-")}]')
+                print(f'{model:16} {k:13} z {v["z"]:+7.2f}  x {v.get("x", 0):+6.2f}  y {v.get("y", 0):+6.2f}  [{v.get("confidence", "-")}]')
     print('wrote', OUT.relative_to(ROOT))
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    main(sys.argv[1:] or None)

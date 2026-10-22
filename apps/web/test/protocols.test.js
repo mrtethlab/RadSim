@@ -9,12 +9,13 @@ const load = (p) => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8')
 const protocols = load('../src/data/protocols.json');
 const landmarks = load('../src/data/landmarks.json');
 const centring = load('../src/data/centring.json');   // the textbook points, looked up first
+const palpation = load('../src/data/palpation.json');
 const all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections.map((p) => ({ ...p, part: g.part }))));
 const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity',
   'totalhipreplacement', 'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
-  assert.equal(all.length, 40);
+  assert.equal(all.length, 43);
   for (const p of all) assert.ok(BROWSER_SUBJECTS.has(p.subject), `${p.proj}: subject ${p.subject}`);
 });
 
@@ -27,9 +28,22 @@ test('every projection carries a pose, and every centring landmark exists for it
 });
 
 test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
+  // the arm (z053) rests 9 degrees off the anatomical position: its views are rolled by what the epicondyles
+  // measure (data/palpation.json), AP laying them parallel to the receptor and the lateral standing
+  // them up, lateral epicondyle on top (+ roll turns +x toward +y, the tube)
+  const pa = palpation.upperextremity;
+  const ax = [pa.lateralEpicondyle.x - pa.medialEpicondyle.x, pa.lateralEpicondyle.y - pa.medialEpicondyle.y];
+  const turned = (roll) => { const r = roll * Math.PI / 180; return [ax[0] * Math.cos(r) - ax[1] * Math.sin(r), ax[0] * Math.sin(r) + ax[1] * Math.cos(r)]; };
+  const deg = (v) => Math.atan2(v[1], v[0]) * 180 / Math.PI;
   for (const p of all) {
     const r = Math.abs(p.pose.roll % 360);
-    if (/^Lateral/.test(p.proj)) assert.equal(r, 90, p.proj);
+    // (the shoulder views keep the patient supine: they are about the girdle, not the elbow)
+    if (p.subject === 'upperextremity' && !/shoulder/.test(p.proj)) {
+      if (/^AP /.test(p.proj)) assert.ok(Math.abs(deg(turned(p.pose.roll))) < 3, `${p.proj}: epicondyles ${deg(turned(p.pose.roll)).toFixed(1)} deg off parallel`);
+      if (/^Lateral/.test(p.proj)) assert.ok(Math.abs(deg(turned(p.pose.roll)) - 90) < 3, `${p.proj}: lateral epicondyle not on top`);
+      continue;
+    }
+    if (/^Lateral/.test(p.proj) || /^Swimmers/.test(p.proj)) assert.equal(r, 90, p.proj);
     if (/^AP /.test(p.proj)) assert.equal(r, 0, p.proj);
     if (/^PA /.test(p.proj) && p.subject !== 'hand') assert.equal(r, 180, `${p.proj}: body subjects rest AP, so PA is a half turn`);
   }
@@ -50,9 +64,13 @@ test('the mortise is an internal rotation of the right leg, not the left', () =>
 
 test('landmarks sit where the traced phantom confirmed them (cm from the volume centre)', () => {
   // values validated on the posed phantom; a model rebuild that moves them should be looked at
+  // (the leg and arm were rebuilt by services/compute/app/build_limbs.py: the leg re-cut from the
+  // same CT, the arm from another (z033, then z053 for its healthy bone), so their numbers moved
+  // and were checked on bone projections; then both were baked to the anatomical position,
+  // app/bake_pose.py, and checked again; the leg is z053's now, its foot near 90 degrees as scanned)
   const pinned = {
-    'lowerextremity.knee': 3.68, 'lowerextremity.ankle': -35.48, 'upperextremity.elbow': 2.02,
-    'upperextremity.forearm': -11.62, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
+    'lowerextremity.knee': -2.3, 'lowerextremity.ankle': -44.9, 'upperextremity.elbow': 1.88,
+    'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
     'chestabdopelvis.kub': -12.7,
   };
   for (const [k, z] of Object.entries(pinned)) {
@@ -91,13 +109,16 @@ test('every gridded exam names its AEC chambers, and a PA chest meters the lungs
   assert.equal(all.find((p) => p.proj === 'AP lumbar').aec, 'c');
 });
 
-test('the cervical spine is centred on C4, measured from the CT\'s own vertebra labels', () => {
-  // the profile method put it on C1 (the neck narrows at the atlas in this arms-up CT) and both
-  // cervical views were centred 4.8 cm high, the AP through the mandible
-  const cs = landmarks.headneck.cspine;
+test('the cervical spine is centred on C4, measured from the vertebra labels of the CT', () => {
+  // the profile method put it on C1 in the first head CT (the neck narrowed at the atlas with the
+  // arms raised) and both cervical views were centred 4.8 cm high, the AP through the mandible
+  const cs = landmarks.headneck.cspine, c = centring.headneck;
   assert.match(cs.how, /C4/);
-  assert.ok(cs.z < -5.5 && cs.z > -8, `C4 z ${cs.z} (C1 is at ~-1.9, C7 at ~-10.3)`);
   assert.equal(cs.confidence, 'high');
+  // between C1-C2 and C7-T1, nearer the middle than either end
+  const span = c.C1C2.z - c.C7T1.z, at = (c.C1C2.z - cs.z) / span;
+  assert.ok(at > 0.3 && at < 0.6, `C4 z ${cs.z}: ${(100 * at).toFixed(0)} % of the way down from C1-C2 (${c.C1C2.z}) to C7-T1 (${c.C7T1.z})`);
+  assert.ok(Math.abs(c.C4.z - cs.z) < 0.01, 'the landmark and the centring point are the same body');
 });
 
 test('the routine views centre where the textbooks say', () => {

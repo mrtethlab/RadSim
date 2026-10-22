@@ -120,6 +120,8 @@ def main():
     ap.add_argument('--subject')
     ap.add_argument('--list', action='store_true')
     ap.add_argument('--limit', type=int, default=25)
+    ap.add_argument('--want', nargs='+', default=['abdomen', 'thorax'],
+                    help='with --list: words every listed study_type must contain (e.g. --want neck)')
     ap.add_argument('--only', nargs='+', default=None,
                     help='fetch only members whose path contains one of these substrings '
                          '(e.g. vertebrae_C: a landmark needs a few labels, not the whole study)')
@@ -139,10 +141,10 @@ def main():
             except ValueError:
                 i_id, i_reg = 0, len(hdr) - 1
             hits = [r for r in rows[1:] if len(r) > max(i_id, i_reg)
-                    and 'abdomen' in r[i_reg].lower() and 'thorax' in r[i_reg].lower()]
-            print(f'  {len(hits)} studies covering thorax+abdomen; first {a.limit}:')
+                    and all(w in r[i_reg].lower() for w in a.want)]
+            print(f'  {len(hits)} studies whose type has {" + ".join(a.want)}; first {a.limit}:')
             for r in hits[:a.limit]:
-                print('   ', r[i_id], '|', r[i_reg])
+                print('   ', ' | '.join(r))
         return
 
     if not a.subject:

@@ -34,8 +34,8 @@ export const K_FACTOR = {
 };
 // which body region each subject is, for the k-factor; phantoms have no effective dose
 export const SUBJECT_REGION = {
-  hand: 'extremity', hand_hires: 'extremity', upperextremity: 'extremity', lowerextremity: 'extremity',
-  hires_shoulder: 'extremity', headneck: 'headNeck', chest: 'chest',
+  hand: 'extremity', upperextremity: 'extremity', lowerextremity: 'extremity',
+  headneck: 'headNeck', chest: 'chest',
   chestabdopelvis: 'chestAbdomenPelvis', totalhipreplacement: 'abdomenPelvis', wholebody: 'trunk',
 };
 const REGION_LABEL = {

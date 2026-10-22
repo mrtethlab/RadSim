@@ -16,7 +16,7 @@ import numpy as np
 from scipy import ndimage as ndi
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from measure_palpation import Vol, lm, extreme, zband, xband, ROOT
+from measure_palpation import Vol, lm, extreme, zband, xband, foot_axis, ROOT
 
 OUT = ROOT / 'apps' / 'web' / 'src' / 'data' / 'centring.json'
 PALP = json.loads((ROOT / 'apps' / 'web' / 'src' / 'data' / 'palpation.json').read_text(encoding='utf-8'))
@@ -135,11 +135,65 @@ def hand():
 def lower_extremity():
     mm, lmal = P('lowerextremity', 'medialMalleolus'), P('lowerextremity', 'lateralMalleolus')
     mid = (mm + lmal) / 2
-    return {
+    out = {
         'intermalleolar': pt(mid, 'midway between the measured medial and lateral malleoli',
             'AP, AP mortise and AP oblique ankle: CR perpendicular to a point midway between the malleoli (Bontrager; Radiopaedia)'),
         'medialMalleolus': pt(mm, 'the medial malleolus (palpation landmark)',
             'Lateral (mediolateral) ankle: CR perpendicular to the medial malleolus (Bontrager)'),
+    }
+    # the base of the 3rd metatarsal, along the foot's own axis (ankle to the tip of the toes): the
+    # metatarsal bases lie a little under half way, the 3rd in the middle of the foot's width there
+    V = Vol('lowerextremity').main_bone()
+    lateral = 1 if lmal[0] > mm[0] else -1
+    fa = foot_axis(V, lm('lowerextremity', 'ankle'), lateral)
+    if fa is not None:
+        t, L, u, x, y, z = fa
+        band = (t > 0.43 * L) & (t < 0.51 * L)
+        xb = x[band]
+        lo, hi = np.percentile(xb, 33), np.percentile(xb, 67)
+        sel = band.copy(); sel[band] = (xb >= lo) & (xb <= hi)
+        out['mt3Base'] = pt([x[sel].mean(), y[sel].mean(), z[sel].mean()],
+            f'the middle third of the foot bone 43-51 % of the way from the ankle to the tip of the toes ({L:.1f} cm): the base of the 3rd metatarsal',
+            'AP foot: CR 10 degrees toward the heel to the base of the 3rd metatarsal; AP medial oblique foot: CR perpendicular to the base of the 3rd metatarsal (Bontrager; Radiopaedia)')
+        # the medial cuneiform lies proximal of the metatarsal bases, about 2 cm back along the foot.
+        # Centred on the 3rd metatarsal a third of the way forward, a lateral foot's 30 cm field fell
+        # short of the heel; on the cuneiform it holds heel to toes
+        c = np.array([x[sel].mean(), y[sel].mean(), z[sel].mean()]) - 2.0 * u
+        out['medialCuneiform'] = pt(c, 'the base of the 3rd metatarsal less 2 cm along the foot (toward the heel): the cuneiforms',
+            'Lateral (mediolateral) foot: CR perpendicular to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager)')
+    return out
+
+
+# ---------------------------------------------------------------- elbow
+def upper_extremity():
+    me, le = P('upperextremity', 'medialEpicondyle'), P('upperextremity', 'lateralEpicondyle')
+    mid = (me + le) / 2
+    return {
+        'elbowJoint': pt([mid[0], mid[1], mid[2] - 1.5], 'the elbow joint: 1.5 cm distal of the midpoint of the measured epicondyles',
+            'AP, AP obliques and lateral elbow: CR perpendicular to the mid elbow joint (Bontrager; Radiopaedia)'),
+    }
+
+
+# ---------------------------------------------------------------- cervical spine
+def head_neck():
+    """The cervical centring points on the vertebral bodies, from the head CT's own labels
+    (measure_landmarks.vertebrae_from_labels; the head & neck volume is already in the rest frame)."""
+    import measure_landmarks as ML
+    h, vol, bone, sp = ML.load('headneck')
+    v = ML.vertebrae_from_labels(bone, sp)
+    if not v:
+        return {}
+    at = lambda k: np.array([v[k]['x'], v[k]['y'], v[k]['z']])
+    c12 = (at('C1') + at('C2')) / 2
+    c7t1 = (at('C7') + at('T1')) / 2
+    return {
+        'C4': pt(at('C4'), 'the body of C4, from the vertebra labels of the CT (s1082)',
+            'AP axial cervical: CR 15-20 degrees cephalad to C4, the lower margin of the thyroid cartilage; lateral cervical: CR to C4; '
+            'AP (posterior) obliques: CR 15-20 degrees cephalad to C4 (Bontrager; Radiopaedia)', 'high'),
+        'C1C2': pt(c12, 'midway between the bodies of C1 and C2: the dens and the atlas',
+            'AP open mouth (C1-C2): CR perpendicular through the centre of the open mouth, to C1-C2 (Bontrager; Radiopaedia)', 'high'),
+        'C7T1': pt(c7t1, 'midway between the bodies of C7 and T1: the cervicothoracic junction',
+            'Swimmers lateral (cervicothoracic): CR to C7-T1, about 2.5 cm above the jugular notch (Bontrager; Radiopaedia)', 'high'),
     }
 
 
@@ -208,7 +262,7 @@ def trunk(name):
 
 def main():
     out = {'_about': __doc__.strip().splitlines()[0] + ' Rest-frame cm from the volume centre.'}
-    for name, fn in (('hand', hand), ('lowerextremity', lower_extremity),
+    for name, fn in (('hand', hand), ('lowerextremity', lower_extremity), ('upperextremity', upper_extremity), ('headneck', head_neck),
                      ('chest', lambda: trunk('chest')), ('chestabdopelvis', lambda: trunk('chestabdopelvis'))):
         out[name] = fn()
         for k, v in out[name].items():
