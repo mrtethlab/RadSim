@@ -25,13 +25,16 @@ import numpy as np
 from scipy import ndimage as ndi
 
 from app.build_model import AIR, FAT, SKIN, write_model
-from app.build_limbs import MODELS, ROOT, SP, skin
+from app.build_limbs import MODELS, ROOT, skin
 
 # the anatomical angles each model is baked to (the motions' rest is the scan's own), in stages,
-# re-measured between: the foot is first brought square to the leg, then turned toes up (the turn
-# is about the leg's axis, which only then is the foot's vertical)
+# re-measured between: the foot is first rolled upright about its own axis (z053's lay inverted),
+# then brought square to the leg, then turned toes up (the turn is about the leg's axis, which only
+# then is the foot's vertical)
 BAKE = {
-    'lowerextremity': [{'ankle.flex': 0}, {'ankle.roll': 0}],
+    # (inversion twice: read on a foot lying 60 degrees over, the metatarsals' row is a poorer
+    # measure than on one near upright, and the first pass left it 18 degrees short or over)
+    'lowerextremity': [{'ankle.invert': 0}, {'ankle.flex': 0}, {'ankle.roll': 0}, {'ankle.invert': 0}],
     'upperextremity': [{'elbow.roll': 0}],
 }
 TOOLS = ROOT / 'tools'
@@ -68,7 +71,7 @@ def pose(name, angles):
     pad = 4
     v = v[max(0, zs.min() - pad):zs.max() + pad + 1, max(0, ys.min() - pad):ys.max() + pad + 1,
           max(0, xs.min() - pad):xs.max() + pad + 1]
-    write_model(str(d), name, h['name'], v, np.array(h['huReference'], np.int16), SP, mesh=True, source=h['source'])
+    write_model(str(d), name, h['name'], v, np.array(h['huReference'], np.int16), float(h['spacing'][0]), mesh=True, source=h['source'])
     skin(name)
 
 

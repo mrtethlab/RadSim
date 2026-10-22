@@ -29,7 +29,7 @@
    neutral, 1.0 cm at 15 internal and 0.8 cm at 25 internal — the textbook sign that the
    rotation is right. */
 
-export const BONE_IDS = [17, 18];   // trabecular, cortical
+export const BONE_IDS = [17, 18, 54, 55, 56, 57, 58, 59, 60, 61];   // trabecular, cortical, the graded bone
 export const MUSCLE_ID = 7;
 const R_HEAD = 2.25;   // cm: bone inside this is femoral head
 const R_CUT = 3.0;     // cm: removing this ball separates femur from pelvis

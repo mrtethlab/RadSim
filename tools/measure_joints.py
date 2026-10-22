@@ -89,6 +89,27 @@ def foot_axis(ank, leg):
     return ax if t.max() > -t.min() else -ax
 
 
+def foot_inversion(ank, leg, fa):
+    """How far the foot is rolled about its own long axis (inversion +: the dorsum turned toward
+    the lateral side, the sole toward the midline): the metatarsals' width axis, the middle principal
+    axis of the bone 35-70 % of the way along the foot, measured from the lateral about the foot's
+    axis. z053's right foot lay inverted some 60 degrees under the crossed left leg, and its
+    lateral film showed the five metatarsals fanned out as on a dorsoplantar."""
+    V = Vol('lowerextremity')
+    P = np.stack(V.coords(V.bone), 1)
+    f = P[(P - ank) @ leg > 1.0]
+    t = (f - ank) @ fa
+    g = f[(t > 0.35 * t.max()) & (t < 0.70 * t.max())]
+    # the width in the plane square to the foot (in 3-D the middle axis took in the metatarsals'
+    # divergence along the foot, and read an upright foot as 44 degrees inverted)
+    e1 = perp([1, 0, 0], fa); e2 = np.cross(fa, e1)
+    q = np.stack([(g - g.mean(0)) @ e1, (g - g.mean(0)) @ e2], 1)
+    w, vec = np.linalg.eigh(np.cov(q.T))
+    wid = vec[0, 1] * e1 + vec[1, 1] * e2
+    a = angle_about(e1, wid, fa)
+    return ((a + 90) % 180) - 90                              # a width axis is a line: within +-90
+
+
 def main():
     out = {'_about': __doc__.strip().splitlines()[0]}
     # ---- the hand: the wrist
@@ -167,6 +188,8 @@ def main():
     lg = np.array(leg)
     antl, medl = perp([0, 1, 0], lg), perp([-1, 0, 0], lg)
     turn = round(angle_about(antl, perp(toes, lg), np.cross(antl, medl) / np.linalg.norm(np.cross(antl, medl))), 1)
+    inv = round(foot_inversion(np.array(v3(im)), lg, toes), 1)
+    up, latf = perp([0, 0, 1], toes), perp([1, 0, 0], toes)
     toes = toes.round(3).tolist()
     out['lowerextremity'] = {
         'knee': {'label': 'Knee', 'c': [round(float(kn[0]), 2), round(float(kn[1]), 2), round(float(kn[2]), 2)],
@@ -181,11 +204,15 @@ def main():
         # foot at 90 degrees reaches forward at the ankle's own height, half of it inside the crease,
         # and a bend fanned it out by height
         'ankle': {'label': 'Ankle', 'c': v3(im), 'distal': perp_none(lg + 0.4 * np.array(toes)), 'blend': 1.5,
-                  'how': f'midway between the malleoli; dorsiflexion turns the foot (its long axis, {toes}) toward the shin; at rest it is {-rest:.0f} degrees plantarflexed and turned {turn:.0f} degrees (internal +)',
+                  'how': f'midway between the malleoli; dorsiflexion turns the foot (its long axis, {toes}) toward the shin; at rest it is {-rest:.0f} degrees plantarflexed, turned {turn:.0f} degrees (internal +) and inverted {inv:.0f} degrees',
                   'motions': [{'key': 'ankle.flex', 'label': 'Dorsiflexion', 'neg': 'plantarflexion', 'pos': 'dorsiflexion',
                                'from': toes, 'toward': [0, 0, 1], 'range': [-80, 20], 'rest': rest},
                               dict({'key': 'ankle.roll', 'label': 'Rotation', 'neg': 'external', 'pos': 'internal', 'roll': True,
-                                    'from': [0, 1, 0], 'toward': [-1, 0, 0], 'range': [-40, 40]}, **({'rest': turn} if abs(turn) > 0.5 else {}))]},
+                                    'from': [0, 1, 0], 'toward': [-1, 0, 0], 'range': [-40, 40]}, **({'rest': turn} if abs(turn) > 0.5 else {})),
+                              # about the foot's own axis: inversion turns the dorsum toward the lateral
+                              dict({'key': 'ankle.invert', 'label': 'Inversion', 'neg': 'eversion', 'pos': 'inversion',
+                                    'from': up.round(3).tolist(), 'toward': latf.round(3).tolist(), 'range': [-20, 35]},
+                                   **({'rest': inv} if abs(inv) > 0.5 else {}))]},
     }
     OUT.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     for s, js in out.items():

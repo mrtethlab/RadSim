@@ -202,34 +202,73 @@ def big_bone(mat, min_vox=20000):
     return np.isin(lab, np.nonzero(sizes >= min_vox)[0] + 1)
 
 
-# z045 at 1.5 mm, as cached (z = 0 at the neck, x low = the patient's RIGHT): measured on the
-# coronal projection and the bone itself
-MIDLINE_X = 166          # median x of the lumbar spine
-CROTCH_Z = 440           # just below the pubic symphysis: under it the two legs are apart in bone
-KNEE_Z = 650             # the knee joints
-ANKLE_Z = 930            # the ankles
+# The leg's frame, per source CT at 1.5 mm (z = 0 at the neck or shoulders, x low = the patient's
+# RIGHT): measured on the coronal projection and the bone itself
+#   top, x1:  the box's top (the iliac crest) and its far side
+#   midline:  x of the spine and symphysis (the pelvis is halved there)
+#   crotch, knee, ankle: just below the symphysis (the legs apart in bone), the knee and ankle joints
+#   arm:      (x, z) the right hand and forearm lie beside the hip short of: the arm's, not the leg's
+#   seed:     a slice where the right leg's bone stands well apart from the left's (x below 140), from
+#             which it is followed up and down (track_leg); without one, x below the midline is right
+LEGS = {
+    # 45 M: its foot lay 78 degrees plantarflexed post mortem, the heel up behind the ankle, and
+    # posed to 90 degrees the calcaneus came out smeared across the bend: a lateral foot was useless
+    'z045': dict(top=330, x1=300, midline=166, crotch=440, knee=650, ankle=930, arm=(55, 500)),
+    # 57 F (the arm's patient): the right foot rests near 90 degrees, as a foot film wants it; the
+    # left leg is crossed over, its knee lying on the right knee, so the right leg is followed
+    'z053': dict(top=280, x1=333, midline=168, crotch=410, knee=655, ankle=925, arm=(50, 480), seed=905),
+}
+LEG = 'z053'
 
 
-def lower_extremity(hu, mat, body):
+def track_leg(bone, z, xmax=140, z_top=0):
+    """The right leg's bone, slice by slice from z (where the legs stand apart in bone: the pieces
+    with x below xmax) up to z_top and down to the end: the 2-D bone pieces of each slice that lie
+    at least 30 % within 3 voxels of the right leg's bone in the slice before. A crossed left knee
+    lying on the right one touches it but hardly overlaps it; a joint space with no bone in a slice
+    carries the last marker on."""
+    out = np.zeros_like(bone)
+    lab, n = ndi.label(bone[z])
+    xs = ndi.center_of_mass(bone[z], lab, range(1, n + 1))
+    seed = np.isin(lab, [i + 1 for i, c in enumerate(xs) if c[1] < xmax])
+    for stop, step in ((z_top - 1, -1), (bone.shape[0], 1)):
+        prev = seed
+        for k in range(z, stop, step):
+            lab, n = ndi.label(bone[k])
+            near = ndi.binary_dilation(prev, iterations=3)
+            ids = [i for i in np.unique(lab[near & (lab > 0)]) if (near & (lab == i)).sum() >= 0.3 * (lab == i).sum()]
+            if ids:
+                prev = np.isin(lab, ids)
+                out[k] = prev
+    return out
+
+
+def lower_extremity(hu, mat, body, subj=LEG):
     """The patient's right leg, iliac crest to toes, alone. Above the crotch the pelvis is halved
-    at the midline as before (a hip film wants the hemipelvis); below it the leg is parted from
-    the left one along the skin where they touch, and the box no longer stops short of the foot,
-    which turns outward to x = 45."""
-    z0, x1 = 330, 300
+    at the midline (a hip film wants the hemipelvis); below it the leg is parted from the left one
+    along the skin where they touch."""
+    L = LEGS[subj]
+    z0, x1, mid = L['top'], L['x1'], L['midline']
+    CROTCH_Z, KNEE_Z, ANKLE_Z = L['crotch'], L['knee'], L['ankle']
     b = body[z0:, :, :x1]
     bone = big_bone(mat[z0:, :, :x1])
     zs = np.arange(b.shape[0])[:, None, None] + z0
     xs = np.arange(x1)[None, None, :]
-    # the right hand and forearm lie beside the hip (x < 55 down to z 500): the arm's, not the leg's
-    arm = bone & (xs < 55) & (zs < 500)
-    right = bone & (xs < MIDLINE_X) & ~arm
+    # the right hand and forearm lie beside the hip: the arm's, not the leg's (all their bone: a
+    # hand's small bones are not 'big', and unmarked, z053's hand went to the hip)
+    arm = np.isin(mat[z0:, :, :x1], [TRABECULAR, CORTICAL]) & (xs < L['arm'][0]) & (zs < L['arm'][1])
+    right = bone & (xs < mid) & ~arm
     keep = np.zeros(body.shape, bool)
     c, k = CROTCH_Z - z0, KNEE_Z - z0
+    if 'seed' in L:                                      # below the crotch, the right leg as followed
+        right[c:] = track_leg(bone, L['seed'] - z0, z_top=c)[c:] & ~arm[c:]
     # Above the crotch: the hand parted from everything else in 3D (left against right there had
     # the two halves of the spine contest the abdomen's core, differently in every slice), then the
     # pelvis halved at the midline, as a hip film has it.
-    mk = np.where(arm[:c], 2, np.where(bone[:c], 1, 0)).astype(np.int32)
-    keep[z0:CROTCH_Z, :, :x1] = (split_3d(b[:c], mk) == 1) & b[:c] & (xs[0, 0] < MIDLINE_X)
+    # (any small piece of bone up here is a hand's: z053's left hand lies on the lower belly)
+    hands = arm[:c] | (np.isin(mat[z0:CROTCH_Z, :, :x1], [TRABECULAR, CORTICAL]) & ~bone[:c])
+    mk = np.where(hands, 2, np.where(bone[:c], 1, 0)).astype(np.int32)
+    keep[z0:CROTCH_Z, :, :x1] = (split_3d(b[:c], mk) == 1) & b[:c] & (xs[0, 0] < mid)
     # The thighs press together over a broad flat face: halfway between the femurs is the contact.
     # (A distance-map watershed failed here: the femur lies lateral of the obese thigh's deepest
     # line, and in 3D the other leg's flood ran down that line ahead of it.)
@@ -506,13 +545,57 @@ def head_neck():
     return mat, keep, h
 
 
+# The finer grid some parts are written on (mm). The part is found on the 1.5 mm cache, where all
+# the cutting and smoothing above was tuned; its materials then come from the CT itself, resampled
+# at this spacing over the part's box (refine). A foot at 1.5 mm printed its bones as speckle: a
+# tarsal's 1 mm cortex was averaged into the marrow beside it.
+OUT_SP = {'lowerextremity': 1.0}
+
+
+def refine(subj, mat, keep, sp, pad=6):
+    """The part on a finer grid: the CT resampled at sp over the part's box (plus pad cache voxels),
+    materialised as the cache was, and the part's mask carried over by trilinear interpolation (cut
+    at one half). What the outline rules added (mat cleared to AIR inside keep) stays to be filled
+    with fat by finish. Returns (mat, hu, keep) on the fine grid."""
+    import SimpleITK as sitk
+    lo = np.maximum(np.array([a.min() for a in np.nonzero(keep)]) - pad, 0)
+    hi = np.minimum(np.array([a.max() for a in np.nonzero(keep)]) + pad + 1, keep.shape)
+    f = SP / sp
+    n = np.ceil((hi - lo) * f).astype(int)                         # z, y, x
+    img = sitk.ReadImage(str(SUBJECTS[subj]['ct']))
+    D = np.array(img.GetDirection()).reshape(3, 3)
+    rs = sitk.ResampleImageFilter()
+    rs.SetOutputSpacing((sp, sp, sp))
+    rs.SetSize([int(n[2]), int(n[1]), int(n[0])])
+    # the cache's voxel (z, y, x) lies at origin + D (x, y, z) SP (resample_iso)
+    rs.SetOutputOrigin(tuple(np.array(img.GetOrigin()) + D @ (lo[::-1] * SP)))
+    rs.SetOutputDirection(img.GetDirection())
+    rs.SetInterpolator(sitk.sitkLinear)
+    rs.SetDefaultPixelValue(-1024)
+    hu1 = sitk.GetArrayFromImage(rs.Execute(img)).astype(np.int16)
+    mat1, _ = materialize(hu1, np.zeros(hu1.shape, np.int32), sp)
+    box = tuple(slice(a, b) for a, b in zip(lo, hi))
+    k0, add0 = keep[box].astype(np.float32), (keep & (mat == AIR))[box].astype(np.float32)
+    yy, xx = np.meshgrid(np.arange(n[1]) / f, np.arange(n[2]) / f, indexing='ij')
+    keep1, add1 = np.zeros(n, bool), np.zeros(n, bool)
+    for k in range(n[0]):
+        c = np.stack([np.full_like(yy, k / f), yy, xx])
+        keep1[k] = ndi.map_coordinates(k0, c, order=1, mode='nearest') >= 0.5
+        add1[k] = ndi.map_coordinates(add0, c, order=1, mode='nearest') >= 0.5
+    mat1[keep1 & add1] = AIR
+    return mat1, hu1, keep1
+
+
 def write(name, title, subj, mat, hu, keep):
     if subj == 'z033':
         mat = healthy_arm(hu, mat, keep)
+    sp = OUT_SP.get(name, SP)
+    if sp != SP:
+        mat, hu, keep = refine(subj, mat, keep, sp)
     part, sl = finish(mat, keep, limb=True)
     # house convention, as build_model --flip 1 0 0 gave the earlier z045 crops: index 0 inferior
     part, h = np.ascontiguousarray(part[::-1]), np.ascontiguousarray(hu[sl][::-1])
-    write_model(str(MODELS / name), name, title, part, h, SP, mesh=True, source=SUBJECTS[subj]['source'])
+    write_model(str(MODELS / name), name, title, part, h, sp, mesh=True, source=SUBJECTS[subj]['source'])
     skin(name)
 
 
@@ -524,7 +607,7 @@ def skin(name):
 
 
 PARTS = {
-    'lowerextremity': ('Lower extremity', 'z045', lambda hu, mat, body: lower_extremity(hu, mat, body)),
+    'lowerextremity': ('Lower extremity', LEG, lambda hu, mat, body: lower_extremity(hu, mat, body)),
     'upperextremity': ('Upper extremity', ARM, lambda hu, mat, body: upper_extremity(hu, mat, body)),
 }
 

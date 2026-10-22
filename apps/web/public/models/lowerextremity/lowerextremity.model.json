@@ -1,15 +1,15 @@
 {
   "name": "Lower extremity",
-  "source": "VSD Full Body postmortem CT (z045, 45M) \u00b7 HU materials \u00b7 CC BY-NC-SA",
+  "source": "VSD Full Body postmortem CT (z053, 57F) \u00b7 HU materials \u00b7 CC BY-NC 3.0",
   "dims": [
-    147,
-    191,
-    666
+    179,
+    224,
+    1062
   ],
   "spacing": [
-    1.5,
-    1.5,
-    1.5
+    1.0,
+    1.0,
+    1.0
   ],
   "order": "x-fastest: i = x + nx*(y + ny*z)",
   "volume": "lowerextremity.mat.bin",
@@ -400,7 +400,7 @@
   ],
   "huReference": [
     -1024,
-    3067
+    3071
   ],
   "backendOnly": false
 }

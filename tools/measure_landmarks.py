@@ -108,7 +108,10 @@ def lower_extremity():
     top = m.shape[0] * sp[2]
     knee, prom = valley(p, sp, top - 57, top - 44)
     ankle = bulge(p, sp, top - 98, top - 86)
-    hip = bulge(p, sp, top - 15, top - 4)
+    # the femoral head 33-47 cm above the knee (a femur's length; from the top, the iliac wing's
+    # bulge stood in for it on a shorter patient)
+    kz = knee * sp[2]
+    hip = bulge(p, sp, kz + 33, min(kz + 47, top - 1))
     femur = (knee + hip) // 2
     foot = int(3.0 / sp[2])
     return {

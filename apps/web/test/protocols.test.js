@@ -67,9 +67,9 @@ test('landmarks sit where the traced phantom confirmed them (cm from the volume 
   // (the leg and arm were rebuilt by services/compute/app/build_limbs.py: the leg re-cut from the
   // same CT, the arm from another (z033, then z053 for its healthy bone), so their numbers moved
   // and were checked on bone projections; then both were baked to the anatomical position,
-  // app/bake_pose.py, and checked again)
+  // app/bake_pose.py, and checked again; the leg is z053's now, its foot near 90 degrees as scanned)
   const pinned = {
-    'lowerextremity.knee': -1.05, 'lowerextremity.ankle': -40.35, 'upperextremity.elbow': 1.88,
+    'lowerextremity.knee': -2.3, 'lowerextremity.ankle': -44.9, 'upperextremity.elbow': 1.88,
     'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
     'chestabdopelvis.kub': -12.7,
   };

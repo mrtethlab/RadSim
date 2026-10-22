@@ -164,14 +164,14 @@
   "knee": {
    "label": "Knee",
    "c": [
-    -0.52,
-    -5.48,
-    -1.05
+    1.1,
+    -4.79,
+    -2.3
    ],
    "distal": [
-    0.104,
     0.008,
-    -0.995
+    -0.02,
+    -1.0
    ],
    "blend": 2.0,
    "how": "the measured joint space between the femoral condyles and the tibial plateau",
@@ -217,17 +217,17 @@
   "ankle": {
    "label": "Ankle",
    "c": [
-    3.6,
-    -5.17,
-    -40.34
+    1.45,
+    -5.65,
+    -46.05
    ],
    "distal": [
-    0.148,
-    0.387,
-    -0.91
+    0.018,
+    0.351,
+    -0.936
    ],
    "blend": 1.5,
-   "how": "midway between the malleoli; dorsiflexion turns the foot (its long axis, [0.124, 0.984, 0.125]) toward the shin; at rest it is -6 degrees plantarflexed and turned -8 degrees (internal +)",
+   "how": "midway between the malleoli; dorsiflexion turns the foot (its long axis, [0.029, 0.999, -0.028]) toward the shin; at rest it is 0 degrees plantarflexed, turned -2 degrees (internal +) and inverted -6 degrees",
    "motions": [
     {
      "key": "ankle.flex",
@@ -235,9 +235,9 @@
      "neg": "plantarflexion",
      "pos": "dorsiflexion",
      "from": [
-      0.124,
-      0.984,
-      0.125
+      0.029,
+      0.999,
+      -0.028
      ],
      "toward": [
       0,
@@ -248,7 +248,7 @@
       -80,
       20
      ],
-     "rest": 6.0
+     "rest": -0.4
     },
     {
      "key": "ankle.roll",
@@ -270,7 +270,28 @@
       -40,
       40
      ],
-     "rest": -7.9
+     "rest": -1.6
+    },
+    {
+     "key": "ankle.invert",
+     "label": "Inversion",
+     "neg": "eversion",
+     "pos": "inversion",
+     "from": [
+      0.001,
+      0.028,
+      1.0
+     ],
+     "toward": [
+      1.0,
+      -0.029,
+      0.001
+     ],
+     "range": [
+      -20,
+      35
+     ],
+     "rest": -6.4
     }
    ]
   }

@@ -438,7 +438,7 @@
             {
               "proj": "AP foot",
               "kv": 60,
-              "mas": 3.2,
+              "mas": 2.0,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -466,7 +466,7 @@
             {
               "proj": "Oblique foot",
               "kv": 60,
-              "mas": 2.5,
+              "mas": 1.6,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -494,9 +494,9 @@
             {
               "proj": "Lateral foot",
               "kv": 62,
-              "mas": 2.5,
+              "mas": 2.0,
               "grid": false,
-              "lut": "extremity",
+              "lut": "limb",
               "sid": 100,
               "coll": [
                 14,
@@ -525,7 +525,7 @@
             {
               "proj": "AP ankle",
               "kv": 63,
-              "mas": 6.4,
+              "mas": 4.0,
               "grid": false,
               "lut": "limb",
               "sid": 100,
@@ -551,7 +551,7 @@
             {
               "proj": "Mortise ankle",
               "kv": 64,
-              "mas": 8,
+              "mas": 4.0,
               "grid": false,
               "lut": "limb",
               "sid": 100,
@@ -577,7 +577,7 @@
             {
               "proj": "Lateral ankle",
               "kv": 65,
-              "mas": 3.2,
+              "mas": 2.0,
               "grid": false,
               "lut": "limb",
               "sid": 100,
@@ -608,7 +608,7 @@
             {
               "proj": "AP knee",
               "kv": 68,
-              "mas": 10,
+              "mas": 8,
               "grid": true,
               "aec": "c",
               "lut": "limb",
@@ -632,7 +632,7 @@
             {
               "proj": "Lateral knee",
               "kv": 70,
-              "mas": 12.5,
+              "mas": 10,
               "grid": true,
               "aec": "c",
               "lut": "limb",
@@ -664,7 +664,7 @@
             {
               "proj": "AP femur",
               "kv": 75,
-              "mas": 16,
+              "mas": 6.4,
               "grid": true,
               "aec": "c",
               "lut": "limb",
@@ -688,7 +688,7 @@
             {
               "proj": "Lateral femur",
               "kv": 77,
-              "mas": 20,
+              "mas": 8,
               "grid": true,
               "aec": "c",
               "lut": "limb",

@@ -336,7 +336,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:24, lumbopelvis:53};
+      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:43, lumbopelvis:53};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){

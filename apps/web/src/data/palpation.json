@@ -70,48 +70,48 @@
  "lowerextremity": {
   "medialMalleolus": {
    "label": "Medial malleolus",
-   "x": 0.75,
-   "y": -3.75,
-   "z": -40.27,
+   "x": -1.5,
+   "y": -4.15,
+   "z": -44.35,
    "dir": [
     -1.0,
     0.0,
     0.0
    ],
-   "how": "the most medial bone within 3 cm of the ankle joint, under the tibia (the fibula is lateral 6 cm above)",
+   "how": "the most medial bone within 1.5 cm below the ankle joint, under the tibia (the fibula is lateral 6 cm above)",
    "confidence": "medium"
   },
   "lateralMalleolus": {
    "label": "Lateral malleolus",
-   "x": 6.45,
-   "y": -6.6,
-   "z": -40.42,
+   "x": 4.4,
+   "y": -7.15,
+   "z": -47.75,
    "dir": [
     1.0,
     0.0,
     0.0
    ],
-   "how": "the most lateral bone within 4 cm of the ankle joint, under the fibula",
+   "how": "the most lateral bone within 3 cm below the ankle joint, under the fibula",
    "confidence": "medium"
   },
   "base5th": {
    "label": "Base of the 5th metatarsal",
-   "x": 5.4,
-   "y": 0.15,
-   "z": -43.88,
+   "x": 6.4,
+   "y": 3.45,
+   "z": -49.25,
    "dir": [
     1.0,
     0.0,
     0.0
    ],
-   "how": "the most lateral bone 30-50 % of the way from the ankle to the tip of the toes (13.4 cm): the 5th metatarsal tuberosity",
+   "how": "the most lateral bone 30-50 % of the way from the ankle to the tip of the toes (14.6 cm): the 5th metatarsal tuberosity",
    "confidence": "medium"
   },
   "patella": {
    "label": "Patella",
-   "x": 0.9,
-   "y": -0.3,
-   "z": 1.57,
+   "x": 2.6,
+   "y": 0.65,
+   "z": -1.35,
    "dir": [
     0.0,
     1.0,
@@ -122,9 +122,9 @@
   },
   "tibialTuberosity": {
    "label": "Tibial tuberosity",
-   "x": 2.1,
-   "y": -2.1,
-   "z": -6.67,
+   "x": 0.3,
+   "y": -1.05,
+   "z": -4.75,
    "dir": [
     0.0,
     1.0,

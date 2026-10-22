@@ -204,16 +204,18 @@ def lower_extremity():
             fp = lab4 == int(np.argsort(s4)[::-1][o]) + 1
             fp = ndi.binary_dilation(fp, iterations=int(round(1.5 / V.sp[0])))
             return np.broadcast_to(fp, V.bone.shape)
-        near_t = zband(V, ank[2] - 3, ank[2] + 2) & V.bone & under(0)
-        near_f = zband(V, ank[2] - 4, ank[2] + 1) & V.bone & under(1)
+        # the tips lie about 1.5 cm (medial) and 2.5 cm (lateral) below the joint: deeper than that,
+        # under a foot at 90 degrees, the talus's head and the navicular reach further medially
+        near_t = zband(V, ank[2] - 1.5, ank[2] + 2) & V.bone & under(0)
+        near_f = zband(V, ank[2] - 3, ank[2] + 1) & V.bone & under(1)
         mm = extreme(V, near_t, 0, -lateral)
         lmal = extreme(V, near_f, 0, lateral)
         if mm is not None:
             out['medialMalleolus'] = entry(mm, [-lateral, 0, 0], 'Medial malleolus',
-                'the most medial bone within 3 cm of the ankle joint, under the tibia (the fibula is lateral 6 cm above)')
+                'the most medial bone within 1.5 cm below the ankle joint, under the tibia (the fibula is lateral 6 cm above)')
         if lmal is not None:
             out['lateralMalleolus'] = entry(lmal, [lateral, 0, 0], 'Lateral malleolus',
-                'the most lateral bone within 4 cm of the ankle joint, under the fibula')
+                'the most lateral bone within 3 cm below the ankle joint, under the fibula')
         # The foot is measured along its own axis, ankle to the tip of the toes: this one is
         # plantarflexed (post mortem), so "below the ankle" in z is not along the foot at all.
         fa = foot_axis(V, ank, lateral)

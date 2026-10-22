@@ -2,37 +2,37 @@
   "_about": "Anatomical centring landmarks for the x-ray protocols, measured by tools/measure_landmarks.py. Volume-frame entries are cm from the volume centre (x, y, z; +z superior) and are mapped to the world through the same flips and rotation as the phantom. Entries marked frame:\"world\" are already in the x-ray world frame. Re-run the tool after rebuilding a model.",
   "lowerextremity": {
     "knee": {
-      "x": 0.52,
-      "y": 5.48,
-      "z": -1.05,
-      "how": "joint-space valley between the condyles and the plateau (prominence 9.5 cm2)",
+      "x": -1.1,
+      "y": 4.79,
+      "z": -2.3,
+      "how": "joint-space valley between the condyles and the plateau (prominence 2.1 cm2)",
       "confidence": "high"
     },
     "ankle": {
-      "x": -2.92,
-      "y": 3.53,
-      "z": -40.35,
+      "x": -1.9,
+      "y": 3.48,
+      "z": -44.9,
       "how": "peak of the malleolar bulge \u2014 the clinical centring point, midway between the malleoli; tibia and talus are fused in the segmentation, so there is no joint-space dip to find",
       "confidence": "medium"
     },
     "hip": {
-      "x": 2.02,
-      "y": 3.12,
-      "z": 40.35,
+      "x": 0.95,
+      "y": 3.56,
+      "z": 38.8,
       "how": "peak of the proximal bulge: femoral head and trochanters",
       "confidence": "medium"
     },
     "femur": {
-      "x": -1.35,
-      "y": 3.02,
-      "z": 19.65,
+      "x": -2.05,
+      "y": 3.15,
+      "z": 18.2,
       "how": "midway between the knee and hip landmarks",
       "confidence": "medium"
     },
     "foot": {
-      "x": -2.02,
-      "y": 6.46,
-      "z": -46.95,
+      "x": -0.6,
+      "y": -5.93,
+      "z": -50.1,
       "how": "tarsals, 3 cm above the inferior end (the sole of the foot at 90 degrees)",
       "confidence": "low"
     }
