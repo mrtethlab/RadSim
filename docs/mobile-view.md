@@ -108,8 +108,7 @@ and the engine auto-switches to the page containing the step's target before pai
   Float32Arrays. The resolution buttons above the ceiling grey out with a note.
 - **Models**: keep the default subject the hand (20 MB); add a one-time size warning
   before first download of a >25 MB subject on a metered/cellular connection
-  (`navigator.connection.effectiveType` where available). GPU-backend subjects
-  (hand_hires, shoulder) already require the Python service and stay desktop-tier.
+  (`navigator.connection.effectiveType` where available).
 - **CT recon** on a phone CPU: works (it's the same JS), but slice count x DFOV matrix
   should default down one notch on mobile. Measure first; don't pre-tune.
 - **Memory**: one voxel volume resident at a time on mobile — evict `S.voxelCache` entries

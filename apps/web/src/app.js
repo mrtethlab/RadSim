@@ -266,22 +266,13 @@ function initScene(){
    (thin extremities need far less than a thick torso). */
 const VOXEL_MODELS = {
   hand:            { title:'Hand',                  scoutKv:80,  scoutMa:40,  xrayKv:55  },
-  // Same hand at 0.2 mm — the coarsest grid that can carry the measured trabecular lattice
-  // (Tb.Th+Tb.Sp = 0.96 mm at BV/TV 0.31 needs <= 0.206 mm). 316 MB, GPU backend only —
-  // the volume is not committed (over GitHub 100 MB per-file) so it is absent from the
-  // hosted build; run services/compute/app/build_hand.py to make it locally.
-  hand_hires:      { title:'Hand · 0.2 mm',        scoutKv:80,  scoutMa:40,  xrayKv:55  },
   chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
   headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
-  // the same patient's L1-to-ischium slab at 1 mm with graded bone (build_highres --graded-bone):
-  // the subject for reading a spine — pedicles, pars, facets — in fluoroscopy and radiography
-  lumbopelvis:     { title:'Lumbar spine & pelvis · 1 mm', scoutKv:120, scoutMa:200, xrayKv:85 },
   upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
   lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
   totalhipreplacement: { title:'Total Hip Replacement', scoutKv:120, scoutMa:250, xrayKv:90 },
   wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
-  hires_shoulder:  { title:'Shoulder · 0.25 mm',    scoutKv:110, scoutMa:120, xrayKv:70  },
   metalphantom:    { title:'Metal Test Phantom',    scoutKv:120, scoutMa:200, xrayKv:120 },
   // QC tools, not anatomy: a lead bar-pattern gauge for measuring limiting spatial
   // resolution in lp/mm. Shot at low kV / high mAs like real resolution QC, so the
@@ -336,7 +327,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:43, lumbopelvis:53};
+      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:43};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -579,7 +570,10 @@ function jointPosedVolume(vm){
 let restPts=null, restFor=null, restKey='', restY=0;
 function skinSample(vm){
   const [nx,ny,nz]=vm.dims, sp=vm.spacingMM.map(v=>v/10), d=vm.data;
-  const st=sp.map(v=>Math.max(1,Math.round(0.5/v)));
+  // 0.5 cm cells, but never coarser than the object along an axis: the line-pair gauge is 16
+  // voxels (0.8 mm) thick, a 100-voxel step saw one face only, and it was sunk below the
+  // receptor where the tracer stops (the film came out blank)
+  const st=sp.map((v,a)=>Math.max(1,Math.min(Math.round(0.5/v), [nx,ny,nz][a]-1)));
   const gx=Math.ceil(nx/st[0]), gy=Math.ceil(ny/st[1]), gz=Math.ceil(nz/st[2]);
   const occ=new Uint8Array(gx*gy*gz);
   for(let c=0;c<gz;c++) for(let b=0;b<gy;b++) for(let a=0;a<gx;a++)
@@ -1035,7 +1029,7 @@ function isObjRotated(){ const r=S.objRot; return r.x||r.y||r.z; }
    which is also the standard projection, so it reads PA at rest.
    A roll of ±90° turns a side to the tube; a lateral is named for the side nearest the
    receptor, and +90° lifts the patient's right (world +x) upward, leaving the LEFT down. */
-const PRONE_AT_REST = new Set(['hand','hand_hires']);
+const PRONE_AT_REST = new Set(['hand']);
 function poseLabel(){
   const rest = PRONE_AT_REST.has(S.subject) ? 180 : 0;      // roll that means "anterior up"
   const r = (((S.objRot.z + rest) % 360) + 360) % 360;
@@ -1066,19 +1060,13 @@ function setGroupRot(grp,R){ const m=new THREE.Matrix4();
    landed on the viewer's LEFT, where a radiograph hung as if facing the patient must
    put it on the viewer's right. New models should be checked the same way.
    Checked and NOT on this list, so do not add them without re-measuring:
-     hand / hand_hires  the metacarpal arch is convex toward -y and the thumb's metacarpal
+     hand             the metacarpal arch is convex toward -y and the thumb's metacarpal
                       lies palmar of the other four, so -y = dorsal; the thumb is at low x
                       (its digit falls 24 mm short of the fingers) and the radius and ulna
                       sit at low z. That is a RIGHT hand, and the house flips put the
                       dorsum toward the tube with the thumb to the image left — which is a
-                      pronated right hand seen from above, i.e. a correct PA hand.
-     hires_shoulder   scapula posterior at high y, heart (y 215) anterior of lung (y 260),
-                      medial bone band at high y: +y = POSTERIOR. Lung at low x, so the
-                      shoulder is at +x and is a LEFT shoulder — house convention on both
-                      axes. (A surface-flatness test disagrees here and is WRONG: the y=0
-                      face is 33.8% tissue, so that "flat surface" is the crop plane, not
-                      skin. It is backend-only, but the backend is sent the same flips.) */
-const ROLLED_180 = new Set(['chestabdopelvis','lumbopelvis','headneck']);
+                      pronated right hand seen from above, i.e. a correct PA hand. */
+const ROLLED_180 = new Set(['chestabdopelvis','headneck']);
 // Anatomical axis flips for the voxel subjects (house convention: volume x=Left,
 // y=Posterior, z=Superior). World: x lateral, y up, z couch/long. CT = supine head-first
 // (anterior up, head toward −z into the bore). X-ray = AP supine (anterior up toward the
@@ -3169,7 +3157,7 @@ function updateMarkerNote(){
 }
 /* Subjects with a midline, where the marker's letter can be checked against the side it lies on.
    A single limb cannot be told left from right here, so only its placement is judged. */
-const BILATERAL=new Set(['chest','headneck','chestabdopelvis','lumbopelvis','totalhipreplacement','wholebody']);
+const BILATERAL=new Set(['chest','headneck','chestabdopelvis','totalhipreplacement','wholebody']);
 function updateDoseReadout(){
   const d=S.lastDose, set=(id,h)=>{ const el=$(id); if(el) el.innerHTML=h; };
   if(!d){ set('esdV','—'); set('dapV','—'); set('dapSumV','—'); return; }

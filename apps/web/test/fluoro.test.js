@@ -1,9 +1,7 @@
-// Fluoroscopy image processing and the lumbopelvic model it is meant to show a spine with.
+// Fluoroscopy image processing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { NR_K, recursiveStep, displayMap, edgeEnhance } from '../src/core/fluoroDisplay.js';
-import { BodyMaterials } from '../src/core/materials.js';
 
 let seed = 7;
 const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
@@ -49,24 +47,4 @@ test('edge enhancement leaves flat regions alone and steepens a step', () => {
   edgeEnhance(lum, n, 0.45);
   assert.ok(Math.abs(lum[5 * n + 3] - before[5 * n + 3]) < 1e-6, 'flat stays flat');
   assert.ok(lum[5 * n + 7] < before[5 * n + 7] && lum[5 * n + 8] > before[5 * n + 8], 'the step overshoots both ways');
-});
-
-test('the lumbopelvic model is 1 mm with graded bone, and every material in it is in the legend', () => {
-  const dir = new URL('../public/models/lumbopelvis/', import.meta.url);
-  const h = JSON.parse(readFileSync(new URL('lumbopelvis.model.json', dir), 'utf8'));
-  assert.deepEqual(h.spacing, [1, 1, 1]);
-  assert.ok(!h.backendOnly, 'fluoro is browser-only, so the volume must load in the browser');
-  const [nx, ny, nz] = h.dims;
-  const data = readFileSync(new URL('lumbopelvis.mat.bin', dir));
-  assert.equal(data.length, nx * ny * nz);
-  const seen = new Uint32Array(256);
-  for (let i = 0; i < data.length; i += 7) seen[data[i]]++;
-  const graded = [54, 55, 56, 57, 58, 59, 60, 61].filter((id) => seen[id] > 0);
-  assert.ok(graded.length >= 7, `graded bone ids present: ${graded}`);
-  assert.equal(seen[17] + seen[18] < (graded.reduce((s, id) => s + seen[id], 0)) / 10, true,
-    'labelled bone is graded, not the two old classes');
-  for (let id = 0; id < 256; id++) if (seen[id]) assert.ok(id < BodyMaterials.count, `material ${id} has no legend entry`);
-  // denser grades attenuate more
-  const mu = (id) => BodyMaterials.muById(id, 60);
-  for (let id = 54; id < 61; id++) assert.ok(mu(id + 1) > mu(id), `Bone grade ${id + 1} denser than ${id}`);
 });

@@ -24,7 +24,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODELS = ROOT / 'apps' / 'web' / 'public' / 'models'
 OUT = ROOT / 'apps' / 'web' / 'src' / 'data' / 'palpation.json'
 LANDMARKS = json.loads((ROOT / 'apps' / 'web' / 'src' / 'data' / 'landmarks.json').read_text(encoding='utf-8'))
-ROLLED_180 = {'chestabdopelvis', 'lumbopelvis', 'headneck'}
+ROLLED_180 = {'chestabdopelvis', 'headneck'}
 
 
 class Vol:

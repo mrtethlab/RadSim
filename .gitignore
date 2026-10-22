@@ -26,16 +26,9 @@ Thumbs.db
 # local-only notes (not for the repo)
 SUMMARY.md
 
-# generated voxel-model assets (regenerable via services/compute/app/build_*.py).
-# Models are committed so GitHub Pages can serve them — EXCEPT the sub-mm ones, whose
-# volumes exceed GitHub's 100 MB per-file limit and would be far too much to download
-# over the web anyway. Only their .model.json is committed, so the subject still appears
-# in the picker; rebuild the volume locally and run the GPU backend to use it.
-#   hires_shoulder  254 MB    hand_hires  316 MB
+# generated voxel-model assets (regenerable via services/compute/app/build_*.py) are committed
+# so GitHub Pages can serve them; the source CTs are not
 services/compute/data/
-apps/web/public/models/hires_shoulder/*.mat.bin
-apps/web/public/models/hires_shoulder/*.glb
-apps/web/public/models/hand_hires/*.mat.bin
 
 # scratch space for probing remote endpoints
 .tmp/
