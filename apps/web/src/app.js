@@ -11,7 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
-import { axisToward, forwardChain, forwardCompiled, compileChain, poseVolume, anyBent } from './core/jointPose.js';
+import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
@@ -626,7 +626,7 @@ function bendVoxelMesh(){
     const rest=g.userData.rest, a=pos.array;
     if(!cc){ a.set(rest); }
     else for(let i=0;i<a.length;i+=3){
-      const q=forwardCompiled([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], cc);
+      const q=forwardSkin([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], cc);   // taut over a bend, folded inside it
       a[i]=f[0]*q[0]*10; a[i+1]=f[1]*q[1]*10; a[i+2]=f[2]*q[2]*10;
     }
     pos.needsUpdate=true; g.computeBoundingSphere(); normalsDue.add(g);

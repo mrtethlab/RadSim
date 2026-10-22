@@ -1,7 +1,7 @@
 // Joint posing: bending a rigid CT at a joint, for the volume, the mesh and the landmarks alike.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume } from '../src/core/jointPose.js';
+import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, compileChain, forwardCompiled, forwardSkin } from '../src/core/jointPose.js';
 
 const near = (a, b, t = 1e-9) => Math.abs(a - b) <= t;
 // a wrist at the origin, the hand along +z; ulnar deviation turns the hand toward -x
@@ -148,4 +148,24 @@ test('a rolled volume carries its tissue round the limb', () => {
   assert.equal(at(2, 0, -8), 18, 'the stripe has gone round to +x below the joint');
   assert.equal(at(0, 2, -8), 7, 'and left +y');
   assert.equal(at(0, 2, 8), 18, 'above the joint it is where it was');
+});
+
+test('the skin goes taut over a bend and folds inside it', () => {
+  // a leg along -z from an ankle at the origin, the foot plantarflexed 80 degrees (toward +y)
+  const J = { c: [0, 0, 0], distal: [0, 0, -1], blend: 1.5,
+    motions: [{ key: 'flex', axis: axisToward([0, 0, -1], [0, 1, 0]) }] };
+  const cc = compileChain([J], { flex: 80 });
+  // outside the bend (-y at rest), in the crease, 5 cm from the axis: drawn in toward it
+  const p = [0, -5, -0.2];
+  const arc = forwardCompiled(p, cc), skin = forwardSkin(p, cc);
+  assert.ok(Math.hypot(skin[1], skin[2]) < Math.hypot(arc[1], arc[2]) - 0.5, `taut: ${skin} vs ${arc}`);
+  // the bone near the axis keeps its arc
+  const b = [0, -0.8, -0.2];
+  assert.deepEqual(forwardSkin(b, cc).map((v) => +v.toFixed(9)), forwardCompiled(b, cc).map((v) => +v.toFixed(9)));
+  // inside the bend nothing crosses the bisector: the turned part stays on its own side
+  const m = cc[0].bis.map((v) => v / cc[0].bisL);
+  for (const q of [[0, 3, -4], [0, 4, -2], [0, 2, -6]]) {
+    const r = forwardSkin(q, cc);
+    if (r[0] * cc[0].ins[0] + r[1] * cc[0].ins[1] + r[2] * cc[0].ins[2] > 0) assert.ok(r[0] * m[0] + r[1] * m[1] + r[2] * m[2] <= 1e-9, `${q} -> ${r}`);
+  }
 });

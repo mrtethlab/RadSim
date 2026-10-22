@@ -153,6 +153,50 @@ export function forwardCompiled(p, cc) {
   for (let i = cc.length - 1; i >= 0; i--) q = forwardOne(q, cc[i]);
   return q;
 }
+/* THE SKIN in the room. Turned by its share of the bend, a point in the crease sweeps an arc at its
+   own distance from the joint: on the outside of a bend that rounded the front of a plantarflexed
+   ankle into a dome 2 cm proud of the shin, and on the inside the heel swung up through the back
+   of the calf. Real skin goes taut over the outside of a bend and folds on the inside. So, for
+   the mesh:
+   - outside the bend, beyond SKIN_CORE cm from the joint's axis (the bone near the joint keeps its
+     arc), a crease point's distance from the axis shrinks as a linear blend of the unmoved and
+     the fully turned point would have it, |(1 - w) + w e^iT|, and a little more (to the power
+     1.5): a chord, not the arc, where the ankle's front then runs on from the shin to the dorsum;
+   - inside the bend, neither piece crosses the bisector (the volume's crook rule): a point of the
+     part above that lies past it, or of the part below short of it, is laid onto it, a fold.
+   The volume the film is traced through is posed by the map above; this only shapes the outline
+   the room shows. */
+const SKIN_CORE = 1;
+function skinOne(p, J) {
+  let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
+  const s = dot(d, J.d);
+  if (!inLimb(d, J, s)) return p;
+  const outside = dot(d, J.ins) < 0;
+  d = roll(d, J, 1);
+  const w = J.T ? blendWeight(s, J.b) : 0;
+  let r = w ? rotate(d, J.n, w * J.T) : d;
+  if (w > 0 && w < 1 && outside) {
+    const ax = dot(r, J.n), rp = [r[0] - ax * J.n[0], r[1] - ax * J.n[1], r[2] - ax * J.n[2]];
+    const len = Math.hypot(rp[0], rp[1], rp[2]);
+    if (len > SKIN_CORE) {
+      const rho = Math.pow(Math.max(0, 1 - 2 * w * (1 - w) * (1 - Math.cos(J.T))), 0.75);
+      const k = (SKIN_CORE + (len - SKIN_CORE) * rho) / len;
+      r = [ax * J.n[0] + rp[0] * k, ax * J.n[1] + rp[1] * k, ax * J.n[2] + rp[2] * k];
+    }
+  }
+  if (J.T && dot(r, J.ins) > 0) {
+    const h = (r[0] * J.bis[0] + r[1] * J.bis[1] + r[2] * J.bis[2]) / J.bisL;   // + toward the part above
+    if ((w < 0.5 && h < 0) || (w >= 0.5 && h > 0)) {
+      r = [r[0] - h * J.bis[0] / J.bisL, r[1] - h * J.bis[1] / J.bisL, r[2] - h * J.bis[2] / J.bisL];
+    }
+  }
+  return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
+}
+export function forwardSkin(p, cc) {
+  let q = p;
+  for (let i = cc.length - 1; i >= 0; i--) q = skinOne(q, cc[i]);
+  return q;
+}
 export function forwardChain(p, chain, angles) {
   return forwardCompiled(p, compileChain(chain, angles));
 }
