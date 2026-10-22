@@ -6,6 +6,39 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-22
+
+### Limb models, three new series, joint rolls and a neck — [#71](https://github.com/mrtethlab/RadSim/pull/71)
+**One patient, one part.** The arm and leg models are rebuilt from one healthy patient (z053) by `build_limbs.py`:
+- each limb is separated from its neighbours along the skin, with tubes and sheets pared off;
+- the leg is at 1 mm, so the lateral foot shows its tarsals as a true lateral;
+- the soft tissue is flat or convex, never concave, with at least 2 cm over every bone (easing to 1 cm at the wrist and ankle). The medial epicondyle no longer pierces the skin;
+- both limbs are baked into the anatomical position, palm up and the foot at 90° to the leg (`bake_pose.py`).
+
+**Display.** A new `limb` LUT gives the extremity films transparent grey soft tissue with the bone detail clear: no detail processing, and headroom above the densest bone. This also removes the elbow's line artifact.
+
+**Series.** The Trainer gains foot ×3, elbow ×4 and cervical spine ×6, with palpation marks for the head, neck and arm.
+
+**Joints.**
+- *Rolls:* the wrist, elbow (pronation and supination spread along the forearm), knee and ankle now roll, and the ankle inverts. This allows a pronated hand or a mortise ankle.
+- *Skin:* dorsiflexing the ankle no longer domes the skin or tears the heel into it. The room's skin is drawn taut over a bend and folds on the crook's bisector inside it. The bones keep their exact rigid map.
+- *Neck:* the head and neck model flexes, extends, tilts and rotates. Each point turns by its own share of one rotation, read from a weight grid made from the CT's labels:
+  - the skull and jaw turn whole;
+  - C1 to C6 turn progressively less;
+  - C7 and the shoulders stay still.
+- *C-spine judging:* the Trainer's C-spine views now judge the chin. The AP views want it raised about 10°, measured from this patient's incisor–mastoid line.
+- *Performance:* posing runs in a Web Worker, sliders move in 5° stations, and the last three poses are cached. Dragging went from about 7 fps to 0 ms per input.
+
+**Clean-up.** The GPU-only hand and shoulder models and the 1 mm lumbopelvic model are gone. The line-pair gauge shows again.
+
+**Checked:**
+- every new view passes at its ideal setup;
+- the chart recalibrated within ±1 DI;
+- the neck checked in projections and on the room mesh at flexion 40°, extension 50°, tilt 30° and rotation 60°;
+- `npm test`: 153 pass. The new tests fail when their fixes are reverted.
+
+---
+
 ## 2026-10-21
 
 ### X-ray: Palpate drawer, 43×43 receptor, resolution under Simulation — [#69](https://github.com/mrtethlab/RadSim/pull/69)
