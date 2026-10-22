@@ -1,0 +1,23 @@
+// Pose a model's label volume with the app's own joint code (apps/web/src/core/jointPose.js), for
+// services/compute/app/bake_pose.py: the limb models are baked into the anatomical position.
+//   node tools/pose_volume.mjs <model> '<angles json>' <out.bin>   -> out.bin (uint8) + out.bin.json {dims}
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const WEB = path.join(ROOT, 'apps', 'web');
+const JP = await import(pathToFileURL(path.join(WEB, 'src', 'core', 'jointPose.js')));
+const [name, ang, out] = process.argv.slice(2);
+const dir = path.join(WEB, 'public', 'models', name);
+const h = JSON.parse(fs.readFileSync(path.join(dir, `${name}.model.json`), 'utf8'));
+const data = new Uint8Array(fs.readFileSync(path.join(dir, `${name}.mat.bin`)));
+const js = JSON.parse(fs.readFileSync(path.join(WEB, 'src', 'data', 'joints.json'), 'utf8'))[name];
+const chain = Object.values(js).map((j) => ({ ...j,
+  motions: j.motions.map((m) => ({ ...m, axis: JP.axisToward(m.from || j.distal, m.toward) })) }));
+const sp = (h.spacing || h.spacingMM || [1.5, 1.5, 1.5]).map(Number);
+// the x-ray room's frame flips (app.js voxelFlips, for a subject not rolled 180 degrees)
+const P = JP.poseVolume({ dims: h.dims, spacingMM: sp, data }, [true, true, false], chain, JSON.parse(ang));
+fs.writeFileSync(out, P.data);
+fs.writeFileSync(out + '.json', JSON.stringify({ dims: P.dims, pad: P.pad }));
+console.log(name, 'posed', ang, '->', P.dims.join('x'));

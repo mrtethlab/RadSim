@@ -254,7 +254,8 @@
                 "centre": "forearm",
                 "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 9 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
                 "joints": {
-                  "elbow.flex": 90
+                  "elbow.flex": 90,
+                  "elbow.roll": -90
                 }
               }
             }
@@ -310,7 +311,8 @@
                 "centre": "elbowJoint",
                 "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 9 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
                 "joints": {
-                  "elbow.flex": 90
+                  "elbow.flex": 90,
+                  "elbow.roll": -90
                 }
               }
             }
@@ -455,7 +457,10 @@
                 "cc": 10,
                 "centre": "mt3Base",
                 "fidelity": "approx",
-                "note": "This foot rests plantarflexed post mortem (about 75 degrees) with the leg straight, toes 17 degrees up from the table: the sole lies nearly flat, as a raised knee would put it. The Trainer asks for it flat."
+                "note": "The foot rests at 90 degrees to the leg (the anatomical position); with the leg straight it is plantarflexed 80 degrees, the most the ankle allows, so the sole lies nearly flat, as a raised knee would put it. The Trainer asks for it flat.",
+                "joints": {
+                  "ankle.flex": -80
+                }
               }
             },
             {
@@ -480,13 +485,16 @@
                 "cc": 0,
                 "centre": "mt3Base",
                 "fidelity": "approx",
-                "note": "This foot rests plantarflexed post mortem (about 75 degrees) with the leg straight, toes 17 degrees up from the table: the sole lies nearly flat, as a raised knee would put it. The Trainer asks for it flat."
+                "note": "The foot rests at 90 degrees to the leg (the anatomical position); with the leg straight it is plantarflexed 80 degrees, the most the ankle allows, so the sole lies nearly flat, as a raised knee would put it. The Trainer asks for it flat.",
+                "joints": {
+                  "ankle.flex": -80
+                }
               }
             },
             {
               "proj": "Lateral foot",
               "kv": 62,
-              "mas": 5.0,
+              "mas": 2.5,
               "grid": false,
               "lut": "extremity",
               "sid": 100,
@@ -503,7 +511,7 @@
               "pose": {
                 "roll": -90,
                 "cc": 0,
-                "centre": "mt3Base",
+                "centre": "medialCuneiform",
                 "joints": {
                   "ankle.flex": 0
                 }
@@ -517,7 +525,7 @@
             {
               "proj": "AP ankle",
               "kv": 63,
-              "mas": 4.0,
+              "mas": 6.4,
               "grid": false,
               "lut": "limb",
               "sid": 100,
@@ -543,7 +551,7 @@
             {
               "proj": "Mortise ankle",
               "kv": 64,
-              "mas": 6.4,
+              "mas": 8,
               "grid": false,
               "lut": "limb",
               "sid": 100,
@@ -569,7 +577,7 @@
             {
               "proj": "Lateral ankle",
               "kv": 65,
-              "mas": 4.0,
+              "mas": 3.2,
               "grid": false,
               "lut": "limb",
               "sid": 100,

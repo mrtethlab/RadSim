@@ -154,7 +154,13 @@ def lower_extremity():
         sel = band.copy(); sel[band] = (xb >= lo) & (xb <= hi)
         out['mt3Base'] = pt([x[sel].mean(), y[sel].mean(), z[sel].mean()],
             f'the middle third of the foot bone 43-51 % of the way from the ankle to the tip of the toes ({L:.1f} cm): the base of the 3rd metatarsal',
-            'AP foot: CR 10 degrees toward the heel to the base of the 3rd metatarsal; AP medial oblique foot: CR perpendicular to the base of the 3rd metatarsal; lateral foot: CR to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager; Radiopaedia)')
+            'AP foot: CR 10 degrees toward the heel to the base of the 3rd metatarsal; AP medial oblique foot: CR perpendicular to the base of the 3rd metatarsal (Bontrager; Radiopaedia)')
+        # the medial cuneiform lies proximal of the metatarsal bases, about 2 cm back along the foot.
+        # Centred on the 3rd metatarsal a third of the way forward, a lateral foot's 30 cm field fell
+        # short of the heel; on the cuneiform it holds heel to toes
+        c = np.array([x[sel].mean(), y[sel].mean(), z[sel].mean()]) - 2.0 * u
+        out['medialCuneiform'] = pt(c, 'the base of the 3rd metatarsal less 2 cm along the foot (toward the heel): the cuneiforms',
+            'Lateral (mediolateral) foot: CR perpendicular to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager)')
     return out
 
 

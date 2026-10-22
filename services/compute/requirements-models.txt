@@ -81,6 +81,9 @@
 #   ./.venv/Scripts/python.exe -m app.build_limbs cache z045 z053          # resample + materialise once
 #   ./.venv/Scripts/python.exe -m app.build_limbs lowerextremity upperextremity
 #   ./.venv/Scripts/python.exe -m app.build_limbs headneck                # (each also rebuilds its smooth skin)
+#   ./.venv/Scripts/python.exe -m app.bake_pose lowerextremity upperextremity   # foot at 90 degrees, palm up
+#     (measures the joints on the scan, poses each limb into the anatomical position with the app's
+#      own joint code through node, and measures everything again on the baked model)
 # then re-measure (from the repo root; the head's labels need this venv's nibabel):
 #   services/compute/.venv/Scripts/python.exe tools/measure_landmarks.py lowerextremity upperextremity headneck
 #   python tools/measure_palpation.py && python tools/measure_centring.py && python tools/measure_joints.py

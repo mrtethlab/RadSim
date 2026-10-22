@@ -103,18 +103,21 @@ def mark(mask, z, sp, how, sure, prefer='largest'):
 def lower_extremity():
     h, vol, bone, sp = load('lowerextremity')
     m = main_component(bone); p = profile(m, sp)
-    knee, prom = valley(p, sp, 50, 63)
-    ankle = bulge(p, sp, 9, 21)
-    hip = bulge(p, sp, 92, 103)
+    # windows from the TOP (the hip): the foot, baked to 90 degrees (services/compute/app/bake_pose.py),
+    # no longer reaches down along the leg, and the volume's lower end moved up 6.5 cm with it
+    top = m.shape[0] * sp[2]
+    knee, prom = valley(p, sp, top - 57, top - 44)
+    ankle = bulge(p, sp, top - 98, top - 86)
+    hip = bulge(p, sp, top - 15, top - 4)
     femur = (knee + hip) // 2
-    foot = int(5.0 / sp[2])
+    foot = int(3.0 / sp[2])
     return {
         'knee': mark(m, knee, sp, f'joint-space valley between the condyles and the plateau (prominence {prom:.1f} cm2)', 'high'),
         'ankle': mark(m, ankle, sp, 'peak of the malleolar bulge — the clinical centring point, midway between the malleoli; '
                                      'tibia and talus are fused in the segmentation, so there is no joint-space dip to find', 'medium'),
         'hip': mark(m, hip, sp, 'peak of the proximal bulge: femoral head and trochanters', 'medium'),
         'femur': mark(m, femur, sp, 'midway between the knee and hip landmarks', 'medium'),
-        'foot': mark(m, foot, sp, 'tarsals, 5 cm above the inferior end — the foot points anteriorly in this supine leg', 'low'),
+        'foot': mark(m, foot, sp, 'tarsals, 3 cm above the inferior end (the sole of the foot at 90 degrees)', 'low'),
     }
 
 

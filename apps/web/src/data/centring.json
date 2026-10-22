@@ -60,35 +60,43 @@
  },
  "lowerextremity": {
   "intermalleolar": {
-   "x": 3.52,
-   "y": -5.47,
-   "z": -37.5,
+   "x": 3.6,
+   "y": -5.17,
+   "z": -40.34,
    "how": "midway between the measured medial and lateral malleoli",
    "guide": "AP, AP mortise and AP oblique ankle: CR perpendicular to a point midway between the malleoli (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "medialMalleolus": {
-   "x": 1.05,
-   "y": -4.5,
-   "z": -35.55,
+   "x": 0.75,
+   "y": -3.75,
+   "z": -40.27,
    "how": "the medial malleolus (palpation landmark)",
    "guide": "Lateral (mediolateral) ankle: CR perpendicular to the medial malleolus (Bontrager)",
    "confidence": "medium"
   },
   "mt3Base": {
-   "x": 4.82,
-   "y": -3.84,
-   "z": -43.9,
-   "how": "the middle third of the foot bone 43-51 % of the way from the ankle to the tip of the toes (18.1 cm): the base of the 3rd metatarsal",
-   "guide": "AP foot: CR 10 degrees toward the heel to the base of the 3rd metatarsal; AP medial oblique foot: CR perpendicular to the base of the 3rd metatarsal; lateral foot: CR to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager; Radiopaedia)",
+   "x": 3.98,
+   "y": 2.53,
+   "z": -42.22,
+   "how": "the middle third of the foot bone 43-51 % of the way from the ankle to the tip of the toes (13.4 cm): the base of the 3rd metatarsal",
+   "guide": "AP foot: CR 10 degrees toward the heel to the base of the 3rd metatarsal; AP medial oblique foot: CR perpendicular to the base of the 3rd metatarsal (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "medialCuneiform": {
+   "x": 3.78,
+   "y": 0.54,
+   "z": -42.07,
+   "how": "the base of the 3rd metatarsal less 2 cm along the foot (toward the heel): the cuneiforms",
+   "guide": "Lateral (mediolateral) foot: CR perpendicular to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager)",
    "confidence": "medium"
   }
  },
  "upperextremity": {
   "elbowJoint": {
-   "x": 2.48,
-   "y": -1.12,
-   "z": 2.02,
+   "x": 0.6,
+   "y": -3.97,
+   "z": 0.38,
    "how": "the elbow joint: 1.5 cm distal of the midpoint of the measured epicondyles",
    "guide": "AP, AP obliques and lateral elbow: CR perpendicular to the mid elbow joint (Bontrager; Radiopaedia)",
    "confidence": "medium"

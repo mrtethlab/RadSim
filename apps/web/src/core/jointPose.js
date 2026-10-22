@@ -65,30 +65,43 @@ function mul3(a, b) {
   return r;
 }
 /* A joint at given angles, as one rotation: { c, d (distal), b (blend), n (axis), T (radians) },
-   or null when it is straight. The motions compose in order (the first, then the next about its
-   fixed axis); the composite's axis-angle is read off its matrix. */
+   and a roll: { tw (radians), sp }, or null when it is straight. The bending motions compose in
+   order (the first, then the next about its fixed axis); the composite's axis-angle is read off its
+   matrix.
+
+   A ROLL (a motion with roll: true) turns the distal part about its own long axis — the line
+   through c along `distal` — before the bend: pronation of the forearm, rotation of the leg at
+   the knee, of the foot at the ankle. It does not change how far a point lies along the limb, so
+   its inverse is exact and the bend's crease solve is untouched. Its share rises like the bend's
+   across the crease, or, with `spread` (cm past the joint), linearly from the crease's far edge
+   to there: a forearm pronates along its length, the radius turning round the ulna, not at the
+   elbow, whose bones keep still. */
 export function compileJoint(j, angles) {
   let R = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-  let any = false;
+  let any = false, tw = 0;
   for (const m of j.motions) {
     const a = (motionAngle(angles, m) - (m.rest || 0)) * Math.PI / 180;
     if (!a) continue;
+    if (m.roll) { tw += dot(m.axis, j.distal) < 0 ? -a : a; continue; }
     any = true;
     const [x, y, z] = m.axis, c = Math.cos(a), s = Math.sin(a), t = 1 - c;
     R = mul3([t * x * x + c, t * x * y - s * z, t * x * z + s * y,
               t * x * y + s * z, t * y * y + c, t * y * z - s * x,
               t * x * z - s * y, t * y * z + s * x, t * z * z + c], R);
   }
-  if (!any) return null;
-  const T = Math.acos(Math.max(-1, Math.min(1, (R[0] + R[4] + R[8] - 1) / 2)));
-  if (T < 1e-9) return null;
-  let n = [R[7] - R[5], R[2] - R[6], R[3] - R[1]];
-  const ln = Math.hypot(n[0], n[1], n[2]);
-  n = ln < 1e-9
-    ? unit([Math.sqrt(Math.max(0, (R[0] + 1) / 2)), Math.sqrt(Math.max(0, (R[4] + 1) / 2)), Math.sqrt(Math.max(0, (R[8] + 1) / 2))])
-    : [n[0] / ln, n[1] / ln, n[2] / ln];
+  let T = any ? Math.acos(Math.max(-1, Math.min(1, (R[0] + R[4] + R[8] - 1) / 2))) : 0;
+  if (T < 1e-9) T = 0;
+  if (!T && Math.abs(tw) < 1e-9) return null;
+  let n = [1, 0, 0];
+  if (T) {
+    n = [R[7] - R[5], R[2] - R[6], R[3] - R[1]];
+    const ln = Math.hypot(n[0], n[1], n[2]);
+    n = ln < 1e-9
+      ? unit([Math.sqrt(Math.max(0, (R[0] + 1) / 2)), Math.sqrt(Math.max(0, (R[4] + 1) / 2)), Math.sqrt(Math.max(0, (R[8] + 1) / 2))])
+      : [n[0] / ln, n[1] / ln, n[2] / ln];
+  }
   const f = rotate(j.distal, n, T);
-  return { c: j.c, d: j.distal, b: j.blend, n, T, R2: j.radius ? j.radius * j.radius : Infinity,
+  return { c: j.c, d: j.distal, b: j.blend, n, T, tw, sp: j.spread || 0, R2: j.radius ? j.radius * j.radius : Infinity,
     ins: [f[0] - j.distal[0], f[1] - j.distal[1], f[2] - j.distal[2]],
     bis: [-f[0] - j.distal[0], -f[1] - j.distal[1], -f[2] - j.distal[2]],
     bisL: Math.hypot(f[0] + j.distal[0], f[1] + j.distal[1], f[2] + j.distal[2]) };
@@ -106,6 +119,19 @@ function inCrook(J, dq, phi) {
   return dot(dq, J.bis) >= 0 ? phi <= J.T / 2 : phi >= J.T / 2;
 }
 
+// the share of a joint's roll a point gets, by its distance s past the joint
+function twistWeight(s, J) {
+  // spread: from the far edge of the crease, so the joint itself (the humerus's condyles, the
+  // olecranon) does not turn; the forearm then turns evenly to `spread`
+  if (J.sp > J.b) return Math.max(0, Math.min(1, (s - J.b) / (J.sp - J.b)));
+  return blendWeight(s, J.b);
+}
+// a point relative to the joint's centre, rolled (sign +1) or unrolled (-1) about the limb's axis
+function roll(r, J, sign) {
+  if (!J.tw) return r;
+  const w = twistWeight(dot(r, J.d), J);
+  return w ? rotate(r, J.d, sign * w * J.tw) : r;
+}
 export function compileChain(chain, angles) {
   return chain.map((j) => compileJoint(j, angles)).filter(Boolean);
 }
@@ -113,11 +139,12 @@ export function compileChain(chain, angles) {
 // within the limb's cylinder (rest frame)
 function inLimb(d, J, s) { return J.R2 === Infinity || dot(d, d) - s * s < J.R2; }
 function forwardOne(p, J) {
-  const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
+  let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
   const s = dot(d, J.d);
-  const w = blendWeight(s, J.b);
-  if (!w || !inLimb(d, J, s)) return p;
-  const r = rotate(d, J.n, w * J.T);
+  if (!inLimb(d, J, s)) return p;
+  d = roll(d, J, 1);
+  const w = J.T ? blendWeight(s, J.b) : 0;
+  const r = w ? rotate(d, J.n, w * J.T) : d;
   return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
 }
 // a compiled chain, most proximal first: the most distal joint applies first
@@ -135,8 +162,11 @@ export function forwardChain(p, chain, angles) {
    is returned, the moved part first: fully turned, then in the crease, then unmoved. The volume
    resampler takes the first that lands on tissue. */
 function preimagesOne(q, J) {
-  const out = [];
   const dq = [q[0] - J.c[0], q[1] - J.c[1], q[2] - J.c[2]];
+  // the roll is undone last: it keeps a point's distance along the limb, which the bend's solve uses
+  const unroll = (p) => { const r = roll([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J, -1); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
+  if (!J.T) return [unroll(q)];
+  const out = [];
   // s(phi): how far past the joint q lies once turned BACK by phi
   const A = dot(J.d, dq), B = -dot(J.d, cross(J.n, dq)), C = dot(J.d, J.n) * dot(J.n, dq);
   const s = (phi) => A * Math.cos(phi) + B * Math.sin(phi) + C * (1 - Math.cos(phi));
@@ -152,7 +182,7 @@ function preimagesOne(q, J) {
     if (w > 0 && w < 1) { const p = back(phi); if (limb(p)) out.push(p); }
   }
   if ((A <= -J.b || !inLimb(dq, J, A)) && inCrook(J, dq, 0)) out.push(q);
-  return out;
+  return J.tw ? out.map(unroll) : out;
 }
 export function preimagesCompiled(q, cc) {
   let cands = [q];
@@ -301,7 +331,10 @@ export function poseVolume(vm, flips, chain, angles) {
           const rx = M[0] * dx + M[1] * dy + M[2] * dz, ry = M[3] * dx + M[4] * dy + M[5] * dz, rz = M[6] * dx + M[7] * dy + M[8] * dz;
           const rs = rx * one.d[0] + ry * one.d[1] + rz * one.d[2];
           const dq = [dx, dy, dz];
-          if (rs >= one.b && (one.R2 === Infinity || rx * rx + ry * ry + rz * rz - rs * rs < one.R2) && inCrook(one, dq, one.T)) v = sampleRest(one.c[0] + rx, one.c[1] + ry, one.c[2] + rz);
+          if (rs >= one.b && (one.R2 === Infinity || rx * rx + ry * ry + rz * rz - rs * rs < one.R2) && inCrook(one, dq, one.T)) {
+            const u = roll([rx, ry, rz], one, -1);
+            v = sampleRest(one.c[0] + u[0], one.c[1] + u[1], one.c[2] + u[2]);
+          }
           if (!v) v = still;
           if (!v && dx * dx + dy * dy + dz * dz < reach2[0]) {
             for (const p of preimagesOne([x, y, z], one)) { v = sampleRest(p[0], p[1], p[2]); if (v) break; }

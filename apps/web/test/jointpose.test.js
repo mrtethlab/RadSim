@@ -109,3 +109,43 @@ test('angles are anatomical: unset means the model as scanned, and the turn is f
   const t = forwardChain([0, 0, 8], [j], { dev: 0 });          // straightened: turned 26 deg radially
   assert.ok(Math.abs(Math.atan2(t[0], t[2]) * 180 / Math.PI - 26) < 1e-6, `straightened ${t}`);
 });
+
+// a forearm along -z from an elbow at the origin: flexion toward +y, and a roll about the forearm
+// (+ turns +y toward +x: supination, on this right arm)
+const rollElbow = (spread) => ({ c: [0, 0, 0], distal: [0, 0, -1], blend: 1, spread,
+  motions: [{ key: 'flex', axis: axisToward([0, 0, -1], [0, 1, 0]) },
+            { key: 'roll', roll: true, axis: axisToward([0, 1, 0], [1, 0, 0]) }] });
+
+test('a roll turns the distal part about its own axis, and keeps its distance along the limb', () => {
+  const J = rollElbow(0);
+  const p = forwardChain([0, 1, -6], [J], { roll: 90 });
+  assert.ok(near(p[0], 1, 1e-9) && near(p[1], 0, 1e-9) && near(p[2], -6, 1e-9), `rolled: ${p}`);
+  assert.deepEqual(forwardChain([0, 1, 3], [J], { roll: 90 }), [0, 1, 3], 'above the joint nothing rolls');
+  // spread over the forearm: half way along, half the roll
+  const q = forwardChain([0, 1, -5.5], [rollElbow(10)], { roll: 90 });   // (1 cm to 10 cm: half way at 5.5)
+  assert.deepEqual(forwardChain([0, 1, -0.5], [rollElbow(10)], { roll: 90 }), [0, 1, -0.5], 'the joint itself does not turn');
+  assert.ok(near(Math.atan2(q[0], q[1]) * 180 / Math.PI, 45, 1e-6), `half rolled: ${q}`);
+});
+
+test('a roll and a bend together invert exactly', () => {
+  const J = rollElbow(10), angles = { flex: 60, roll: -70 };
+  for (const p of [[0.5, 1, -6], [-1, 0.3, -12], [1, -1, -0.5], [0.2, 0.4, 4]]) {
+    const q = forwardChain(p, [J], angles);
+    const back = preimagesChain(q, [J], angles);
+    assert.ok(back.some((b) => Math.hypot(b[0] - p[0], b[1] - p[1], b[2] - p[2]) < 1e-3), `rest point of ${p}`);
+  }
+});
+
+test('a rolled volume carries its tissue round the limb', () => {
+  // a forearm rod with a "radius" stripe on its +y side
+  const nx = 9, ny = 9, nz = 31, data = new Uint8Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 2; j <= 6; j++) for (let i = 2; i <= 6; i++) data[(k * ny + j) * nx + i] = j === 6 ? 18 : 7;
+  const J = { c: [0, 0, 0], distal: [0, 0, -1], blend: 1,
+    motions: [{ key: 'roll', roll: true, axis: axisToward([0, 1, 0], [1, 0, 0]) }] };
+  const r = poseVolume({ dims: [nx, ny, nz], spacingMM: [10, 10, 10], data }, [false, false, false], [J], { roll: 90 });
+  const [Nx, Ny, Nz] = r.dims;
+  const at = (x, y, z) => r.data[((Math.round(z + (Nz - 1) / 2)) * Ny + Math.round(y + (Ny - 1) / 2)) * Nx + Math.round(x + (Nx - 1) / 2)];
+  assert.equal(at(2, 0, -8), 18, 'the stripe has gone round to +x below the joint');
+  assert.equal(at(0, 2, -8), 7, 'and left +y');
+  assert.equal(at(0, 2, 8), 18, 'above the joint it is where it was');
+});

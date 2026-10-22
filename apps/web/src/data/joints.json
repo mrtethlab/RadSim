@@ -54,17 +54,18 @@
   "elbow": {
    "label": "Elbow",
    "c": [
-    2.48,
-    -1.12,
-    2.02
+    0.6,
+    -3.97,
+    0.38
    ],
    "distal": [
-    0.281,
-    0.153,
-    -0.947
+    0.277,
+    0.167,
+    -0.946
    ],
    "blend": 1.5,
-   "how": "the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon",
+   "spread": 19.0,
+   "how": "the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon; the forearm pronates over its 19.0 cm",
    "motions": [
     {
      "key": "elbow.flex",
@@ -72,23 +73,45 @@
      "neg": "extension",
      "pos": "flexion",
      "toward": [
-      -0.177,
-      0.984,
+      -0.152,
+      0.988,
       -0.0
      ],
      "range": [
       0,
       140
      ]
+    },
+    {
+     "key": "elbow.roll",
+     "label": "Forearm rotation",
+     "neg": "pronation",
+     "pos": "supination",
+     "roll": true,
+     "from": [
+      -0.188,
+      0.975,
+      0.117
+     ],
+     "toward": [
+      0.949,
+      0.107,
+      0.297
+     ],
+     "range": [
+      -180,
+      10
+     ],
+     "rest": -3.4
     }
    ]
   },
   "wrist": {
    "label": "Wrist",
    "c": [
-    8.7,
-    2.27,
-    -18.47
+    6.98,
+    -0.14,
+    -20.88
    ],
    "distal": [
     0,
@@ -104,13 +127,34 @@
      "neg": "radial",
      "pos": "ulnar",
      "toward": [
-      0.455,
-      -0.89,
+      -0.978,
+      -0.209,
       -0.0
      ],
      "range": [
       -20,
       35
+     ]
+    },
+    {
+     "key": "wrist.roll",
+     "label": "Hand roll",
+     "neg": "pronation",
+     "pos": "supination",
+     "roll": true,
+     "from": [
+      -0.188,
+      0.975,
+      0.117
+     ],
+     "toward": [
+      0.949,
+      0.107,
+      0.297
+     ],
+     "range": [
+      -30,
+      30
      ]
     }
    ]
@@ -121,12 +165,12 @@
    "label": "Knee",
    "c": [
     -0.52,
-    -5.63,
-    2.48
+    -5.48,
+    -1.05
    ],
    "distal": [
-    0.101,
-    0.004,
+    0.104,
+    0.008,
     -0.995
    ],
    "blend": 2.0,
@@ -146,23 +190,44 @@
       0,
       120
      ]
+    },
+    {
+     "key": "knee.roll",
+     "label": "Rotation",
+     "neg": "external",
+     "pos": "internal",
+     "roll": true,
+     "from": [
+      0,
+      1,
+      0
+     ],
+     "toward": [
+      -1,
+      0,
+      0
+     ],
+     "range": [
+      -40,
+      40
+     ]
     }
    ]
   },
   "ankle": {
    "label": "Ankle",
    "c": [
-    3.52,
-    -5.47,
-    -37.5
+    3.6,
+    -5.17,
+    -40.34
    ],
    "distal": [
-    0,
-    0,
-    -1
+    0.148,
+    0.387,
+    -0.91
    ],
    "blend": 1.5,
-   "how": "midway between the malleoli; dorsiflexion turns the foot (ankle to the base of the 3rd metatarsal, [0.193, 0.242, -0.951]) toward the shin; at rest it is 75 degrees plantarflexed",
+   "how": "midway between the malleoli; dorsiflexion turns the foot (its long axis, [0.124, 0.984, 0.125]) toward the shin; at rest it is -6 degrees plantarflexed and turned -8 degrees (internal +)",
    "motions": [
     {
      "key": "ankle.flex",
@@ -170,9 +235,9 @@
      "neg": "plantarflexion",
      "pos": "dorsiflexion",
      "from": [
-      0.193,
-      0.242,
-      -0.951
+      0.124,
+      0.984,
+      0.125
      ],
      "toward": [
       0,
@@ -183,7 +248,29 @@
       -80,
       20
      ],
-     "rest": -75.1
+     "rest": 6.0
+    },
+    {
+     "key": "ankle.roll",
+     "label": "Rotation",
+     "neg": "external",
+     "pos": "internal",
+     "roll": true,
+     "from": [
+      0,
+      1,
+      0
+     ],
+     "toward": [
+      -1,
+      0,
+      0
+     ],
+     "range": [
+      -40,
+      40
+     ],
+     "rest": -7.9
     }
    ]
   }

@@ -2996,7 +2996,7 @@ function landmarkLocal(subject, name){
   const f = voxelFlips();                                          // the same flips the phantom uses
   return [f[0] ? -lm.x : lm.x, f[1] ? -(lm.y || 0) : (lm.y || 0), f[2] ? -lm.z : lm.z];
 }
-const OFF_LIMIT = 45;                                              // the patient-offset sliders' range, cm
+const OFF_LIMIT = 55;                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
 function applyPose(pose){
   const note = $('protocolPose');
   if (!pose) { if (note) note.textContent = ''; return; }
@@ -3006,7 +3006,10 @@ function applyPose(pose){
   S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
   let clamped = false;
   S.objOff.x = 0; S.objOff.z = 0;
-  const loc = pose.centre ? landmarkLocal(S.subject, pose.centre) : null;
+  // where the landmark is once the joints are bent (an AP foot plantarflexes its foot 80 degrees,
+  // and its 3rd metatarsal goes 8 cm down the table with it)
+  const rest = pose.centre ? landmarkLocal(S.subject, pose.centre) : null;
+  const loc = rest && poseLoc(rest);
   if (loc) {
     const w = applyMat3(objMat(), loc);                            // where the landmark sits after the roll
     const ox = -w[0], oz = -w[2];

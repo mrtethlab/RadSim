@@ -108,7 +108,7 @@ function startView(vi) {
     renderPanel();
   });
 }
-const clampOff = (v) => Math.max(-45, Math.min(45, v));
+const clampOff = (v) => Math.max(-55, Math.min(55, v));    // the sandbox's table travel (app.js OFF_LIMIT)
 
 // the centring point in the post-flip frame
 function centreLoc(view) {
@@ -171,8 +171,8 @@ function stepHTML(view, S) {
       ${slider('trRoll', 'Rotate <small>about the long axis</small>', -180, 180, 1, S.objRot.z, '°')}
       ${slider('trTilt', 'Tilt <small>side to side</small>', -30, 30, 1, S.objRot.x, '°')}
       ${slider('trTurn', 'Turn <small>in the plane of the table</small>', -30, 30, 1, S.objRot.y, '°')}
-      ${slider('trOffZ', 'Patient <small>along the table</small>', -45, 45, 0.1, S.objOff.z, ' cm')}
-      ${slider('trOffX', 'Patient <small>across the table</small>', -45, 45, 0.1, S.objOff.x, ' cm')}
+      ${slider('trOffZ', 'Patient <small>along the table</small>', -55, 55, 0.1, S.objOff.z, ' cm')}
+      ${slider('trOffX', 'Patient <small>across the table</small>', -55, 55, 0.1, S.objOff.x, ' cm')}
       ${motionsOf().map((m) => slider('trJ_' + m.key.replace('.', '_'), `${esc(m.joint)} <small>${esc(m.label.toLowerCase())}: ${esc(m.neg)} &minus; / ${esc(m.pos)} +</small>`,
         m.range[0], m.range[1], 1, Math.round(S.joints[m.key] ?? m.rest ?? 0), '°')).join('')}
       <div class="tr-tip">Watch the patient in the room: the rotation is judged against the view's,

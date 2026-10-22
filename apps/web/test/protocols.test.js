@@ -66,10 +66,11 @@ test('landmarks sit where the traced phantom confirmed them (cm from the volume 
   // values validated on the posed phantom; a model rebuild that moves them should be looked at
   // (the leg and arm were rebuilt by services/compute/app/build_limbs.py: the leg re-cut from the
   // same CT, the arm from another (z033, then z053 for its healthy bone), so their numbers moved
-  // and were checked on bone projections)
+  // and were checked on bone projections; then both were baked to the anatomical position,
+  // app/bake_pose.py, and checked again)
   const pinned = {
-    'lowerextremity.knee': 2.48, 'lowerextremity.ankle': -36.38, 'upperextremity.elbow': 3.68,
-    'upperextremity.forearm': -6.98, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
+    'lowerextremity.knee': -1.05, 'lowerextremity.ankle': -40.35, 'upperextremity.elbow': 1.88,
+    'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
     'chestabdopelvis.kub': -12.7,
   };
   for (const [k, z] of Object.entries(pinned)) {
