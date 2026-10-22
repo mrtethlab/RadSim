@@ -1,7 +1,7 @@
 // Joint posing: bending a rigid CT at a joint, for the volume, the mesh and the landmarks alike.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, compileChain, forwardCompiled, forwardSkin } from '../src/core/jointPose.js';
+import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, posePlan, poseChunk, compileChain, forwardCompiled, forwardSkin } from '../src/core/jointPose.js';
 
 const near = (a, b, t = 1e-9) => Math.abs(a - b) <= t;
 // a wrist at the origin, the hand along +z; ulnar deviation turns the hand toward -x
@@ -235,4 +235,24 @@ test('a point the joint does not move comes back bit for bit (or the whole limb 
   const J = { ...wrist, c: [0.6, -3.97, 0.38] };
   const cc = compileChain([J], { dev: 30 });
   for (const p of [[0.1, 1.95, -5.35], [3.3, 1.55, -9.1], [-2.9, 0.7, -20.3]]) assert.deepEqual(forwardCompiled(p, cc), p);
+});
+
+test('a pose made in chunks, as the worker pool makes it, is the pose made whole', () => {
+  // an elbow bent and rolled in a forearm rod: crease, crook fold and roll all in play
+  const nx = 11, ny = 11, nz = 41, data = new Uint8Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 2; j <= 8; j++) for (let i = 2; i <= 8; i++) data[(k * ny + j) * nx + i] = j === 8 ? 18 : 7;
+  const vm = { dims: [nx, ny, nz], spacingMM: [5, 5, 5], data }, angles = { flex: 70, roll: 40 };
+  const whole = poseVolume(vm, [true, true, false], [rollElbow(6)], angles);
+  for (const m of [2, 5, 9]) {
+    const plan = posePlan(vm, [true, true, false], [rollElbow(6)], angles);
+    const [N0, N1, N2] = plan.dims, out = new Uint8Array(N0 * N1 * N2);
+    for (let c = m - 1; c >= 0; c--) {                       // in any order
+      const [k0, k1] = poseChunk(N2, c, m), part = new Uint8Array(N0 * N1 * (k1 - k0));
+      plan.rows(k0, k1, part);
+      out.set(part, k0 * N0 * N1);
+    }
+    plan.fold(out);
+    assert.deepEqual(plan.dims, whole.dims);
+    assert.ok(out.every((v, i) => v === whole.data[i]), `${m} chunks`);
+  }
 });

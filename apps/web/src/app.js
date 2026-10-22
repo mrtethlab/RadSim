@@ -537,18 +537,61 @@ function poseLoc(p){ const ch=jointsActive(); return ch ? forwardChain(p, ch, S.
    voxels: 2.6 s), and on the page it froze the room while a slider rested. It is made in a worker
    (core/poseWorker.js) and kept per pose, the last few of them: the sliders move in 5 degree
    stations, so going back to a pose is instant. An exposure waits for its pose
-   (ensureJointVolume); only without a worker is it made here, as before. */
-const POSE_KEEP = 3;
-let poseWorker=null, poseSeq=0;
-const poseWaits=new Map();
-function poser(){
-  if(poseWorker!==null) return poseWorker;
-  try {
-    poseWorker=new Worker(new URL('./core/poseWorker.js', import.meta.url), { type:'module' });
-    poseWorker.onmessage=(e)=>{ const w=poseWaits.get(e.data.id); if(w){ poseWaits.delete(e.data.id); w(e.data); } };
-    poseWorker.onerror=()=>{ poseWorker=false; for(const w of poseWaits.values()) w({ error:'worker' }); poseWaits.clear(); };
-  } catch { poseWorker=false; }
-  return poseWorker;
+   (ensureJointVolume); only without a worker is it made here, as before.
+
+   THE POOL. Several workers share a pose (core/poseWorker.js): its output slices are cut into
+   POSE_CHUNKS chunks a worker, handed out as each worker comes free, put together here, and one
+   worker smooths the crooks. The chunks are fine because the work is not even: a knee's crease
+   costs most, within a few cm of the joint — at 3 chunks a worker one chunk held it and took 0.9 s
+   while the others idled. The joint chain (the neck's 0.8 MB of weights with it) goes to each
+   worker once a pose. Each worker holds its own copy of the model — no SharedArrayBuffer, which needs headers
+   GitHub Pages cannot send — so a phone gets two workers and a desktop up to six (measured on 16
+   threads: 4 workers took a 90 degree knee from 2.4 s to 0.95 s, 8 to 0.70 s; six copies of the
+   42 MB leg is the line drawn). A worker that fails is dropped; with none the pose is made here. */
+const POSE_KEEP = 3, POSE_CHUNKS = 16;
+let posePool=null, poseSeq=0;
+const poseWaits=new Map();                            // id -> { res, w }
+const lowMemory = () => document.body.classList.contains('mobile') || IOS || (navigator.deviceMemory||8) <= 4;
+function posers(){
+  if(posePool) return posePool;
+  posePool=[];
+  const n=Math.max(1, Math.min(lowMemory() ? 2 : 6, (navigator.hardwareConcurrency||4) - 1));
+  for(let i=0;i<n;i++){
+    let w;
+    try { w=new Worker(new URL('./core/poseWorker.js', import.meta.url), { type:'module' }); } catch { break; }
+    w.onmessage=(e)=>{ const f=poseWaits.get(e.data.id); if(f){ poseWaits.delete(e.data.id); f.res(e.data); } };
+    w.onerror=()=>{
+      const k=posePool.indexOf(w); if(k>=0) posePool.splice(k, 1);
+      for(const [id, f] of poseWaits) if(f.w===w){ poseWaits.delete(id); f.res({ error:'worker' }); }
+    };
+    posePool.push(w);
+  }
+  return posePool;
+}
+// one message to one worker, answered
+function askPoser(w, msg, transfer=[]){
+  return new Promise(res=>{ const id=++poseSeq; poseWaits.set(id, { res, w }); w.postMessage({ ...msg, id }, transfer); });
+}
+// a pose from the pool: { data, dims, pad } or { error }
+async function posePooled(pool, base){
+  if(pool.length===1) return askPoser(pool[0], { ...base, type:'pose' });
+  const m=pool.length*POSE_CHUNKS;
+  let next=0, out=null, dims=null, pad=null, failed=null;
+  await Promise.all(pool.map(async (w)=>{
+    let first=true;
+    while(next<m && !failed){
+      const c=next++;
+      const { chain, ...rest }=base;
+      const r=await askPoser(w, { ...rest, ...(first ? { chain } : {}), type:'chunk', c, m });
+      first=false;
+      if(r.error){ failed=r; return; }
+      if(!out){ dims=r.dims; pad=r.pad; out=new Uint8Array(dims[0]*dims[1]*dims[2]); }
+      out.set(r.data, r.k0*dims[0]*dims[1]);
+    }
+  }));
+  if(failed) return failed;
+  const f=await askPoser(pool[0], { ...base, type:'fold', data:out }, [out.buffer]);
+  return f.error ? f : { data:f.data, dims, pad };
 }
 function poseCache(vm){ return vm._jcache || (vm._jcache=new Map()); }
 /* A pose's key: every motion's angle as it is applied (unset = the model's own). It was the
@@ -561,7 +604,7 @@ function poseKey(ch, angles){ return ch.flatMap(j=>j.motions.map(m=>motionAngle(
    or less (Chromium only), or any iPhone or iPad: Safari says nothing of its memory, kills a tab
    well short of the device's, and an iPad held landscape gets the desktop layout. */
 const IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1);
-const poseBudget = () => (document.body.classList.contains('mobile') || IOS || (navigator.deviceMemory||8) <= 4) ? 160e6 : 480e6;
+const poseBudget = () => lowMemory() ? 160e6 : 480e6;
 function keepPose(vm, key, posed){
   const c=poseCache(vm); c.delete(key); c.set(key, posed);
   const bytes=()=>{ let n=0; for(const v of c.values()) n+=v.data.length; return n; };
@@ -575,16 +618,14 @@ async function ensureJointVolume(vm, angles=S.joints){
   if(S.mode!=='xray' || !ch || !anyBent(ch, angles) || !vm?.data) return;
   const key=poseKey(ch, angles);
   if(poseCache(vm).has(key)) return;
-  const w=poser(); if(!w) return;                     // jointPosedVolume poses it here instead
+  const pool=posers(); if(!pool.length) return;       // jointPosedVolume poses it here instead
   vm._jpending=vm._jpending||new Map();
   if(!vm._jpending.has(key)){
     const mk=vm.url||S.subject;
-    if(vm._poserFor!==w){ w.postMessage({ type:'model', key:mk, dims:vm.dims, spacingMM:vm.spacingMM, data:vm.data }); vm._poserFor=w; }
-    const id=++poseSeq;
-    vm._jpending.set(key, new Promise(res=>{
-      poseWaits.set(id, res);
-      w.postMessage({ type:'pose', id, key:mk, flips:voxelFlips(), chain:ch, angles:{ ...angles } });
-    }).then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad }); }));
+    // each worker holds one model: send this one where another (or none) is held
+    for(const w of pool) if(w._modelKey!==mk){ w.postMessage({ type:'model', key:mk, dims:vm.dims, spacingMM:vm.spacingMM, data:vm.data }); w._modelKey=mk; }
+    vm._jpending.set(key, posePooled(pool, { key:mk, flips:voxelFlips(), chain:ch, angles:{ ...angles } })
+      .then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad }); }));
   }
   await vm._jpending.get(key);
 }
