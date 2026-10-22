@@ -169,3 +169,49 @@ test('the skin goes taut over a bend and folds inside it', () => {
     if (r[0] * cc[0].ins[0] + r[1] * cc[0].ins[1] + r[2] * cc[0].ins[2] > 0) assert.ok(r[0] * m[0] + r[1] * m[1] + r[2] * m[2] <= 1e-9, `${q} -> ${r}`);
   }
 });
+
+// a neck: a field joint about the origin, the head (z > 4) taking the whole turn, the trunk
+// (z < -4) none, the weight rising linearly between; flexion toward +y
+const neckField = (() => {
+  const dims = [21, 21, 41], sp = 1, origin = [-10, -10, -20], data = new Uint8Array(dims[0] * dims[1] * dims[2]);
+  for (let k = 0; k < dims[2]; k++) {
+    const z = origin[2] + k, w = Math.max(0, Math.min(1, (z + 4) / 8));
+    data.fill(Math.round(w * 255), k * dims[0] * dims[1], (k + 1) * dims[0] * dims[1]);
+  }
+  return { dims, sp, origin, data };
+})();
+const neck = { c: [0, 0, 0], distal: [0, 0, 1], blend: 0, field: neckField,
+  motions: [{ key: 'flex', axis: axisToward([0, 0, 1], [0, 1, 0]) }, { key: 'rot', roll: true, axis: axisToward([0, 1, 0], [1, 0, 0]) }] };
+
+test('a field joint turns each point by its own share: the head whole, the trunk not at all', () => {
+  const head = forwardChain([0, 0, 8], [neck], { flex: 90 });
+  assert.ok(near(head[1], 8, 1e-6) && near(head[2], 0, 1e-6), `the head flexed 90: ${head}`);
+  assert.deepEqual(forwardChain([0, 0, -8], [neck], { flex: 90 }), [0, 0, -8]);
+  const mid = forwardChain([0, 0, 2], [neck], { flex: 90 });                 // weight 0.75
+  assert.ok(near(Math.atan2(mid[1], mid[2]), 0.75 * Math.PI / 2, 0.005), `mid-neck turns 3/4: ${mid}`);
+  // its roll is a plain turn about the neck: the face goes to +x
+  const face = forwardChain([0, 5, 8], [neck], { rot: 90 });
+  assert.ok(near(face[0], 5, 1e-6) && near(face[1], 0, 1e-6), `rotated 90: ${face}`);
+});
+
+test('a field joint finds the rest point of every posed point, through the blend too', () => {
+  const angles = { flex: 50, rot: -30 };
+  for (const p of [[0, 0, 8], [3, -6, 7], [0, 6, 1], [-4, 2, -1], [2, -7, 3], [0, 0, -8]]) {
+    const q = forwardChain(p, [neck], angles);
+    const back = preimagesChain(q, [neck], angles);
+    assert.ok(back.some((b) => Math.hypot(b[0] - p[0], b[1] - p[1], b[2] - p[2]) < 0.02), `rest point of ${p}: ${JSON.stringify(back)}`);
+  }
+});
+
+test('a field-posed volume has the head turned and the trunk where it was', () => {
+  const nx = 9, ny = 9, nz = 25, data = new Uint8Array(nx * ny * nz);
+  // a column of tissue along z, its front (+y) face bone
+  for (let k = 0; k < nz; k++) for (let j = 2; j <= 6; j++) for (let i = 2; i <= 6; i++) data[(k * ny + j) * nx + i] = j === 6 ? 18 : 7;
+  const r = poseVolume({ dims: [nx, ny, nz], spacingMM: [10, 10, 10], data }, [false, false, false], [neck], { rot: 90 });
+  const [Nx, Ny, Nz] = r.dims;
+  const at = (x, y, z) => r.data[((Math.round(z + (Nz - 1) / 2)) * Ny + Math.round(y + (Ny - 1) / 2)) * Nx + Math.round(x + (Nx - 1) / 2)];
+  assert.equal(at(2, 0, 9), 18, 'the front has turned to +x in the head');
+  assert.equal(at(0, 2, 9), 7, 'and left +y');
+  assert.equal(at(0, 2, -9), 18, 'the trunk is as it was');
+  assert.equal(at(2, 0, -9), 7);
+});

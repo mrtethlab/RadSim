@@ -295,5 +295,89 @@
     }
    ]
   }
+ },
+ "headneck": {
+  "neck": {
+   "label": "Neck",
+   "c": [
+    -0.27,
+    0.56,
+    -4.47
+   ],
+   "distal": [
+    0.047,
+    0.132,
+    0.99
+   ],
+   "blend": 0,
+   "field": {
+    "file": "headneck.neckw.bin",
+    "dims": [
+     118,
+     71,
+     93
+    ],
+    "sp": 0.4,
+    "origin": [
+     -23.25,
+     -13.875,
+     -18.225
+    ]
+   },
+   "how": "the cervical spine, a field joint: the head turns whole, C1 to C6 by their share, C7 and below stay; about C4, 1 cm behind its body",
+   "motions": [
+    {
+     "key": "neck.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "toward": [
+      0,
+      1,
+      0
+     ],
+     "range": [
+      -60,
+      50
+     ]
+    },
+    {
+     "key": "neck.tilt",
+     "label": "Lateral flexion",
+     "neg": "left lateral flexion",
+     "pos": "right lateral flexion",
+     "toward": [
+      1,
+      0,
+      0
+     ],
+     "range": [
+      -40,
+      40
+     ]
+    },
+    {
+     "key": "neck.rot",
+     "label": "Rotation",
+     "neg": "left rotation",
+     "pos": "right rotation",
+     "roll": true,
+     "from": [
+      -0.006,
+      0.991,
+      -0.131
+     ],
+     "toward": [
+      0.999,
+      -0.006,
+      -0.047
+     ],
+     "range": [
+      -70,
+      70
+     ]
+    }
+   ]
+  }
  }
 }

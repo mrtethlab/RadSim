@@ -70,6 +70,13 @@ const ELBOW_REQ = { parts: [{ mat: 'tissue', connect: 'elbow', z: [{ lm: 'elbowJ
 /* The cervical spine is bone only, hung off the vertebral bodies the CT's own labels place (C4,
    C1-C2, C7-T1). Every window is wide enough for the transverse processes on the AP and the
    spinous processes on the lateral, and keeps the mandible and the skull out. */
+/* The head on the neck (the neck joint, joints.json). As scanned, the line from the lower margin of
+   the upper incisors (y 11.6, z -0.1 cm, the most anterior midline bone of the closed mouth) to the
+   mastoid tips (y 0.75, z 2.0, measure_palpation) dips 11 degrees toward the chin: the AP views,
+   which want that line perpendicular to the receptor, raise the chin about 10 degrees. The lateral
+   and the obliques raise it a little, to keep the rami of the mandible off C1-C2. */
+const CS_CHIN_AP = { 'neck.flex': [-15, -5] };
+const CS_CHIN_LAT = { 'neck.flex': [-20, 0] };
 const CS_AP_REQ = { parts: [{ mat: 'bone', x: [-3.5, 3.5], y: [{ lm: 'C4', axis: 'y', add: -6 }, { lm: 'C4', axis: 'y', add: 1.5 }],
   z: [{ lm: 'C7T1', add: -4 }, { lm: 'C4', add: 2 }] }], text: 'C3 to T2: the bodies, the intervertebral spaces and the uncovertebral joints' };
 const CS_OM_REQ = { parts: [{ mat: 'bone', x: [-4, 4], y: [{ lm: 'C1C2', axis: 'y', add: -2.5 }, { lm: 'C1C2', axis: 'y', add: 1.5 }],
@@ -169,25 +176,25 @@ export const SERIES = [
       how: 'Left lateral: left side to the receptor, arms raised, no rotation. Central ray to T7 at the mid-coronal plane.' },
   ] },
   { id: 'cspine6', name: 'Cervical spine · 6 views', views: [
-    { label: 'AP axial', proto: ['Spine', 'AP cervical'], pose: { roll: 0, tol: 2 },
+    { label: 'AP axial', proto: ['Spine', 'AP cervical'], pose: { roll: 0, tol: 2 }, joints: CS_CHIN_AP,
       cr: { cc: -15, tol: 3, words: ['cephalad', 'caudad'] },
       centre: { lm: 'C4', name: 'C4 (the lower margin of the thyroid cartilage)', tol: 1.5 }, require: CS_AP_REQ,
-      how: 'Supine, no rotation, chin raised so the occlusal plane and the mastoid tips line up. Central ray 15-20 degrees cephalad, to C4.' },
-    { label: 'AP open mouth (C1-C2)', proto: ['Spine', 'AP open mouth'], pose: { roll: 0, tol: 2 },
+      how: 'Supine, no rotation, chin raised so the line from the upper incisors to the mastoid tips is perpendicular to the receptor (about 10 degrees of extension on this patient). Central ray 15-20 degrees cephalad, to C4.' },
+    { label: 'AP open mouth (C1-C2)', proto: ['Spine', 'AP open mouth'], pose: { roll: 0, tol: 2 }, joints: CS_CHIN_AP,
       centre: { lm: 'C1C2', name: 'C1-C2, through the open mouth', tol: 1.5 }, require: CS_OM_REQ,
       approx: 'This model cannot open its mouth: the lower teeth and the mandible lie over the dens.',
       how: 'Supine, mouth open as wide as possible, the line from the upper incisors to the mastoid tips perpendicular to the receptor. Central ray perpendicular through the centre of the open mouth, to C1-C2.' },
-    { label: 'Lateral', proto: ['Spine', 'Lateral cervical'], pose: { roll: 90, tol: 2 },
+    { label: 'Lateral', proto: ['Spine', 'Lateral cervical'], pose: { roll: 90, tol: 2 }, joints: CS_CHIN_LAT,
       centre: { lm: 'C4', name: 'C4', tol: 1.5 }, require: CS_LAT_REQ,
-      how: 'True lateral at 150-180 cm, shoulders depressed, chin slightly raised. Central ray horizontal to C4.' },
-    { label: 'Right posterior oblique', proto: ['Spine', 'Oblique cervical'], pose: { roll: -45, tol: 2 },
+      how: 'True lateral at 150-180 cm, shoulders depressed, chin slightly raised (the mandible off C1-C2). Central ray horizontal to C4.' },
+    { label: 'Right posterior oblique', proto: ['Spine', 'Oblique cervical'], pose: { roll: -45, tol: 2 }, joints: CS_CHIN_LAT,
       cr: { cc: -15, tol: 3, words: ['cephalad', 'caudad'] },
       centre: { lm: 'C4', name: 'C4', tol: 1.5 }, require: CS_OBL_REQ,
-      how: 'Rotate the body 45 degrees, right side down (RPO): the left intervertebral foramina open. Central ray 15-20 degrees cephalad, to C4.' },
-    { label: 'Left posterior oblique', proto: ['Spine', 'Oblique cervical'], pose: { roll: 45, tol: 2 },
+      how: 'Rotate the body 45 degrees, right side down (RPO), chin slightly raised: the left intervertebral foramina open. Central ray 15-20 degrees cephalad, to C4.' },
+    { label: 'Left posterior oblique', proto: ['Spine', 'Oblique cervical'], pose: { roll: 45, tol: 2 }, joints: CS_CHIN_LAT,
       cr: { cc: -15, tol: 3, words: ['cephalad', 'caudad'] },
       centre: { lm: 'C4', name: 'C4', tol: 1.5 }, require: CS_OBL_REQ,
-      how: 'Rotate the body 45 degrees, left side down (LPO): the right intervertebral foramina open. Central ray 15-20 degrees cephalad, to C4.' },
+      how: 'Rotate the body 45 degrees, left side down (LPO), chin slightly raised: the right intervertebral foramina open. Central ray 15-20 degrees cephalad, to C4.' },
     { label: 'Swimmers lateral', proto: ['Spine', 'Swimmers lateral'], pose: { roll: 90, tol: 2 },
       centre: { lm: 'C7T1', name: 'C7-T1', tol: 1.5 }, require: CS_SW_REQ,
       approx: 'This patient lies with both arms at the sides; the arm nearer the receptor cannot be raised.',

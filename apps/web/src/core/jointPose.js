@@ -75,14 +75,22 @@ function mul3(a, b) {
    its inverse is exact and the bend's crease solve is untouched. Its share rises like the bend's
    across the crease, or, with `spread` (cm past the joint), linearly from the crease's far edge
    to there: a forearm pronates along its length, the radius turning round the ulna, not at the
-   elbow, whose bones keep still. */
+   elbow, whose bones keep still.
+
+   A FIELD JOINT (j.field: { data: Uint8Array 0-255, dims, sp (cm), origin (cm) }, a weight per
+   rest-frame cell) is not cut by a plane at all: each point turns about c by its own share of the
+   joint's one rotation, read from the field. The neck is one: the skull and mandible take all of
+   it, each cervical vertebra less, C7 and the shoulders none, the soft tissue between them a smooth
+   blend — no plane through the neck can tell the jaw (in front of C1-C3) from the spine. Its rolls
+   are plain rotations (no exactness to keep: the inverse is solved, fieldInverse). */
 export function compileJoint(j, angles) {
   let R = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   let any = false, tw = 0;
+  const field = j.field || null;
   for (const m of j.motions) {
     const a = (motionAngle(angles, m) - (m.rest || 0)) * Math.PI / 180;
     if (!a) continue;
-    if (m.roll) { tw += dot(m.axis, j.distal) < 0 ? -a : a; continue; }
+    if (m.roll && !field) { tw += dot(m.axis, j.distal) < 0 ? -a : a; continue; }
     any = true;
     const [x, y, z] = m.axis, c = Math.cos(a), s = Math.sin(a), t = 1 - c;
     R = mul3([t * x * x + c, t * x * y - s * z, t * x * z + s * y,
@@ -99,6 +107,11 @@ export function compileJoint(j, angles) {
     n = ln < 1e-9
       ? unit([Math.sqrt(Math.max(0, (R[0] + 1) / 2)), Math.sqrt(Math.max(0, (R[4] + 1) / 2)), Math.sqrt(Math.max(0, (R[8] + 1) / 2))])
       : [n[0] / ln, n[1] / ln, n[2] / ln];
+  }
+  if (field) {
+    if (!T) return null;
+    return { c: j.c, d: j.distal, b: j.blend, n, T, tw: 0, sp: 0, R2: Infinity, wf: field,
+      ins: [0, 0, 0], bis: [0, 0, 1], bisL: 1 };                  // (no crook: the field decides)
   }
   const f = rotate(j.distal, n, T);
   return { c: j.c, d: j.distal, b: j.blend, n, T, tw, sp: j.spread || 0, R2: j.radius ? j.radius * j.radius : Infinity,
@@ -138,7 +151,52 @@ export function compileChain(chain, angles) {
 
 // within the limb's cylinder (rest frame)
 function inLimb(d, J, s) { return J.R2 === Infinity || dot(d, d) - s * s < J.R2; }
+// a field joint's share at a rest-frame point: trilinear in the field, 0 outside it
+export function fieldWeight(F, p) {
+  const gx = (p[0] - F.origin[0]) / F.sp, gy = (p[1] - F.origin[1]) / F.sp, gz = (p[2] - F.origin[2]) / F.sp;
+  const [nx, ny, nz] = F.dims;
+  if (!(gx >= 0 && gy >= 0 && gz >= 0 && gx <= nx - 1 && gy <= ny - 1 && gz <= nz - 1)) return 0;
+  const i = Math.min(nx - 2, Math.floor(gx)), j = Math.min(ny - 2, Math.floor(gy)), k = Math.min(nz - 2, Math.floor(gz));
+  const fx = gx - i, fy = gy - j, fz = gz - k, D = F.data, row = nx, sl = nx * ny;
+  const o = (k * ny + j) * nx + i;
+  const c00 = D[o] * (1 - fx) + D[o + 1] * fx, c10 = D[o + row] * (1 - fx) + D[o + row + 1] * fx;
+  const c01 = D[o + sl] * (1 - fx) + D[o + sl + 1] * fx, c11 = D[o + sl + row] * (1 - fx) + D[o + sl + row + 1] * fx;
+  return ((c00 * (1 - fy) + c10 * fy) * (1 - fz) + (c01 * (1 - fy) + c11 * fy) * fz) / 255;
+}
+/* Which rest points a field joint carries to q. A rest point p goes to q when p = c + R(-w T)(q - c)
+   with w = W(p): along that one arc of candidates, parametrised by w, it is a root of
+   g(w) = W(p(w)) - w, and as g(0) >= 0 and g(1) <= 0 there is always one. (Iterating p = c +
+   R(-W(p) T)(q - c) instead diverged in front of the face: 20 cm from c, a weight that falls over
+   3 cm and half a radian of turn make the step longer than the error.) Several roots are a fold:
+   tissue pressed together, as behind the neck in extension; all are returned. Rigid places (the
+   head, the shoulders: g flat at 1 or 0) cost the two ends. */
+const FIELD_SCAN = 8;
+function fieldInverse(q, J) {
+  const dq = [q[0] - J.c[0], q[1] - J.c[1], q[2] - J.c[2]];
+  const at = (w) => { const r = rotate(dq, J.n, -w * J.T); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
+  const W = (w) => fieldWeight(J.wf, at(w));
+  const g0 = W(0), g1 = W(1) - 1;
+  const out = g0 === 0 ? [q] : [];                             // unmoved, where nothing turns
+  if (g1 === 0) { out.push(at(1)); return out; }               // a point of the head, turned whole
+  let wa = 0, ga = g0;
+  for (let i = 1; i <= FIELD_SCAN; i++) {
+    const wb = i / FIELD_SCAN, gb = i === FIELD_SCAN ? g1 : W(wb) - wb;
+    if (ga > 0 && gb <= 0) {
+      let lo = wa, hi = wb;
+      for (let k = 0; k < 8; k++) { const m = (lo + hi) / 2; if (W(m) - m > 0) lo = m; else hi = m; }
+      out.push(at((lo + hi) / 2));
+    }
+    wa = wb; ga = gb;
+  }
+  return out;
+}
 function forwardOne(p, J) {
+  if (J.wf) {
+    const w = fieldWeight(J.wf, p);
+    if (!w) return p;
+    const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, w * J.T);
+    return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
+  }
   let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
   const s = dot(d, J.d);
   if (!inLimb(d, J, s)) return p;
@@ -168,6 +226,7 @@ export function forwardCompiled(p, cc) {
    the room shows. */
 const SKIN_CORE = 1;
 function skinOne(p, J) {
+  if (J.wf) return forwardOne(p, J);                 // (a field bends smoothly already)
   let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
   const s = dot(d, J.d);
   if (!inLimb(d, J, s)) return p;
@@ -206,6 +265,7 @@ export function forwardChain(p, chain, angles) {
    is returned, the moved part first: fully turned, then in the crease, then unmoved. The volume
    resampler takes the first that lands on tissue. */
 function preimagesOne(q, J) {
+  if (J.wf) return fieldInverse(q, J);
   const dq = [q[0] - J.c[0], q[1] - J.c[1], q[2] - J.c[2]];
   // the roll is undone last: it keeps a point's distance along the limb, which the bend's solve uses
   const unroll = (p) => { const r = roll([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J, -1); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
@@ -254,6 +314,7 @@ const FOLD = 2, FOLD_R = 9, FOLD_W = 4, FAT = 2;
 function smoothFold(out, N, sg, sp, cc) {
   const C = [(N[0] - 1) / 2, (N[1] - 1) / 2, (N[2] - 1) / 2];
   for (const J of cc) {
+    if (J.wf) continue;                               // (a field joint has no crook to fold)
     const m = [J.bis[0] / J.bisL, J.bis[1] / J.bisL, J.bis[2] / J.bisL];
     // the subvolume around the joint
     const lo = [0, 1, 2].map((a) => Math.max(0, Math.floor(C[a] + (sg[a] * J.c[a] - FOLD_R) / sp[a]) - 2));
@@ -322,6 +383,7 @@ export function poseVolume(vm, flips, chain, angles) {
     const p = [sg[0] * (i - cx) * sp[0], sg[1] * (j - cy) * sp[1], sg[2] * (k - cz) * sp[2]];
     for (let n = 0; n < cc.length; n++) {
       const J = cc[n], d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], sd = dot(d, J.d);
+      if (J.wf) continue;
       if (Math.abs(sd) < J.b + 2 * st * sp[2] && inLimb(d, J, sd)) creaseR2[n] = Math.max(creaseR2[n], dot(d, d));
     }
     const q = forwardCompiled(p, cc);
@@ -341,7 +403,7 @@ export function poseVolume(vm, flips, chain, angles) {
   const out = new Uint8Array(N[0] * N[1] * N[2]);
   const at = (i, j, k) => (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz ? 0 : data[(k * ny + j) * nx + i]);
   const sampleRest = (x, y, z) => at(Math.round(sg[0] * x / sp[0] + cx), Math.round(sg[1] * y / sp[1] + cy), Math.round(sg[2] * z / sp[2] + cz));
-  const one = cc.length === 1 ? cc[0] : null;
+  const one = cc.length === 1 && !cc[0].wf ? cc[0] : null;
   // the full inverse turn of the one joint, as a matrix
   let M = null;
   if (one) {
@@ -363,6 +425,8 @@ export function poseVolume(vm, flips, chain, angles) {
         let vac = false;
         for (let n = 0; n < cc.length; n++) {
           const J = cc[n], ex = x - J.c[0], ey = y - J.c[1], ez = z - J.c[2];
+          // a field joint: whatever it moves at all has left its rest place
+          if (J.wf) { if (fieldWeight(J.wf, [x, y, z]) > 0) { vac = true; break; } continue; }
           const sd = ex * J.d[0] + ey * J.d[1] + ez * J.d[2];
           if (sd > -J.b && (J.R2 === Infinity || ex * ex + ey * ey + ez * ez - sd * sd < J.R2)) { vac = true; break; }
           if (ex * J.ins[0] + ey * J.ins[1] + ez * J.ins[2] > 0 && ex * J.bis[0] + ey * J.bis[1] + ez * J.bis[2] < 0) { vac = true; break; }

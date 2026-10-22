@@ -340,6 +340,7 @@ async function setSubject(sub){
     S.subjectLoading=true;   // guards CT START/exposure until the swap completes
     try{
       vm=await loadVoxelModel(import.meta.env.BASE_URL+'models/'+sub, sub);
+      await loadJointFields(sub);
       S.voxelCache[sub]=vm;
       if(vm.meshUrl){
         // Display meshes live in one wrapper so the CT/x-ray transforms treat the subject
@@ -502,13 +503,29 @@ function applyVoxelMeshTransform(grp){
    fluoroscopy and the other rooms scan the patient as the volume has them, and the mesh
    straightens there. */
 const chainCache={};
+/* A FIELD joint (the neck) carries its weights in a grid beside the model (fieldData, loaded with
+   the subject by loadJointFields); until the grid is in, the joint is not offered. */
+const fieldData={};
+async function loadJointFields(subject){
+  const js=jointData[subject]; if(!js) return;
+  for(const j of Object.values(js)){
+    const f=j.field?.file, k=subject+'/'+f;
+    if(!f || fieldData[k]) continue;
+    try {
+      const r=await fetch(import.meta.env.BASE_URL+'models/'+k);
+      if(r.ok){ fieldData[k]=new Uint8Array(await r.arrayBuffer()); delete chainCache[subject]; }
+    } catch { /* the joint stays unoffered */ }
+  }
+}
 function jointChain(subject){
   if(chainCache[subject]!==undefined) return chainCache[subject];
   const js=jointData[subject];
   if(!js){ chainCache[subject]=null; return null; }
   // proximal first, as joints.json lists them
-  return chainCache[subject]=Object.values(js).map(j=>({ ...j,
+  const ch=Object.values(js).filter(j=>!j.field || fieldData[subject+'/'+j.field.file]).map(j=>({ ...j,
+    ...(j.field ? { field: { ...j.field, data: fieldData[subject+'/'+j.field.file] } } : {}),
     motions: j.motions.map(m=>({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
+  return chainCache[subject]=ch.length ? ch : null;
 }
 function jointsActive(){
   const ch=jointChain(S.subject);

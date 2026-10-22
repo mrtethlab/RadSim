@@ -22,6 +22,15 @@ turns round the ulna over the forearm's length); the hand's roll at the wrist; t
 at the knee; the foot's at the ankle. Positive turns `from` toward `toward`. The forearm's roll
 is anatomical: 0 is supination (palm up, the radius beside the ulna laterally), -90 the thumb up,
 -180 the palm down; its `rest` is measured from where the radius lies round the ulna.
+
+THE NECK is a FIELD joint (core/jointPose.js): no plane through the neck parts the head from the
+trunk (the jaw hangs in front of C1-C3), so each point turns by its own share of the one rotation,
+a weight read from a grid written beside the model (headneck.neckw.bin). The skull and mandible
+take all of it, each cervical vertebra less (cervical motion is shared down the segments), C7 and
+everything below none; the soft tissue between takes the weights of the bones nearest it, blended
+(a soft minimum of the distances) and smoothed. Its rotation is about C4, 1 cm behind the body
+(the facets), with the neck's own axis from C7-T1 to C1-C2. Needs the head CT's labels and nibabel
+(the compute venv: services/compute/.venv).
 """
 import json, pathlib, sys
 import numpy as np
@@ -108,6 +117,52 @@ def foot_inversion(ank, leg, fa):
     wid = vec[0, 1] * e1 + vec[1, 1] * e2
     a = angle_about(e1, wid, fa)
     return ((a + 90) % 180) - 90                              # a width axis is a line: within +-90
+
+
+# the share of the neck's rotation each bone takes (cumulative from below: what lies above the
+# segment). Flexion-extension and lateral flexion spread over the column; axial rotation is half
+# at C1-C2, which a single field cannot also carry — C1 and C2 stand apart a little for it.
+NECK_W = {'skull': 1.0, 'vertebrae_C1': 0.95, 'vertebrae_C2': 0.8, 'vertebrae_C3': 0.62, 'vertebrae_C4': 0.45,
+          'vertebrae_C5': 0.28, 'vertebrae_C6': 0.12}
+NECK_STILL = ['vertebrae_C7'] + [f'vertebrae_T{k}' for k in range(1, 13)] + [f'rib_{s}_{k}' for s in ('left', 'right') for k in range(1, 13)]     + [f'{b}_{s}' for b in ('clavicula', 'scapula', 'humerus') for s in ('left', 'right')] + ['sternum', 'costal_cartilages']
+FIELD_SP = 0.4          # cm, the weight grid
+FIELD_LAMBDA = 1.2      # cm, how far a bone's weight reaches into the tissue beside it
+FIELD_SIGMA = 0.8       # cm, the smoothing after
+
+
+def neck_field(name='headneck'):
+    """The neck's weight grid (uint8, 255 = the whole turn) over the model, in its rest frame; and
+    its header for joints.json. None without the labels."""
+    import measure_landmarks as ML
+    h, vol, bone, sp = ML.load(name)
+    nz, ny, nx = bone.shape
+    o = -(np.array([nx, ny, nz]) - 1) / 2 * sp                     # the model's corner, cm
+    dims = (np.ceil((np.array([nx, ny, nz]) - 1) * sp / FIELD_SP) + 1).astype(int)
+    groups = [(k, w) for k, w in NECK_W.items()] + [(k, 0.0) for k in NECK_STILL]
+    num = np.zeros(dims[::-1], np.float64); den = np.zeros(dims[::-1], np.float64)
+    still = np.zeros(dims[::-1], bool)
+    for k, w in groups:
+        P = ML.label_points(k, bone, sp)
+        if P is None or not len(P):
+            if k in NECK_W:
+                return None
+            continue
+        g = np.round((P - o) / FIELD_SP).astype(int)
+        g = g[(g >= 0).all(1) & (g < dims).all(1)]
+        m = np.zeros(dims[::-1], bool)
+        m[g[:, 2], g[:, 1], g[:, 0]] = True
+        if w == 0:
+            still |= m
+            continue
+        e = np.exp(-ndi.distance_transform_edt(~m, sampling=FIELD_SP) / FIELD_LAMBDA)
+        num += w * e; den += e
+    e = np.exp(-ndi.distance_transform_edt(~still, sampling=FIELD_SP) / FIELD_LAMBDA)
+    den += e
+    W = ndi.gaussian_filter(num / np.maximum(den, 1e-300), FIELD_SIGMA / FIELD_SP)
+    W = np.where(W < 0.02, 0, np.where(W > 0.98, 1, W))
+    q = np.round(W * 255).astype(np.uint8)
+    (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f'{name}.neckw.bin').write_bytes(q.tobytes())
+    return {'file': f'{name}.neckw.bin', 'dims': dims.tolist(), 'sp': FIELD_SP, 'origin': o.round(4).tolist()}
 
 
 def main():
@@ -214,6 +269,25 @@ def main():
                                     'from': up.round(3).tolist(), 'toward': latf.round(3).tolist(), 'range': [-20, 35]},
                                    **({'rest': inv} if abs(inv) > 0.5 else {}))]},
     }
+    # ---- the head and neck: one field joint
+    field = neck_field()
+    if field:
+        hc = CENT['headneck']
+        c4, top, bot = (np.array(v3(hc[k])) for k in ('C4', 'C1C2', 'C7T1'))
+        ax = (top - bot) / np.linalg.norm(top - bot)
+        c = c4 + np.array([0, -1.0, 0])                          # behind the body: the facets
+        out['headneck'] = {'neck': {
+            'label': 'Neck', 'c': c.round(2).tolist(), 'distal': ax.round(3).tolist(), 'blend': 0, 'field': field,
+            'how': 'the cervical spine, a field joint: the head turns whole, C1 to C6 by their share, C7 and below stay; about C4, 1 cm behind its body',
+            'motions': [{'key': 'neck.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': [0, 1, 0], 'range': [-60, 50]},
+                        {'key': 'neck.tilt', 'label': 'Lateral flexion', 'neg': 'left lateral flexion', 'pos': 'right lateral flexion', 'toward': [1, 0, 0], 'range': [-40, 40]},
+                        {'key': 'neck.rot', 'label': 'Rotation', 'neg': 'left rotation', 'pos': 'right rotation', 'roll': True,
+                         'from': perp([0, 1, 0], ax).round(3).tolist(), 'toward': perp([1, 0, 0], ax).round(3).tolist(), 'range': [-70, 70]}]}}
+    else:
+        print('  no head CT labels (or nibabel): the neck keeps its old joints.json entry')
+        old = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else {}
+        if 'headneck' in old:
+            out['headneck'] = old['headneck']
     OUT.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     for s, js in out.items():
         if s.startswith('_'): continue
