@@ -215,3 +215,24 @@ test('a field-posed volume has the head turned and the trunk where it was', () =
   assert.equal(at(0, 2, -9), 18, 'the trunk is as it was');
   assert.equal(at(2, 0, -9), 7);
 });
+
+test('a roll keeps the tissue at its crease, which is vacated but does not move', () => {
+  // the forearm turns from the far edge of the crease (spread): the crease itself stays where it
+  // is, and the row-wise copy that zeroes everything distal of the crease must put it back
+  const nx = 9, ny = 9, nz = 31, data = new Uint8Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 2; j <= 6; j++) for (let i = 2; i <= 6; i++) data[(k * ny + j) * nx + i] = 7;
+  // a broad crease (5 cm a side) on 1 cm voxels, so it reaches well past the moved part's margin
+  const J = { ...rollElbow(12), blend: 5 };
+  const r = poseVolume({ dims: [nx, ny, nz], spacingMM: [10, 10, 10], data }, [false, false, false], [J], { roll: 90 });
+  const [Nx, Ny, Nz] = r.dims;
+  const at = (x, y, z) => r.data[((Math.round(z + (Nz - 1) / 2)) * Ny + Math.round(y + (Ny - 1) / 2)) * Nx + Math.round(x + (Nx - 1) / 2)];
+  for (const z of [4, 2, 0]) assert.equal(at(0, 0, z), 7, `tissue at the crease, z ${z}`);
+  assert.equal(at(0, 0, -10), 7, 'and the forearm, rolled');
+});
+
+test('a point the joint does not move comes back bit for bit (or the whole limb counts as moved)', () => {
+  // a joint off the origin: (p - c) + c is not p in floating point
+  const J = { ...wrist, c: [0.6, -3.97, 0.38] };
+  const cc = compileChain([J], { dev: 30 });
+  for (const p of [[0.1, 1.95, -5.35], [3.3, 1.55, -9.1], [-2.9, 0.7, -20.3]]) assert.deepEqual(forwardCompiled(p, cc), p);
+});

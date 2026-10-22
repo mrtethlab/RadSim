@@ -102,6 +102,8 @@ function startView(vi) {
     S.objOff.z = clampOff(ideal.z + r * Math.sin(th));
     S.collX = S.detW; S.collZ = S.detH;
     S.joints = {}; H.renderJointUI();
+    // the reference film's pose, made now (in the worker) rather than after the student's exposure
+    H.preposeJoints(idealJoints(view));
     H.setMarker(null);
     H.syncSandbox();
     H.syncScene();
@@ -412,17 +414,21 @@ async function referenceImage(view) {
     H.syncScene();
   }
 }
+/* The joints the view asks for, at the middle of their range; everything else at anatomical
+   neutral (0), which is not always how the patient was scanned: this foot rests 75 degrees
+   plantarflexed, and an ankle view wants it dorsiflexed to 90 degrees from the leg. The hand
+   straight on the forearm (or, for the scaphoid, deviated to the middle of its range). */
+function idealJoints(view) {
+  const j = {};
+  for (const m of (H.jointChain() || []).flatMap((jt) => jt.motions)) j[m.key] = 0;
+  for (const [k, r] of Object.entries(view.joints || {})) j[k] = Math.round((r[0] + r[1]) / 2);
+  if (view.align) j[view.align.motion || 'wrist.dev'] = view.align.range ? Math.round((view.align.range[0] + view.align.range[1]) / 2) : 0;
+  return j;
+}
 /* The ideal setup of a view, applied to the room (the reference film, and the QC hook). */
 function applyIdeal(view) {
   const S = H.S, cc = view.cr?.cc ?? 0;
-  // the joints the view asks for, at the middle of their range; everything else at anatomical
-  // neutral (0), which is not always how the patient was scanned: this foot rests 75 degrees
-  // plantarflexed, and an ankle view wants it dorsiflexed to 90 degrees from the leg
-  S.joints = {};
-  for (const m of (H.jointChain() || []).flatMap((j) => j.motions)) S.joints[m.key] = 0;
-  for (const [k, r] of Object.entries(view.joints || {})) S.joints[k] = Math.round((r[0] + r[1]) / 2);
-  // the hand straight on the forearm (or, for the scaphoid, deviated to the middle of its range)
-  if (view.align) S.joints[view.align.motion || 'wrist.dev'] = view.align.range ? Math.round((view.align.range[0] + view.align.range[1]) / 2) : 0;
+  S.joints = idealJoints(view);
   S.objRot = { x: 0, y: 0, z: view.pose.roll };
   // a hand or wrist: turn the arm until the forearm runs down the film (a few steps, either way)
   if (view.align) {
@@ -459,7 +465,7 @@ function applyIdeal(view) {
 /* QC: drive the Trainer from tests — the session, and the ideal setup of the current view. */
 if (typeof window !== 'undefined') window.radsimTrainer = {
   state: () => T,
-  applyIdeal: () => { if (T && T.series) { applyIdeal(T.series.views[T.vi]); H.syncSandbox(); H.syncScene(); } },
+  applyIdeal: () => { if (T && T.series) { applyIdeal(T.series.views[T.vi]); H.syncSandbox(); H.syncScene(); H.prepareJointVolume(); } },
   measure: () => (T && T.series ? measure(T.series.views[T.vi]) : null),
 };
 // the marker a perfect film carries: on a limb, its side (every limb model is a right one); on the
