@@ -11,7 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
-import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent } from './core/jointPose.js';
+import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent, motionAngle } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
@@ -551,13 +551,26 @@ function poser(){
   return poseWorker;
 }
 function poseCache(vm){ return vm._jcache || (vm._jcache=new Map()); }
+/* A pose's key: every motion's angle as it is applied (unset = the model's own). It was the
+   joints object as written, so one pose reached two ways — a protocol's { knee.flex: 25 }, the
+   Trainer's ideal with every motion named — was posed twice, seconds each. */
+function poseKey(ch, angles){ return ch.flatMap(j=>j.motions.map(m=>motionAngle(angles, m))).join(','); }
+/* ...and by size: a posed leg is the 1 mm volume padded to hold the bent part, 114 MB with the
+   knee at 25 degrees and 163 MB at 45, so three of them were half a gigabyte, too much for a
+   phone. The newest is always kept. */
+const poseBudget = () => (document.body.classList.contains('mobile') || (navigator.deviceMemory||8) <= 4) ? 160e6 : 480e6;
 function keepPose(vm, key, posed){
   const c=poseCache(vm); c.delete(key); c.set(key, posed);
-  while(c.size>POSE_KEEP) c.delete(c.keys().next().value);
+  const bytes=()=>{ let n=0; for(const v of c.values()) n+=v.data.length; return n; };
+  while(c.size>POSE_KEEP || (c.size>1 && bytes()>poseBudget())) c.delete(c.keys().next().value);
 }
-async function ensureJointVolume(vm){
-  const ch=jointsActive(); if(!ch || !vm?.data) return;
-  const key=JSON.stringify(S.joints);
+/* Pose the volume for these angles (the room's own, by default) in the worker, and wait for it.
+   Called ahead of need too — when a protocol, a Trainer view or its ideal sets the joints — so
+   the exposure finds the pose made. */
+async function ensureJointVolume(vm, angles=S.joints){
+  const ch=jointChain(S.subject);
+  if(S.mode!=='xray' || !ch || !anyBent(ch, angles) || !vm?.data) return;
+  const key=poseKey(ch, angles);
   if(poseCache(vm).has(key)) return;
   const w=poser(); if(!w) return;                     // jointPosedVolume poses it here instead
   vm._jpending=vm._jpending||new Map();
@@ -567,14 +580,14 @@ async function ensureJointVolume(vm){
     const id=++poseSeq;
     vm._jpending.set(key, new Promise(res=>{
       poseWaits.set(id, res);
-      w.postMessage({ type:'pose', id, key:mk, flips:voxelFlips(), chain:ch, angles:{ ...S.joints } });
+      w.postMessage({ type:'pose', id, key:mk, flips:voxelFlips(), chain:ch, angles:{ ...angles } });
     }).then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad }); }));
   }
   await vm._jpending.get(key);
 }
 function jointPosedVolume(vm){
   const ch=jointsActive(); if(!ch || !vm.data) return null;
-  const key=JSON.stringify(S.joints);
+  const key=poseKey(ch, S.joints);
   if(!poseCache(vm).has(key)) keepPose(vm, key, poseVolume(vm, voxelFlips(), ch, S.joints));
   return poseCache(vm).get(key);
 }
@@ -2347,8 +2360,12 @@ async function computeRadiograph(opts={}){
   // opts.dry: the same exposure, returned instead of recorded — no image history, no dose log,
   // no EI/DI or marker readouts. The Trainer's reference image is made this way.
   const dry=!!opts.dry;
+  // where an exposure's time goes, ms (radsimQC.timing): the pose, the phantom, the ray-cast, the rest
+  const tm={ t0:performance.now() };
   if(S.voxelModel) await ensureJointVolume(S.voxelModel);   // the pose, from the worker
+  tm.pose=performance.now();
   const phantom=buildPhantom();
+  tm.phantom=performance.now();
   const source=sourcePos();
 
   // detector matches the 3D image receptor (selectable size) so open collimation
@@ -2439,6 +2456,9 @@ async function computeRadiograph(opts={}){
       onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
     });
   }
+  tm.project=performance.now();
+  S.lastTiming={ pose:tm.pose-tm.t0, phantom:tm.phantom-tm.pose, project:tm.project-tm.phantom,
+                 dims:phantom.voxel ? [phantom.nx, phantom.ny, phantom.nz] : null, nx, ny, t0:tm.t0 };
 
   /* THE OPEN BEAM at every pixel: what the receptor would read with nobody in the way. The EI
      has to set aside raw beam before it measures the anatomy, and it used to find the raw
@@ -3065,6 +3085,7 @@ function applyPose(pose){
   S.objRot = { x: 0, y: 0, z: pose.roll || 0 };
   S.legRot = pose.legs || 0; syncLegRotUI();
   S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg
+  prepareJointVolume();                                     // its pose, made while the room is set
   S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
   let clamped = false;
   S.objOff.x = 0; S.objOff.z = 0;
@@ -3241,8 +3262,11 @@ if(typeof window!=='undefined') window.radsimQC={
   async expose(proj){
     if(S.exposing) return null;
     S.exposing=true; try { await computeRadiograph(); } finally { S.exposing=false; }
+    if(S.lastTiming) S.lastTiming.total=performance.now()-S.lastTiming.t0;
     return { proj, kv:S.kv, mas:S.mas, di:S.lastDI, aec:!!S.aecOn };
-  }
+  },
+  // the last exposure's time, ms, by phase
+  timing(){ return S.lastTiming ? { ...S.lastTiming } : null; }
 };
 /* Point the render state at history[idx] and refresh the view + strip + meta. */
 function setActiveImage(idx){
@@ -4123,6 +4147,7 @@ window.addEventListener('load',()=>{
     landmarkLocal: (name) => landmarkLocal(S.subject, name),
     centring: (name) => centringData[S.subject]?.[name] || null,
     poseLoc, jointChain: () => jointChain(S.subject), renderJointUI, prepareJointVolume,
+    preposeJoints: (angles) => { if(S.voxelModel) ensureJointVolume(S.voxelModel, angles); },
     matFor: (r) => { const d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); },
     modelCentreY: () => restHeight() + S.objOff.y,
     modelCentre: () => [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
