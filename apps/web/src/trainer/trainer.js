@@ -174,7 +174,7 @@ function stepHTML(view, S) {
       ${slider('trOffZ', 'Patient <small>along the table</small>', -55, 55, 0.1, S.objOff.z, ' cm')}
       ${slider('trOffX', 'Patient <small>across the table</small>', -55, 55, 0.1, S.objOff.x, ' cm')}
       ${motionsOf().map((m) => slider('trJ_' + m.key.replace('.', '_'), `${esc(m.joint)} <small>${esc(m.label.toLowerCase())}: ${esc(m.neg)} &minus; / ${esc(m.pos)} +</small>`,
-        m.range[0], m.range[1], 1, Math.round(S.joints[m.key] ?? m.rest ?? 0), '°')).join('')}
+        m.range[0], m.range[1], 5, 5 * Math.round((S.joints[m.key] ?? m.rest ?? 0) / 5), '°')).join('')}
       <div class="tr-tip">Watch the patient in the room: the rotation is judged against the view's,
         within ${view.pose.tol}°. The film is the only feedback after the exposure &mdash; as on the job.</div>
       ${next('centre', 'Centre')}</div>`;
@@ -298,18 +298,29 @@ function wireStep(col, view) {
     });
   }
   col.querySelectorAll('.tr-next').forEach((b) => b.onclick = () => { T.step = b.dataset.to; renderPanel(); });
+  // the value is taken at once, the room and the sandbox redrawn at most once a frame (a joint
+  // redraws the bent mesh: done for every input event, a slider dragged at 7 frames a second)
+  let frame = 0, joints = false;
+  const redraw = () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      if (joints) { joints = false; H.renderJointUI(); }
+      H.syncSandbox(); H.syncScene();
+    });
+  };
   const bind = (id, set) => {
     const el = $(id); if (!el) return;
     el.oninput = () => {
       const v = +el.value; set(v);
       const lab = $(id + 'V'); if (lab) lab.textContent = fmt(v, +el.step) + el.dataset.unit;
-      H.syncSandbox(); H.syncScene();
+      redraw();
     };
   };
   bind('trRoll', (v) => { S.objRot.z = v; });
   bind('trTilt', (v) => { S.objRot.x = v; });
   bind('trTurn', (v) => { S.objRot.y = v; });
-  for (const m of motionsOf()) bind('trJ_' + m.key.replace('.', '_'), (v) => { S.joints[m.key] = v; H.renderJointUI(); H.prepareJointVolume(); });
+  for (const m of motionsOf()) bind('trJ_' + m.key.replace('.', '_'), (v) => { S.joints[m.key] = v; joints = true; H.prepareJointVolume(); });
   bind('trOffZ', (v) => { S.objOff.z = v; });
   bind('trOffX', (v) => { S.objOff.x = v; });
   bind('trTubeZ', (v) => { S.tubeZ = v; });

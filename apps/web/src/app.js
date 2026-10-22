@@ -11,7 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
-import { axisToward, forwardChain, poseVolume, anyBent } from './core/jointPose.js';
+import { axisToward, forwardChain, forwardCompiled, compileChain, poseVolume, anyBent } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
@@ -525,11 +525,50 @@ function jointsActive(){
 }
 // a rest-frame point (landmark, required anatomy, palpation) where the bent patient has it
 function poseLoc(p){ const ch=jointsActive(); return ch ? forwardChain(p, ch, S.joints) : p; }
+/* THE POSED VOLUME. Resampling a limb into a bent pose is seconds of work at 1 mm (the leg, 42 M
+   voxels: 2.6 s), and on the page it froze the room while a slider rested. It is made in a worker
+   (core/poseWorker.js) and kept per pose, the last few of them: the sliders move in 5 degree
+   stations, so going back to a pose is instant. An exposure waits for its pose
+   (ensureJointVolume); only without a worker is it made here, as before. */
+const POSE_KEEP = 3;
+let poseWorker=null, poseSeq=0;
+const poseWaits=new Map();
+function poser(){
+  if(poseWorker!==null) return poseWorker;
+  try {
+    poseWorker=new Worker(new URL('./core/poseWorker.js', import.meta.url), { type:'module' });
+    poseWorker.onmessage=(e)=>{ const w=poseWaits.get(e.data.id); if(w){ poseWaits.delete(e.data.id); w(e.data); } };
+    poseWorker.onerror=()=>{ poseWorker=false; for(const w of poseWaits.values()) w({ error:'worker' }); poseWaits.clear(); };
+  } catch { poseWorker=false; }
+  return poseWorker;
+}
+function poseCache(vm){ return vm._jcache || (vm._jcache=new Map()); }
+function keepPose(vm, key, posed){
+  const c=poseCache(vm); c.delete(key); c.set(key, posed);
+  while(c.size>POSE_KEEP) c.delete(c.keys().next().value);
+}
+async function ensureJointVolume(vm){
+  const ch=jointsActive(); if(!ch || !vm?.data) return;
+  const key=JSON.stringify(S.joints);
+  if(poseCache(vm).has(key)) return;
+  const w=poser(); if(!w) return;                     // jointPosedVolume poses it here instead
+  vm._jpending=vm._jpending||new Map();
+  if(!vm._jpending.has(key)){
+    const mk=vm.url||S.subject;
+    if(vm._poserFor!==w){ w.postMessage({ type:'model', key:mk, dims:vm.dims, spacingMM:vm.spacingMM, data:vm.data }); vm._poserFor=w; }
+    const id=++poseSeq;
+    vm._jpending.set(key, new Promise(res=>{
+      poseWaits.set(id, res);
+      w.postMessage({ type:'pose', id, key:mk, flips:voxelFlips(), chain:ch, angles:{ ...S.joints } });
+    }).then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad }); }));
+  }
+  await vm._jpending.get(key);
+}
 function jointPosedVolume(vm){
   const ch=jointsActive(); if(!ch || !vm.data) return null;
   const key=JSON.stringify(S.joints);
-  if(vm._jposed?.key!==key) vm._jposed={ key, posed: poseVolume(vm, voxelFlips(), ch, S.joints) };
-  return vm._jposed.posed;
+  if(!poseCache(vm).has(key)) keepPose(vm, key, poseVolume(vm, voxelFlips(), ch, S.joints));
+  return poseCache(vm).get(key);
 }
 /* REST ON THE TABLE. A patient lies on the receptor whichever way they are turned. The model
    used to stand at half its unrotated depth, so a lateral, an oblique or a tilt sank part of it
@@ -563,8 +602,9 @@ function restHeight(){
   const key=JSON.stringify(S.objRot)+(ch?JSON.stringify(S.joints):'');
   if(key===restKey) return restY;
   const R=objMat(); let lo=Infinity;
+  const cc=ch ? compileChain(ch, S.joints) : null;      // once, not once per point
   for(let i=0;i<restPts.length;i+=3){
-    const p=ch ? forwardChain([restPts[i],restPts[i+1],restPts[i+2]], ch, S.joints) : [restPts[i],restPts[i+1],restPts[i+2]];
+    const p=cc ? forwardCompiled([restPts[i],restPts[i+1],restPts[i+2]], cc) : [restPts[i],restPts[i+1],restPts[i+2]];
     const y=R[3]*p[0]+R[4]*p[1]+R[5]*p[2];
     if(y<lo) lo=y;
   }
@@ -572,27 +612,44 @@ function restHeight(){
   return restY;
 }
 /* The mesh bends with the same map: its vertices are the volume frame in mm, the rest frame is
-   that flipped and in cm. The rest positions are kept, so straightening restores them exactly. */
-let bentKey='';
+   that flipped and in cm. The rest positions are kept, so straightening restores them exactly.
+   Only the meshes on show are bent (each remembers the pose it has), the chain is compiled once
+   per pose, not once per vertex, and the normals, the dearest part, are redone once the joint has
+   rested: while it moves the shading lags a frame or two, which no one sees. */
+let normalsTimer=null, normalsDue=new Set();
 function bendVoxelMesh(){
   const wrap=three.chestGroup; if(!wrap) return;
   const ch=jointsActive();
   const key=ch ? S.subject+JSON.stringify(S.joints) : '';
-  if(key===bentKey && wrap.userData.bentFor===S.subject) return;
-  bentKey=key; wrap.userData.bentFor=S.subject;
   const f=voxelFlips().map(b=>b?-1:1);
+  const cc=ch ? compileChain(ch, S.joints) : null;
   wrap.traverse(o=>{
-    if(!o.isMesh || !o.geometry?.attributes?.position) return;
-    const pos=o.geometry.attributes.position;
-    if(!o.geometry.userData.rest){ if(!ch) return; o.geometry.userData.rest=Float32Array.from(pos.array); }
-    const rest=o.geometry.userData.rest, a=pos.array;
-    if(!ch){ a.set(rest); }
+    if(!o.isMesh || !o.visible || !o.geometry?.attributes?.position) return;
+    const g=o.geometry, pos=g.attributes.position;
+    if((g.userData.bentKey||'')===key) return;
+    if(!g.userData.rest){ if(!cc) return; g.userData.rest=Float32Array.from(pos.array); }
+    g.userData.bentKey=key;
+    const rest=g.userData.rest, a=pos.array;
+    if(!cc){ a.set(rest); }
     else for(let i=0;i<a.length;i+=3){
-      const q=forwardChain([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], ch, S.joints);
+      const q=forwardCompiled([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], cc);
       a[i]=f[0]*q[0]*10; a[i+1]=f[1]*q[1]*10; a[i+2]=f[2]*q[2]*10;
     }
-    pos.needsUpdate=true; o.geometry.computeVertexNormals(); o.geometry.computeBoundingSphere();
+    pos.needsUpdate=true; g.computeBoundingSphere(); normalsDue.add(g);
   });
+  if(normalsDue.size){
+    clearTimeout(normalsTimer);
+    normalsTimer=setTimeout(()=>{ for(const g of normalsDue) g.computeVertexNormals(); normalsDue.clear(); }, 150);
+  }
+}
+/* A joint slider's input: the angle is taken at once, the room redrawn at most once a frame, and
+   the volume posed (in the worker) once the slider rests. The sliders move in 5 degree stations:
+   every view's window for a joint is 10 degrees or wider, and fewer poses mean each is cached. */
+const JOINT_STEP = 5;
+let jointFrame=0;
+function jointMoved(){
+  if(!jointFrame) jointFrame=requestAnimationFrame(()=>{ jointFrame=0; resetPrep?.(); syncScene(); });
+  prepareJointVolume();
 }
 /* The sandbox's joint sliders, one per motion the current subject has. */
 function renderJointUI(){
@@ -603,20 +660,19 @@ function renderJointUI(){
     const v=Math.round(S.joints[m.key] ?? m.rest ?? 0);   // anatomical: the model as scanned when unset
     return `<div class="row" style="margin-top:8px"><div class="rl">${j.label} <small>${m.label.toLowerCase()} (${m.neg} &minus; / ${m.pos} +)</small></div>`
       +`<div class="valchip" id="jv_${m.key.replace('.','_')}">${v}°</div></div>`
-      +`<input type="range" class="jointSl" data-key="${m.key}" min="${m.range[0]}" max="${m.range[1]}" step="1" value="${v}">`;
+      +`<input type="range" class="jointSl" data-key="${m.key}" min="${m.range[0]}" max="${m.range[1]}" step="${JOINT_STEP}" value="${v}">`;
   }).join('')).join('');
   host.querySelectorAll('.jointSl').forEach(el=>el.addEventListener('input',()=>{
     S.joints[el.dataset.key]=+el.value;
     const t=$('jv_'+el.dataset.key.replace('.','_')); if(t) t.textContent=el.value+'°';
-    resetPrep?.(); syncScene(); prepareJointVolume();
+    jointMoved();
   }));
 }
-/* Pose the volume once the slider has rested, so the exposure finds it ready (1-2 s for the
-   0.5 mm hand; it is cached per pose either way). */
+/* Pose the volume (in the worker) once the slider has rested, so the exposure finds it ready. */
 let jointPrepTimer=null;
 function prepareJointVolume(){
   clearTimeout(jointPrepTimer);
-  jointPrepTimer=setTimeout(()=>{ if(S.voxelModel) jointPosedVolume(S.voxelModel); }, 450);
+  jointPrepTimer=setTimeout(()=>{ if(S.voxelModel) ensureJointVolume(S.voxelModel); }, 250);
 }
 
 /* X-ray detector receptor size + orientation. The 3D receptor (modelled 24x30) scales
@@ -2286,6 +2342,7 @@ async function computeRadiograph(opts={}){
   // opts.dry: the same exposure, returned instead of recorded — no image history, no dose log,
   // no EI/DI or marker readouts. The Trainer's reference image is made this way.
   const dry=!!opts.dry;
+  if(S.voxelModel) await ensureJointVolume(S.voxelModel);   // the pose, from the worker
   const phantom=buildPhantom();
   const source=sourcePos();
 
