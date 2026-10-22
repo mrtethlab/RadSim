@@ -244,22 +244,25 @@ def lower_extremity(hu, mat, body):
     keep[KNEE_Z:a] = ndi.median_filter(keep[KNEE_Z:a].astype(np.uint8), size=(5, 1, 1)).astype(bool) & body[KNEE_Z:a]
     keep[z0:] = pare(keep[z0:], r=2)
     foot = np.zeros(keep.shape[0], bool); foot[ANKLE_Z:] = True
-    return smooth(keep, foot, big_bone(mat))
+    keep = smooth(keep, foot, big_bone(mat))
+    # the thigh, knee and calf (not the hemipelvis above, nor the foot below the ankle)
+    return convex_limb(keep, CROTCH_Z, ANKLE_Z, mat, big_bone(mat) & keep, joints=(KNEE_Z,))
 
 
 # The arm's frame, per source CT at 1.5 mm (z = 0 at the shoulders, x low = the patient's RIGHT,
 # as in z045: the liver lies at low x, the stomach's gas at high x):
 #   axilla: the axillary fold (above it the shoulder keeps its girdle, out to x1)
 #   edge:   the arm's bone cluster ends short of this x; the trunk's starts beyond it
-#   wrist, end: the wrist and the fingertips
+#   free:   where the arm stands clear of the trunk (its outline is evened from there on)
+#   elbow, wrist, end: the elbow joint, the wrist and the fingertips
 ARMS = {
     # 87 M: osteoporotic, its spongy bone at muscle HU; the elbow printed without its condyles
-    'z033': dict(axilla=100, x1=135, edge=120, wrist=400, end=470),
+    'z033': dict(axilla=100, x1=135, edge=120, wrist=400, end=470, elbow=219),
     # 57 F: the right arm straight at the side, clear of the trunk below the axilla, its bone
     # healthy (cortex ~1200 HU, spongy bone well above muscle). Its fingers reach the scan's edge
     # at x = 2 and lose a few millimetres of the hand's radial side; the hand and wrist films use
     # the hand CT, so here the hand only ends a forearm film.
-    'z053': dict(axilla=75, x1=140, edge=100, wrist=372, end=475, clear=118),
+    'z053': dict(axilla=75, x1=140, edge=100, wrist=372, end=475, clear=118, free=140, elbow=215),
 }
 ARM = 'z053'
 
@@ -330,46 +333,79 @@ def upper_extremity(hu, mat, body, subj=ARM):
     # The surface is grown about 5 mm (cut at 0.3, not 0.5), filled with fat: z033's skin lay thin
     # over the epicondyles and the olecranon, and the bone guard kept those bumps.
     keep = smooth(keep, hand, big_bone(mat, 2000), level=0.3)
-    return convex_limb(keep, ax, w, mat)
+    # above where the arm stands clear of the trunk its inner side is the cut against the chest, and
+    # the hull drew a cone from it to the elbow: there the outline is held to no wider than at `free`
+    return convex_limb(keep, ax, w, mat, big_bone(mat, 2000) & keep, joints=(a_['elbow'],), free=a_.get('free'))
 
 
-def convex_limb(keep, z0, z1, mat, span_mm=120, bins=96):
-    """A healthy limb's outline is flat or convex, along it and around it. This one dipped in a
-    waist above the humeral condyles, under the bulge of the biceps, and its skin waved: wasting and
-    the sag of a body lying dead. Per slice, the skin's distance from the limb's centre line is
-    taken in `bins` directions; along the limb each direction's distance is closed over span_mm (a
-    dip shorter than that is bridged, the bulges either side kept), and each section is made convex.
-    Only ever adds, and what it adds is fat, whatever lay there (the hull reaches toward the chest,
-    whose ribs are not the arm's): `mat` is cleared there, and finish fills it with fat."""
-    from skimage.morphology import convex_hull_image
+def convex_limb(keep, z0, z1, mat, bone, joints=(), free=None, bins=96, cover_mm=20, cover_end_mm=10, ease_mm=40):
+    """A healthy limb's outline is flat or convex, along it and around it, and its bones lie well
+    inside it. This one dipped in a waist above the humeral condyles, under the bulge of the biceps,
+    its skin waved (wasting, and the sag of a body lying dead), and the medial epicondyle, the
+    olecranon, the patella and the shin came through it.
+    - Cover: no bone within cover_mm of the skin, easing to cover_end_mm over the distal third (z
+      grows distally), where a wrist or an ankle is thin.
+    - Outline: per slice, the skin's distance from the limb's centre line in `bins` directions.
+      Along each segment between `joints` (z), each direction's distance is replaced by its least
+      concave majorant, the upper hull of the profile: flat or convex all along the upper arm, the
+      forearm, the thigh and the leg (a closing only bridged dips, and a calf's taper to the ankle
+      is no dip). A joint between two segments may still be narrower than either. Around the limb
+      the profile is closed over 45 degrees (a hollow in the section is filled).
+    - The change eases in and out over ease_mm at both ends of z0..z1, so the hip above and the hand
+      or foot below meet it without a step.
+    Only ever adds, and what it adds is fat, whatever lay there (toward the chest it would take in
+    ribs that are not the arm's): `mat` is cleared there, and finish fills it with fat."""
     n = z1 - z0
-    sub = keep[z0:z1]
-    c = np.array([ndi.center_of_mass(s) if s.any() else (np.nan, np.nan) for s in sub])
+    sub = keep[z0:z1].copy()
+    t = np.clip((np.arange(n) - 2 * n / 3) / (n / 3), 0, 1)
+    cover = cover_mm * (1 - t) + cover_end_mm * t
+    zs, ys, xs = np.nonzero(sub)
+    m = int(np.ceil(cover_mm / SP)) + 2
+    y0, y1 = max(0, ys.min() - m), min(sub.shape[1], ys.max() + m + 1)
+    x0, x1 = max(0, xs.min() - m), min(sub.shape[2], xs.max() + m + 1)
+    d = ndi.distance_transform_edt(~bone[z0:z1, y0:y1, x0:x1]) * SP
+    sub[:, y0:y1, x0:x1] |= d <= cover[:, None, None]
+    c = np.array([ndi.center_of_mass(s_) if s_.any() else (np.nan, np.nan) for s_ in sub])
     ok = ~np.isnan(c[:, 0])
     for a in range(2):                                   # the centre line, filled in and smoothed
         c[:, a] = np.interp(np.arange(n), np.nonzero(ok)[0], c[ok, a])
         c[:, a] = ndi.gaussian_filter1d(c[:, a], 8, mode='nearest')
     ny, nx = sub.shape[1:]
     yy, xx = np.mgrid[:ny, :nx]
-    R = np.zeros((n, bins), np.float32)
-    for i in range(n):
-        dy, dx = yy - c[i, 0], xx - c[i, 1]
-        th = ((np.arctan2(dy, dx) + np.pi) / (2 * np.pi) * bins).astype(int) % bins
-        r = np.hypot(dy, dx)
-        m = sub[i]
-        np.maximum.at(R[i], th[m], r[m])
-    w = max(3, int(round(span_mm / SP)) | 1)
-    R = ndi.grey_closing(R, size=(w, 1), mode='nearest')
+    def profile(vol):
+        R = np.zeros((n, bins), np.float32)
+        for i in range(n):
+            dy, dx = yy - c[i, 0], xx - c[i, 1]
+            th = ((np.arctan2(dy, dx) + np.pi) / (2 * np.pi) * bins).astype(int) % bins
+            msk = vol[i]
+            np.maximum.at(R[i], th[msk], np.hypot(dy, dx)[msk])
+        return R
+    R0 = profile(keep[z0:z1])                            # the limb as it was
+    R = profile(sub)                                     # with its cover
+    R = ndi.grey_closing(R, size=(1, bins // 8 | 1), mode='wrap')
+    if free is not None and z0 < free < z1:              # (above `free`: no wider than at it)
+        f = free - z0
+        R[:f] = np.minimum(R[:f], R[f])
+        R0[:f] = np.minimum(R0[:f], R[f])
+    cuts = [0] + sorted(int(j) - z0 for j in joints if z0 < j < z1) + [n]
+    for a, b in zip(cuts[:-1], cuts[1:]):
+        for j in range(bins):
+            R[a:b, j] = majorant(R[a:b, j])
     R = ndi.gaussian_filter(R, (2, 1), mode=('nearest', 'wrap'))
+    e = max(1, int(round(ease_mm / SP)))
+    k = np.arange(n)
+    w = np.clip(np.minimum(k + 1, n - k) / e, 0, 1)[:, None]
+    w = w * w * (3 - 2 * w)                              # smoothstep
+    R = R0 + w * np.maximum(R - R0, 0)
     out = keep.copy()
     for i in range(n):
         dy, dx = yy - c[i, 0], xx - c[i, 1]
-        t = (np.arctan2(dy, dx) + np.pi) / (2 * np.pi) * bins - 0.5
-        lo = np.floor(t).astype(int) % bins; f = t - np.floor(t)
+        tt = (np.arctan2(dy, dx) + np.pi) / (2 * np.pi) * bins - 0.5
+        lo = np.floor(tt).astype(int) % bins; f = tt - np.floor(tt)
         rr = R[i, lo] * (1 - f) + R[i, (lo + 1) % bins] * f
-        grown = sub[i] | (np.hypot(dy, dx) <= rr)
-        out[z0 + i] = keep[z0 + i] | convex_hull_image(grown)
-        mat[z0 + i][out[z0 + i] & ~keep[z0 + i]] = AIR
+        add = (np.hypot(dy, dx) <= rr) & (w[i, 0] > 0)
+        out[z0 + i] |= add
+        mat[z0 + i][add & ~keep[z0 + i]] = AIR
     return out
 
 
@@ -393,6 +429,21 @@ def healthy_arm(hu, mat, keep, fat_mm=7.5, fat_hu=-100):
     h = ndi.gaussian_filter(hu[z0:z1].astype(np.float32), 1.0)
     sub[soft & (depth > fat_mm) & (h > fat_hu)] = MUSCLE
     return out
+
+
+def majorant(y):
+    """The least concave function over y (indexed 0..n-1): the upper convex hull, interpolated."""
+    hull = []
+    for i, v in enumerate(y):
+        while len(hull) >= 2:
+            (i1, v1), (i2, v2) = hull[-2], hull[-1]
+            if (v2 - v1) * (i - i1) <= (v - v1) * (i2 - i1):    # the middle point lies under the chord
+                hull.pop()
+            else:
+                break
+        hull.append((i, float(v)))
+    hi, hv = zip(*hull)
+    return np.interp(np.arange(len(y)), hi, hv)
 
 
 def within_reach(part, bone, margin=2, smooth=9):

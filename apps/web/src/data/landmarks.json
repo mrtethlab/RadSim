@@ -2,36 +2,36 @@
   "_about": "Anatomical centring landmarks for the x-ray protocols, measured by tools/measure_landmarks.py. Volume-frame entries are cm from the volume centre (x, y, z; +z superior) and are mapped to the world through the same flips and rotation as the phantom. Entries marked frame:\"world\" are already in the x-ray world frame. Re-run the tool after rebuilding a model.",
   "lowerextremity": {
     "knee": {
-      "x": 0.82,
-      "y": 5.71,
+      "x": 0.52,
+      "y": 5.63,
       "z": 2.48,
       "how": "joint-space valley between the condyles and the plateau (prominence 9.5 cm2)",
       "confidence": "high"
     },
     "ankle": {
-      "x": -2.32,
-      "y": 6.86,
+      "x": -2.62,
+      "y": 6.79,
       "z": -36.38,
       "how": "peak of the malleolar bulge \u2014 the clinical centring point, midway between the malleoli; tibia and talus are fused in the segmentation, so there is no joint-space dip to find",
       "confidence": "medium"
     },
     "hip": {
-      "x": 2.32,
-      "y": 3.34,
+      "x": 2.02,
+      "y": 3.27,
       "z": 43.88,
       "how": "peak of the proximal bulge: femoral head and trochanters",
       "confidence": "medium"
     },
     "femur": {
-      "x": -1.05,
-      "y": 3.25,
+      "x": -1.35,
+      "y": 3.17,
       "z": 23.18,
       "how": "midway between the knee and hip landmarks",
       "confidence": "medium"
     },
     "foot": {
-      "x": -2.85,
-      "y": 3.35,
+      "x": -3.15,
+      "y": 3.27,
       "z": -48.52,
       "how": "tarsals, 5 cm above the inferior end \u2014 the foot points anteriorly in this supine leg",
       "confidence": "low"
@@ -40,8 +40,8 @@
   "upperextremity": {
     "elbow": {
       "x": -2.4,
-      "y": 1.55,
-      "z": 3.68,
+      "y": 1.51,
+      "z": 3.52,
       "how": "widest bone in the 8 cm below the humeral shaft (which ends at 40.5 cm): the epicondyles",
       "confidence": "high"
     },

@@ -55,13 +55,13 @@
    "label": "Elbow",
    "c": [
     2.48,
-    -1.2,
-    2.18
+    -1.12,
+    2.02
    ],
    "distal": [
-    0.279,
-    0.155,
-    -0.948
+    0.281,
+    0.153,
+    -0.947
    ],
    "blend": 1.5,
    "how": "the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon",
@@ -72,8 +72,8 @@
      "neg": "extension",
      "pos": "flexion",
      "toward": [
-      -0.152,
-      0.988,
+      -0.177,
+      0.984,
       -0.0
      ],
      "range": [
@@ -120,8 +120,8 @@
   "knee": {
    "label": "Knee",
    "c": [
-    -0.82,
-    -5.71,
+    -0.52,
+    -5.63,
     2.48
    ],
    "distal": [
@@ -152,8 +152,8 @@
   "ankle": {
    "label": "Ankle",
    "c": [
-    3.23,
-    -5.55,
+    3.52,
+    -5.47,
     -37.5
    ],
    "distal": [
@@ -162,7 +162,7 @@
     -1
    ],
    "blend": 1.5,
-   "how": "midway between the malleoli; dorsiflexion turns the foot (ankle to the base of the 3rd metatarsal, [0.192, 0.244, -0.951]) toward the shin; at rest it is 75 degrees plantarflexed",
+   "how": "midway between the malleoli; dorsiflexion turns the foot (ankle to the base of the 3rd metatarsal, [0.193, 0.242, -0.951]) toward the shin; at rest it is 75 degrees plantarflexed",
    "motions": [
     {
      "key": "ankle.flex",
@@ -170,8 +170,8 @@
      "neg": "plantarflexion",
      "pos": "dorsiflexion",
      "from": [
-      0.192,
-      0.244,
+      0.193,
+      0.242,
       -0.951
      ],
      "toward": [
