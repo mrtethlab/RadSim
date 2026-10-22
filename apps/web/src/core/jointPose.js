@@ -377,13 +377,29 @@ function smoothFold(out, N, sg, sp, cc) {
    into, a voxel is either unmoved or vacated; inside it, only cells where moved tissue landed are
    searched, the fully turned and unmoved candidates first, and only voxels within a crease's
    measured reach pay for its solve. (Measured on the 1 mm leg: a knee at 25 degrees 2.3 s -> 1.0 s,
-   the knee and ankle together 41 s -> 3.7 s, voxel for voxel the same volume.) */
+   the knee and ankle together 41 s -> 3.7 s, voxel for voxel the same volume.)
+
+   In parts, for several workers (core/poseWorker.js): posePlan makes the plan (the one pass over
+   the input, the box, its occupancy, the padded grid), plan.rows(k0, k1, out) fills output slices
+   k0..k1-1 into out, and plan.fold(out) smooths the crooks of the whole volume. The slices are
+   independent, so any split of them gives the same volume as poseVolume. */
 export function poseVolume(vm, flips, chain, angles) {
+  const plan = posePlan(vm, flips, chain, angles);
+  if (!plan) return { data: vm.data, dims: vm.dims.slice(), pad: [0, 0, 0] };
+  const [N0, N1, N2] = plan.dims;
+  const out = new Uint8Array(N0 * N1 * N2);
+  plan.rows(0, N2, out);
+  plan.fold(out);
+  return { data: out, dims: plan.dims, pad: plan.pad };
+}
+// the output slices of chunk c of m: [k0, k1)
+export function poseChunk(n2, c, m) { return [Math.floor((c * n2) / m), Math.floor(((c + 1) * n2) / m)]; }
+export function posePlan(vm, flips, chain, angles) {
   const [nx, ny, nz] = vm.dims, data = vm.data;
   const sp = vm.spacingMM.map((v) => v / 10);
   const sg = flips.map((f) => (f ? -1 : 1));
   const cc = compileChain(chain, angles);
-  if (!cc.length) return { data, dims: [nx, ny, nz], pad: [0, 0, 0] };
+  if (!cc.length) return null;
   const cx = (nx - 1) / 2, cy = (ny - 1) / 2, cz = (nz - 1) / 2;
   // one pass over a coarse sample: where the bent parts go, how far the patient reaches, and how
   // far from each joint its crease tissue lies
@@ -443,6 +459,7 @@ export function poseVolume(vm, flips, chain, angles) {
     occ = grown;
   }
   const occAt = (x, y, z) => occ[(cell(z, 2) * on[1] + cell(y, 1)) * on[0] + cell(x, 0)];
+  mq.length = 0;                                                  // (a worker keeps the plan between chunks)
   const reach2 = creaseR2.map((r) => (Math.sqrt(r) + 1) ** 2);
   const pad = [0, 1, 2].map((a) => {
     const half = ([nx, ny, nz][a] - 1) / 2 * sp[a];
@@ -450,7 +467,6 @@ export function poseVolume(vm, flips, chain, angles) {
     return Math.max(0, Math.ceil((need - half) / sp[a]));
   });
   const N = [nx + 2 * pad[0], ny + 2 * pad[1], nz + 2 * pad[2]];
-  const out = new Uint8Array(N[0] * N[1] * N[2]);
   const at = (i, j, k) => (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz ? 0 : data[(k * ny + j) * nx + i]);
   const sampleRest = (x, y, z) => at(Math.round(sg[0] * x / sp[0] + cx), Math.round(sg[1] * y / sp[1] + cy), Math.round(sg[2] * z / sp[2] + cz));
   const one = cc.length === 1 && !cc[0].wf ? cc[0] : null;
@@ -499,39 +515,41 @@ export function poseVolume(vm, flips, chain, angles) {
     if (B > 0) { while (t >= 0 && f(t)) t--; while (t + 1 < N0 && !f(t + 1)) t++; return [t + 1, N0]; }
     while (t + 1 < N0 && f(t + 1)) t++; while (t >= 0 && !f(t)) t--; return [0, t + 1];
   };
-  for (let k = 0; k < N[2]; k++) {
-    const z = sg[2] * (k - Cz) * sp[2];
-    const kin = z >= blo[2] && z <= bhi[2];
-    const ks = k - pad[2];
-    for (let j = 0; j < N[1]; j++) {
-      const y = sg[1] * (j - Cy) * sp[1];
-      const jin = kin && y >= blo[1] && y <= bhi[1];
-      const row = (k * N[1] + j) * N0, js = j - pad[1];
-      if (rowWise) {
-        if (ks >= 0 && ks < nz && js >= 0 && js < ny) out.set(data.subarray((ks * ny + js) * nx, (ks * ny + js + 1) * nx), row + pad[0]);
-        for (const J of cc) {
-          const ey = y - J.c[1], ez = z - J.c[2], ex0 = bx - J.c[0];
-          const sd = lin(ex0 * J.d[0] + ey * J.d[1] + ez * J.d[2] + J.b, ax * J.d[0]);
-          out.fill(0, row + sd[0], row + sd[1]);
-          const a = lin(ex0 * J.ins[0] + ey * J.ins[1] + ez * J.ins[2], ax * J.ins[0]);
-          const b = lin(-(ex0 * J.bis[0] + ey * J.bis[1] + ez * J.bis[2]), -ax * J.bis[0]);
-          const lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]);
-          if (lo < hi) out.fill(0, row + lo, row + hi);
+  // output slices k0..k1-1, into out (their own N0 x N1 x (k1 - k0) block)
+  const rows = (k0, k1, out) => {
+    for (let k = k0; k < k1; k++) {
+      const z = sg[2] * (k - Cz) * sp[2];
+      const kin = z >= blo[2] && z <= bhi[2];
+      const ks = k - pad[2];
+      for (let j = 0; j < N[1]; j++) {
+        const y = sg[1] * (j - Cy) * sp[1];
+        const jin = kin && y >= blo[1] && y <= bhi[1];
+        const row = ((k - k0) * N[1] + j) * N0, js = j - pad[1];
+        if (rowWise) {
+          if (ks >= 0 && ks < nz && js >= 0 && js < ny) out.set(data.subarray((ks * ny + js) * nx, (ks * ny + js + 1) * nx), row + pad[0]);
+          for (const J of cc) {
+            const ey = y - J.c[1], ez = z - J.c[2], ex0 = bx - J.c[0];
+            const sd = lin(ex0 * J.d[0] + ey * J.d[1] + ez * J.d[2] + J.b, ax * J.d[0]);
+            out.fill(0, row + sd[0], row + sd[1]);
+            const a = lin(ex0 * J.ins[0] + ey * J.ins[1] + ez * J.ins[2], ax * J.ins[0]);
+            const b = lin(-(ex0 * J.bis[0] + ey * J.bis[1] + ez * J.bis[2]), -ax * J.bis[0]);
+            const lo = Math.max(a[0], b[0]), hi = Math.min(a[1], b[1]);
+            if (lo < hi) out.fill(0, row + lo, row + hi);
+          }
+          if (!jin) continue;
+          // the box's columns
+          const i0 = (blo[0] - bx) / ax, i1 = (bhi[0] - bx) / ax;
+          const ia = Math.max(0, Math.ceil(Math.min(i0, i1))), ib = Math.min(N0 - 1, Math.floor(Math.max(i0, i1)));
+          for (let i = ia; i <= ib; i++) { const x = bx + ax * i; if (occAt(x, y, z)) out[row + i] = posedAt(x, y, z, out[row + i]); }
+          continue;
         }
-        if (!jin) continue;
-        // the box's columns
-        const i0 = (blo[0] - bx) / ax, i1 = (bhi[0] - bx) / ax;
-        const ia = Math.max(0, Math.ceil(Math.min(i0, i1))), ib = Math.min(N0 - 1, Math.floor(Math.max(i0, i1)));
-        for (let i = ia; i <= ib; i++) { const x = bx + ax * i; if (occAt(x, y, z)) out[row + i] = posedAt(x, y, z, out[row + i]); }
-        continue;
-      }
-      for (let i = 0; i < N0; i++) {
-        const x = bx + ax * i;
-        const still = vacAt(x, y, z) ? 0 : at(i - pad[0], js, ks);
-        out[row + i] = jin && x >= blo[0] && x <= bhi[0] && occAt(x, y, z) ? posedAt(x, y, z, still) : still;
+        for (let i = 0; i < N0; i++) {
+          const x = bx + ax * i;
+          const still = vacAt(x, y, z) ? 0 : at(i - pad[0], js, ks);
+          out[row + i] = jin && x >= blo[0] && x <= bhi[0] && occAt(x, y, z) ? posedAt(x, y, z, still) : still;
+        }
       }
     }
-  }
-  smoothFold(out, N, sg, sp, cc);
-  return { data: out, dims: N, pad };
+  };
+  return { dims: N, pad, rows, fold: (out) => smoothFold(out, N, sg, sp, cc) };
 }
