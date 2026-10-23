@@ -2053,6 +2053,15 @@ body.mode-iv .ivxs.show{display:block}
 .ivflash b{display:block; height:100%; width:0; background:#9a0a12; transition:width .1s}
 .ivflash b.art{background:#ff3030; animation:ivpulse .86s ease-in-out infinite}
 body.mode-iv .ivflash.gone{display:none}
+/* Assessment: the needle's angle as a number, bottom left where the section would be */
+.ivangle{position:absolute; left:14px; bottom:14px; z-index:16; padding:8px 14px; border-radius:10px; background:rgba(10,14,20,0.82);
+  border:1px solid rgba(255,255,255,0.08); font-size:10px; letter-spacing:.14em; color:var(--dmuted)}
+.ivangle b{display:block; margin-top:2px; font:700 30px/1 ui-monospace,Menlo,Consolas,monospace; color:#e8edf2; letter-spacing:0}
+body.mode-iv .ivangle{display:none}
+body.mode-iv .ivangle.show{display:block}
+/* IV has its own views (Arm, Site, Needle): the bay's view options are not for it */
+body.mode-iv #viewDrop{display:none}
+body.mode-iv .ivviews{top:14px}
 @keyframes ivpulse{50%{filter:brightness(1.6)}}
 .ivviews{position:absolute; right:14px; top:52px; z-index:16}
 body.mode-iv .ivviews{display:flex; gap:4px}

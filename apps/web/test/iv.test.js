@@ -189,10 +189,11 @@ test('palpation: a vein is felt more with the tourniquet on, a deep one less', (
   assert.equal(art[0].kind, 'artery');
 });
 
-test('a needle across the vein is a fail: the attempt ends and Assessment cannot pass', () => {
-  const A = toSkin({ mode: 'assessment' });
-  IV.setYaw(A, 80); IV.setPitch(A, 22);
-  IV.advance(A, 0.5);
+test('a needle across the vein is a fail where it pierces it: the attempt ends and Assessment cannot pass', () => {
+  // come in from beside the middle, turned 60° off the vein: it meets the vein's top at that angle
+  const A = toSkin({ mode: 'assessment', site: { lateral: -2 } });
+  IV.setYaw(A, 60); IV.setPitch(A, 35);
+  advanceUntil(A, 30, (a) => a.pierce.front);
   assert.ok(A.errors.some((e) => e.code === 'acrossVein'), A.errors.map((e) => e.code).join());
   assert.ok(A.ended, 'the attempt ends');
   IV.finish(A);
@@ -313,4 +314,75 @@ test('the flush speed is judged against the gauge: over its rating, or under 1 m
   assert.ok(!codes(big).includes('flushFast') && !codes(big).includes('flushSlow'), codes(big).join());
   const slow = setUp(22); push(slow, 0.05, 0.1);   // 0.5 mL/s
   assert.ok(codes(slow).includes('flushSlow') && !codes(slow).includes('flushFast'));
+});
+
+test('fishing: missed beside the vein, drawn back and turned toward it, it goes in through the side wall and threads', () => {
+  const A = toSkin({ mode: 'practice', site: { lateral: -9 } });
+  IV.setPitch(A, 25);
+  advanceUntil(A, 26, () => false);                       // straight past, beside the vein
+  assert.ok(!A.pierce.front, 'it passed beside the vein');
+  IV.advance(A, -(A.needle.s - 1));                        // back to just under the skin
+  assert.ok(A.needle.inSkin, 'still in the skin');
+  IV.setYaw(A, 25);                                        // swung about the entry, toward the vein
+  advanceUntil(A, 30, (a) => a.pierce.front || a.ended);
+  assert.ok(A.pierce.front && A.pierce.fromSide, `in through the side: ${A.tip}`);
+  assert.ok(!A.ended, A.errors.map((e) => e.code).join());
+  advanceUntil(A, 4, (a) => a.flash.level > 0);
+  IV.setPitch(A, 10); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
+  IV.setPitch(A, 8);
+  for (let i = 0; i < 15 && !A.cath.hubbed; i++) IV.thread(A, 1);
+  assert.ok(A.cath.hubbed, 'threaded to the hub');
+  assert.ok(!A.errors.some((e) => e.code === 'sideWall'), 'not out through the far side');
+});
+
+test('from the side without traction the vein rolls away from the needle', () => {
+  const A = toSkin({ mode: 'practice', site: { lateral: -9 } });
+  IV.setTraction(A, false);
+  IV.setPitch(A, 25); IV.advance(A, 1); IV.setYaw(A, 25);
+  advanceUntil(A, 30, (a) => a.pierce.front || a.ended);
+  assert.ok(Math.abs(A.vein.dy) > 1, `rolled ${A.vein.dy.toFixed(2)} mm`);
+});
+
+test('traction is needed until the vein is punctured, not after', () => {
+  const A = toSkin(); IV.setPitch(A, 25);
+  advanceUntil(A, 20, (a) => a.flash.level > 0);
+  IV.setTraction(A, false);
+  assert.ok(!A.errors.some((e) => e.code === 'tractionEarly'), 'let go after the flash: fine');
+  const B = toSkin(); IV.setPitch(B, 25); IV.advance(B, 2);
+  IV.setTraction(B, false);
+  assert.ok(B.errors.some((e) => e.code === 'tractionEarly'), 'let go on the way in: an error');
+});
+
+test('the port cap may come off before or after the dressing; out of order costs nothing unless critical', () => {
+  const A = toSkin(); IV.setPitch(A, 25);
+  advanceUntil(A, 20, (a) => a.flash.level > 0);
+  IV.setPitch(A, 12); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
+  IV.setPitch(A, 8);
+  for (let i = 0; i < 15 && !A.cath.hubbed; i++) IV.thread(A, 1);
+  IV.withdrawNeedle(A, 40); IV.disposeNeedle(A); IV.toggleClamp(A);
+  IV.releaseTourniquet(A);
+  assert.equal(IV.placeDressing(A, 2).ok, true, 'Guided: the dressing before the port cap');
+  [0, 1, 2, 3].forEach((i) => IV.pressEdge(A, i));
+  assert.ok(A.done.has('dressing'));
+  assert.equal(IV.attachSyringe(A).ok, false, 'but not the syringe');
+  assert.equal(IV.removePortCap(A).ok, true);
+  assert.equal(IV.attachSyringe(A).ok, true);
+  assert.deepEqual(A.errors.map((e) => e.code), []);
+  // Practice: a step out of order is flagged, and costs nothing
+  const P = IV.createAttempt(cfg, { mode: 'practice' });
+  for (const x of cfg.procedure.prep) IV.tickPrep(P, x);
+  IV.markSite(P, SITE);                                    // before the tourniquet
+  assert.ok(P.errors.some((e) => e.code === 'order'));
+  assert.equal(IV.score(P).cat.sequence, cfg.score.weights.sequence);
+});
+
+test('gone in far before the flash shows, lowering the angle completes the flashback step', () => {
+  const A = toSkin(); IV.setPitch(A, 25);
+  // advance with no time passing: the catheter is in before the flash has had time to show
+  for (let i = 0; i < 80 && A.cathTip !== 'lumen'; i++) IV.advance(A, 0.2);
+  run(A, 0.5);
+  assert.ok(A.flash.level > 0 && A.cathTip === 'lumen' && !A.done.has('flash'));
+  IV.setPitch(A, 12);
+  assert.ok(A.done.has('flash'), 'lowered: the step is done');
+  assert.equal(IV.currentStep(A), 'thread');
 });

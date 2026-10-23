@@ -33,7 +33,7 @@ export const STEP_IDS = ['prep', 'tourniquet', 'palpate', 'clean', 'seal', 'alig
 /* Every error: whether the attempt survives it, the score category it costs, how much, and a
    plain-language tip for the debrief. */
 export const ERRORS = {
-  order: { end: false, cat: 'sequence', pts: 3, msg: 'Step out of order', tip: 'Follow the sequence: each step makes the next one safe.' },
+  order: { end: false, cat: 'sequence', pts: 0, msg: 'Step out of order', tip: 'Follow the sequence: each step makes the next one safe.' },
   orderCritical: { end: false, cat: 'sequence', pts: 8, msg: 'Critical step out of order', tip: 'Clamp before you open the system, and before the syringe comes off.' },
   prepSkipped: { end: false, cat: 'sequence', pts: 3, msg: 'Prep item skipped', tip: 'Hygiene, gloves, ID and the order come before anything touches the patient.' },
   tqBelowElbow: { end: false, cat: 'technique', pts: 3, msg: 'Tourniquet below the elbow', tip: 'Put the tourniquet above the elbow, well proximal of the site.' },
@@ -52,7 +52,7 @@ export const ERRORS = {
   notLowered: { end: false, cat: 'insertion', pts: 3, msg: 'Angle not lowered after the flash', tip: 'On flash, drop to 10-15° before the last 1-2 mm.' },
   stoppedAtFlash: { end: false, cat: 'insertion', pts: 2, msg: 'Threaded at the first flash', tip: 'At first flash only the bevel is in: advance 1-2 mm so the catheter tip is too.' },
   threadSteep: { end: false, cat: 'insertion', pts: 3, msg: 'Threading at a steep angle', tip: 'Thread at 10° or less, or the catheter meets the back wall.' },
-  tractionEarly: { end: false, cat: 'insertion', pts: 3, msg: 'Traction released early', tip: 'Keep the skin anchored until the catheter is threaded.' },
+  tractionEarly: { end: false, cat: 'insertion', pts: 3, msg: 'Traction released before the vein was punctured', tip: 'Keep the skin anchored until the needle is in the vein: that is what stops it rolling.' },
   reinsert: { end: false, cat: 'insertion', pts: 4, msg: 'Needle pushed back into the catheter', tip: 'Never re-advance the needle into a threaded catheter: it can shear it.' },
   backWall: { end: true, cat: 'insertion', pts: 10, msg: 'Through the back wall', tip: 'After the flash, lower the angle before advancing.' },
   sideWall: { end: true, cat: 'insertion', pts: 10, msg: 'Out through the side wall', tip: 'Line the needle up with the vein before inserting.' },
@@ -64,7 +64,7 @@ export const ERRORS = {
   tqWarn: { end: false, cat: 'time', pts: 0, msg: 'Tourniquet on over a minute', tip: '' },
   tqOver: { end: false, cat: 'time', pts: 5, msg: 'Tourniquet on too long', tip: 'Release the tourniquet within two minutes.' },
   tqLeft: { end: false, cat: 'time', pts: 5, msg: 'Tourniquet still on at the flush', tip: 'Release the tourniquet before you flush.' },
-  dressingPoor: { end: false, cat: 'securement', pts: 4, msg: 'Dressing does not show the site', tip: 'The window goes over the insertion site, the hub under the film.' },
+  dressingPoor: { end: false, cat: 'securement', pts: 4, msg: 'Dressing does not cover the site and the wings', tip: 'The film goes over the insertion site and the catheter\'s wings.' },
   syringeDirty: { end: false, cat: 'asepsis', pts: 4, msg: 'Syringe tip contaminated', tip: 'Keep the syringe tip off every surface but the port.' },
   capDirty: { end: false, cat: 'asepsis', pts: 4, msg: 'Cap contaminated', tip: 'Keep the cap off every surface but the port.' },
   flushClosed: { end: false, cat: 'securement', pts: 2, msg: 'Flushed against a closed clamp', tip: 'Open the clamp before you flush.' },
@@ -137,7 +137,8 @@ export function gate(A, id) {
   const k = stepIndex(id);
   if (k <= A.step || A.done.has(id)) return { ok: true };
   // (lining up is its own error when skipped — 'misaligned' — so only Guided waits for it)
-  const missing = STEP_IDS.slice(0, k).filter((s) => !A.done.has(s) && (s !== 'align' || A.mode === 'guided'));
+  const missing = STEP_IDS.slice(0, k).filter((s) => !A.done.has(s) && (s !== 'align' || A.mode === 'guided')
+    && !(s === 'portcap' && k < stepIndex('syringe')));
   if (!missing.length) return { ok: true };
   if (A.mode === 'guided') return { ok: false, why: `First: ${A.cfg.steps[stepIndex(missing[0])].title.toLowerCase()}.` };
   const critical = missing.some((s) => CRITICAL.has(s)) || CRITICAL.has(id);
@@ -310,7 +311,7 @@ export function setTraction(A, on) {
     A.everTraction = true;
     const g = gate(A, 'anchor');
     if (g.ok) complete(A, 'anchor');
-  } else if (A.needle.inSkin && !A.cath.hubbed && !A.ended) {
+  } else if (A.needle.inSkin && !A.pierce.front && !A.ended) {
     addError(A, 'tractionEarly');
     A.vein.dy += (A.mark.roll || 1) * A.P.vein.rollOnReleaseMM * Math.sign(A.mark.lateral || 1);   // the vein drifts
   }
@@ -318,7 +319,20 @@ export function setTraction(A, on) {
 }
 export function setYaw(A, deg) {
   if (A.cath.thread > 0) return;
-  A.needle.yaw = clamp(deg, -90, 90);      // (in the skin it pivots about the tip, which stays put)
+  const n = A.needle;
+  // in the vein it is held; in the skin short of it, it swings about the entry (fishing for the vein)
+  if (n.inSkin && A.pierce.front) return;
+  if (n.inSkin) {
+    const d0 = needleDir(A), t = n.tip;
+    const E = [t[0] - n.s * d0[0], t[1] - n.s * d0[1], t[2] - n.s * d0[2]];
+    n.yaw = clamp(deg, -90, 90);
+    const d1 = needleDir(A);
+    n.tip = [E[0] + n.s * d1[0], E[1] + n.s * d1[1], E[2] + n.s * d1[2]];
+    A.pierce.indent = 0; A.vein.pushing = false;
+    interact(A, 0);
+    return;
+  }
+  n.yaw = clamp(deg, -90, 90);
   if (!A.needle.inSkin && A.done.has('seal')) {
     const g = gate(A, 'align');
     if (g.ok && Math.abs(A.needle.yaw) <= A.P.align.tolDeg) complete(A, 'align');
@@ -328,6 +342,12 @@ export function setPitch(A, deg) {
   if (A.cath.thread > 0) return;
   A.needle.pitch = clamp(deg, 2, 60);
   if (A.needle.inSkin) interact(A, 0);
+  flashDone(A);
+}
+// the flashback step is done once the flash has shown, the catheter's tip is in and the angle is
+// down — whichever comes last (gone in far before the flash showed, lowering it is what's left)
+function flashDone(A) {
+  if (A.pierce.flashAt != null && A.cathTip === 'lumen' && !A.done.has('flash') && A.needle.pitch <= A.P.angles.lowerMax) complete(A, 'flash');
 }
 /* Advance (mm, negative withdraws) the needle along its axis. */
 export function advance(A, mm) {
@@ -344,9 +364,7 @@ export function advance(A, mm) {
       log(A, 'skinEntry', { pitch: A.needle.pitch, yaw: A.needle.yaw });
       if (!A.done.has('clean')) addError(A, 'order', { repeat: true, skipped: 'clean', did: 'insert' });
       else if (!A.clean.dry) addError(A, 'insertWet');
-      // across the vein a catheter cannot be threaded at all: that ends the attempt
-      if (Math.abs(A.needle.yaw) >= A.P.align.acrossDeg) addError(A, 'acrossVein');
-      else if (Math.abs(A.needle.yaw) > A.P.align.tolDeg) addError(A, 'misaligned');
+      if (Math.abs(A.needle.yaw) > A.P.align.tolDeg) addError(A, 'misaligned');
     }
   }
   const steps = Math.max(1, Math.ceil(Math.abs(mm) / 0.1)), d = mm / steps;
@@ -384,7 +402,33 @@ function interact(A, ds) {
        pinned, and the advance goes into the wall regardless — through a vein flattened by then. */
     const r = veinR(A), top = A.mark.depth + A.vein.dz;
     const across = q[1] - A.vein.dy;
-    if (ds > 0 && Math.abs(across) <= r && q[2] >= top) {
+    // FROM THE SIDE (fished across to it, or come at it at an angle): the tip against the vein's
+    // flank, moving in toward its middle. The same build to a puncture, from the share of the
+    // advance that goes into that wall; the rest shoves the vein sideways — it rolls away, unless
+    // the skin is held.
+    const d = needleDir(A), inward = -Math.sign(across) * d[1];
+    const rz = q[2] - veinCentreZ(A), bz = r * (1 - A.vein.flat) + P.wallMM;
+    const side = ds > 0 && Math.abs(across) > 0.8 * r && Math.abs(across) <= r + P.wallMM + 0.3 && Math.abs(rz) <= bz && inward > 0.05;
+    if (side) {
+      const incS = Math.asin(Math.min(1, inward)) / D;
+      const shallowS = incS < A.P.angles.pierceMin ? (incS / A.P.angles.pierceMin) ** 2 : 1;
+      // (loose, it slides off about as fast as it is pushed — until it can go no further; held, hardly
+      // at all. Only what the needle gains on it goes into the wall)
+      const roll = ds * (A.traction ? 0.1 : 1.1) * (A.mark.roll || 1) * (0.4 + 0.6 * inward);
+      const dy0 = A.vein.dy;
+      A.vein.dy = clamp(A.vein.dy - Math.sign(across) * roll, -P.maxRollMM, P.maxRollMM);
+      const gain = Math.max(0, ds * d[1] * -Math.sign(across) - Math.abs(A.vein.dy - dy0));
+      k.indent += gain * shallowS * (0.6 + 0.4 * stiff);
+      A.vein.pushing = true;
+      if (k.indent >= P.punctureMM) {
+        k.front = true; k.fromSide = true; k.sPierce = n.s; n.pitchAtPuncture = n.pitch;
+        log(A, 'sideWallIn', { pitch: n.pitch, yaw: n.yaw });
+        if (Math.abs(n.yaw) >= A.P.align.acrossDeg) addError(A, 'acrossVein');
+        // the tip just inside the flank, at its depth (the vein is round: narrower above and below its middle)
+        const bIn = r * (1 - A.vein.flat), hw = r * Math.sqrt(Math.max(0.05, 1 - (rz / bIn) ** 2));
+        A.vein.dy = q[1] - Math.sign(across) * Math.max(0.2, hw - 0.15);
+      }
+    } else if (ds > 0 && Math.abs(across) <= r && q[2] >= top) {
       const inc = n.pitch, nIn = Math.sin(inc * D);
       const shallow = inc < A.P.angles.pierceMin ? (inc / A.P.angles.pierceMin) ** 2 : 1;
       const pinned = A.vein.dz >= P.maxPushMM - 1e-6;
@@ -402,6 +446,8 @@ function interact(A, ds) {
         log(A, 'frontWall', { pitch: n.pitch, flat: +A.vein.flat.toFixed(2) });
         if (n.pitch < A.P.angles.pierceMin) addError(A, 'tooShallow');
         if (n.pitch > A.P.angles.steepOver) addError(A, 'tooSteep');
+        // across the vein a catheter cannot be threaded at all: that ends the attempt
+        if (Math.abs(n.yaw) >= A.P.align.acrossDeg) addError(A, 'acrossVein');
         if (A.vein.flat >= P.doubleWallFlat) { k.back = true; A.tip = 'through'; addError(A, 'doubleWall'); return; }
         // the tip is just under the roof; the tented wall then springs back round the needle
         const b = r * (1 - A.vein.flat);
@@ -454,6 +500,7 @@ function interact(A, ds) {
 /* ---- 9 thread ------------------------------------------------------------------------------ */
 export function thread(A, ticks = 1) {
   if (!A.pierce.front) return { ok: false, why: 'The needle is not in the vein.' };
+  flashDone(A);
   const g = gate(A, 'thread'); if (!g.ok) return g;
   if (A.cath.hubbed) return { ok: true };
   const P = A.P;
@@ -528,10 +575,10 @@ export function removePortCap(A) {
 }
 
 /* ---- 14 dressing -------------------------------------------------------------------------------- */
-export function placeDressing(A, offsetMM) {
+export function placeDressing(A, offsetMM, covers) {
   const g = gate(A, 'dressing'); if (!g.ok) return g;
   A.dressing.placed = true;
-  A.dressing.ok = offsetMM <= A.P.dressing.tolMM;
+  A.dressing.ok = covers ?? offsetMM <= A.P.dressing.tolMM;
   A.dressing.edges = [false, false, false, false];
   if (!A.dressing.ok) addError(A, 'dressingPoor');
   log(A, 'dressingPlaced', { offset: +offsetMM.toFixed(1) });
@@ -685,7 +732,7 @@ export function update(A, dt) {
     }
   }
   // the vein drifts off an unanchored needle while it is in the skin
-  if (A.needle.inSkin && !A.traction && !A.cath.hubbed && A.mark) {
+  if (A.needle.inSkin && !A.traction && !A.pierce.front && A.mark) {
     A.vein.dy = clamp(A.vein.dy + Math.sign(A.mark.lateral || 1) * (A.mark.roll || 1) * 0.15 * dt, -P.vein.maxRollMM, P.vein.maxRollMM);
   }
   // a breached vein bleeds into the tissue
