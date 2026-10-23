@@ -149,3 +149,14 @@ test('the routine views centre where the textbooks say', () => {
   assert.ok(c.crestCol.y < c.crestMc.y - 4 && c.crestCol.y > -12, `crestCol y ${c.crestCol.y}`);
   assert.ok(c.T7col.y < c.T7mc.y - 4 && c.T7col.y > -12, `T7col y ${c.T7col.y}`);
 });
+
+test('the hand films show their soft tissue: the hand LUT, no detail processing, the whole tissue range kept', () => {
+  const luts = load('../src/data/luts.json').luts;
+  const hand = all.filter((p) => p.subject === 'hand');
+  assert.ok(hand.length >= 8, `${hand.length} hand protocols`);
+  for (const p of hand) assert.equal(p.lut, 'hand', `${p.proj} uses ${p.lut}`);
+  // DR detail processing smeared the cortex and flattened the soft tissue into the background;
+  // the dark end keeps all but 1 % of the anatomy, so the finger envelope stays in the window
+  assert.equal(luts.hand.detail, false);
+  assert.ok(luts.hand.clipLo <= 0.02 && luts.hand.width >= 0.9, JSON.stringify(luts.hand));
+});
