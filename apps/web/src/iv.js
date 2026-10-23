@@ -163,9 +163,12 @@ function makeRoom() {
     sh.quadraticCurveTo(-0.72, 1.1 * sd, -0.72, 0.9 * sd); sh.lineTo(-0.6, 0.18 * sd); sh.closePath();
     return sh;
   };
+  const wings = [];
   for (const sd of [1, -1]) {
     const w = new THREE.Mesh(new THREE.ExtrudeGeometry(wingShape(sd), { depth: 0.05, bevelEnabled: false }), mat(gaugeCol, { side: THREE.DoubleSide }));
-    w.rotation.x = Math.PI / 2; w.position.y = -0.14; hub.add(w);
+    w.rotation.x = Math.PI / 2; w.position.y = -0.14; w.frustumCulled = false; hub.add(w);
+    w.userData = { rest: w.geometry.attributes.position.array.slice() };
+    wings.push(w);
   }
   const housing = new THREE.Group();
   const chamber = alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.55, 14), clear(0xffffff, 0.35)), -0.3);
@@ -251,7 +254,7 @@ function makeRoom() {
   gauze.visible = false; group.add(gauze);
   const finger = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), mat(0x6b8fd6, { transparent: true, opacity: 0.85 }));
   finger.visible = false; group.add(finger);
-  R3 = { group, board, kit, needle, cathM, hub, housing, flashFill, ext, clampM, clampJaw: pivot, port, portCap, tubing, extRest, extAt: extRest, drapeKey: '',
+  R3 = { group, board, kit, needle, cathM, hub, housing, flashFill, ext, clampM, clampJaw: pivot, wings, port, portCap, tubing, extRest, extAt: extRest, drapeKey: '',
     syringe, plunger, saline, luer, swab, band, thumb, gauze, finger, patch: null, rings: [], blood: null };
 }
 function disposeRoom() {
@@ -312,7 +315,7 @@ function buildPatch() {
     polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
   m.renderOrder = 5;
   R3.group.add(m);
-  R3.patch = { mesh: m, cv, g: cv.getContext('2d'), tex, a0, a1, l0, l1 };
+  R3.patch = { mesh: m, cv, g: cv.getContext('2d'), tex, a0, a1, l0, l1, na, nl, grid };
 }
 // how much of a vein shows at its i-th point (0..1). What shows is what a real arm shows first: a
 // bigger, shallower vein, a fuller one, a junction; and in stretches, not end to end (the stretches
@@ -328,6 +331,17 @@ function veinShow(f, i, dif, fill) {
   if ((f.joins || []).some(([ja, jl]) => Math.hypot(a - ja, l - jl) < 0.8)) k += 0.25;
   const t = (k - (dif - 0.12)) / 0.24;
   return Math.max(0, Math.min(1, t * t * (3 - 2 * t)));
+}
+// the smoothed skin at (a, l), and its normal: bilinear over the patch's own grid (the surface the
+// dressing is painted 2.5 mm out from), clamped at the patch's edge
+function skinAt(a, l) {
+  const P3 = R3.patch, { na, nl, grid } = P3;
+  const fi = Math.max(0, Math.min(na - 1e-6, (a - P3.a0) / (P3.a1 - P3.a0) * na));
+  const fj = Math.max(0, Math.min(nl - 1e-6, (l - P3.l0) / (P3.l1 - P3.l0) * nl));
+  const i = Math.floor(fi), j = Math.floor(fj), u = fi - i, w = fj - j;
+  const g00 = grid[i * (nl + 1) + j], g01 = grid[i * (nl + 1) + j + 1], g10 = grid[(i + 1) * (nl + 1) + j], g11 = grid[(i + 1) * (nl + 1) + j + 1];
+  const mix = (k) => (g00[k].map((_, c) => (1 - u) * ((1 - w) * g00[k][c] + w * g01[k][c]) + u * ((1 - w) * g10[k][c] + w * g11[k][c])));
+  return { p: mix('w'), n: v3.norm(mix('n')) };
 }
 // (a, l) cm -> the patch canvas, px
 const toPx = (a, l) => [(l - R3.patch.l0) * PX_PER_CM, (a - R3.patch.a0) * PX_PER_CM];
@@ -536,6 +550,31 @@ function placeKit() {
   // the clip's jaw: lifted open, pressed shut on the tube
   R3.clampJaw.rotation.z = A.clampOpen ? 0.42 : 0.0;
   R3.portCap.visible = !A.portOpen && !A.cap.locked;
+  conformWings(settled);
+}
+// The wings are soft plastic. Wherever they would sink into the skin they lie on it instead, and
+// once the catheter is in they lie flat on it — under the dressing, not through it: each point of
+// the wing 1.7-2.2 mm out from the smoothed skin under it (the dressing is painted 2.5 mm out).
+function conformWings(flat) {
+  const { THREE } = ctx;
+  if (!R3.patch?.grid) return;
+  R3.kit.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  for (const w of R3.wings) {
+    const pos = w.geometry.attributes.position, { rest } = w.userData, M = w.matrixWorld, inv = M.clone().invert();
+    for (let i = 0; i < pos.count; i++) {
+      v.set(rest[3 * i], rest[3 * i + 1], rest[3 * i + 2]).applyMatrix4(M);
+      const { a, l } = G.paramOf(G.fromWorld([v.x, v.y, v.z]));
+      const { p: s0, n: n0 } = skinAt(a, l);
+      const h = (v.x - s0[0]) * n0[0] + (v.y - s0[1]) * n0[1] + (v.z - s0[2]) * n0[2];
+      // (local z 0 is the upper face, 0.05 the face against the skin)
+      const want = 0.17 + (0.05 - rest[3 * i + 2]);
+      const tgt = flat ? want : Math.max(h, want);
+      v.x += n0[0] * (tgt - h); v.y += n0[1] * (tgt - h); v.z += n0[2] * (tgt - h);
+      v.applyMatrix4(inv); pos.setXYZ(i, v.x, v.y, v.z);
+    }
+    pos.needsUpdate = true; w.geometry.computeVertexNormals();
+  }
 }
 // a world point dropped onto the skin, lifted along the normal
 function onSkin(w, lift) {
@@ -1099,7 +1138,7 @@ function toast(msg) {
 const TOOLS = [
   { id: 'tourniquet', label: 'Tourniquet', svg: '<path d="M9 35 L22 13 Q26 5 20 5 Q14 5 18 13 L31 35" fill="none" stroke="#e8875a" stroke-width="5.5" stroke-linejoin="round"/>' },
   { id: 'pad', label: 'Alcohol swab', svg: '<g transform="rotate(-8 20 20)"><rect x="6" y="8" width="28" height="24" rx="2" fill="#fbfbfc" stroke="#c3c9cf"/><rect x="8" y="14" width="24" height="9" fill="#2f74c0"/><rect x="11" y="16.4" width="15" height="1.7" fill="#fff"/><rect x="11" y="19.4" width="10" height="1.7" fill="#fff"/></g>' },
-  { id: 'catheter', label: 'Catheter', svg: '<path d="M21 19 C7 22, 1 33, 10 35.5 L17 35.5" fill="none" stroke="#cdd7e0" stroke-width="2.2"/>'
+  { id: 'catheter', label: 'IV', svg: '<path d="M21 19 C7 22, 1 33, 10 35.5 L17 35.5" fill="none" stroke="#cdd7e0" stroke-width="2.2"/>'
     + '<rect x="5" y="17" width="20" height="8" rx="4" fill="#a9adb2" transform="rotate(-38 15 21)"/>'
     + '<path d="M20 11 L31 8.5 L26.5 19 Z" style="fill:var(--gc,#f08a9b)"/><line x1="26" y1="12.5" x2="38.5" y2="2.5" stroke="#6b737c" stroke-width="1.5"/>'
     + '<rect x="3.5" y="28.5" width="6" height="4" rx="1" fill="#1d2563"/>'
@@ -1140,7 +1179,8 @@ function refresh() {
       const doLine = guided && step.do ? `<div class="ivs-do">${step.do}</div>` : '';
       const prep = st === 'prep' ? `<div class="ivs-prep">${P.prep.map((p) => `<button data-prep="${p}" class="${A.prep.has(p) ? 'on' : ''}">${PREP_LABEL[p]}</button>`).join('')}</div>` : '';
       const ks = assess ? '' : `<div class="ivs-keys">${step.keys.map(([k, v]) => chip(k, v)).join('')}</div>`;
-      card.innerHTML = title + doLine + prep + ks;
+      const prog = st === 'clean' && !assess ? '<div class="ivs-prog" id="ivProg"><i id="ivProgFill"></i><span id="ivProgLab"></span></div>' : '';
+      card.innerHTML = title + doLine + prep + ks + prog;
       card.querySelectorAll('[data-prep]').forEach((b) => b.addEventListener('click', () => { IV.tickPrep(A, b.dataset.prep); refresh(); }));
     }
     card.classList.toggle('empty', !card.innerHTML);
@@ -1316,6 +1356,23 @@ function frame(now) {
     tq.textContent = A.tq.on || s > 0 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '–:––';
     tq.className = 'ivtq ' + (s > P.tourniquet.limitS ? 'over' : s > P.tourniquet.warnS ? 'warn' : A.tq.on ? 'on' : '');
   }
+  // the clean: how much is scrubbed, then how long left to dry
+  const pf = $('ivProgFill');
+  if (pf && A && !A.done.has('clean')) {
+    const c = A.clean, pc = P.clean;
+    let f, lab, dry = false;
+    if (c.dryFrom != null && !c.dry) {
+      f = Math.min(1, (A.t - c.dryFrom) / pc.dryS); dry = true;
+      lab = `Drying · ${Math.max(0, Math.ceil(pc.dryS - (A.t - c.dryFrom)))} s · hands off`;
+    } else {
+      const fc = Math.min(1, c.coverage / pc.coverage), ft = Math.min(1, c.scrub / pc.scrubS);
+      f = Math.min(fc, ft);
+      lab = (fc >= 1 && ft < 1 ? 'Keep scrubbing' : ft >= 1 && fc < 1 ? 'Cover the whole circle' : 'Scrub') + ` · ${Math.round(f * 100)}%`;
+    }
+    pf.style.width = (f * 100).toFixed(1) + '%';
+    pf.parentElement.classList.toggle('dry', dry);
+    $('ivProgLab').textContent = lab;
+  }
   // the flash, magnified, for every mode (it is what the hand sees)
   const fb = $('ivFlashFill');
   if (fb && A) { fb.style.width = (A.flash.level * 100).toFixed(0) + '%'; fb.classList.toggle('art', !!A.flash.artery); }
@@ -1433,7 +1490,7 @@ export function initIV(context) {
   document.addEventListener('keyup', (e) => onKey(e, false));
   window.addEventListener('blur', () => { if (keys.space && A && A.mark) IV.setTraction(A, false); keys.space = false; keys.f = false; });
   // the hook the browser checks drive the room with: where a site point is on the screen
-  if (typeof window !== 'undefined') window.radsimIV = { attempt: () => A, IV, cfg, geometry: () => G, room: () => R3, start, setup, view: () => ctx.three.ivView,
+  if (typeof window !== 'undefined') window.radsimIV = { attempt: () => A, IV, cfg, geometry: () => G, room: () => R3, start, setup, view: () => ctx.three.ivView, THREE: () => ctx.THREE, three: () => ctx.three,
     hit: (x, y) => hitPatch({ clientX: x, clientY: y }, ctx.three.renderer.domElement, ctx.three.cam), tool: () => tool,
     screen: (a, l) => {
       const { THREE, three } = ctx, w = G.worldAt(a, l), v = new THREE.Vector3(...w).project(three.cam);

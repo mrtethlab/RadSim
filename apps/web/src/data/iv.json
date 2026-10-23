@@ -32,7 +32,7 @@
     { "id": "prep", "title": "Prep", "do": "Tick each item.", "keys": [["Click", "tick"]] },
     { "id": "tourniquet", "title": "Apply tourniquet", "do": "Above the elbow.", "keys": [["Tool", "tourniquet"], ["Click", "the arm"]] },
     { "id": "palpate", "title": "Find a vein", "do": "Feel for a bouncy, straight vein, then mark it.", "keys": [["Hold F", "palpate"], ["Click", "mark"]] },
-    { "id": "clean", "title": "Clean the site", "do": "Scrub the whole circle, then let it dry.", "keys": [["Tool", "alcohol pad"], ["Drag", "scrub"]] },
+    { "id": "clean", "title": "Clean the site", "do": "Scrub the whole circle, then let it dry.", "keys": [["Tool", "alcohol swab"], ["Hold + drag", "scrub"]] },
     { "id": "seal", "title": "Break the seal", "do": "Slide the hub a few mm, then let go.", "keys": [["Drag", "hub forward"], ["Release", "reseat"]] },
     { "id": "align", "title": "Line up with the vein", "do": "Point the needle along the vein.", "keys": [["Q / E", "rotate"]] },
     { "id": "anchor", "title": "Anchor the skin", "do": "Hold traction until the catheter is in.", "keys": [["Hold Space", "traction"]] },
