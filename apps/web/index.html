@@ -108,20 +108,19 @@
           </div>
         </div>
       </div>
-      <div class="home-card hc-editor" data-mode="editor">
+      <div class="home-card hc-iv" data-mode="iv">
         <div class="hc-art"></div>
         <div class="hc-body">
-          <div class="hc-name">Model Editor</div>
-          <div class="hc-tag">Paint voxel phantoms slice by slice</div>
-          <div class="hc-desc">Build or alter a phantom directly: paint materials onto
-            transverse slices with a live 3D preview, then save it as a subject the scanners
-            can image.</div>
+          <div class="hc-name">IV Placement</div>
+          <div class="hc-tag">Peripheral IV for contrast &mdash; feel, aim, flash, thread</div>
+          <div class="hc-desc">A closed-system catheter in the antecubital fossa, the radial
+            forearm or the back of the hand. Feel for the vein, prep, break the seal, pierce at
+            the right angle, lower on the flash and thread &mdash; then clamp, dress, flush and
+            cap. Guided, practice and assessment.</div>
           <div class="hc-acts">
-            <button class="hc-open" data-mode="editor">Open</button>
-            <button class="hc-tut" data-tut="editor" title="Walk through this mode control by control">&#9654; Tutorial</button>
+            <button class="hc-open" data-mode="iv">Open</button>
           </div>
-          <div class="hc-mobnote">Desktop only &mdash; slice painting wants a wide screen
-            and a fine pointer.</div>
+          <div class="hc-mobnote">Desktop only &mdash; it needs a mouse and a keyboard.</div>
         </div>
       </div>
 
@@ -186,6 +185,22 @@
           </div>
         </div>
       </div>
+      <div class="home-card hc-editor" data-mode="editor">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">Model Editor</div>
+          <div class="hc-tag">Paint voxel phantoms slice by slice</div>
+          <div class="hc-desc">Build or alter a phantom directly: paint materials onto
+            transverse slices with a live 3D preview, then save it as a subject the scanners
+            can image.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="editor">Open</button>
+            <button class="hc-tut" data-tut="editor" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
+          <div class="hc-mobnote">Desktop only &mdash; slice painting wants a wide screen
+            and a fine pointer.</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -196,6 +211,18 @@
   <div class="bay">
     <canvas id="view"></canvas>
     <canvas id="bigFilm"></canvas>
+    <!-- ============ IV ROOM (src/iv.js): the step, the controls, the cross-section ============ -->
+    <div class="iv-only ivstep" id="ivStep"></div>
+    <div class="iv-only ivtoast" id="ivToast"></div>
+    <div class="iv-only ivhot" id="ivHot"></div>
+    <div class="iv-only ivxs" id="ivXs">
+      <canvas id="ivXsCanvas" width="160" height="90"></canvas>
+      <div class="ivxs-row"><canvas id="ivXsStrip" width="160" height="28"></canvas><span id="ivXsAngle" class="ivxs-angle"></span></div>
+    </div>
+    <div class="iv-only ivtray" id="ivTray" aria-label="Supply tray"><div class="ivtools" id="ivTools"></div></div>
+    <div class="iv-only ivflash" id="ivFlash" title="Flash chamber"><span>FLASH</span><i><b id="ivFlashFill"></b></i></div>
+    <div class="iv-only ivviews" id="ivViews"><button data-view="overview" type="button">Arm</button><button data-view="site" type="button">Site</button><button data-view="needle" type="button">Needle</button></div>
+    <div class="iv-only ivdebrief" id="ivDebrief"></div>
     <!-- TRAINER: the marked film beside the reference film (src/trainer/trainer.js) -->
     <div class="trcompare" id="trainerCompare"></div>
     <!-- FLUORO MONITORS over the room: live and reference side by side, where the C-arm is, so
@@ -1002,6 +1029,37 @@
   <!-- ============ GENERATOR CONSOLE + MONITOR ============ -->
   <!-- TRAINER: replaces both control columns while a series is running -->
   <div class="col trainer-col" id="trainerCol"></div>
+  <!-- IV: its own column (src/iv.js) -->
+  <div class="col iv-col" id="ivCol">
+    <div class="ivsetup" id="ivSetup">
+      <div class="ivh">IV placement</div>
+      <div class="ivlab">Site</div>
+      <div class="ivseg ivsites" id="ivSiteSeg">
+        <button type="button" data-v="antecubital" class="on"><i class="ivico ac"></i>Antecubital</button>
+        <button type="button" data-v="forearm"><i class="ivico fa"></i>Forearm</button>
+        <button type="button" data-v="hand"><i class="ivico dh"></i>Hand</button>
+      </div>
+      <div class="ivlab">Mode</div>
+      <div class="ivseg" id="ivModeSeg">
+        <button type="button" data-v="guided" class="on">Guided</button><button type="button" data-v="practice">Practice</button><button type="button" data-v="assessment">Assessment</button>
+      </div>
+      <div class="ivlab">Catheter</div>
+      <div class="ivseg ivgauge" id="ivGaugeSeg">
+        <button type="button" data-v="20" class="on" style="--g:#f08a9b">20G</button><button type="button" data-v="22" style="--g:#33c3d3">22G</button><button type="button" data-v="24" style="--g:#f2cd2c">24G</button>
+      </div>
+      <div class="ivlab">Difficulty <small id="ivDiffV">50%</small></div>
+      <div class="ivdiff" id="ivDiffWrap">
+        <input type="range" id="ivDiff" min="0" max="100" step="5" value="50" aria-label="Vein visibility difficulty">
+        <div class="ivdiff-ticks"><span>Veins seen</span><span>Some</span><span>Feel only</span></div>
+      </div>
+      <button class="ivstart" id="ivStart" type="button">Start</button>
+    </div>
+    <div class="ivrun" id="ivRun">
+      <div class="ivrow"><span class="ivlab">Tourniquet</span><span class="ivtq" id="ivTq">–:––</span></div>
+      <div id="ivChecklistWrap"><div class="ivlab">Steps <small>Tab hides</small></div><ol class="ivchk" id="ivChecklist"></ol></div>
+      <div class="ivbtns"><button id="ivRestart" type="button">Restart <small>R</small></button><button id="ivEnd" type="button">End</button><button id="ivBack" type="button">Setup</button></div>
+    </div>
+  </div>
 
   <div class="col" id="consoleCol">
     <!-- The two halves of this column are wrapped so the mobile pager can treat them as

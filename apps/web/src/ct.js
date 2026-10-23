@@ -957,11 +957,12 @@ function applyMode(mode) {
   document.body.classList.toggle('mode-home', mode === 'home');
   if (mode === 'home') {
     ctx.S.mode = 'home';
-    ['mode-ct', 'mode-xray', 'mode-editor', 'mode-fluoro', 'mode-mammo', 'mode-us', 'mode-dxa']
+    ['mode-ct', 'mode-xray', 'mode-editor', 'mode-fluoro', 'mode-mammo', 'mode-us', 'mode-dxa', 'mode-iv']
       .forEach(c => document.body.classList.remove(c));
     ctx.fluoroMode?.(false);
     ctx.mammoMode?.(false);
     ctx.usMode?.(false);
+    ctx.ivMode?.(false);
     resetCTSession();
     ctx.editorMode?.(false);
     return;
@@ -982,10 +983,11 @@ function applyMode(mode) {
   document.body.classList.toggle('mode-mammo', mode === 'mammo');
   document.body.classList.toggle('mode-us', mode === 'us');
   document.body.classList.toggle('mode-dxa', mode === 'dxa');
+  document.body.classList.toggle('mode-iv', mode === 'iv');
   const cur = ctx.$('modeCur');
   if (cur) cur.textContent = mode === 'ct' ? 'CT' : mode === 'editor' ? 'MODEL EDITOR'
     : mode === 'fluoro' ? 'FLUOROSCOPY' : mode === 'mammo' ? 'MAMMOGRAPHY'
-    : mode === 'us' ? 'ULTRASOUND'
+    : mode === 'us' ? 'ULTRASOUND' : mode === 'iv' ? 'IV PLACEMENT'
     : mode === 'dxa' ? 'DXA' : mode === 'dxa' ? 'DENSITOMETRY' : 'X-RAY';
   ctApplyColorTheme();                            // x-ray drops any vendor theme; CT re-applies it
   const tag = document.querySelector('.baytag .s');
@@ -994,6 +996,7 @@ function applyMode(mode) {
     : mode === 'fluoro' ? 'Fluoroscopy · GE OEC C-arm'
     : mode === 'mammo' ? 'Mammography · upright unit'
     : mode === 'us' ? 'Ultrasound · hand-held probe'
+    : mode === 'iv' ? 'IV · peripheral cannulation'
     : mode === 'dxa' ? 'DXA · bone densitometry' : 'Digit · Hand phantom';
   const imgBtn = ctx.$('contentImageBtn');   // the Image view is the Planning window in CT
   if (imgBtn) imgBtn.textContent = mode === 'ct' ? 'Planning' : 'Image';
@@ -1022,6 +1025,7 @@ function applyMode(mode) {
   ctx.mammoMode?.(mode === 'mammo');
   ctx.usMode?.(mode === 'us');
   ctx.dxaMode?.(mode === 'dxa');
+  ctx.ivMode?.(mode === 'iv');
   greyHelical(mode === 'ct');     // helical params don't apply to a scout
   if (mode === 'ct') renderStorage();   // reflect any scans still held from before
   setHint(mode === 'ct' ? 'Set the isocentre, then acquire scouts to plan the scan.' : '');

@@ -1928,3 +1928,159 @@ body.trainer:not(.mobile) .bay{height:auto; min-height:0}
 .tr-palp-menu button.on{background:#5a1a1a; border-color:#ff4a4a; color:#fff}
 .tr-palp-menu button.clear{color:var(--muted)}
 .tr-guide{font-size:11.5px; line-height:1.45; color:#9fd2ff; margin-bottom:8px}
+
+/* ============================================================================
+   IV ROOM (src/iv.js) — its own column, a step card over the bay, a pixel cross-section.
+   The screen says the step, what to know and the controls; everything else is the arm.
+   ============================================================================ */
+/* IV placement: a catheter laid in line along the vein, over the skin's parallel lines */
+.hc-iv .hc-art{background:linear-gradient(160deg,#5a2614,#a8532b 55%,#eaa06c)}
+.hc-iv .hc-art::before{content:''; position:absolute; inset:0;
+  background:linear-gradient(-18deg, transparent 41%, rgba(255,236,224,.24) 41% 59%, transparent 59%),
+             repeating-linear-gradient(-18deg, rgba(255,255,255,.15) 0 1px, transparent 1px 9px)}
+.hc-iv .hc-art::after{content:''; position:absolute; left:50%; top:50%; width:170px; height:14px; margin:-7px 0 0 -85px;
+  border-radius:7px; transform:rotate(-18deg);
+  background:linear-gradient(90deg, rgba(250,240,232,.92) 0 30%, transparent 30% 34%, rgba(250,240,232,.6) 34% 100%);
+  box-shadow:0 0 22px rgba(255,220,190,.45)}
+.iv-only, .iv-col{display:none}
+body.mode-iv .app{grid-template-columns:1fr 300px}
+body.mode-iv .app > .col:not(.iv-col){display:none}
+body.mode-iv .iv-col{display:block; padding:14px 14px 30px; overflow-y:auto}
+body.mode-iv .iv-only{display:block}
+body.mode-iv #palpPanel, body.mode-iv #ctrstPanel{display:none}
+body.mode-iv.iv-tool .bay canvas#view{cursor:crosshair}
+.ivh{font-size:15px; font-weight:700; letter-spacing:.06em; color:var(--dtxt); margin:2px 0 10px}
+.ivlab{font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--dmuted); margin:12px 0 6px}
+.ivlab small{float:right; letter-spacing:.04em; text-transform:none; color:var(--dmuted2)}
+.ivseg{display:flex; gap:6px}
+.ivseg button{flex:1; padding:8px 4px; border-radius:8px; border:1px solid var(--edge2); background:#1a222b;
+  color:var(--dtxt); font-size:12px; cursor:pointer}
+.ivseg button.on{border-color:var(--cyan); background:#163038; color:#fff}
+.ivsites button{display:flex; flex-direction:column; align-items:center; gap:6px; padding:10px 4px}
+.ivico{display:block; width:44px; height:28px; border-radius:6px; background:#2b3640; position:relative; overflow:hidden}
+.ivico::before{content:''; position:absolute; left:-6px; right:-6px; top:9px; height:11px; border-radius:6px; background:#e6b39a}
+.ivico::after{content:''; position:absolute; width:7px; height:7px; border-radius:50%; background:#7a3fd0; top:11px}
+.ivico.ac::after{left:19px}
+.ivico.fa::after{left:30px}
+.ivico.dh::before{left:8px; right:8px; top:4px; height:20px; border-radius:6px 6px 10px 10px}
+.ivico.dh::after{left:19px; top:10px}
+.ivgauge button{border-left:4px solid var(--g)}
+.ivgauge button.on{border-color:var(--g); border-left-width:4px; background:#202a33}
+.ivstart{width:100%; margin-top:18px; padding:12px; border-radius:10px; border:0; background:var(--cyan); color:#05252a;
+  font-weight:700; font-size:14px; letter-spacing:.08em; cursor:pointer}
+.ivsetup, .ivrun{display:none}
+.ivsetup.show, .ivrun.show{display:block}
+.ivrow{display:flex; align-items:center; justify-content:space-between}
+.ivrow .ivlab{margin:4px 0}
+.ivtq{font:600 20px/1 ui-monospace,Menlo,Consolas,monospace; color:var(--dmuted2)}
+.ivtq.on{color:var(--dtxt)}
+.ivtq.warn{color:var(--amber)}
+.ivtq.over{color:var(--red)}
+/* the supply tray beside the patient: brushed steel, a well for each item */
+.ivtray{position:absolute; right:14px; top:50%; transform:translateY(-50%); z-index:16; padding:9px; border-radius:14px;
+  background:linear-gradient(145deg,#e3e7eb,#b4bcc4 60%,#a3acb5);
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.75), inset 0 -3px 6px rgba(0,0,0,.22), 0 10px 26px rgba(0,0,0,.5)}
+body.mode-iv .ivtray{display:block}
+body.mode-iv.iv-setup .ivtray{display:none}
+.ivtools{display:grid; grid-template-columns:repeat(2,58px); gap:7px}
+.ivtools button{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; height:58px; padding:2px;
+  border-radius:9px; border:1px solid rgba(0,0,0,.12); cursor:pointer; color:#3a4450; font-size:9.5px; font-weight:600;
+  background:linear-gradient(160deg,#c9d0d6,#d8dde2); box-shadow:inset 0 2px 5px rgba(0,0,0,.22), inset 0 -1px 0 rgba(255,255,255,.6);
+  transition:transform .12s, box-shadow .12s}
+.ivtools button svg{width:34px; height:34px; display:block}
+.ivtools button:hover{transform:translateY(-1px)}
+.ivtools button.on{transform:translateY(-2px); border-color:var(--cyan); background:linear-gradient(160deg,#dff3f6,#eaf6f8);
+  box-shadow:0 4px 10px rgba(0,0,0,.25), 0 0 0 2px rgba(56,200,220,.45)}
+.ivtools button.want{border-color:var(--amber); box-shadow:inset 0 2px 5px rgba(0,0,0,.2), 0 0 0 2px rgba(255,178,62,0.45); animation:ivglow 1.4s ease-in-out infinite}
+.ivdiff input{width:100%; accent-color:var(--cyan)}
+.ivdiff-ticks{display:flex; justify-content:space-between; font-size:10px; color:var(--dmuted2); margin-top:2px}
+.ivdiff.off{opacity:.45}
+@keyframes ivglow{50%{box-shadow:inset 0 2px 5px rgba(0,0,0,.2), 0 0 0 5px rgba(255,178,62,0.15)}}
+.ivchk{margin:0; padding-left:20px; font-size:12px; color:var(--dmuted2); line-height:1.65}
+.ivchk li.done{color:var(--dmuted); text-decoration:line-through; text-decoration-color:rgba(160,180,200,0.4)}
+.ivchk li.cur{color:#fff; font-weight:600}
+body.iv-hide-help #ivChecklistWrap, body.iv-hide-help .ivstep .ivs-keys{display:none}
+.ivbtns{display:flex; gap:6px; margin-top:16px}
+.ivbtns button{flex:1; padding:7px 4px; border-radius:8px; border:1px solid var(--edge2); background:#1a222b; color:var(--dtxt); cursor:pointer; font-size:12px}
+.ivbtns small{color:var(--dmuted2)}
+
+/* the step card, top centre of the bay */
+.ivstep{position:absolute; left:50%; top:52px; transform:translateX(-50%); z-index:20; min-width:260px; max-width:min(560px,80%);
+  padding:10px 16px 11px; border-radius:12px; background:rgba(12,18,26,0.82); border:1px solid rgba(255,255,255,0.08);
+  backdrop-filter:blur(6px); -webkit-backdrop-filter:blur(6px); text-align:center}
+.ivstep.empty{display:none !important}
+.ivs-t{font-size:16px; font-weight:700; color:#fff}
+.ivs-t.ivs-bad{color:#ff8a80}
+.ivs-n{display:inline-block; min-width:22px; height:22px; line-height:22px; margin-right:8px; border-radius:11px; background:var(--cyan); color:#05252a; font-size:12px}
+.ivs-do{margin-top:3px; font-size:13px; color:var(--dmuted)}
+.ivs-keys{margin-top:8px; display:flex; flex-wrap:wrap; gap:6px 12px; justify-content:center}
+.ivs-prog{position:relative; height:17px; margin-top:8px; border-radius:9px; background:rgba(255,255,255,0.1); overflow:hidden}
+.ivs-prog i{position:absolute; left:0; top:0; bottom:0; width:0; background:var(--cyan); opacity:.75; transition:width .15s}
+.ivs-prog.dry i{background:#7fb6ff}
+.ivs-prog.bad i{background:#ff6b5f}
+.ivs-prog span{position:relative; display:block; text-align:center; font-size:10.5px; line-height:17px; color:#fff; letter-spacing:.04em}
+.ivk{font-size:12px; color:var(--dmuted)}
+.ivk b{display:inline-block; margin-right:5px; padding:1px 7px; border-radius:5px; background:#2a3541; color:#fff; font-weight:600; font-size:11px}
+.ivs-prep{margin-top:8px; display:flex; gap:6px; justify-content:center; flex-wrap:wrap}
+.ivs-prep button{padding:6px 10px; border-radius:16px; border:1px solid var(--edge2); background:#1a222b; color:var(--dtxt); cursor:pointer; font-size:12px}
+.ivs-prep button.on{border-color:var(--green); color:#c9f5da}
+.ivs-prep button.on::before{content:'\2713  '}
+.ivtoast{position:absolute; left:50%; top:150px; transform:translateX(-50%); z-index:21; padding:7px 14px; border-radius:18px;
+  background:rgba(40,20,20,0.88); color:#ffd9d3; font-size:13px; opacity:0; transition:opacity .2s; pointer-events:none}
+.ivtoast.on{opacity:1}
+/* hotspots over the small things there are to click */
+.ivhot{position:absolute; inset:0; z-index:15; pointer-events:none}
+.ivhot button{position:absolute; transform:translate(-50%,-50%); width:30px; height:30px; border-radius:50%;
+  border:2px solid rgba(255,255,255,0.7); background:rgba(20,30,40,0.55); color:#fff; font-size:13px; cursor:pointer; pointer-events:auto; padding:0}
+.ivhot button.cue{pointer-events:none; width:26px; height:26px; background:transparent; border:2px solid var(--amber); animation:ivglow 1.4s ease-in-out infinite}
+.ivhot button.want{border-color:var(--amber); animation:ivglow 1.4s ease-in-out infinite}
+/* the cross-section: pixel art, upscaled with nearest neighbour */
+.ivxs{position:absolute; left:14px; bottom:14px; z-index:16; padding:8px; border-radius:10px; background:rgba(10,14,20,0.82);
+  border:1px solid rgba(255,255,255,0.08)}
+body.mode-iv .ivxs{display:none}
+body.mode-iv .ivxs.show{display:block}
+.ivxs canvas{display:block; image-rendering:pixelated; image-rendering:crisp-edges}
+#ivXsCanvas{width:min(480px,38vw); aspect-ratio:16/9; height:auto}
+.ivxs-row{display:flex; align-items:center; gap:10px; margin-top:6px}
+#ivXsStrip{width:240px; height:42px; border-radius:4px}
+.ivxs-angle{font:700 22px/1 ui-monospace,Menlo,Consolas,monospace}
+.ivxs-angle.in{color:var(--green)}
+.ivxs-angle.close{color:var(--amber)}
+.ivxs-angle.out{color:#ff6b5f}
+.ivflash{position:absolute; right:14px; bottom:14px; z-index:16; padding:7px 10px; border-radius:10px; background:rgba(10,14,20,0.82);
+  border:1px solid rgba(255,255,255,0.08); font-size:10px; letter-spacing:.14em; color:var(--dmuted)}
+.ivflash i{display:block; margin-top:5px; width:120px; height:12px; border-radius:6px; background:rgba(255,255,255,0.12); overflow:hidden}
+.ivflash b{display:block; height:100%; width:0; background:#9a0a12; transition:width .1s}
+.ivflash b.art{background:#ff3030; animation:ivpulse .86s ease-in-out infinite}
+body.mode-iv .ivflash.gone{display:none}
+@keyframes ivpulse{50%{filter:brightness(1.6)}}
+.ivviews{position:absolute; right:14px; top:52px; z-index:16}
+body.mode-iv .ivviews{display:flex; gap:4px}
+.ivviews button{padding:5px 9px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); background:rgba(12,18,26,0.7); color:var(--dmuted); font-size:11px; cursor:pointer}
+.ivviews button.on{color:#fff; border-color:var(--cyan)}
+/* the debrief */
+.ivdebrief{position:absolute; inset:0; z-index:30; align-items:center; justify-content:center; background:rgba(6,10,14,0.6)}
+body.mode-iv .ivdebrief{display:none}
+body.mode-iv .ivdebrief.show{display:flex}
+.ivd-card{width:min(760px,92%); max-height:88%; overflow:auto; padding:18px 20px; border-radius:14px; background:#141b23; border:1px solid var(--edge2); color:var(--dtxt)}
+.ivd-score{font-size:34px; font-weight:800}
+.ivd-score small{font-size:15px; color:var(--dmuted); margin-left:3px}
+.ivd-score span{margin-left:14px; font-size:16px; padding:3px 10px; border-radius:8px; vertical-align:middle}
+.ivd-score.pass span{background:#1d4d33; color:#a7f3c4}
+.ivd-score.fail span{background:#5a2020; color:#ffc3bb}
+.ivd-cats{display:grid; gap:4px; margin:10px 0 12px}
+.ivd-cats div{display:grid; grid-template-columns:90px 1fr 50px; align-items:center; gap:8px; font-size:12px; text-transform:capitalize}
+.ivd-cats i{display:block; height:8px; border-radius:4px; background:var(--cyan)}
+.ivd-cats b{text-align:right; font-weight:600}
+.ivd-row{display:grid; grid-template-columns:1fr 300px; gap:16px}
+.ivd-steps{margin:0; padding-left:20px; font-size:12px; line-height:1.55; color:var(--dmuted)}
+.ivd-steps li em{float:right; font-style:normal; color:var(--dmuted2)}
+.ivd-steps li.err span{color:#ffb4a8}
+.ivd-steps li.miss span{color:var(--dmuted2)}
+.ivd-steps li b{display:block; font-weight:500; color:#ff8a80; font-size:11px}
+.ivd-meta{margin:6px 0; font-size:11px; color:var(--dmuted2)}
+.ivd-tips p{margin:6px 0 0; padding:8px 10px; border-radius:8px; background:#1c2632; font-size:13px; color:#e8eef4}
+.ivd-btns{display:flex; gap:8px; margin-top:14px}
+.ivd-btns button{padding:9px 16px; border-radius:9px; border:1px solid var(--edge2); background:#1d2731; color:#fff; cursor:pointer}
+.ivd-btns button:first-child{background:var(--cyan); color:#05252a; border:0; font-weight:700}
+body.mobile .hc-iv .hc-open{display:none}
