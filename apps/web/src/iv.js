@@ -770,14 +770,14 @@ function prepUp() {
 function miniStep() {
   if (!A || A.ended || A.finished) return null;
   if (tool === 'pad' && PREP.swab !== 'out') {
-    return PREP.swab === 'closed' ? { do: 'Tear the packet open at its corner.', keys: [['Drag', 'corner']] }
-      : { do: 'Take the swab out.', keys: [['Drag', 'swab out']] };
+    return PREP.swab === 'closed' ? { do: 'Tear the packet open at its corner.', keys: [['Left-drag', 'corner']] }
+      : { do: 'Take the swab out.', keys: [['Left-drag', 'swab out']] };
   }
   if (!kitAtSite() && (tool === 'catheter' || IV.currentStep(A) === 'seal')) {
     if (A.kit.off) return { do: 'The catheter came off the needle.', keys: [], newKit: true };
-    if (PREP.pack === 'closed') return { do: 'Peel the lid back from the corner by the triangle.', keys: [['Drag', 'corner tab']] };
-    if (PREP.pack === 'open') return { do: 'Lift the IV out.', keys: [['Drag ↑', 'IV']] };
-    return { do: 'Slide the catheter 1 mm off the needle, then back.', keys: [['Drag →', 'break'], ['Drag ←', 'reseat']] };
+    if (PREP.pack === 'closed') return { do: 'Peel the lid back from the corner by the triangle.', keys: [['Left-drag', 'corner tab']] };
+    if (PREP.pack === 'open') return { do: 'Lift the IV out.', keys: [['Left-drag ↑', 'IV']] };
+    return { do: 'Slide the catheter 1 mm off the needle, then back.', keys: [['Left-drag →', 'break'], ['Left-drag ←', 'reseat']] };
   }
   return null;
 }
@@ -1100,11 +1100,18 @@ export function ivPointer(e, phase, cam, canvas) {
 }
 function onDown(e, canvas, cam) {
   const st = IV.currentStep(A);
+  // every drag is a left-drag but the needle's angle, which is a right-drag
+  if (e.button === 2) {
+    if (!A.ended && R3.kit.visible && kitAtSite() && !A.cath.hubbed) { ptr.kind = 'angle'; ptr.pitchRaw = A.needle.pitch; }
+    return;
+  }
+  if (e.button !== 0) return;
   // after an attempt-ending error: the catheter comes out, gauze, hold pressure
   if (A.ended) {
-    if (A.pressure.removed && tool === 'gauze') {
+    if (!A.pressure.removed) { ptr.kind = 'withdraw'; return; }
+    if (tool === 'gauze') {
       const h = hitPatch(e, canvas, cam);
-      if (h && (A.pressure.gauze || IV.applyGauze(A).ok)) { R3.gauze.userData.at = h; ptr.kind = 'press'; }
+      if (h && (A.pressure.gauze || IV.applyGauze(A).ok)) { R3.gauze.userData.at = h; ptr.kind = 'press'; refresh(); }
     }
     return;
   }
@@ -1169,9 +1176,10 @@ function onMove(e, canvas, cam, dx, dy, dt) {
     ptr.pitchRaw -= dy * 0.12;
     IV.setPitch(A, Math.round(ptr.pitchRaw));
   } else if (ptr.kind === 'withdraw') {
+    if (A.ended && dy <= 0) return;                 // (out, all of it, with a pull down)
     const r = IV.withdrawNeedle(A, Math.max(0, dy) * 0.12);
     if (r && r.why) toast(r.why);
-    if (A.needle.shielded) { sfx('click'); refresh(); }
+    if (A.needle.shielded || A.pressure.removed) { sfx('click'); refresh(); }
   } else if (ptr.kind === 'flush') {
     if (dy < 0) {
       const ml = -dy * 0.02, r = IV.flush(A, ml, dt);
@@ -1511,7 +1519,8 @@ function refresh() {
     if (A.ended && !A.finished) {
       card.innerHTML = `<div class="ivs-t ivs-bad">${IV.ERRORS[A.ended.code].msg}</div>`
         + `<div class="ivs-do">${!A.pressure.removed ? 'Remove the catheter.' : !A.pressure.gauze ? 'Gauze over the site.' : 'Hold pressure.'}</div>`
-        + `<div class="ivs-keys">${!A.pressure.removed ? chip('Drag ↓', 'on the needle') : !A.pressure.gauze ? chip('Tool', 'gauze') + chip('Click', 'site') : chip('Hold click', 'on the gauze')}</div>`;
+        + `<div class="ivs-keys">${!A.pressure.removed ? chip('Left-drag ↓', 'on the needle') : !A.pressure.gauze ? chip('Tool', 'gauze') + chip('Left-click', 'site') : chip('Hold left-click', 'on the gauze')}</div>`
+        + (A.pressure.gauze ? '<div class="ivs-prog dry" id="ivProg"><i id="ivPressFill"></i><span id="ivPressLab"></span></div>' : '');
     } else if (A.finished) card.innerHTML = '';
     else {
       const mini = miniStep();
@@ -1709,6 +1718,12 @@ function frame(now) {
     const s = IV.tourniquetTime(A);
     tq.textContent = A.tq.on || s > 0 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '–:––';
     tq.className = 'ivtq ' + (s > P.tourniquet.limitS ? 'over' : s > P.tourniquet.warnS ? 'warn' : A.tq.on ? 'on' : '');
+  }
+  // pressure on the gauze: how long left to hold
+  const pr = $('ivPressFill');
+  if (pr && A?.ended) {
+    pr.style.width = (Math.min(1, A.pressure.held / P.pressureS) * 100).toFixed(1) + '%';
+    $('ivPressLab').textContent = `Pressure · ${Math.max(0, Math.ceil(P.pressureS - A.pressure.held))} s`;
   }
   // the clean: how much is scrubbed, then how long left to dry
   const pf = $('ivProgFill');
