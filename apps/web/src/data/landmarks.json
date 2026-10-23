@@ -77,22 +77,22 @@
   "hand": {
     "wrist": {
       "x": -0.28,
-      "y": -0.78,
-      "z": -3.22,
+      "y": -0.3,
+      "z": -3.08,
       "how": "2 cm proximal of the first slice that cuts all five metacarpals: the carpals",
       "confidence": "high"
     },
     "hand": {
       "x": -0.7,
-      "y": 0.04,
-      "z": 3.58,
+      "y": 0.52,
+      "z": 3.72,
       "how": "distal end of the five-metacarpal zone: the MCP joints, the PA hand centring point",
       "confidence": "high"
     },
     "fingers": {
       "x": -0.43,
-      "y": 0.5,
-      "z": 7.48,
+      "y": 0.97,
+      "z": 7.62,
       "how": "midway from the MCP joints to the fingertips: PIP level",
       "confidence": "medium"
     }

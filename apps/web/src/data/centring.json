@@ -3,56 +3,56 @@
  "hand": {
   "mcp3Joint": {
    "x": -0.55,
-   "y": -0.05,
-   "z": 3.15,
+   "y": -0.53,
+   "z": 3.3,
    "how": "the joint space along the 3rd ray: the deepest dip in bone between the metacarpal head and the proximal phalanx",
    "guide": "PA and PA oblique hand: CR perpendicular to the 3rd MCP joint (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "mcp2Joint": {
-   "x": 1.6,
-   "y": 0.03,
-   "z": 3.35,
+   "x": 1.62,
+   "y": -0.45,
+   "z": 3.5,
    "how": "the joint space along the 2nd ray: the deepest dip in bone between the metacarpal head and the proximal phalanx",
    "guide": "Lateral hand: CR perpendicular to the 2nd MCP joint (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "midcarpal": {
    "x": -0.55,
-   "y": 1.2,
-   "z": -3.22,
+   "y": 0.73,
+   "z": -3.08,
    "how": "the middle of the carpus (the midcarpal landmark: 2 cm proximal of the carpometacarpal level), on the line of the 3rd metacarpal (the capitate)",
    "guide": "PA, PA oblique and lateral wrist: CR perpendicular to the midcarpal area (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "mc3Base": {
-   "x": -0.51,
-   "y": 1.23,
-   "z": -1.22,
+   "x": -0.54,
+   "y": 0.76,
+   "z": -1.08,
    "how": "the 3rd metacarpal at the carpometacarpal level: bone within 0.7 cm of the 3rd ray",
    "guide": "3rd metacarpal axis (base to MCP joint), for the hand/wrist alignment criterion",
    "confidence": "medium"
   },
   "radiusDistal": {
-   "x": -1.19,
-   "y": 1.61,
-   "z": -7.42,
+   "x": -1.18,
+   "y": 1.14,
+   "z": -7.28,
    "how": "the centroid of the radius (the larger forearm bone) 2 cm proximal of the radiocarpal joint",
    "guide": "distal radius axis, for the hand/wrist alignment criterion",
    "confidence": "medium"
   },
   "radiusProx": {
-   "x": -2.59,
-   "y": 1.64,
-   "z": -10.42,
+   "x": -2.62,
+   "y": 1.17,
+   "z": -10.28,
    "how": "the centroid of the radius (the larger forearm bone) 5 cm proximal of the radiocarpal joint",
    "guide": "distal radius axis, for the hand/wrist alignment criterion",
    "confidence": "medium"
   },
   "scaphoid": {
-   "x": 0.5,
-   "y": 0.64,
-   "z": -4.42,
+   "x": 0.54,
+   "y": 0.14,
+   "z": -4.28,
    "how": "the radial-most 1.5 cm of carpal bone 1 cm distal to the radiocarpal joint: the scaphoid",
    "guide": "PA axial scaphoid: CR 10-15 degrees proximally, toward the elbow, to the scaphoid, hand in ulnar deviation (Bontrager; Radiopaedia)",
    "confidence": "medium"

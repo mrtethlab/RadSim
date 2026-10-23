@@ -305,8 +305,17 @@ HULL_MM, HULL_STEP_MM = 16.0, 4.0       # the palm's stretch whose dips are fill
 PALM = {'palmar': 18.0, 'side': 10.0, 'dorsal': 6.0}
 THENAR = {'palmar': 22.0, 'side': 11.0, 'dorsal': 6.0}             # the thumb's metacarpal
 HYPOTHENAR = {'palmar': 20.0, 'side': 14.0, 'dorsal': 6.0}         # the little finger's
-CARPUS = {'palmar': 14.0, 'side': 9.0, 'dorsal': 6.0}
-FOREARM = {'palmar': 11.0, 'side': 9.0, 'dorsal': 7.0}
+# The eminences lie over the metacarpal shafts and give way to the palm toward the knuckles:
+# over the last EMINENCE_TAPER_MM before the first and fifth knuckles their cover eases to the
+# palm's, so those knuckles round off like the second to fourth (carried to the heads, the
+# eminences stood out as knobs beside them).
+EMINENCE_TAPER_MM = 15.0
+# The wrist and distal forearm: an oval in section, fuller than the bones (the pronator quadratus,
+# the flexor and extensor tendons in their fat), its subcutaneous fat FOREARM_FAT_MM deep.
+CARPUS = {'palmar': 15.0, 'side': 10.0, 'dorsal': 8.0}
+FOREARM = {'palmar': 14.0, 'side': 12.0, 'dorsal': 10.0}
+FOREARM_FAT_MM = 7.0
+BORDER_PROUD_MM = 3.0   # the first and fifth rays' palmar face, at most this above the palm's
 
 
 def hand_rays(bone: np.ndarray, spacing: float):
@@ -315,7 +324,8 @@ def hand_rays(bone: np.ndarray, spacing: float):
     Above the carpus every slice cuts the five metacarpal shafts apart, so the bone above the
     first slice with five islands falls into five 3-D pieces, one a ray. The thumb is the one
     that reaches least far; the others are ordered across the hand from it. Returns
-    (ray labels 1..5 over the bone, their names, the last forearm slice)."""
+    (ray labels 1..5 over the bone, their names, the last forearm slice, the first slice of the
+    metacarpal shafts)."""
     nz = bone.shape[0]
     count = np.array([ndi.label(bone[z])[1] for z in range(nz)])
     zs = np.where(bone.any(axis=(1, 2)))[0]
@@ -341,7 +351,7 @@ def hand_rays(bone: np.ndarray, spacing: float):
         out[lab == q[3]] = i + 1
     # the palm faces +y: the thumb lies palmar of the other metacarpals
     assert thumb[2] > np.mean([q[2] for q in rest]), 'the palm is not on +y: check the flips'
-    return out, ['thumb', 'index', 'middle', 'ring', 'little'], zf
+    return out, ['thumb', 'index', 'middle', 'ring', 'little'], zf, cut
 
 
 def ray_frame(rays, i, name, spacing):
@@ -425,6 +435,47 @@ def taper_outward(mask, axis2, t_from, spacing):
     return out
 
 
+def oval_wrist(soft, bone, zcut, spacing, stop_mm=10.0, ease_mm=25.0, clear_mm=4.0):
+    """The distal forearm and the wrist, slice by slice, as ovals.
+
+    Grown on its bones the forearm was a dumbbell in section — the radius and the ulna each
+    wrapped, with a waist between (they lie at different depths, so the palmar and dorsal
+    surfaces followed each in turn) — and on the PA a rectangle. Each slice up to stop_mm below
+    the metacarpal shafts (zcut: their bases, at the carpus) becomes the ellipse with the same
+    area, orientation and spread as the slice's convex hull: the second moments of the hull fix
+    the axes, scaled to hold its area. It is never closer than clear_mm to the bone. Over the
+    last ease_mm the oval turns into the palm's section, their signed distances blended slice by
+    slice (switched in one slice, the oval left a ledge across the palm on the PA and the
+    lateral)."""
+    from skimage.morphology import convex_hull_image
+    ny, nx = soft.shape[1:]
+    yy, xx = np.mgrid[0:ny, 0:nx].astype(np.float32)
+    near = ndi.distance_transform_edt(~bone, sampling=spacing) <= clear_mm
+    z_end = zcut - int(round(stop_mm / spacing))
+    ease = int(round(ease_mm / spacing))
+    sdf = lambda m: ndi.distance_transform_edt(~m) - ndi.distance_transform_edt(m)
+    out = soft.copy()
+    for z in range(z_end):
+        sl = soft[z]
+        if sl.sum() < 20:
+            continue
+        hull = convex_hull_image(sl)
+        py, px = np.nonzero(hull)
+        cy, cx = py.mean(), px.mean()
+        cov = np.cov(np.vstack([py - cy, px - cx]))
+        ev, evec = np.linalg.eigh(cov)
+        # a uniform ellipse has variance a^2/4 along each semi-axis a
+        a = 2 * np.sqrt(np.maximum(ev, 1e-6))
+        a *= np.sqrt(hull.sum() / (np.pi * a[0] * a[1]))           # the hull's own area
+        dy, dx = yy - cy, xx - cx
+        u = (dy * evec[0, 0] + dx * evec[1, 0]) / a[0]
+        v = (dy * evec[0, 1] + dx * evec[1, 1]) / a[1]
+        oval = (u * u + v * v <= 1) | near[z]
+        t = np.clip((z - (z_end - ease)) / ease, 0, 1)             # 0 an oval, 1 the palm
+        out[z] = oval if t == 0 else ((1 - t) * sdf(oval) + t * sdf(sl) <= 0) | bone[z]
+    return out
+
+
 def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2,
                     tendon_mm=2.0, fat_mm=4.5):
     """Bone mask -> full material volume: an anatomical soft-tissue envelope.
@@ -448,7 +499,7 @@ def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2
     """
     print("      the rays, the knuckles and each bone's cover …")
     nz, ny, nx = bone.shape
-    rays, names, zf = hand_rays(bone, spacing)
+    rays, names, zf, zcut = hand_rays(bone, spacing)
     cover = {k: np.zeros(bone.shape, np.float32) for k in ('palmar', 'side', 'dorsal')}
     digit = np.zeros(bone.shape, np.float32)                        # 1 in a finger, 0 in the palm
     palm_region = np.zeros(bone.shape, bool)                        # where muscle may lie
@@ -477,7 +528,11 @@ def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2
         np.maximum.at(hi_, bins, u)
         wpa = ndi.percentile_filter(np.where(np.isfinite(hi_ - lo_), hi_ - lo_ + spacing, 0), 35,
                                     size=9, mode='nearest')[bins]
-        palm = THENAR if nm == 'thumb' else HYPOTHENAR if nm == 'little' else PALM
+        palm = PALM
+        if nm in ('thumb', 'little'):
+            emi = THENAR if nm == 'thumb' else HYPOTHENAR
+            e = np.clip((smcp - s) / EMINENCE_TAPER_MM, 0, 1)      # 1 on the shaft, 0 at the knuckle
+            palm = {k: e * emi[k] + (1 - e) * PALM[k] for k in PALM}
         fing = dict(FINGER, side=np.maximum(FINGER['side'], FINGER_SIDE * wpa))
         for k in cover:
             cover[k][zz, yy, xx] = g * fing[k] + (1 - g) * palm[k]
@@ -490,6 +545,7 @@ def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2
         kn = (c + a * (smcp + ((P - c) @ a).min()))[[0, 2]]
         axes[i + 1] = (ax2, float(kn @ ax2))
         print(f"        {nm:7s} ray {s.max() / 10:4.1f} cm, knuckle {smcp / 10:4.1f} cm along it")
+    ray2 = rays.max(axis=1)                                         # (z, x): the ray below, or 0
     del rays, rest
 
     print("      the outline, the surfaces, the edges …")
@@ -534,6 +590,19 @@ def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2
     # a neighbour came out half as thick, a dark rim along every crowded proximal phalanx
     seam_f = np.where(seam & (web < 1), web, 0)[qz, qx]
     yp, yd, g2 = yp[jz, jx], yd[jz, jx], g2[jz, jx]                # carried out to the outline
+    # THE BORDER RAYS IN LINE. The first and fifth metacarpals lie palmar of the second to
+    # fourth (the thumb in front of the palm, the fifth down the transverse arch), so their
+    # cover put two humps on the palm's palmar face — over the thenar and toward the fifth
+    # knuckle (the fourth's head is down the arch too), standing 1.1 and 0.75 cm proud on the
+    # lateral. Over the palm, the palmar surface above the first, fourth and fifth rays stands
+    # at most BORDER_PROUD_MM above the second and third's at the same level: the knuckles all
+    # follow their curve.
+    ray_f = ray2[jz, jx]
+    mid_rays = foot & np.isin(ray_f, (2, 3))
+    ref = np.where(mid_rays, yp, -np.inf).max(axis=1, keepdims=True)          # per row
+    border = foot & np.isin(ray_f, (1, 4, 5)) & (g2 < 0.5) & np.isfinite(ref)
+    yp = np.where(border, np.minimum(yp, ref + BORDER_PROUD_MM), yp)
+    del ray_f, mid_rays, ref, border, ray2
     del d2, jz, jx, side, owner, seam, f2, p2, web, qz, qx
 
     def smooth(f, sig_mm):                                          # within the outline only
@@ -548,11 +617,16 @@ def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2
     mid, half = (yp + yd) / 2, np.maximum((yp - yd) / 2, 0)
     edge = ndi.distance_transform_edt(foot, sampling=spacing)       # mm in from the outline
     w = np.minimum(half, 12.0)
+    # the wrist and forearm rounded across their whole width (an oval, not a slab with its
+    # corners turned): the rounding reaches the row's own half-width
+    fore2 = np.clip((zf + r10 - np.arange(nz)) / r10, 0, 1)[:, None]
+    w = (1 - fore2) * w + fore2 * edge.max(axis=1, keepdims=True)
     hh = half * np.sqrt(1 - (1 - np.clip(edge / np.maximum(w, 1e-6), 0, 1)) ** 2)
     hh *= (1 - seam_f) + seam_f * np.sqrt(1 - (1 - np.clip(seam_d / np.maximum(w, 1e-6), 0, 1)) ** 2)
     soft = foot[:, None, :] & (np.abs(ys - mid[:, None, :]) <= hh[:, None, :])
     soft |= bone
     del yp, yd, g2, mid, half, edge, w, hh, has, foot, seam_d, seam_f
+    soft = oval_wrist(soft, bone, zcut, spacing)
 
     # for the layers: how far each point is from its nearest bone, and which way (+y palmar)
     dist, idx = ndi.distance_transform_edt(~bone, sampling=spacing, return_indices=True)
@@ -563,6 +637,7 @@ def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2
     uy[dist == 0] = 0
     near_digit = digit[iz, iy, ix]
     near_palm = palm_region[iz, iy, ix]
+    fat_d = fat_mm + (FOREARM_FAT_MM - fat_mm) * fore[iz, iy, ix]   # deeper fat over the forearm
     del iz, iy, ix, digit, palm_region
     occ = ndi.gaussian_filter(soft.astype(np.float32), sigma=smooth_mm / spacing)
     soft = (occ > 0.5) | bone
@@ -572,10 +647,10 @@ def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2
     sdepth = ndi.distance_transform_edt(soft, sampling=spacing)    # mm below the skin
     mat = np.full(bone.shape, AIR, dtype=np.uint8)
     mat[soft] = FAT
-    mat[soft & near_palm & (near_digit < 0.5) & (sdepth > fat_mm) & (uy > -0.35)] = MUSCLE
+    mat[soft & near_palm & (near_digit < 0.5) & (sdepth > fat_d) & (uy > -0.35)] = MUSCLE
     mat[soft & (dist <= tendon_mm)] = SOFT                          # tendons, sheaths, ligaments
     mat[soft & (sdepth <= skin_mm)] = SKIN
-    del sdepth, soft, dist, uy, near_digit, near_palm
+    del sdepth, soft, dist, uy, near_digit, near_palm, fat_d
 
     bone_architecture(mat, bone, spacing)
 
