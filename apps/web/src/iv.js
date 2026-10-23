@@ -153,6 +153,9 @@ function makeRoom() {
   const alongX = (m, x = 0) => { m.rotation.z = -Math.PI / 2; m.position.x = x; return m; };
   const needle = alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 3.2, 10), mat(0xd9dde2, { metalness: 0.9, roughness: 0.2 })));
   const cathM = alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.066, 2.5, 12), clear(0xf6f8fa, 0.7)));
+  const sheath = new THREE.Group();
+  sheath.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.19, 2.6, 14), clear(0xbfdcf5, 0.5)), -0.8));
+  sheath.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.5, 14), mat(0x2f6fd6)), 0.55));
   const hub = new THREE.Group();
   hub.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.24, 0.8, 16), clear(0xeef4f8, 0.55))));
   hub.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.13, 0.7, 12), mat(gaugeCol))));
@@ -181,8 +184,8 @@ function makeRoom() {
   housing.add(chamber, flashFill, body, tab);
   for (let i = 0; i < 4; i++) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.5), mat(0xb9bdc1)); r.position.set(-0.8 - i * 0.2, 0.32, 0); housing.add(r); }
   // the extension set
-  const extRest = { curve: [[-0.3, 0, 0.25], [-1.0, 0.05, 1.3], [-1.8, 0.05, 2.0], [-2.6, 0.05, 2.3], [-3.5, 0.05, 2.45], [-4.45, 0.05, 2.4]],
-    clamp: [-2.6, 0.12, 2.3], port: [-6.3, 0.05, 2.4], cap: [-7.15, 0.05, 2.4] };
+  const extRest = { curve: [[-0.3, 0, -0.25], [-1.0, 0.05, -1.3], [-1.8, 0.05, -2.0], [-2.6, 0.05, -2.3], [-3.5, 0.05, -2.45], [-4.45, 0.05, -2.4]],
+    clamp: [-2.6, 0.12, -2.3], port: [-6.3, 0.05, -2.4], cap: [-7.15, 0.05, -2.4] };
   const tubeCurve = new THREE.CatmullRomCurve3(extRest.curve.map((p) => new THREE.Vector3(...p)));
   const tubing = new THREE.Mesh(new THREE.TubeGeometry(tubeCurve, 40, 0.1, 8, false), clear(0xf4f8fb, 0.6));
   // the pinch clip: a base, a jaw hinged at the back that presses the tube, a hook at the front
@@ -207,7 +210,19 @@ function makeRoom() {
   portCap.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.12, 14), clear(0xffffff, 0.8)), -0.32));
   clampM.position.set(...extRest.clamp); port.position.set(...extRest.port); portCap.position.set(...extRest.cap);
   const ext = new THREE.Group(); ext.add(tubing, clampM, port, portCap);
-  kit.add(needle, cathM, hub, housing, ext);
+  // the hands that break the seal: a gloved thumb and finger pinching the wings and flash chamber,
+  // another pair on the needle housing; the first pair rides forward with the catheter
+  const glove = mat(0x6b8fd6, { roughness: 0.6 });
+  const pinch = (parent, x) => {
+    const gp = new THREE.Group();
+    for (const [y, r] of [[0.44, 0.22], [-0.42, 0.2]]) {
+      const f = new THREE.Mesh(new THREE.CapsuleGeometry(r, 1.3, 6, 12), glove);
+      f.rotation.x = Math.PI / 2; f.position.set(x, y, 0.95); gp.add(f);
+    }
+    gp.visible = false; parent.add(gp); return gp;
+  };
+  const hands = [pinch(hub, -0.15), pinch(housing, -1.7)];
+  kit.add(needle, cathM, hub, housing, ext, sheath);
   kit.visible = false;
   // the flush: a 10 mL syringe, clear and graduated, a black stopper on a cross-section rod
   const syringe = new THREE.Group();
@@ -254,8 +269,9 @@ function makeRoom() {
   gauze.visible = false; group.add(gauze);
   const finger = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), mat(0x6b8fd6, { transparent: true, opacity: 0.85 }));
   finger.visible = false; group.add(finger);
-  R3 = { group, board, kit, needle, cathM, hub, housing, flashFill, ext, clampM, clampJaw: pivot, wings, port, portCap, tubing, extRest, extAt: extRest, drapeKey: '',
+  R3 = { group, board, kit, needle, cathM, hub, housing, flashFill, ext, clampM, clampJaw: pivot, wings, sheath, hands, port, portCap, tubing, extRest, extAt: extRest, drapeKey: '',
     syringe, plunger, saline, luer, swab, band, thumb, gauze, finger, patch: null, rings: [], blood: null };
+  R3.prep = buildPrep(THREE, mat, clear, group);
 }
 function disposeRoom() {
   if (!R3) return;
@@ -418,7 +434,7 @@ function paint() {
         const [x, y] = toPx(A.mark.a + da * A.mark.tan[0] - dl * A.mark.tan[1], A.mark.l + da * A.mark.tan[1] + dl * A.mark.tan[0]);
         o.fillRect(x - s / 2, y - s / 2, s, s);
       }
-      g.save(); g.filter = 'blur(5px)'; g.globalAlpha = A.clean.dry ? 0.07 : 0.38;
+      g.save(); g.filter = 'blur(5px)'; g.globalAlpha = A.clean.dry ? 0.07 + 0.31 * Math.max(0, 1 - (A.t - (A.clean.dryAt ?? A.t)) / 12) : 0.38;
       g.drawImage(off, 0, 0); g.restore();
     }
     // the target circle (Guided)
@@ -511,11 +527,302 @@ function orient(obj, pos, dir, up) {
   obj.matrixAutoUpdate = false; obj.matrixWorldNeedsUpdate = true;
 }
 
+/* ---------------------------------------------------------------- the prep table
+   Supplies are opened beside the patient on a steel table: the alcohol swab torn open at its notched
+   corner and the swab taken out; the IV's pack peeled open from its tab, the IV lifted out, and its
+   seal broken in hand (the catheter slid a millimetre off the needle and back) before it goes to
+   the arm. Prep-table frame: X along the limb, Y up, Z toward the patient. */
+const SWAB_AT = [-11, 0, 3], PACK_AT = [4, 0, 0], KIT_IN_PACK = [5.2, 0.45, 0.78];
+const PREP = { swab: 'closed', swabT: 0, swabLift: 0, pack: 'closed', packT: 0, lift: 0, sealPeak: 0, atSite: false };
+function resetPrep() { Object.assign(PREP, { swab: 'closed', swabT: 0, swabLift: 0, pack: 'closed', packT: 0, lift: 0, sealPeak: 0, atSite: false }); }
+const kitAtSite = () => !!A && (A.done.has('seal') || A.needle.inSkin || PREP.atSite);
+const LID = { L: 13.6, W: 7.4, x0: -6.8, nx: 72, y: 1.25, curl: 0.35 };
+
+function buildPrep(THREE, mat, clear, group) {
+  const g = new THREE.Group(); group.add(g);
+  const table = new THREE.Mesh(new THREE.BoxGeometry(34, 0.6, 22), mat(0x8e979f, { metalness: 0.5, roughness: 0.45 }));
+  table.position.y = -0.3; g.add(table);
+  // ---- the alcohol swab: a foil packet, printed; its notched corner tears back along a diagonal
+  const sw = new THREE.Group(); sw.position.set(...SWAB_AT); g.add(sw);
+  const sc = document.createElement('canvas'); sc.width = sc.height = 256;
+  const c = sc.getContext('2d');
+  c.fillStyle = '#f6f7f9'; c.fillRect(0, 0, 256, 256);
+  c.strokeStyle = '#cfd4da'; c.lineWidth = 1;
+  for (let i = 8; i < 250; i += 5) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, 11); c.moveTo(i, 245); c.lineTo(i, 256); c.moveTo(0, i); c.lineTo(11, i); c.moveTo(245, i); c.lineTo(256, i); c.stroke(); }
+  c.fillStyle = '#2f74c0'; c.fillRect(26, 74, 204, 90);
+  c.fillStyle = '#fff'; c.textAlign = 'center'; c.font = 'bold 34px Arial, sans-serif';
+  c.fillText('ALCOHOL', 128, 114); c.fillText('SWAB', 128, 152);
+  c.fillStyle = '#2f74c0'; c.font = 'bold 15px Arial, sans-serif'; c.fillText('70% Isopropyl Alcohol', 128, 190);
+  c.fillStyle = '#4c5a68'; c.font = '12px Arial, sans-serif'; c.textAlign = 'left';
+  c.fillText('• For external use only', 40, 214); c.fillText('• Sterile', 40, 230);
+  c.strokeStyle = '#9aa4ae'; c.setLineDash([5, 4]); c.lineWidth = 2; c.beginPath(); c.moveTo(172, 2); c.lineTo(254, 84); c.stroke();
+  const stex = new THREE.CanvasTexture(sc); stex.colorSpace = THREE.SRGBColorSpace;
+  const uvFrom = (geo, off = [0, 0]) => {
+    const pos = geo.attributes.position, uv = [];
+    for (let i = 0; i < pos.count; i++) uv.push((pos.getX(i) + off[0] + 2.75) / 5.5, (pos.getY(i) + off[1] + 2.75) / 5.5);
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    return geo;
+  };
+  const back = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.08, 5.5), mat(0xe9ecef));
+  back.position.y = 0.04; sw.add(back);
+  const face = new THREE.Group(); face.rotation.x = -Math.PI / 2; face.position.y = 0.17; sw.add(face);
+  const fs = new THREE.Shape(); fs.moveTo(-2.75, -2.75); fs.lineTo(2.75, -2.75); fs.lineTo(2.75, 0.95); fs.lineTo(0.95, 2.75); fs.lineTo(-2.75, 2.75); fs.closePath();
+  const sheet = mat(0xffffff, { map: stex, side: THREE.DoubleSide, roughness: 0.4, metalness: 0.15 });
+  face.add(new THREE.Mesh(uvFrom(new THREE.ShapeGeometry(fs)), sheet));
+  const flapPivot = new THREE.Group(); flapPivot.position.set(1.85, 1.85, 0); face.add(flapPivot);
+  const ts = new THREE.Shape(); ts.moveTo(-0.9, 0.9); ts.lineTo(0.9, 0.9); ts.lineTo(0.9, -0.9); ts.closePath();
+  flapPivot.add(new THREE.Mesh(uvFrom(new THREE.ShapeGeometry(ts), [1.85, 1.85]), sheet));
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.1, 4.3), mat(0xfbfbfa, { roughness: 0.95 }));
+  pad.position.y = 0.11; sw.add(pad);
+  // ---- the IV's pack: a clear blister, the IV laid in it, under a printed paper lid with a pull tab
+  const pk = new THREE.Group(); pk.position.set(...PACK_AT); g.add(pk);
+  const rr = (w, h, r) => {
+    const sh = new THREE.Shape(), x = -w / 2, y = -h / 2;
+    sh.moveTo(x + r, y); sh.lineTo(x + w - r, y); sh.quadraticCurveTo(x + w, y, x + w, y + r); sh.lineTo(x + w, y + h - r);
+    sh.quadraticCurveTo(x + w, y + h, x + w - r, y + h); sh.lineTo(x + r, y + h); sh.quadraticCurveTo(x, y + h, x, y + h - r);
+    sh.lineTo(x, y + r); sh.quadraticCurveTo(x, y, x + r, y); return sh;
+  };
+  const floor = new THREE.Mesh(new THREE.ShapeGeometry(rr(13, 7, 0.7)), clear(0xdcecf8, 0.4));
+  floor.material.side = THREE.DoubleSide; floor.rotation.x = -Math.PI / 2; floor.position.y = 0.02; pk.add(floor);
+  const ring = rr(13, 7, 0.7); ring.holes.push(rr(12.3, 6.3, 0.5));
+  const rim = new THREE.Mesh(new THREE.ExtrudeGeometry(ring, { depth: 1.22, bevelEnabled: false }), clear(0xc9e0f4, 0.5));
+  rim.rotation.x = -Math.PI / 2; pk.add(rim);
+  // the lid: one sheet, folded back over itself as it peels (label above, plain paper beneath)
+  const lidGeo = new THREE.BufferGeometry(), nx = LID.nx, rest = [], uv = [], idx = [];
+  for (let i = 0; i <= nx; i++) for (let j = 0; j <= 1; j++) {
+    const x = LID.x0 + LID.L * i / nx, z = -LID.W / 2 + LID.W * j;
+    rest.push([x, z]); uv.push(i / nx, 1 - j);
+  }
+  for (let i = 0; i < nx; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); }
+  lidGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(rest.length * 3), 3));
+  lidGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  lidGeo.setIndex(idx);
+  const lc = document.createElement('canvas'); lc.width = 1024; lc.height = 557;
+  const ltex = new THREE.CanvasTexture(lc); ltex.colorSpace = THREE.SRGBColorSpace; ltex.anisotropy = 4;
+  const lid = new THREE.Mesh(lidGeo, mat(0xffffff, { map: ltex, roughness: 0.8 }));
+  const lidBack = new THREE.Mesh(lidGeo, mat(0xf1f2f0, { side: THREE.BackSide, roughness: 0.9 }));
+  pk.add(lid, lidBack);
+  return { group: g, swab: { group: sw, flapPivot, pad }, pack: { group: pk, lid, lidBack, lidGeo, rest, lc, ltex } };
+}
+// the lid's label, after the real one: the gauge's band in its colour
+function paintLid() {
+  const { lc, ltex } = R3.prep.pack, c = lc.getContext('2d'), W = lc.width, H = lc.height, gauge = P.gauges[setup.gauge];
+  c.fillStyle = '#eef1f4'; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#f8fafb'; c.strokeStyle = '#d3d9df'; c.lineWidth = 3;
+  c.beginPath(); c.roundRect(70, 26, W - 100, H - 52, 30); c.fill(); c.stroke();
+  // the pull tab, at the left end
+  c.fillStyle = '#dfe4e9'; c.fillRect(0, 0, 62, H);
+  c.save(); c.translate(38, H / 2); c.rotate(-Math.PI / 2); c.fillStyle = '#7d8790'; c.font = 'bold 24px Arial, sans-serif'; c.textAlign = 'center';
+  c.fillText('PEEL  ▼', 0, 0); c.restore();
+  c.fillStyle = '#5c636b'; c.textAlign = 'left';
+  c.font = '600 48px Arial, sans-serif'; c.fillText('BD Nexiva™ Diffusics™', 130, 104);
+  c.font = '24px Arial, sans-serif'; c.fillText('Closed IV Catheter System.', 130, 142);
+  // the line drawing: the catheter in its box
+  c.strokeStyle = '#6c737b'; c.lineWidth = 3; c.strokeRect(130, 166, 190, 168);
+  c.beginPath(); c.moveTo(150, 300); c.lineTo(250, 220); c.lineTo(262, 236); c.lineTo(162, 316); c.closePath(); c.stroke();
+  c.beginPath(); c.moveTo(250, 220); c.lineTo(290, 196); c.lineTo(270, 246); c.closePath(); c.stroke();
+  c.beginPath(); c.moveTo(286, 200); c.lineTo(312, 178); c.stroke();
+  c.beginPath(); c.moveTo(150, 260); c.quadraticCurveTo(210, 190, 300, 230); c.stroke();
+  c.font = '30px Arial, sans-serif'; c.fillText('REF', 132, 368);
+  // the small print, as print
+  c.fillStyle = '#b4bcc4';
+  for (let i = 0; i < 7; i++) c.fillRect(350, 176 + i * 22, 470 - (i % 3) * 70, 8);
+  // the port, drawn
+  c.fillStyle = '#7b838c'; c.beginPath(); c.roundRect(660, 300, 220, 46, 18); c.fill();
+  c.fillStyle = '#f8fafb'; c.font = 'bold 20px Arial, sans-serif'; c.fillText('BD Diffusics', 705, 330);
+  // the gauge band
+  c.fillStyle = gauge.pack; c.fillRect(70, 392, W - 100, 66);
+  c.fillStyle = '#29505d'; c.font = 'bold 50px Arial, sans-serif'; c.fillText(gauge.label, 130, 443);
+  c.fillStyle = '#b4bcc4'; for (let i = 0; i < 4; i++) c.fillRect(150, 478 + i * 16, 420, 7);
+  // a square code
+  for (let i = 0; i < 12; i++) for (let j = 0; j < 12; j++) if (((i * 7 + j * 13 + i * j) % 5) < 2) { c.fillStyle = '#8c949c'; c.fillRect(640 + i * 6, 472 + j * 6, 6, 6); }
+  ltex.needsUpdate = true;
+}
+// fold the lid back: t 0 sealed, 1 peeled clear of the tray
+function setLid(t) {
+  const { lidGeo, rest } = R3.prep.pack, pos = lidGeo.attributes.position, r = LID.curl;
+  const h = t * (LID.L + 1.2);
+  rest.forEach(([x, z], i) => {
+    const u = x - LID.x0;
+    let X = x, Y = 0;
+    if (u < h) {
+      const d = h - u;
+      if (d < Math.PI * r) { const th = d / r; X = LID.x0 + h - r * Math.sin(th); Y = r * (1 - Math.cos(th)); }
+      else { X = LID.x0 + h + (d - Math.PI * r); Y = 2 * r; }
+    } else if (u < 0.6 && t === 0) Y = (0.6 - u) * 0.25;          // the tab, a little proud
+    pos.setXYZ(i, X, LID.y + Y, z);
+  });
+  pos.needsUpdate = true; lidGeo.computeVertexNormals(); lidGeo.computeBoundingSphere();
+}
+// the table beside the board, on the limb's lateral side, the pack lying along the limb
+function placePrep(box) {
+  if (!R3?.prep) return;
+  const s0 = G.worldAt(0, 0), o = G.toWorld(G.O);
+  const flat = (v) => v3.norm([v[0], 0, v[2]]);
+  const X = flat(v3.sub(G.toWorld(v3.add(G.O, G.Ax)), o)), Y = [0, 1, 0];
+  let side = v3.cross(Y, X);
+  if (v3.dot(side, flat(v3.sub(G.toWorld(v3.add(G.O, G.L)), o))) < 0) side = v3.mul(side, -1);
+  let half = 0;
+  for (const cx of [box.min.x, box.max.x]) for (const cz of [box.min.z, box.max.z]) half = Math.max(half, v3.dot(v3.sub([cx, s0[1], cz], s0), side));
+  const at = v3.add([s0[0], box.min.y + 0.4, s0[2]], v3.mul(side, half + 13));
+  // (the table's +Z runs back toward the patient: X x Y)
+  orient(R3.prep.group, at, X, Y);
+  R3.prep.group.updateMatrixWorld(true);
+  R3.prep.X = X; R3.prep.Y = Y; R3.prep.Z = v3.cross(X, Y); R3.prep.O = at;
+  paintLid(); setLid(0);
+}
+const prepPoint = (q) => v3.add(R3.prep.O, v3.add(v3.mul(R3.prep.X, q[0]), v3.add(v3.mul(R3.prep.Y, q[1]), v3.mul(R3.prep.Z, q[2]))));
+// each frame: the swab's corner, the pad, the lid, toward where the learner left them
+function animatePrep(dt) {
+  if (!R3?.prep) return;
+  const k = 1 - Math.exp(-dt * 8);
+  const to = (key, want, dragging) => { if (!dragging) PREP[key] += (want - PREP[key]) * k; };
+  to('swabT', PREP.swab === 'closed' ? 0 : 1, ptr.kind === 'tear');
+  to('swabLift', PREP.swab === 'out' ? 1 : 0, ptr.kind === 'swabOut');
+  to('packT', PREP.pack === 'closed' ? 0 : 1, ptr.kind === 'peel');
+  to('lift', PREP.pack === 'out' ? 1 : 0, ptr.kind === 'lift');
+  const sw = R3.prep.swab;
+  sw.flapPivot.quaternion.setFromAxisAngle(new ctx.THREE.Vector3(Math.SQRT1_2, -Math.SQRT1_2, 0), PREP.swabT * 2.75);
+  const L = PREP.swabLift;
+  sw.pad.position.set(0.707 * 4.5 * L, 0.11 + 2.2 * L, -0.707 * 4.5 * L);
+  sw.pad.visible = L < 0.97;
+  if (Math.abs(PREP.packT - (R3.prep.lidT ?? -1)) > 1e-4) { setLid(PREP.packT < 1e-3 ? 0 : PREP.packT); R3.prep.lidT = PREP.packT; }
+}
+// where a world direction runs on the screen, px per cm
+function screenAxis(cam, w, dir) {
+  const { THREE } = ctx, r = ctx.three.renderer.domElement.getBoundingClientRect();
+  const a = new THREE.Vector3(...w).project(cam), b = new THREE.Vector3(...v3.add(w, dir)).project(cam);
+  const dx = (b.x - a.x) * 0.5 * r.width, dy = -(b.y - a.y) * 0.5 * r.height, n = Math.hypot(dx, dy) || 1;
+  return { ux: dx / n, uy: dy / n, px: n };
+}
+const hubWorld = () => worldOfKitPart(R3.hub);
+function prepDown(e, canvas, cam) {
+  const P0 = R3.prep;
+  ptr.sx = e.clientX; ptr.sy = e.clientY;
+  if (tool === 'pad' && PREP.swab !== 'out') {
+    const hit = ray(e, canvas, cam).intersectObject(P0.swab.group, true)[0];
+    if (!hit) return;
+    if (PREP.swab === 'closed') {
+      const q = P0.swab.group.worldToLocal(hit.point.clone());
+      if (q.x - q.z < 2.4) { toast('Tear it open at the notched corner.'); return; }
+      ptr.kind = 'tear'; return;
+    }
+    ptr.kind = 'swabOut'; return;
+  }
+  // the IV
+  if (A.mode === 'guided' && !A.done.has('clean')) { toast('Clean the site first.'); return; }
+  if (A.kit.off) { toast('The catheter came off: take a new kit.'); return; }
+  if (PREP.pack === 'closed') {
+    const hit = ray(e, canvas, cam).intersectObjects([P0.pack.lid, P0.pack.lidBack], false)[0];
+    if (!hit) return;
+    const q = P0.pack.group.worldToLocal(hit.point.clone());
+    if (q.x > LID.x0 + 1.4) { toast('Peel it back from the tab.'); return; }
+    ptr.ax = screenAxis(cam, prepPoint(PACK_AT), P0.X); ptr.kind = 'peel'; return;
+  }
+  if (PREP.pack === 'open') { ptr.kind = 'lift'; return; }
+  // in hand: Practice and Assessment may take it straight to the arm (the skipped seal is theirs)
+  if (A.mode !== 'guided' && !A.done.has('seal')) {
+    const h = hitSkin(e, canvas, cam);
+    if (h) { PREP.atSite = true; refresh(); return; }
+  }
+  ptr.ax = screenAxis(cam, hubWorld(), P0.X); ptr.slide0 = A.kit.slide; ptr.kind = 'seal';
+}
+function prepMove(e) {
+  const dx = e.clientX - ptr.sx, dy = e.clientY - ptr.sy, cl = (v) => Math.max(0, Math.min(1, v));
+  if (ptr.kind === 'tear') PREP.swabT = cl(Math.hypot(dx, dy) / 150);
+  else if (ptr.kind === 'swabOut') PREP.swabLift = cl(Math.hypot(dx, dy) / 140);
+  else if (ptr.kind === 'peel') PREP.packT = cl((dx * ptr.ax.ux + dy * ptr.ax.uy) / (ptr.ax.px * LID.L * 0.8));
+  else if (ptr.kind === 'lift') PREP.lift = cl(-dy / 130);
+  else if (ptr.kind === 'seal') {
+    const mm = Math.max(0, ptr.slide0 + (dx * ptr.ax.ux + dy * ptr.ax.uy) / (ptr.ax.px / 10));
+    const r = IV.sealSlide(A, mm);
+    if (r && r.why) { toast(r.why); ptr.kind = null; return; }
+    if (A.kit.off) { sfx('creak'); toast('Too far: the catheter came off.'); ptr.kind = null; refresh(); return; }
+    const peak0 = PREP.sealPeak;
+    PREP.sealPeak = Math.max(PREP.sealPeak, A.kit.slide);
+    if (peak0 < P.seal.breakMinMM && PREP.sealPeak >= P.seal.breakMinMM) { sfx('click'); toast('Seal broken. Slide it back.'); }
+    if (PREP.sealPeak >= P.seal.breakMinMM && A.kit.slide <= 0.2) {
+      const res = IV.sealRelease(A, PREP.sealPeak);
+      ptr.kind = null;
+      if (res.ok) sfx('click'); else if (res.why) toast(res.why);
+      refresh();
+    }
+  }
+}
+function prepUp() {
+  if (ptr.kind === 'tear' && PREP.swabT >= 0.6) { PREP.swab = 'open'; sfx('snap'); refresh(); }
+  else if (ptr.kind === 'swabOut' && PREP.swabLift >= 0.5) { PREP.swab = 'out'; refresh(); }
+  else if (ptr.kind === 'peel' && PREP.packT >= 0.55) { PREP.pack = 'open'; sfx('snap'); refresh(); }
+  else if (ptr.kind === 'lift' && PREP.lift >= 0.5) { PREP.pack = 'out'; refresh(); }
+}
+// the step card's own lines while a supply is being opened
+function miniStep() {
+  if (!A || A.ended || A.finished) return null;
+  if (tool === 'pad' && PREP.swab !== 'out') {
+    return PREP.swab === 'closed' ? { do: 'Tear the packet open at its corner.', keys: [['Drag', 'corner']] }
+      : { do: 'Take the swab out.', keys: [['Drag', 'swab out']] };
+  }
+  if (tool === 'catheter' && !kitAtSite()) {
+    if (A.kit.off) return { do: 'The catheter came off the needle.', keys: [], newKit: true };
+    if (PREP.pack === 'closed') return { do: 'Peel the lid back from its tab.', keys: [['Drag →', 'tab']] };
+    if (PREP.pack === 'open') return { do: 'Lift the IV out.', keys: [['Drag ↑', 'IV']] };
+    return { do: 'Slide the catheter 1 mm off the needle, then back.', keys: [['Drag →', 'break'], ['Drag ←', 'reseat']] };
+  }
+  return null;
+}
+// a camera that keeps an area of radius R round t in the clear part of the screen (left of the
+// tray, under the step card), looking along -n
+function fitView(t, n, up, R) {
+  const cv = ctx.three.renderer.domElement.getBoundingClientRect();
+  const tray = $('ivTray')?.getBoundingClientRect(), card = $('ivStep')?.getBoundingClientRect();
+  const fx = tray && tray.width ? Math.max(0, Math.min(0.4, (cv.right - tray.left + 8) / cv.width)) : 0;
+  const fy = card && card.height ? Math.max(0, Math.min(0.35, (card.bottom - cv.top + 8) / cv.height)) : 0;
+  const tn = Math.tan(21 * D), asp = cv.width / Math.max(1, cv.height);
+  const d = Math.max(R / (tn * asp * (1 - fx)), R / (tn * (1 - fy)));
+  const u0 = v3.norm(v3.sub(up, v3.mul(n, v3.dot(up, n)))), r0 = v3.cross(v3.mul(n, -1), u0);
+  const Hh = d * tn, Hw = Hh * asp;
+  const tgt = v3.add(t, v3.add(v3.mul(r0, fx * Hw), v3.mul(u0, fy * Hh)));
+  return { pos: v3.add(tgt, v3.mul(n, d)), target: tgt, up: u0, fitted: true };
+}
+// any other view: moved sideways so what it centres on sits in the clear part of the screen
+function clearOfOverlays(w) {
+  const cv = ctx.three.renderer.domElement.getBoundingClientRect();
+  const tray = $('ivTray')?.getBoundingClientRect(), card = $('ivStep')?.getBoundingClientRect();
+  const fx = tray && tray.width ? Math.max(0, Math.min(0.4, (cv.right - tray.left + 8) / cv.width)) : 0;
+  const fy = card && card.height ? Math.max(0, Math.min(0.35, (card.bottom - cv.top + 8) / cv.height)) : 0;
+  const f = v3.sub(w.target, w.pos), d = Math.hypot(...f), fn = v3.mul(f, 1 / (d || 1));
+  const u0 = v3.norm(v3.sub(w.up, v3.mul(fn, v3.dot(w.up, fn)))), r0 = v3.cross(fn, u0);
+  const Hh = d * Math.tan(21 * D), Hw = Hh * cv.width / Math.max(1, cv.height);
+  const sh = v3.add(v3.mul(r0, fx * Hw), v3.mul(u0, fy * Hh));
+  return { pos: v3.add(w.pos, sh), target: v3.add(w.target, sh), up: w.up };
+}
+
 /* ---------------------------------------------------------------- placing everything */
 function placeKit() {
   const k = R3.kit;
-  const kitStep = A && A.mark && (A.done.has('clean') || tool === 'catheter' || A.needle.inSkin || A.done.has('seal'));
-  k.visible = !!(kitStep && (tool === 'catheter' || A.done.has('seal') || A.needle.inSkin)) && !A.pressure.removed;
+  if (!A || A.pressure.removed || !R3.prep?.O) { k.visible = false; return; }
+  if (!kitAtSite()) {
+    // in its pack on the table, lifted out, then held over it for the seal
+    k.visible = true;
+    const q = [KIT_IN_PACK[0] + PACK_AT[0], KIT_IN_PACK[1] + PREP.lift * 4.5, KIT_IN_PACK[2] + PACK_AT[2]];
+    orient(k, prepPoint(q), R3.prep.X, R3.prep.Y);
+    const off = A.kit.slide / 10, hubX = -0.15 - 2.5 - 0.45 + off;
+    drapeExt(false, hubX);
+    R3.needle.position.set(-1.6, 0, 0); R3.needle.visible = true;
+    R3.cathM.position.set(-0.15 - 1.25 + off, 0, 0); R3.cathM.visible = !A.kit.off;
+    R3.hub.position.set(hubX, 0, 0); R3.ext.position.set(hubX, 0, 0);
+    R3.housing.position.set(-0.15 - 2.5 - 0.9, 0, 0); R3.housing.visible = true;
+    R3.flashFill.visible = false;
+    R3.sheath.visible = PREP.pack !== 'out';
+    for (const h of R3.hands) h.visible = PREP.pack === 'out' && !A.done.has('seal') && !A.kit.off;
+    R3.clampJaw.rotation.z = A.clampOpen ? 0.42 : 0.0;
+    R3.portCap.visible = true;
+    restWings();
+    return;
+  }
+  R3.sheath.visible = false; R3.cathM.visible = true;
+  for (const h of R3.hands) h.visible = false;
+  k.visible = !!A.mark;
   if (!k.visible) return;
   const F = veinFrame(), dir = IV.needleDir(A), dW = engineDirWorld(F, dir);
   const tip = engineToWorld(F, IV.needleTip(A));
@@ -555,9 +862,15 @@ function placeKit() {
 // The wings are soft plastic. Wherever they would sink into the skin they lie on it instead, and
 // once the catheter is in they lie flat on it — under the dressing, not through it: each point of
 // the wing 1.7-2.2 mm out from the smoothed skin under it (the dressing is painted 2.5 mm out).
+function restWings() {
+  if (R3.wingsAtRest) return;
+  for (const w of R3.wings) { w.geometry.attributes.position.array.set(w.userData.rest); w.geometry.attributes.position.needsUpdate = true; w.geometry.computeVertexNormals(); }
+  R3.wingsAtRest = true;
+}
 function conformWings(flat) {
   const { THREE } = ctx;
   if (!R3.patch?.grid) return;
+  R3.wingsAtRest = false;
   R3.kit.updateMatrixWorld(true);
   const v = new THREE.Vector3();
   for (const w of R3.wings) {
@@ -689,6 +1002,13 @@ function desiredView() {
     const b = R3.band.userData.anchor || s;
     return { pos: [b[0] + 20, b[1] + 28, b[2] - 18], target: b, up: [0, 1, 0] };
   }
+  if (key === 'clean') return fitView(s, nrm, alongW, 3.6);
+  if (key.startsWith('prep') && R3.prep?.O) {
+    const P0 = R3.prep, n = v3.norm(v3.add(P0.Y, v3.mul(P0.Z, 0.35))), up = v3.mul(P0.Z, -1);
+    if (key === 'prepSwab') return fitView(prepPoint(SWAB_AT), n, up, 4.2);
+    if (key === 'prepIV') return fitView(prepPoint([PACK_AT[0], 0.6, PACK_AT[2]]), n, up, 7.8);
+    return fitView(hubWorld(), n, up, 2.8);
+  }
   if (key === 'site') {
     // looking down on the site, the limb running up the screen
     return { pos: v3.add(s, v3.add(v3.mul(nrm, 22), v3.mul(alongW, -4))), target: s, up: alongW };
@@ -706,6 +1026,10 @@ function stepView() {
   if (!A) return 'overview';
   const st = IV.currentStep(A);
   if (A.ended) return 'site';
+  // opening supplies, at the table
+  if (tool === 'pad' && PREP.swab !== 'out') return 'prepSwab';
+  if (!kitAtSite() && (tool === 'catheter' || st === 'seal')) return PREP.pack === 'out' ? 'prepSeal' : 'prepIV';
+  if (st === 'clean') return 'clean';
   if (['prep', 'tourniquet'].includes(st)) return 'overview';
   if (['palpate', 'clean', 'dressing'].includes(st)) return 'site';
   if (['seal', 'align', 'anchor', 'insert', 'flash', 'thread', 'withdraw'].includes(st)) return 'needle';
@@ -714,7 +1038,8 @@ function stepView() {
 }
 function updateCamera(dt) {
   const { THREE, three } = ctx;
-  const want = desiredView();
+  let want = desiredView();
+  if (!want.fitted && (viewPinned || viewKey) !== 'overview') want = clearOfOverlays(want);
   if (!three.ivView) three.ivView = { pos: new THREE.Vector3(...want.pos), target: new THREE.Vector3(...want.target), up: new THREE.Vector3(...want.up), zoom: 1 };
   const v = three.ivView, k = 1 - Math.exp(-dt * 4);
   const tgt = new THREE.Vector3(...want.target);
@@ -783,6 +1108,7 @@ function onDown(e, canvas, cam) {
     R3.band.visible = true; sfx('snap'); setTool(null); refresh();
     return;
   }
+  if ((tool === 'pad' && PREP.swab !== 'out') || (tool === 'catheter' && !kitAtSite())) { prepDown(e, canvas, cam); return; }
   if (tool === 'pad') { ptr.kind = 'scrub'; return; }
   if (tool === 'tegaderm') {
     const h = hitPatch(e, canvas, cam); if (!h || !A.mark) return;
@@ -797,7 +1123,7 @@ function onDown(e, canvas, cam) {
     return;
   }
   // the needle, from the align step to the withdrawal: left-drag advances, right-drag angles
-  if (R3.kit.visible && (A.done.has('seal') || A.needle.inSkin)) {
+  if (R3.kit.visible && kitAtSite()) {
     if (st === 'withdraw' || (A.cath.hubbed && !A.needle.shielded)) { ptr.kind = 'withdraw'; return; }
     if (A.syringe.locked && st === 'flush') { ptr.kind = 'flush'; ptr.flushT = performance.now() / 1000; return; }
     if (!A.cath.hubbed) { ptr.kind = e.button === 2 ? 'angle' : 'advance'; ptr.pitchRaw = A.needle.pitch; return; }
@@ -813,6 +1139,7 @@ function onMove(e, canvas, cam, dx, dy, dt) {
   // the palpating finger follows the cursor while F is held
   if (keys.f && !ptr.down) palpateAt(e, canvas, cam);
   if (!ptr.down) { R3.finger.visible = keys.f && !!hitPatch(e, canvas, cam); return; }
+  if (['tear', 'swabOut', 'peel', 'lift', 'seal'].includes(ptr.kind)) { prepMove(e); return; }
   if (ptr.kind === 'scrub') {
     const h = hitPatch(e, canvas, cam); if (!h || !A.mark) return;
     // the swab rides under the cursor, flat on the skin
@@ -843,6 +1170,7 @@ function onMove(e, canvas, cam, dx, dy, dt) {
 }
 function onUp() {
   if (ptr.kind === 'scrub') sfx('scrubStop');
+  prepUp();
   if (R3) R3.swab.visible = false;
   ptr.kind = null;
 }
@@ -976,7 +1304,7 @@ function onKey(e, down) {
     if (A.syringe.on && !A.syringe.locked) { IV.twistSyringe(A, 15 * s); if (A.syringe.locked) sfx('twist'); }
     else if (A.syringe.locked && IV.currentStep(A) === 'syringeOff' && s < 0) { IV.twistSyringe(A, -15); if (!A.syringe.on) sfx('twist'); }
     else if (A.cap.on && !A.cap.locked) { IV.twistCap(A, 15 * s); if (A.cap.locked) sfx('twist'); }
-    else if (A.done.has('seal') || tool === 'catheter') IV.setYaw(A, A.needle.yaw + 2 * s);
+    else if (kitAtSite()) IV.setYaw(A, A.needle.yaw + 2 * s);
     refresh(); return;
   }
   // keyboard alternatives to the drags
@@ -1005,32 +1333,6 @@ export function ivWheel(e) {
   return true;
 }
 
-/* ---------------------------------------------------------------- the seal widget (step 4) */
-function wireSeal() {
-  const el = $('ivSealHub'), track = $('ivSeal');
-  if (!el || !track) return;
-  let x0 = null;
-  el.addEventListener('pointerdown', (e) => { if (!A) return; x0 = e.clientX; try { el.setPointerCapture(e.pointerId); } catch { /* (a synthetic pointer) */ } });
-  el.addEventListener('pointermove', (e) => {
-    if (x0 == null) return;
-    const mm = Math.max(0, (e.clientX - x0) / 10);
-    const r = IV.sealSlide(A, mm);
-    if (r && r.why) toast(r.why);
-    el.style.transform = `translateX(${Math.min(mm, 14) * 10}px)`;
-    $('ivSealMm').textContent = mm.toFixed(1) + ' mm';
-    if (A.kit.off) { $('ivSeal').classList.add('off'); }
-  });
-  const up = () => {
-    if (x0 == null) return; x0 = null;
-    el.style.transform = '';
-    const r = IV.sealRelease(A);
-    if (r.ok) { sfx('click'); toast('Seal broken.'); }
-    else if (r.why) toast(r.why);
-    refresh();
-  };
-  el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
-  $('ivNewKit')?.addEventListener('click', () => { IV.replaceKit(A); $('ivSeal').classList.remove('off'); refresh(); });
-}
 
 /* ---------------------------------------------------------------- the cross-section */
 const XS = { w: 160, h: 90, u0: -4, u1: 28, z0: -3, z1: 15 };
@@ -1153,8 +1455,6 @@ const TOOLS = [
 function setTool(id) {
   tool = tool === id ? null : id;
   document.querySelectorAll('#ivTools button').forEach((b) => b.classList.toggle('on', b.dataset.tool === tool));
-  if (tool === 'catheter' && A && !A.done.has('seal')) $('ivSeal')?.classList.add('show');
-  else $('ivSeal')?.classList.remove('show');
   if (tool === 'syringe' && A) A.syringeTouched = false;
   if (tool === 'cap' && A) A.capTouched = false;
   document.body.classList.toggle('iv-tool', !!tool);
@@ -1175,13 +1475,19 @@ function refresh() {
         + `<div class="ivs-keys">${!A.pressure.removed ? chip('Drag ↓', 'on the needle') : !A.pressure.gauze ? chip('Tool', 'gauze') + chip('Click', 'site') : chip('Hold click', 'on the gauze')}</div>`;
     } else if (A.finished) card.innerHTML = '';
     else {
+      const mini = miniStep();
       const title = guided ? `<div class="ivs-t"><span class="ivs-n">${si}</span>${step.title}</div>` : '';
-      const doLine = guided && step.do ? `<div class="ivs-do">${step.do}</div>` : '';
+      const doText = mini ? mini.do : step.do;
+      const doLine = guided && doText ? `<div class="ivs-do">${doText}</div>` : '';
       const prep = st === 'prep' ? `<div class="ivs-prep">${P.prep.map((p) => `<button data-prep="${p}" class="${A.prep.has(p) ? 'on' : ''}">${PREP_LABEL[p]}</button>`).join('')}</div>` : '';
-      const ks = assess ? '' : `<div class="ivs-keys">${step.keys.map(([k, v]) => chip(k, v)).join('')}</div>`;
-      const prog = st === 'clean' && !assess ? '<div class="ivs-prog" id="ivProg"><i id="ivProgFill"></i><span id="ivProgLab"></span></div>' : '';
+      const ks = (assess ? '' : `<div class="ivs-keys">${(mini ? mini.keys : step.keys).map(([k, v]) => chip(k, v)).join('')}</div>`)
+        + (mini?.newKit ? '<div class="ivs-prep"><button data-newkit="1">New kit</button></div>' : '');
+      const prog = st === 'clean' && !assess && !mini ? '<div class="ivs-prog" id="ivProg"><i id="ivProgFill"></i><span id="ivProgLab"></span></div>' : '';
       card.innerHTML = title + doLine + prep + ks + prog;
       card.querySelectorAll('[data-prep]').forEach((b) => b.addEventListener('click', () => { IV.tickPrep(A, b.dataset.prep); refresh(); }));
+      card.querySelector('[data-newkit]')?.addEventListener('click', () => {
+        IV.replaceKit(A); Object.assign(PREP, { pack: 'closed', lift: 0, sealPeak: 0 }); refresh();
+      });
     }
     card.classList.toggle('empty', !card.innerHTML);
   }
@@ -1197,7 +1503,6 @@ function refresh() {
   // the cross-section shows from the seal to the withdrawal, Guided and Practice
   const xs = !assess && A.mark && (A.done.has('seal') || A.needle.inSkin) && !A.needle.shielded && !A.finished;
   $('ivXs')?.classList.toggle('show', !!xs);
-  $('ivSeal')?.classList.toggle('show', tool === 'catheter' && !A.done.has('seal'));
   viewKey = stepView();
   paint();
 }
@@ -1216,6 +1521,13 @@ function hotspots(cam) {
     if (!A.portOpen && !A.cap.locked) list.push({ id: 'portcap', at: worldOfKitPart(R3.portCap), want: st === 'portcap', icon: '○', tip: 'Port cap' });
     if (A.portOpen && (tool === 'syringe' || tool === 'cap')) list.push({ id: 'port', at: worldOfKitPart(R3.port), want: true, icon: '◎', tip: 'Port' });
   }
+  if (A.mode === 'guided' && R3.prep?.O && !A.ended) {
+    if (tool === 'pad' && PREP.swab === 'closed' && PREP.swabT < 0.05) list.push({ id: 'cueSwab', at: prepPoint([SWAB_AT[0] + 2.2, 0.2, SWAB_AT[2] - 2.2]), cue: true });
+    if (tool === 'pad' && PREP.swab === 'open') list.push({ id: 'cuePad', at: prepPoint([SWAB_AT[0] + 1.2, 0.3, SWAB_AT[2] - 1.2]), cue: true });
+    if (tool === 'catheter' && !kitAtSite() && !A.kit.off) {
+      if (PREP.pack === 'closed') { if (PREP.packT < 0.05) list.push({ id: 'cueTab', at: prepPoint([PACK_AT[0] + LID.x0 + 0.35, LID.y + 0.1, PACK_AT[2]]), cue: true }); } else list.push({ id: 'cueKit', at: hubWorld(), cue: true });
+    }
+  }
   if (A.dressing.placed && !A.done.has('dressing') && A.dressingAt) {
     const m = A.mark, c = A.dressingAt, t = m.tan, hw = 3, hh = 3.5;
     const pts = [[c.a + t[0] * hh, c.l + t[1] * hh], [c.a - t[1] * hw, c.l + t[0] * hw], [c.a - t[0] * hh, c.l - t[1] * hh], [c.a + t[1] * hw, c.l - t[0] * hw]];
@@ -1232,7 +1544,8 @@ function hotspots(cam) {
       el.addEventListener('pointerdown', (e) => { e.stopPropagation(); hotClick(h.id); });
       box.appendChild(el);
     }
-    el.textContent = h.icon; el.title = h.tip;
+    el.textContent = h.cue ? '' : h.icon; el.title = h.tip || '';
+    el.classList.toggle('cue', !!h.cue);
     el.classList.toggle('want', A.mode === 'guided' && h.want);
     el.style.left = (r.left - br.left + (v.x * 0.5 + 0.5) * r.width) + 'px';
     el.style.top = (r.top - br.top + (-v.y * 0.5 + 0.5) * r.height) + 'px';
@@ -1329,13 +1642,15 @@ function frame(now) {
       refresh();
     }
     // the skin changes slowly (veins filling, a bruise spreading, the prep drying): ten times a second
-    if ((A.tq.fill > 0 && A.tq.fill < 1) || A.hematoma > 0 || A.infiltration > 0 || (A.clean.dryFrom != null && !A.clean.dry)) {
+    if ((A.tq.fill > 0 && A.tq.fill < 1) || A.hematoma > 0 || A.infiltration > 0 || (A.clean.dryFrom != null && !A.clean.dry)
+      || (A.clean.dry && A.t - (A.clean.dryAt ?? -99) < 12.5)) {
       if (now - (frame.painted || 0) > 100) { paint(); frame.painted = now; }
     }
     if (A.flags.length) toast(A.flags.shift().msg);
   }
   // (the last step, or End, finishes the attempt from an input handler: the debrief follows on the next frame)
   if (A && A.finished && !A.debriefShown) { A.debriefShown = true; showDebrief(); }
+  animatePrep(dt);
   placeKit(); placeSyringe(); placeThumb();
   if (R3.gauze) {
     R3.gauze.visible = !!(A && A.ended && A.pressure.gauze);
@@ -1361,7 +1676,7 @@ function frame(now) {
   if (pf && A && !A.done.has('clean')) {
     const c = A.clean, pc = P.clean;
     let f, lab, dry = false;
-    if (c.dryFrom != null && !c.dry) {
+    if (c.dryFrom != null && !c.dry && pc.dryS > 0) {
       f = Math.min(1, (A.t - c.dryFrom) / pc.dryS); dry = true;
       lab = `Drying · ${Math.max(0, Math.ceil(pc.dryS - (A.t - c.dryFrom)))} s · hands off`;
     } else {
@@ -1404,6 +1719,7 @@ function placeBoard() {
   R3.board.scale.set(sz.x + 10, 2.4, sz.z + 6);
   R3.board.position.set(c.x, box.min.y - 1.2, c.z);
   R3.bbox = { c: [c.x, c.y, c.z], span: Math.max(sz.x, sz.z, 30) };
+  placePrep(box);
 }
 async function start() {
   attempts += 1;
@@ -1414,6 +1730,7 @@ async function start() {
   A.difficulty = (setup.mode === 'assessment' ? 25 + 5 * Math.floor(Math.random() * 16) : setup.difficulty) / 100;
   $('ivTools')?.style.setProperty('--gc', P.gauges[setup.gauge].color);
   tool = null; keys.space = false; keys.f = false;
+  resetPrep();
   prevTip = 'outside'; prevStep = null; prevFlash = false; prevEnded = false;
   if (ctx.three.ivView) ctx.three.ivView.zoom = 1;
   showSetup(false);
@@ -1485,7 +1802,6 @@ export function initIV(context) {
     document.querySelectorAll('#ivViews button').forEach((x) => x.classList.toggle('on', x.dataset.view === viewPinned));
     if (ctx.three.ivView) ctx.three.ivView.zoom = 1;
   }));
-  wireSeal();
   document.addEventListener('keydown', (e) => onKey(e, true));
   document.addEventListener('keyup', (e) => onKey(e, false));
   window.addEventListener('blur', () => { if (keys.space && A && A.mark) IV.setTraction(A, false); keys.space = false; keys.f = false; });

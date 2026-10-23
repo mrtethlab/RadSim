@@ -246,10 +246,12 @@ export function sealSlide(A, mm) {
   if (A.kit.slide > A.P.seal.offMM && !A.kit.off) { A.kit.off = true; addError(A, 'sealOff'); log(A, 'kitOff'); }
   return { ok: true };
 }
-export function sealRelease(A) {
-  const s = A.kit.slide; A.kit.slide = 0;
+// back on the needle: the seal is broken if the catheter went far enough off it (`peak`, mm; the
+// slide as it stands if not given) and not so far it came off
+export function sealRelease(A, peak) {
+  const s = peak ?? A.kit.slide; A.kit.slide = 0;
   if (A.kit.off) return { ok: false, why: 'The catheter came off: take a new kit.' };
-  if (s >= A.P.seal.breakMinMM && s <= A.P.seal.breakMaxMM + 2) { A.kit.broken = true; complete(A, 'seal'); return { ok: true }; }
+  if (s >= A.P.seal.breakMinMM && s < A.P.seal.offMM) { A.kit.broken = true; complete(A, 'seal'); return { ok: true }; }
   return { ok: false, why: s < A.P.seal.breakMinMM ? 'Slide it a little further.' : '' };
 }
 export function replaceKit(A) {
@@ -616,7 +618,7 @@ export function update(A, dt) {
   }
   // the prep dries
   if (A.clean.dryFrom != null && !A.clean.dry && A.t - A.clean.dryFrom >= P.clean.dryS) {
-    A.clean.dry = true; complete(A, 'clean'); log(A, 'dry');
+    A.clean.dry = true; A.clean.dryAt = A.t; complete(A, 'clean'); log(A, 'dry');
   }
   // a pushed vein springs back when the needle stops pushing
   if (!A.vein.pushing) {

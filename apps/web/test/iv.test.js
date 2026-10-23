@@ -213,3 +213,24 @@ test('the flush cannot push more than the syringe holds', () => {
   for (let i = 0; i < 20; i++) { IV.flush(A, 1, 1); IV.update(A, 1); }
   assert.ok(A.syringe.vol <= cfg.procedure.flush.volumeML + 1e-9, `${A.syringe.vol} mL`);
 });
+
+test('the seal breaks off the needle and back: it counts how far the catheter went, not where it ends', () => {
+  const A = IV.createAttempt(cfg, { mode: 'practice' });
+  IV.sealSlide(A, 2); IV.sealSlide(A, 0);           // out 2 mm, back home
+  assert.equal(IV.sealRelease(A, 2).ok, true);
+  assert.ok(A.kit.broken && A.done.has('seal'));
+  const B = IV.createAttempt(cfg, { mode: 'practice' });
+  IV.sealSlide(B, 0.5); IV.sealSlide(B, 0);         // not far enough to break it
+  assert.equal(IV.sealRelease(B, 0.5).ok, false);
+  assert.ok(!B.done.has('seal'));
+});
+
+test('the prep needs no drying wait: the site is clean once scrubbed', () => {
+  const A = IV.createAttempt(cfg, { mode: 'guided' });
+  for (const p of cfg.procedure.prep) IV.tickPrep(A, p);
+  IV.applyTourniquet(A, true); run(A, 26);
+  IV.markSite(A, SITE);
+  IV.cleanStroke(A, 1, cfg.procedure.clean.scrubS);
+  IV.update(A, 0.05);
+  assert.ok(A.done.has('clean') && A.clean.dry);
+});

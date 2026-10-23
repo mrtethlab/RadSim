@@ -5,7 +5,7 @@
   "procedure": {
     "prep": ["hygiene", "gloves", "patientId", "order"],
     "tourniquet": { "fillS": 25, "releaseS": 10, "warnS": 60, "limitS": 120 },
-    "clean": { "radiusMM": 25, "coverage": 0.9, "scrubS": 10, "dryS": 15 },
+    "clean": { "radiusMM": 25, "coverage": 0.9, "scrubS": 10, "dryS": 0 },
     "seal": { "breakMinMM": 1, "breakMaxMM": 4, "offMM": 8 },
     "align": { "tolDeg": 10, "acrossDeg": 45 },
     "angles": { "pierceMin": 15, "pierceMax": 30, "steepOver": 35, "lowerMin": 5, "lowerMax": 15, "threadMax": 10, "lowerWithinS": 5 },
@@ -21,10 +21,9 @@
     "pressureS": 5,
     "maxDepthMM": 7,
     "gauges": {
-      "18": { "odMM": 1.3, "minVeinMM": 4.0, "color": "#3cc88f" },
-      "20": { "odMM": 1.1, "minVeinMM": 3.0, "color": "#f08a9b" },
-      "22": { "odMM": 0.9, "minVeinMM": 2.4, "color": "#33c3d3" },
-      "24": { "odMM": 0.7, "minVeinMM": 1.8, "color": "#f2cd2c" }
+      "20": { "odMM": 1.1, "minVeinMM": 3.0, "color": "#f08a9b", "pack": "#f6b3bf", "label": "20 GA 1.00 IN  (1.1 x 25 mm)" },
+      "22": { "odMM": 0.9, "minVeinMM": 2.4, "color": "#33c3d3", "pack": "#8fd3e8", "label": "22 GA 1.00 IN  (0.9 x 25 mm)" },
+      "24": { "odMM": 0.7, "minVeinMM": 1.8, "color": "#f2cd2c", "pack": "#f5dd6a", "label": "24 GA 0.75 IN  (0.7 x 19 mm)" }
     }
   },
 
@@ -32,8 +31,8 @@
     { "id": "prep", "title": "Prep", "do": "Tick each item.", "keys": [["Click", "tick"]] },
     { "id": "tourniquet", "title": "Apply tourniquet", "do": "Above the elbow.", "keys": [["Tool", "tourniquet"], ["Click", "the arm"]] },
     { "id": "palpate", "title": "Find a vein", "do": "Feel for a bouncy, straight vein, then mark it.", "keys": [["Hold F", "palpate"], ["Click", "mark"]] },
-    { "id": "clean", "title": "Clean the site", "do": "Scrub the whole circle, then let it dry.", "keys": [["Tool", "alcohol swab"], ["Hold + drag", "scrub"]] },
-    { "id": "seal", "title": "Break the seal", "do": "Slide the hub a few mm, then let go.", "keys": [["Drag", "hub forward"], ["Release", "reseat"]] },
+    { "id": "clean", "title": "Clean the site", "do": "Open a swab, then scrub the whole circle.", "keys": [["Tool", "alcohol swab"], ["Hold + drag", "scrub"]] },
+    { "id": "seal", "title": "Break the seal", "do": "Open the IV. Slide the catheter 1 mm off the needle, then back.", "keys": [["Drag →", "break"], ["Drag ←", "reseat"]] },
     { "id": "align", "title": "Line up with the vein", "do": "Point the needle along the vein.", "keys": [["Q / E", "rotate"]] },
     { "id": "anchor", "title": "Anchor the skin", "do": "Hold traction until the catheter is in.", "keys": [["Hold Space", "traction"]] },
     { "id": "insert", "title": "Insert", "do": "Pierce at 15-30°. Watch the flash chamber.", "keys": [["Hold Space", "traction"], ["Drag ↕", "advance"], ["Right-drag ↕", "angle"]] },

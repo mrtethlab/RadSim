@@ -2031,6 +2031,7 @@ body.iv-hide-help #ivChecklistWrap, body.iv-hide-help .ivstep .ivs-keys{display:
 .ivhot{position:absolute; inset:0; z-index:15; pointer-events:none}
 .ivhot button{position:absolute; transform:translate(-50%,-50%); width:30px; height:30px; border-radius:50%;
   border:2px solid rgba(255,255,255,0.7); background:rgba(20,30,40,0.55); color:#fff; font-size:13px; cursor:pointer; pointer-events:auto; padding:0}
+.ivhot button.cue{pointer-events:none; width:26px; height:26px; background:transparent; border:2px solid var(--amber); animation:ivglow 1.4s ease-in-out infinite}
 .ivhot button.want{border-color:var(--amber); animation:ivglow 1.4s ease-in-out infinite}
 /* the cross-section: pixel art, upscaled with nearest neighbour */
 .ivxs{position:absolute; left:14px; bottom:14px; z-index:16; padding:8px; border-radius:10px; background:rgba(10,14,20,0.82);
@@ -2056,19 +2057,6 @@ body.mode-iv .ivflash.gone{display:none}
 body.mode-iv .ivviews{display:flex; gap:4px}
 .ivviews button{padding:5px 9px; border-radius:7px; border:1px solid rgba(255,255,255,0.12); background:rgba(12,18,26,0.7); color:var(--dmuted); font-size:11px; cursor:pointer}
 .ivviews button.on{color:#fff; border-color:var(--cyan)}
-/* the seal: drag the hub a few mm along the needle */
-.ivseal{position:absolute; left:50%; bottom:22px; transform:translateX(-50%); z-index:17; padding:12px 16px; border-radius:12px;
-  background:rgba(12,18,26,0.88); border:1px solid rgba(255,255,255,0.1)}
-body.mode-iv .ivseal{display:none}
-body.mode-iv .ivseal.show{display:block}
-.ivseal-track{position:relative; width:300px; height:44px}
-.ivseal-needle{position:absolute; left:0; right:0; top:21px; height:2px; background:#cfd6dd}
-.ivseal-ok{position:absolute; left:100px; width:30px; top:8px; height:28px; border-radius:4px; background:rgba(70,209,127,0.16); border:1px dashed rgba(70,209,127,0.6)}
-.ivseal-hub{position:absolute; left:80px; top:10px; width:30px; height:24px; border-radius:5px; background:#e86aa0; cursor:ew-resize; box-shadow:0 0 0 2px rgba(255,255,255,0.3); touch-action:none}
-.ivseal.off .ivseal-hub{background:#ff5050}
-.ivseal-foot{display:flex; justify-content:space-between; align-items:center; margin-top:4px; font:12px ui-monospace,Menlo,Consolas,monospace; color:var(--dmuted)}
-.ivseal-foot button{display:none; padding:4px 10px; border-radius:6px; border:1px solid var(--amber); background:transparent; color:var(--amber); cursor:pointer}
-.ivseal.off .ivseal-foot button{display:inline-block}
 /* the debrief */
 .ivdebrief{position:absolute; inset:0; z-index:30; align-items:center; justify-content:center; background:rgba(6,10,14,0.6)}
 body.mode-iv .ivdebrief{display:none}
