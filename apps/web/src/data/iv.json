@@ -15,15 +15,15 @@
       "flatPerMM": 0.45, "doubleWallFlat": 0.65, "reboundS": 0.3, "tqSwell": 0.35, "backWallMM": 0.3, "rollOnReleaseMM": 1.2
     },
     "thread": { "tickMM": 2.0, "resistTicks": 3 },
-    "flush": { "volumeML": 10, "mlPerMM": 0.25, "maxRateMLs": 1.5, "infiltrationML": 1.5 },
+    "flush": { "volumeML": 10, "mlPerMM": 0.25, "minRateMLs": 1, "infiltrationML": 1.5, "aspirateMaxML": 1.5, "bloodCheckML": 0.2 },
     "dressing": { "tolMM": 9 },
     "twistLockDeg": 90,
     "pressureS": 5,
     "maxDepthMM": 7,
     "gauges": {
-      "20": { "odMM": 1.1, "minVeinMM": 3.0, "color": "#f08a9b", "pack": "#f6b3bf", "label": "20 GA 1.00 IN  (1.1 x 25 mm)" },
-      "22": { "odMM": 0.9, "minVeinMM": 2.4, "color": "#33c3d3", "pack": "#8fd3e8", "label": "22 GA 1.00 IN  (0.9 x 25 mm)" },
-      "24": { "odMM": 0.7, "minVeinMM": 1.8, "color": "#f2cd2c", "pack": "#f5dd6a", "label": "24 GA 0.75 IN  (0.7 x 19 mm)" }
+      "20": { "odMM": 1.1, "rateMLs": 10, "minVeinMM": 3.0, "color": "#f08a9b", "pack": "#f6b3bf", "label": "20 GA 1.00 IN  (1.1 x 25 mm)" },
+      "22": { "odMM": 0.9, "rateMLs": 6.5, "minVeinMM": 2.4, "color": "#33c3d3", "pack": "#8fd3e8", "label": "22 GA 1.00 IN  (0.9 x 25 mm)" },
+      "24": { "odMM": 0.7, "rateMLs": 3, "minVeinMM": 1.8, "color": "#f2cd2c", "pack": "#f5dd6a", "label": "24 GA 0.75 IN  (0.7 x 19 mm)" }
     }
   },
 
@@ -38,14 +38,14 @@
     { "id": "insert", "title": "Insert", "do": "Pierce at 15-30°. Watch the flash chamber.", "keys": [["Hold Space", "traction"], ["Left-drag ↕", "advance"], ["Right-drag ↕", "angle"]] },
     { "id": "flash", "title": "Flashback", "do": "Lower the angle, then advance 1-2 mm more.", "keys": [["Right-drag ↕", "angle"], ["Left-drag ↕", "advance"]] },
     { "id": "thread", "title": "Thread the catheter", "do": "Keep the needle still; push the catheter in.", "keys": [["Hold Space", "traction"], ["Wheel ↑", "thread"]] },
-    { "id": "withdraw", "title": "Withdraw the needle", "do": "Pull it back into its shield.", "keys": [["Left-drag ↓", "on the needle"]] },
+    { "id": "withdraw", "title": "Withdraw the needle", "do": "Pull it back into its shield, then into the sharps container.", "keys": [["Left-drag ↓", "on the needle"]] },
     { "id": "clamp1", "title": "Close the clamp", "do": "Before opening the system.", "keys": [["Click", "clamp"]], "critical": true },
     { "id": "portcap", "title": "Remove the port cap", "do": "", "keys": [["Click", "port cap"]] },
     { "id": "tqoff", "title": "Release the tourniquet", "do": "", "keys": [["Click", "tourniquet"]], "critical": true },
     { "id": "dressing", "title": "Apply Tegaderm", "do": "Window over the site, then press each edge.", "keys": [["Tool", "Tegaderm"], ["Click", "site, then edges"]] },
     { "id": "syringe", "title": "Attach the flush", "do": "", "keys": [["Tool", "syringe"], ["Click", "port"], ["Q / E", "twist"]] },
     { "id": "clamp2", "title": "Open the clamp", "do": "", "keys": [["Click", "clamp"]] },
-    { "id": "flush", "title": "Flush", "do": "10 mL, steadily. Stop if it swells.", "keys": [["Left-drag ↑", "plunger"]] },
+    { "id": "flush", "title": "Flush", "do": "Pull back for blood, then push 10 mL steadily. Stop if it swells.", "keys": [["Left-drag ↓", "pull back"], ["Left-drag ↑", "push"]] },
     { "id": "clamp3", "title": "Close the clamp", "do": "Before the syringe comes off.", "keys": [["Click", "clamp"]], "critical": true },
     { "id": "syringeOff", "title": "Remove the flush", "do": "", "keys": [["Q / E", "twist off"]] },
     { "id": "cap", "title": "Cap the port", "do": "", "keys": [["Tool", "cap"], ["Click", "port"], ["Q / E", "twist"]] }

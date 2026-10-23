@@ -47,13 +47,16 @@ test('a textbook attempt runs all 21 steps, with nothing logged against it', () 
   assert.ok(A.cath.hubbed, 'threaded to the hub');
   IV.setTraction(A, false);
   IV.withdrawNeedle(A, 40);
+  IV.disposeNeedle(A);                          // into the sharps container
   IV.toggleClamp(A);                            // close
   IV.removePortCap(A);
   IV.releaseTourniquet(A);
   IV.placeDressing(A, 2); [0, 1, 2, 3].forEach((i) => IV.pressEdge(A, i));
   IV.attachSyringe(A); IV.twistSyringe(A, 90);
   IV.toggleClamp(A);                            // open
-  for (let i = 0; i < 12 && !A.done.has('flush'); i++) { IV.flush(A, 1, 1); IV.update(A, 1); }
+  assert.equal(IV.flush(A, 1, 1).ok, false, 'Guided: no flush before the pull-back');
+  assert.equal(IV.aspirate(A, 0.5).blood, true, 'blood comes back');
+  for (let i = 0; i < 12 && !A.done.has('flush'); i++) { IV.flush(A, 1, 0.8); IV.update(A, 0.8); }
   IV.toggleClamp(A);                            // close
   IV.twistSyringe(A, -90);
   IV.attachCap(A); IV.twistCap(A, 90);
@@ -206,10 +209,11 @@ test('the flush cannot push more than the syringe holds', () => {
   IV.setPitch(A, 12); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
   IV.setPitch(A, 8);
   for (let i = 0; i < 15 && !A.cath.hubbed; i++) IV.thread(A, 1);
-  IV.setTraction(A, false); IV.withdrawNeedle(A, 40);
+  IV.setTraction(A, false); IV.withdrawNeedle(A, 40); IV.disposeNeedle(A);
   IV.toggleClamp(A); IV.removePortCap(A); IV.releaseTourniquet(A);
   IV.placeDressing(A, 2); [0, 1, 2, 3].forEach((i) => IV.pressEdge(A, i));
   IV.attachSyringe(A); IV.twistSyringe(A, 90); IV.toggleClamp(A);
+  IV.aspirate(A, 0.5);
   for (let i = 0; i < 20; i++) { IV.flush(A, 1, 1); IV.update(A, 1); }
   assert.ok(A.syringe.vol <= cfg.procedure.flush.volumeML + 1e-9, `${A.syringe.vol} mL`);
 });
@@ -233,4 +237,80 @@ test('the prep needs no drying wait: the site is clean once scrubbed', () => {
   IV.cleanStroke(A, 1, cfg.procedure.clean.scrubS);
   IV.update(A, 0.05);
   assert.ok(A.done.has('clean') && A.clean.dry);
+});
+
+test('a steep thread catches on the back wall: logged, and the catheter rides over it to the hub', () => {
+  const A = toSkin(); IV.setPitch(A, 25);
+  advanceUntil(A, 20, (a) => a.flash.level > 0);
+  IV.setPitch(A, 12); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
+  IV.setPitch(A, 20);
+  for (let i = 0; i < 25 && !A.cath.hubbed; i++) IV.thread(A, 1);
+  assert.ok(A.errors.some((e) => e.code === 'bunched'));
+  assert.ok(!A.ended, 'the attempt goes on');
+  assert.ok(A.cath.hubbed, 'threaded to the hub');
+});
+
+test('once threading starts the needle is held: asking it to move is no fault', () => {
+  const A = toSkin(); IV.setPitch(A, 25);
+  advanceUntil(A, 20, (a) => a.flash.level > 0);
+  IV.setPitch(A, 12); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
+  IV.setPitch(A, 8); IV.thread(A, 1);
+  const p = A.needle.pitch, y = A.needle.yaw;
+  IV.setPitch(A, 20); IV.setYaw(A, 30); IV.advance(A, -1);
+  assert.equal(A.needle.pitch, p); assert.equal(A.needle.yaw, y);
+  assert.deepEqual(A.errors.map((e) => e.code), []);
+});
+
+test('the withdrawal ends in the sharps container', () => {
+  const A = toSkin(); IV.setPitch(A, 25);
+  advanceUntil(A, 20, (a) => a.flash.level > 0);
+  IV.setPitch(A, 12); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
+  IV.setPitch(A, 8);
+  for (let i = 0; i < 15 && !A.cath.hubbed; i++) IV.thread(A, 1);
+  IV.setTraction(A, false); IV.withdrawNeedle(A, 40);
+  assert.ok(A.needle.shielded && !A.done.has('withdraw'), 'shielded, not yet put away');
+  assert.equal(IV.disposeNeedle(A).ok, true);
+  assert.ok(A.done.has('withdraw'));
+});
+
+test('blood backs up the line with the clamp open: slow past the needle, fast without it; it stops at the cap and spills at an open port', () => {
+  const A = toSkin({ mode: 'practice' }); IV.setPitch(A, 25);
+  advanceUntil(A, 20, (a) => a.flash.level > 0);
+  IV.setPitch(A, 12); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
+  IV.setPitch(A, 8);
+  for (let i = 0; i < 15 && !A.cath.hubbed; i++) IV.thread(A, 1);
+  const b0 = A.line.blood; run(A, 1); const slow = A.line.blood - b0;
+  IV.withdrawNeedle(A, 40);
+  const b1 = A.line.blood; run(A, 0.3); const fast = A.line.blood - b1;
+  assert.ok(fast > slow * 3, `needle out fills faster: ${slow.toFixed(3)} vs ${fast.toFixed(3)} per`);
+  run(A, 3);
+  assert.equal(A.line.blood, 1, 'full to the capped port');
+  assert.equal(A.spill, 0, 'capped: nothing spills');
+  IV.removePortCap(A); run(A, 1);
+  assert.ok(A.spill > 0, 'open: it spills');
+});
+
+test('the flush speed is judged against the gauge: over its rating, or under 1 mL/s', () => {
+  const setUp = (gauge) => {
+    const A = toSkin({ mode: 'practice', gauge }); IV.setPitch(A, 25);
+    advanceUntil(A, 20, (a) => a.flash.level > 0);
+    IV.setPitch(A, 12); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
+    IV.setPitch(A, 8);
+    for (let i = 0; i < 15 && !A.cath.hubbed; i++) IV.thread(A, 1);
+    IV.withdrawNeedle(A, 40); IV.disposeNeedle(A);
+    IV.toggleClamp(A); IV.removePortCap(A); IV.releaseTourniquet(A);
+    IV.placeDressing(A, 2); [0, 1, 2, 3].forEach((i) => IV.pressEdge(A, i));
+    IV.attachSyringe(A); IV.twistSyringe(A, 90); IV.toggleClamp(A); IV.aspirate(A, 0.5);
+    return A;
+  };
+  const codes = (A) => A.errors.map((e) => e.code);
+  const push = (A, ml, dt) => { for (let i = 0; i < 400 && !A.done.has('flush'); i++) IV.flush(A, ml, dt); assert.ok(A.done.has('flush')); };
+  const ok = setUp(24); push(ok, 0.25, 0.1);       // 2.5 mL/s on a 24G (rated 3)
+  assert.ok(!codes(ok).includes('flushFast') && !codes(ok).includes('flushSlow'), codes(ok).join());
+  const fast = setUp(24); push(fast, 0.4, 0.1);    // 4 mL/s on a 24G
+  assert.ok(codes(fast).includes('flushFast'));
+  const big = setUp(20); push(big, 0.6, 0.1);      // 6 mL/s on a 20G (rated 10)
+  assert.ok(!codes(big).includes('flushFast') && !codes(big).includes('flushSlow'), codes(big).join());
+  const slow = setUp(22); push(slow, 0.05, 0.1);   // 0.5 mL/s
+  assert.ok(codes(slow).includes('flushSlow') && !codes(slow).includes('flushFast'));
 });

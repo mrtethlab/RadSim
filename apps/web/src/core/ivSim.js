@@ -52,7 +52,6 @@ export const ERRORS = {
   notLowered: { end: false, cat: 'insertion', pts: 3, msg: 'Angle not lowered after the flash', tip: 'On flash, drop to 10-15° before the last 1-2 mm.' },
   stoppedAtFlash: { end: false, cat: 'insertion', pts: 2, msg: 'Threaded at the first flash', tip: 'At first flash only the bevel is in: advance 1-2 mm so the catheter tip is too.' },
   threadSteep: { end: false, cat: 'insertion', pts: 3, msg: 'Threading at a steep angle', tip: 'Thread at 10° or less, or the catheter meets the back wall.' },
-  needleMoved: { end: false, cat: 'insertion', pts: 2, msg: 'Needle moved while threading', tip: 'Hold the needle still and push only the catheter.' },
   tractionEarly: { end: false, cat: 'insertion', pts: 3, msg: 'Traction released early', tip: 'Keep the skin anchored until the catheter is threaded.' },
   reinsert: { end: false, cat: 'insertion', pts: 4, msg: 'Needle pushed back into the catheter', tip: 'Never re-advance the needle into a threaded catheter: it can shear it.' },
   backWall: { end: true, cat: 'insertion', pts: 10, msg: 'Through the back wall', tip: 'After the flash, lower the angle before advancing.' },
@@ -60,7 +59,7 @@ export const ERRORS = {
   doubleWall: { end: true, cat: 'insertion', pts: 10, msg: 'Through both walls of a flattened vein', tip: 'Too shallow flattens the vein: enter at 15-30°.' },
   arterial: { end: true, cat: 'insertion', pts: 15, msg: 'Arterial puncture', tip: 'A pulsing, bright flash is an artery: feel for the pulse before you mark.' },
   threadOutside: { end: true, cat: 'insertion', pts: 10, msg: 'Threaded with the tip outside the vein', tip: 'Thread only once the catheter tip is in the lumen.' },
-  bunched: { end: true, cat: 'insertion', pts: 10, msg: 'Catheter bunched against the back wall', tip: 'Thread at 10° or less, and stop at resistance.' },
+  bunched: { end: false, cat: 'insertion', pts: 5, msg: 'Catheter caught on the back wall', tip: 'Thread at 10° or less, and stop at resistance.' },
   spill: { end: false, cat: 'securement', pts: 4, msg: 'Blood at the open port', tip: 'Close the clamp before the port is opened.' },
   tqWarn: { end: false, cat: 'time', pts: 0, msg: 'Tourniquet on over a minute', tip: '' },
   tqOver: { end: false, cat: 'time', pts: 5, msg: 'Tourniquet on too long', tip: 'Release the tourniquet within two minutes.' },
@@ -69,7 +68,10 @@ export const ERRORS = {
   syringeDirty: { end: false, cat: 'asepsis', pts: 4, msg: 'Syringe tip contaminated', tip: 'Keep the syringe tip off every surface but the port.' },
   capDirty: { end: false, cat: 'asepsis', pts: 4, msg: 'Cap contaminated', tip: 'Keep the cap off every surface but the port.' },
   flushClosed: { end: false, cat: 'securement', pts: 2, msg: 'Flushed against a closed clamp', tip: 'Open the clamp before you flush.' },
-  flushFast: { end: false, cat: 'securement', pts: 2, msg: 'Flushed too fast', tip: 'Push steadily, about 1 mL a second.' },
+  flushFast: { end: false, cat: 'securement', pts: 2, msg: 'Flushed faster than the catheter is rated for', tip: 'Keep the push under the rate printed on the port for its gauge.' },
+  flushSlow: { end: false, cat: 'securement', pts: 2, msg: 'Flushed too slowly', tip: 'Push steadily, at least 1 mL a second.' },
+  noBloodCheck: { end: false, cat: 'securement', pts: 3, msg: 'Flushed without checking for blood return', tip: 'Pull back on the syringe first: blood in it confirms the catheter is in the vein.' },
+  sharpsLeft: { end: false, cat: 'sequence', pts: 4, msg: 'Needle not put in the sharps container', tip: 'The needle goes straight into the sharps container once it is out.' },
   infiltration: { end: true, cat: 'securement', pts: 10, msg: 'Infiltration', tip: 'Swelling or blanching at the tip: stop, the catheter is out of the vein.' },
   disconnectOpen: { end: false, cat: 'securement', pts: 4, msg: 'Syringe off with the clamp open', tip: 'Close the clamp before you disconnect.' },
   portOpen: { end: false, cat: 'securement', pts: 5, msg: 'Port left uncapped', tip: 'Cap the port with a sterile Luer-lock cap.' },
@@ -100,10 +102,11 @@ export function createAttempt(cfg, opts = {}) {
     tip: 'outside', cathTip: 'outside',
     flash: { level: 0, lumenFor: 0, artery: false },
     cath: { thread: 0, hubbed: false, resist: 0, bunched: false, inVein: false },
+    line: { blood: 0 },
     traction: false, everTraction: false,
     clampOpen: true, portOpen: false,
     dressing: { placed: false, ok: false, edges: [false, false, false, false] },
-    syringe: { on: false, twist: 0, locked: false, dirty: false, vol: 0, lastT: 0 },
+    syringe: { on: false, twist: 0, locked: false, dirty: false, vol: 0, lastT: 0, drawn: 0, blood: 0, checked: false, rate: 0, pushT: 0 },
     cap: { on: false, twist: 0, locked: false, dirty: false },
     spill: 0, hematoma: 0, infiltration: 0,
     pressure: { removed: false, gauze: false, held: 0, done: false },
@@ -187,13 +190,13 @@ export function palpationCues(A, near) {
   const fill = A.tq.fill, out = [];
   for (const f of near) {
     const r = f.radius * (f.kind === 'vein' ? 1 + A.P.vein.tqSwell * fill : 1);
-    const reach = r + 2.5;
+    const reach = r + 1.5;
     const fall = Math.exp(-((f.dist / reach) ** 2));
-    let s = (r / 2) * (3 / Math.max(1.5, f.depth)) * fall;
+    let s = 0.7 * (r / 2) * (3 / Math.max(1.5, f.depth)) * fall;
     if (f.kind === 'vein') s *= 0.35 + 0.65 * fill;
     if (f.kind === 'artery') s *= 0.9;
     if (f.kind === 'tendon') s *= 1.2;
-    if (s > 0.12) out.push({ kind: f.kind, id: f.id, strength: clamp(s, 0, 1) });
+    if (s > 0.18) out.push({ kind: f.kind, id: f.id, strength: clamp(s, 0, 1) });
     if (f.kind === 'vein' && f.valveDist != null && f.valveDist < 3.5 && fall > 0.3) out.push({ kind: 'valve', id: f.id, strength: 0.5 * fall });
   }
   return out;
@@ -314,7 +317,7 @@ export function setTraction(A, on) {
   log(A, on ? 'tractionOn' : 'tractionOff');
 }
 export function setYaw(A, deg) {
-  if (A.cath.thread > 0) { if (Math.abs(deg - A.needle.yaw) > 0.5) addError(A, 'needleMoved'); return; }
+  if (A.cath.thread > 0) return;
   A.needle.yaw = clamp(deg, -90, 90);      // (in the skin it pivots about the tip, which stays put)
   if (!A.needle.inSkin && A.done.has('seal')) {
     const g = gate(A, 'align');
@@ -322,15 +325,14 @@ export function setYaw(A, deg) {
   }
 }
 export function setPitch(A, deg) {
-  if (A.cath.thread > 0) { if (Math.abs(deg - A.needle.pitch) > 0.5) addError(A, 'needleMoved'); return; }
+  if (A.cath.thread > 0) return;
   A.needle.pitch = clamp(deg, 2, 60);
   if (A.needle.inSkin) interact(A, 0);
 }
 /* Advance (mm, negative withdraws) the needle along its axis. */
 export function advance(A, mm) {
   if (A.cath.thread > 0) {
-    if (mm > 0 && A.needle.withdrawn > 0) addError(A, 'reinsert');
-    else if (Math.abs(mm) > 0.05) addError(A, 'needleMoved');
+    if (mm > 0 && A.needle.withdrawn > 0 && !A.needle.shielded) addError(A, 'reinsert');
     return { ok: false };
   }
   if (A.needle.s <= 0 && mm > 0) {
@@ -467,11 +469,11 @@ export function thread(A, ticks = 1) {
       if (A.cath.resist >= P.thread.resistTicks) { A.cath.bunched = true; addError(A, 'threadOutside'); return { ok: false }; }
       continue;
     }
-    if (A.needle.pitch > P.angles.threadMax) {
+    if (A.needle.pitch > P.angles.threadMax && !A.cath.bunched) {
       A.cath.resist++;
       addError(A, 'threadSteep');
       A.cath.thread += P.thread.tickMM * 0.3;
-      if (A.cath.resist >= P.thread.resistTicks + 2) { A.cath.bunched = true; addError(A, 'bunched'); return { ok: false }; }
+      if (A.cath.resist >= P.thread.resistTicks + 2) { A.cath.bunched = true; A.cath.resist = 0; addError(A, 'bunched'); return { ok: false, resist: true }; }
       continue;
     }
     if (!inLumen) { A.cath.resist++; continue; }
@@ -492,7 +494,16 @@ export function withdrawNeedle(A, mm) {
   const g = gate(A, 'withdraw'); if (!g.ok) return g;
   if (!A.cath.hubbed) return { ok: false, why: 'Thread the catheter first.' };
   A.needle.withdrawn = Math.max(0, A.needle.withdrawn + mm);
-  if (A.needle.withdrawn >= P_len(A) && !A.needle.shielded) { A.needle.shielded = true; log(A, 'shielded'); complete(A, 'withdraw'); }
+  if (A.needle.withdrawn >= P_len(A) && !A.needle.shielded) { A.needle.shielded = true; log(A, 'shielded'); }
+  return { ok: true };
+}
+// the shielded needle into the sharps container
+export function disposeNeedle(A) {
+  if (!A.needle.shielded) return { ok: false, why: 'Withdraw the needle first.' };
+  if (A.needle.disposed) return { ok: true };
+  const g = gate(A, 'withdraw'); if (!g.ok) return g;
+  A.needle.disposed = true; log(A, 'disposed');
+  complete(A, 'withdraw');
   return { ok: true };
 }
 const P_len = (A) => A.P.needle.needleLenMM;
@@ -538,7 +549,7 @@ export function attachSyringe(A, touchedOther = false) {
   const g = gate(A, 'syringe'); if (!g.ok) return g;
   if (!A.portOpen) return { ok: false, why: 'Take the port cap off first.' };
   if (touchedOther) { A.syringe.dirty = true; addError(A, 'syringeDirty'); }
-  A.syringe.on = true; A.syringe.twist = 0; A.syringe.locked = false;
+  Object.assign(A.syringe, { on: true, twist: 0, locked: false, drawn: 0, blood: 0, checked: false, rate: 0, pushT: 0, pushed: 0 });
   return { ok: true };
 }
 export function twistSyringe(A, deg) {
@@ -560,16 +571,48 @@ export function twistSyringe(A, deg) {
   }
   return { ok: true };
 }
-/* Push the plunger: mL, over dtS seconds. */
+/* Pull the plunger back: mL. With the catheter in the vein, blood comes back into the syringe and
+   clouds the saline — the check that it is in before anything is pushed. */
+export function aspirate(A, ml) {
+  if (!A.syringe.locked) return { ok: false };
+  const g = gate(A, 'flush'); if (!g.ok) return g;
+  if (!A.clampOpen) return { ok: false, resist: true, why: 'The clamp is closed.' };
+  const P = A.P.flush, s = A.syringe;
+  ml = Math.min(ml, Math.max(0, P.aspirateMaxML - s.drawn));
+  s.drawn += ml;
+  const tipIn = A.cath.inVein && A.cath.hubbed && !A.pierce.back && !A.pierce.side;
+  if (tipIn) { s.blood += ml * 0.8; A.line.blood = 1; }
+  if (s.blood >= P.bloodCheckML) s.checked = true;
+  return { ok: true, blood: tipIn };
+}
+/* Push the plunger: mL, over dtS seconds. What was drawn back goes in first. */
 export function flush(A, ml, dtS) {
   if (!A.syringe.locked) return { ok: false };
   const g = gate(A, 'flush'); if (!g.ok) return g;
   if (!A.clampOpen) { addError(A, 'flushClosed'); return { ok: false, resist: true }; }
-  const P = A.P.flush;
-  const room = Math.max(0, P.volumeML - A.syringe.vol);
+  const P = A.P.flush, s = A.syringe;
+  if (!s.checked) {
+    if (A.mode === 'guided') return { ok: false, why: 'Pull back first: check for blood.' };
+    addError(A, 'noBloodCheck');
+  }
+  const pushed = ml;
+  if (s.drawn > 0) {
+    const back = Math.min(ml, s.drawn);
+    s.blood = Math.max(0, s.blood - back * (s.blood / s.drawn));
+    s.drawn -= back; ml -= back;
+  }
+  const room = Math.max(0, P.volumeML - s.vol);
   ml = Math.min(ml, room);
-  A.syringe.vol += ml;
-  if (dtS > 0 && ml / dtS > P.maxRateMLs * 1.6 && ml > 0.2) addError(A, 'flushFast');
+  s.vol += ml;
+  A.line.blood = Math.max(0, A.line.blood - ml * 0.6);
+  // the speed: a running average while the plunger moves (the caller leaves pauses out of dtS)
+  const dt = Math.max(1e-3, dtS || 0);
+  if (pushed > 0) {
+    s.pushT += dt; s.pushed = (s.pushed || 0) + pushed;
+    const k = Math.min(1, dt / 0.3);
+    s.rate = s.rate * (1 - k) + (pushed / dt) * k;
+    if (s.rate > A.P.gauges[A.gauge].rateMLs) addError(A, 'flushFast');
+  }
   const tipIn = A.cath.inVein && A.cath.hubbed && !A.pierce.back && !A.pierce.side;
   if (!tipIn) {
     A.infiltration += ml;
@@ -577,7 +620,10 @@ export function flush(A, ml, dtS) {
     return { ok: true, resist: true };
   }
   if (A.tq.on) addError(A, 'tqLeft');
-  if (A.syringe.vol >= P.volumeML) complete(A, 'flush');
+  if (s.vol >= P.volumeML && !A.done.has('flush')) {
+    if (s.pushed / Math.max(1e-3, s.pushT) < P.minRateMLs) addError(A, 'flushSlow');
+    complete(A, 'flush');
+  }
   return { ok: true };
 }
 export function attachCap(A, touchedOther = false) {
@@ -644,9 +690,16 @@ export function update(A, dt) {
   }
   // a breached vein bleeds into the tissue
   if (A.pierce.back || A.pierce.side || A.pierce.artery) A.hematoma = clamp(A.hematoma + dt * (A.pierce.artery ? 0.25 : 0.12), 0, 1);
-  // an open system bleeds at the port
+  // blood backs up the extension set while the clamp is open and the catheter is in the vein:
+  // slowly past the needle still inside it, fast once that is out; a capped port stops it
   const inVein = A.cath.hubbed && A.cath.inVein;
-  if (A.portOpen && A.clampOpen && inVein && !A.syringe.on) {
+  const inLumen = inVein || (A.cath.thread > 0 && A.cath.inVein) || (A.flash.level > 0 && A.cathTip === 'lumen');
+  if (inLumen && A.clampOpen && !A.ended && !A.syringe.on) {
+    const out = A.needle.shielded ? 1 : clamp(A.needle.withdrawn / P.needle.needleLenMM, 0, 1);
+    A.line.blood = clamp(A.line.blood + dt * (0.03 + 0.97 * out) * (A.tq.on ? 1.6 : 1), 0, 1);
+  }
+  // an open system bleeds at the port, once the blood has reached it
+  if (A.portOpen && A.clampOpen && inVein && !A.syringe.on && !A.cap.on && A.line.blood >= 1) {
     A.spill = clamp(A.spill + dt * (A.tq.on ? 0.6 : 0.25), 0, 1);
     if (A.spill > 0.05) addError(A, 'spill');
   }

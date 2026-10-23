@@ -2017,6 +2017,7 @@ body.iv-hide-help #ivChecklistWrap, body.iv-hide-help .ivstep .ivs-keys{display:
 .ivs-prog{position:relative; height:17px; margin-top:8px; border-radius:9px; background:rgba(255,255,255,0.1); overflow:hidden}
 .ivs-prog i{position:absolute; left:0; top:0; bottom:0; width:0; background:var(--cyan); opacity:.75; transition:width .15s}
 .ivs-prog.dry i{background:#7fb6ff}
+.ivs-prog.bad i{background:#ff6b5f}
 .ivs-prog span{position:relative; display:block; text-align:center; font-size:10.5px; line-height:17px; color:#fff; letter-spacing:.04em}
 .ivk{font-size:12px; color:var(--dmuted)}
 .ivk b{display:inline-block; margin-right:5px; padding:1px 7px; border-radius:5px; background:#2a3541; color:#fff; font-weight:600; font-size:11px}

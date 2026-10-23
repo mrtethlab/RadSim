@@ -187,7 +187,7 @@ function makeRoom() {
   const extRest = { curve: [[-0.3, 0, -0.25], [-1.0, 0.05, -1.3], [-1.8, 0.05, -2.0], [-2.6, 0.05, -2.3], [-3.5, 0.05, -2.45], [-4.45, 0.05, -2.4]],
     clamp: [-2.6, 0.12, -2.3], port: [-6.3, 0.05, -2.4], cap: [-7.15, 0.05, -2.4] };
   const tubeCurve = new THREE.CatmullRomCurve3(extRest.curve.map((p) => new THREE.Vector3(...p)));
-  const tubing = new THREE.Mesh(new THREE.TubeGeometry(tubeCurve, 40, 0.1, 8, false), clear(0xf4f8fb, 0.6));
+  const tubing = new THREE.Mesh(new THREE.TubeGeometry(tubeCurve, 40, 0.1, 8, false), clear(0xf4f8fb, 0.32));
   // the pinch clip: a base, a jaw hinged at the back that presses the tube, a hook at the front
   const clampM = new THREE.Group();
   const navy = mat(NAVY, { roughness: 0.45 });
@@ -204,12 +204,16 @@ function makeRoom() {
   const portBody = new THREE.Mesh(new THREE.LatheGeometry(prof, 20), navy);
   portBody.rotation.z = Math.PI / 2; portBody.position.x = 1.85; port.add(portBody);
   port.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.32, 16), mat(gaugeCol)), 1.55));
-  port.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.3, 14), clear(0xf2f6f9, 0.7)), -0.45));
-  const portCap = new THREE.Group();
+  const portTip = alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.3, 14), clear(0xf2f6f9, 0.7)), -0.45);
+  port.add(portTip);
+  const portCap = new THREE.Group(); portCap.position.x = -0.85; port.add(portCap);
   portCap.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.7, 14), clear(0xf3f6f8, 0.6))));
   portCap.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.24, 0.12, 14), clear(0xffffff, 0.8)), -0.32));
-  clampM.position.set(...extRest.clamp); port.position.set(...extRest.port); portCap.position.set(...extRest.cap);
-  const ext = new THREE.Group(); ext.add(tubing, clampM, port, portCap);
+  clampM.position.set(...extRest.clamp); port.position.set(...extRest.port);
+  // the blood in the line: a red core in the tubing, shown as far along as it has come
+  const bloodTube = new THREE.Mesh(new THREE.TubeGeometry(tubeCurve, 40, 0.075, 6, false), new THREE.MeshBasicMaterial({ color: 0x8a0d16 }));
+  bloodTube.geometry.setDrawRange(0, 0);
+  const ext = new THREE.Group(); ext.add(tubing, bloodTube, clampM, port);
   // the hands that break the seal: a gloved thumb and finger pinching the wings and flash chamber,
   // another pair on the needle housing; the first pair rides forward with the catheter
   const glove = mat(0x6b8fd6, { roughness: 0.6 });
@@ -241,7 +245,9 @@ function makeRoom() {
   const collar = alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.3, 16), clear(0xffffff, 0.6)), -0.25);
   syringe.add(barrel, print, flange, tip, collar);
   const saline = alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.7, 1, 20), clear(0xd6ecff, 0.45)));
-  syringe.add(saline);
+  const sBlood = alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.66, 0.66, 1, 18), clear(0x9a1020, 0.5)));
+  sBlood.visible = false;
+  syringe.add(saline, sBlood);
   const plunger = new THREE.Group();
   plunger.add(alongX(new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.35, 20), mat(0x1c1c1e, { roughness: 0.7 })), -0.18));
   const rodA = new THREE.Mesh(new THREE.BoxGeometry(6.3, 0.12, 0.95), clear(0xffffff, 0.85)); rodA.position.x = -3.5;
@@ -256,6 +262,9 @@ function makeRoom() {
   for (const y of [0.06, 0.18]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.08, 16), lc); r.position.y = y; luer.add(r); }
   const seal = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.08, 16), mat(0xf2f0fa, { transparent: true, opacity: 0.9 })); seal.position.y = 0.8; luer.add(seal);
   luer.visible = false; group.add(luer);
+  // blood spilled at an open port
+  const leak = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 0.02, 24), new THREE.MeshBasicMaterial({ color: 0x7a0a12, transparent: true, opacity: 0.85 }));
+  leak.visible = false; group.add(leak);
   // the alcohol swab, under the fingers while scrubbing
   const swab = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.08, 2.2), mat(0xfafafa, { roughness: 0.95 }));
   swab.visible = false; group.add(swab);
@@ -269,14 +278,18 @@ function makeRoom() {
   gauze.visible = false; group.add(gauze);
   const finger = new THREE.Mesh(new THREE.SphereGeometry(0.45, 16, 12), mat(0x6b8fd6, { transparent: true, opacity: 0.85 }));
   finger.visible = false; group.add(finger);
-  R3 = { group, board, kit, needle, cathM, hub, housing, flashFill, ext, clampM, clampJaw: pivot, wings, sheath, hands, port, portCap, tubing, extRest, extAt: extRest, drapeKey: '',
-    syringe, plunger, saline, luer, swab, band, thumb, gauze, finger, patch: null, rings: [], blood: null };
+  R3 = { group, board, kit, needle, cathM, hub, housing, flashFill, ext, clampM, clampJaw: pivot, wings, sheath, hands, port, portCap, portTip, bloodTube, tubing, extRest, extAt: extRest, drapeKey: '',
+    syringe, plunger, saline, sBlood, luer, swab, leak, band, thumb, gauze, finger, patch: null, rings: [], blood: null };
   R3.prep = buildPrep(THREE, mat, clear, group);
 }
 function disposeRoom() {
   if (!R3) return;
   ctx.three.scene.remove(R3.group);
-  R3.group.traverse((o) => { o.geometry?.dispose?.(); if (o.material?.map) o.material.map.dispose(); o.material?.dispose?.(); });
+  R3.group.traverse((o) => {
+    o.geometry?.dispose?.();
+    // (a mesh may carry one material or one per face)
+    for (const m of [].concat(o.material || [])) { m.map?.dispose?.(); m.dispose?.(); }
+  });
   R3 = null;
 }
 
@@ -388,7 +401,7 @@ function paint() {
     const v = V.getContext('2d', { willReadFrequently: true }), mk = M.getContext('2d', { willReadFrequently: true });
     mk.fillStyle = '#000'; mk.fillRect(0, 0, M.width, M.height);
     mk.globalCompositeOperation = 'lighten';
-    v.strokeStyle = 'rgb(62,82,140)'; v.lineCap = mk.lineCap = 'round'; v.lineJoin = 'round';
+    v.strokeStyle = 'rgb(74,88,136)'; v.lineCap = mk.lineCap = 'round'; v.lineJoin = 'round';
     for (const f of G.feats) {
       if (f.kind !== 'vein') continue;
       const lw = Math.max(2, f.radius * 2 * (1 + 0.3 * fill) / 10 * PX_PER_CM);
@@ -410,10 +423,12 @@ function paint() {
     const bk = B.getContext('2d', { willReadFrequently: true });
     bk.filter = 'blur(9px)'; bk.drawImage(M, 0, 0);
     const vd = v.getImageData(0, 0, V.width, V.height), md = bk.getImageData(0, 0, B.width, B.height).data;
-    const base = 0.3 + 0.3 * fill;
+    const base = 0.2 + 0.22 * fill;
     for (let o = 3; o < vd.data.length; o += 4) vd.data[o] = vd.data[o] * md[o - 3] / 255 * base;
     v.putImageData(vd, 0, 0);
-    g.save(); g.filter = 'blur(3px)'; g.drawImage(V, 0, 0); g.restore();
+    // (seen through the skin: a wide haze and, over it, a soft core — no edge anywhere)
+    g.save(); g.filter = 'blur(14px)'; g.globalAlpha = 0.85; g.drawImage(V, 0, 0);
+    g.filter = 'blur(6px)'; g.globalAlpha = 0.5; g.drawImage(V, 0, 0); g.restore();
   }
   if (A.mark) {
     const [mx, my] = toPx(A.mark.a, A.mark.l);
@@ -532,48 +547,63 @@ function orient(obj, pos, dir, up) {
    corner and the swab taken out; the IV's pack peeled open from its tab, the IV lifted out, and its
    seal broken in hand (the catheter slid a millimetre off the needle and back) before it goes to
    the arm. Prep-table frame: X along the limb, Y up, Z toward the patient. */
-const SWAB_AT = [-11, 0, 3], PACK_AT = [4, 0, 0], KIT_IN_PACK = [5.2, 0.45, 0.78];
-const PREP = { swab: 'closed', swabT: 0, swabLift: 0, pack: 'closed', packT: 0, lift: 0, sealPeak: 0, atSite: false };
-function resetPrep() { Object.assign(PREP, { swab: 'closed', swabT: 0, swabLift: 0, pack: 'closed', packT: 0, lift: 0, sealPeak: 0, atSite: false }); }
+const SWAB_AT = [-13, 0, 4], PACK_AT = [6, 0, -4], KIT_IN_PACK = [5.2, 0.45, 0.78];
+const SHARPS_AT = [-10, 0, -7], FLUSH_AT = [-3, 0, 6], TEGA_AT = [9, 0, 6], CAPP_AT = [16, 0, -6], GAUZE_AT = [17, 0, 4], TQ_AT = [-2, 0, 11.8];
+const PREP0 = { swab: 'closed', swabT: 0, swabPop: 0, swabLift: 0, pack: 'closed', packT: 0, lift: 0, sealPeak: 0, atSite: false,
+  flush: 'closed', flushT: 0, flushLift: 0, capOff: 0, sharps: 'held', sharpT: 0, flip: 0, drop: 0 };
+const PREP = { ...PREP0 };
+function resetPrep() { Object.assign(PREP, PREP0); }
 const kitAtSite = () => !!A && (A.done.has('seal') || A.needle.inSkin || PREP.atSite);
+// the spent needle is in hand, on its way to the sharps container
+const sharpsStage = () => !!A && A.needle.shielded && !A.needle.disposed && !A.ended;
 const LID = { L: 13.6, W: 7.4, x0: -6.8, nx: 72, nz: 8, y: 1.25, curl: 0.35, tab: 1.1 };
 
 function buildPrep(THREE, mat, clear, group) {
   const g = new THREE.Group(); group.add(g);
-  const table = new THREE.Mesh(new THREE.BoxGeometry(34, 0.6, 22), mat(0x8e979f, { metalness: 0.5, roughness: 0.45 }));
+  const ax = (m, x = 0) => { m.rotation.z = -Math.PI / 2; m.position.x = x; return m; };
+  const canvasTex = (w, h, draw) => {
+    const cv = document.createElement('canvas'); cv.width = w; cv.height = h; draw(cv.getContext('2d'), w, h);
+    const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+  };
+  const table = new THREE.Mesh(new THREE.BoxGeometry(40, 0.6, 26), mat(0x8e979f, { metalness: 0.5, roughness: 0.45 }));
   table.position.y = -0.3; g.add(table);
-  // ---- the alcohol swab: a foil packet, printed; its notched corner tears back along a diagonal
+
+  // ---- the alcohol swab: a printed foil packet; the strip across its top tears off from the notch,
+  // left to right, and the swab inside rides up out of the opening
   const sw = new THREE.Group(); sw.position.set(...SWAB_AT); g.add(sw);
-  const sc = document.createElement('canvas'); sc.width = sc.height = 256;
-  const c = sc.getContext('2d');
-  c.fillStyle = '#f6f7f9'; c.fillRect(0, 0, 256, 256);
-  c.strokeStyle = '#cfd4da'; c.lineWidth = 1;
-  for (let i = 8; i < 250; i += 5) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, 11); c.moveTo(i, 245); c.lineTo(i, 256); c.moveTo(0, i); c.lineTo(11, i); c.moveTo(245, i); c.lineTo(256, i); c.stroke(); }
-  c.fillStyle = '#2f74c0'; c.fillRect(26, 74, 204, 90);
-  c.fillStyle = '#fff'; c.textAlign = 'center'; c.font = 'bold 34px Arial, sans-serif';
-  c.fillText('ALCOHOL', 128, 114); c.fillText('SWAB', 128, 152);
-  c.fillStyle = '#2f74c0'; c.font = 'bold 15px Arial, sans-serif'; c.fillText('70% Isopropyl Alcohol', 128, 190);
-  c.fillStyle = '#4c5a68'; c.font = '12px Arial, sans-serif'; c.textAlign = 'left';
-  c.fillText('• For external use only', 40, 214); c.fillText('• Sterile', 40, 230);
-  c.strokeStyle = '#9aa4ae'; c.setLineDash([5, 4]); c.lineWidth = 2; c.beginPath(); c.moveTo(172, 2); c.lineTo(254, 84); c.stroke();
-  const stex = new THREE.CanvasTexture(sc); stex.colorSpace = THREE.SRGBColorSpace;
-  const uvFrom = (geo, off = [0, 0]) => {
+  const stex = canvasTex(256, 256, (c) => {
+    c.fillStyle = '#f6f7f9'; c.fillRect(0, 0, 256, 256);
+    c.strokeStyle = '#cfd4da'; c.lineWidth = 1;
+    for (let i = 8; i < 250; i += 5) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, 11); c.moveTo(i, 245); c.lineTo(i, 256); c.moveTo(0, i); c.lineTo(11, i); c.moveTo(245, i); c.lineTo(256, i); c.stroke(); }
+    c.fillStyle = '#2f74c0'; c.fillRect(26, 74, 204, 90);
+    c.fillStyle = '#fff'; c.textAlign = 'center'; c.font = 'bold 34px Arial, sans-serif';
+    c.fillText('ALCOHOL', 128, 114); c.fillText('SWAB', 128, 152);
+    c.fillStyle = '#2f74c0'; c.font = 'bold 15px Arial, sans-serif'; c.fillText('70% Isopropyl Alcohol', 128, 190);
+    c.fillStyle = '#4c5a68'; c.font = '12px Arial, sans-serif'; c.textAlign = 'left';
+    c.fillText('• For external use only', 40, 214); c.fillText('• Sterile', 40, 230);
+    // the tear: a notch at the top left, a dotted line across
+    c.fillStyle = '#8f99a3'; c.beginPath(); c.moveTo(0, 32); c.lineTo(12, 42); c.lineTo(0, 52); c.closePath(); c.fill();
+    c.strokeStyle = '#a7b0b9'; c.setLineDash([3, 4]); c.lineWidth = 1.5; c.beginPath(); c.moveTo(14, 42); c.lineTo(254, 42); c.stroke();
+    c.setLineDash([]); c.fillStyle = '#8f99a3'; c.font = 'bold 13px Arial, sans-serif'; c.fillText('TEAR →', 18, 32);
+  });
+  const uvFrom = (geo) => {
     const pos = geo.attributes.position, uv = [];
-    for (let i = 0; i < pos.count; i++) uv.push((pos.getX(i) + off[0] + 2.75) / 5.5, (pos.getY(i) + off[1] + 2.75) / 5.5);
+    for (let i = 0; i < pos.count; i++) uv.push((pos.getX(i) + 2.75) / 5.5, (pos.getY(i) + 2.75) / 5.5);
     geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
     return geo;
   };
-  const back = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.08, 5.5), mat(0xe9ecef));
-  back.position.y = 0.04; sw.add(back);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(5.5, 0.08, 4.6), mat(0xe9ecef));
+  back.position.set(0, 0.04, 0.45); sw.add(back);
   const face = new THREE.Group(); face.rotation.x = -Math.PI / 2; face.position.y = 0.17; sw.add(face);
-  const fs = new THREE.Shape(); fs.moveTo(-2.75, -2.75); fs.lineTo(2.75, -2.75); fs.lineTo(2.75, 0.95); fs.lineTo(0.95, 2.75); fs.lineTo(-2.75, 2.75); fs.closePath();
+  const fs = new THREE.Shape(); fs.moveTo(-2.75, -2.75); fs.lineTo(2.75, -2.75); fs.lineTo(2.75, 1.85); fs.lineTo(-2.75, 1.85); fs.closePath();
   const sheet = mat(0xffffff, { map: stex, side: THREE.DoubleSide, roughness: 0.4, metalness: 0.15 });
   face.add(new THREE.Mesh(uvFrom(new THREE.ShapeGeometry(fs)), sheet));
-  const flapPivot = new THREE.Group(); flapPivot.position.set(1.85, 1.85, 0); face.add(flapPivot);
-  const ts = new THREE.Shape(); ts.moveTo(-0.9, 0.9); ts.lineTo(0.9, 0.9); ts.lineTo(0.9, -0.9); ts.closePath();
-  flapPivot.add(new THREE.Mesh(uvFrom(new THREE.ShapeGeometry(ts), [1.85, 1.85]), sheet));
-  const pad = new THREE.Mesh(new THREE.BoxGeometry(4.3, 0.1, 4.3), mat(0xfbfbfa, { roughness: 0.95 }));
-  pad.position.y = 0.11; sw.add(pad);
+  const stripGeo = new THREE.PlaneGeometry(5.5, 0.9, 22, 1); stripGeo.translate(0, 2.3, 0); uvFrom(stripGeo);
+  const stripRest = stripGeo.attributes.position.array.slice();
+  const strip = new THREE.Mesh(stripGeo, sheet); face.add(strip);
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.1, 4.0), mat(0xfbfbfa, { roughness: 0.95 }));
+  pad.position.set(0, 0.11, 0.6); sw.add(pad);
+
   // ---- the IV's pack: a clear blister, the IV laid in it, under a printed paper lid with a pull tab
   const pk = new THREE.Group(); pk.position.set(...PACK_AT); g.add(pk);
   const rr = (w, h, r) => {
@@ -606,7 +636,134 @@ function buildPrep(THREE, mat, clear, group) {
   const lid = new THREE.Mesh(lidGeo, mat(0xffffff, { map: ltex, roughness: 0.8 }));
   const lidBack = new THREE.Mesh(lidGeo, mat(0xf1f2f0, { side: THREE.BackSide, roughness: 0.9 }));
   pk.add(lid, lidBack);
-  return { group: g, swab: { group: sw, flapPivot, pad }, pack: { group: pk, lid, lidBack, lidGeo, rest, lc, ltex } };
+
+  // ---- the sharps container: yellow, labelled, a black safety tray in its lid hinged at the back,
+  // flipped up to drop what lies on it inside
+  const sh = new THREE.Group(); sh.position.set(...SHARPS_AT); g.add(sh);
+  const yel = mat(0xf2c418, { roughness: 0.45 }), blk = mat(0x1c1e21, { roughness: 0.6 });
+  const shBody = new THREE.Mesh(new THREE.BoxGeometry(16, 9, 9), yel); shBody.position.y = 4.5; sh.add(shBody);
+  const shTex = canvasTex(1024, 512, paintSharpsLabel);
+  const shLabel = new THREE.Mesh(new THREE.PlaneGeometry(12.4, 6.2), mat(0xffffff, { map: shTex, roughness: 0.6 }));
+  shLabel.position.set(-0.9, 4.4, 4.51); sh.add(shLabel);
+  const win = new THREE.Mesh(new THREE.CapsuleGeometry(0.6, 1.3, 4, 12), mat(0x3a1012, { roughness: 0.25 }));
+  win.scale.z = 0.12; win.position.set(6.5, 4.6, 4.5); sh.add(win);
+  const shLid = new THREE.Mesh(new THREE.BoxGeometry(16.6, 1.4, 9.6), yel); shLid.position.y = 9.7; sh.add(shLid);
+  for (const lx of [-5.5, 5.5]) { const k = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.5, 2.2), yel); k.position.set(lx, 10.6, 0.3); sh.add(k); }
+  const hole = new THREE.Mesh(new THREE.BoxGeometry(7.4, 0.06, 5.6), blk); hole.position.set(0, 10.42, 0.4); sh.add(hole);
+  const latch = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.9, 0.5), blk); latch.position.set(0, 9.1, 4.85); sh.add(latch);
+  for (let i = 0; i < 4; i++) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.12, 1.7, 0.1), mat(0x2c2f33)); r.position.set(-0.75 + i * 0.5, 9.1, 5.13); sh.add(r); }
+  for (const ex of [-8.45, 8.45]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.7, 1.8), blk); l.position.set(ex, 9.6, 0); sh.add(l); }
+  const trayPivot = new THREE.Group(); trayPivot.position.set(0, 10.55, -2.4); sh.add(trayPivot);
+  const tplate = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.18, 5.4), blk); tplate.position.set(0, 0.09, 2.7); trayPivot.add(tplate);
+  const tlip = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.8, 0.22), blk); tlip.position.set(0, 0.4, 5.3); trayPivot.add(tlip);
+  for (let i = 0; i < 6; i++) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 4.2), mat(0x2a2d31)); r.position.set(-2.9 + i * 1.16, 0.22, 2.6); trayPivot.add(r); }
+
+  // ---- the needle as it comes out (a child of the table, placed in its frame): the grey housing
+  // with its ridged push-off tab, the bare needle, the white shield closed over the tip
+  const spent = new THREE.Group(); spent.visible = false; g.add(spent);
+  const grey = mat(0xb6babe, { roughness: 0.55 }), white = mat(0xf4f4f2, { roughness: 0.45 });
+  const hb = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.72, 0.82), grey); hb.position.x = -3.5; spent.add(hb);
+  const hTop = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.18, 0.6), grey); hTop.position.set(-3.3, 0.44, 0); spent.add(hTop);
+  const ptab = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.7, 0.7), grey); ptab.position.set(-4.45, 0.55, 0); ptab.rotation.z = 0.3; spent.add(ptab);
+  for (let i = 0; i < 4; i++) { const r = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.62, 0.66), mat(0xa4a8ac)); r.position.set(-4.62 + i * 0.09, 0.62 - i * 0.03, 0); r.rotation.z = 0.3; spent.add(r); }
+  spent.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.2, 0.5, 12), grey), -2.2));
+  spent.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 4.4, 8), mat(0xd9dde2, { metalness: 0.9, roughness: 0.2 })), 0.15));
+  const shield = new THREE.Group(); shield.position.x = 2.9; spent.add(shield);
+  shield.add(ax(new THREE.Mesh(new THREE.CapsuleGeometry(0.3, 0.9, 6, 14), white), 0.25));
+  for (const sd of [1, -1]) {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.12, 0.5), white);
+    f.position.set(-0.55, 0.12 * sd, 0); f.rotation.z = 0.32 * sd; shield.add(f);
+  }
+
+  // ---- the flush, in its clear pouch, a printed paper header at one end torn back to open it; the
+  // syringe inside with a white cap on its tip
+  const fl = new THREE.Group(); fl.position.set(...FLUSH_AT); g.add(fl);
+  const pouch = new THREE.Mesh(new THREE.BoxGeometry(10.8, 0.5, 3.4), clear(0xeaf2f8, 0.3)); pouch.position.set(0.9, 0.25, 0); fl.add(pouch);
+  const hdrTex = canvasTex(256, 384, (c, w, h) => {
+    c.fillStyle = '#f7f8f6'; c.fillRect(0, 0, w, h);
+    c.save(); c.translate(w / 2, h / 2); c.rotate(-Math.PI / 2);
+    c.fillStyle = '#2d6db5'; c.textAlign = 'center'; c.font = 'bold 40px Arial, sans-serif'; c.fillText('SALINE FLUSH', 0, -40);
+    c.font = '26px Arial, sans-serif'; c.fillText('0.9% Sodium Chloride', 0, 6); c.fillText('10 mL · Sterile', 0, 42);
+    c.fillStyle = '#8f99a3'; c.font = 'bold 22px Arial, sans-serif'; c.fillText('← TEAR', 0, 96);
+    c.restore();
+  });
+  const hdrPivot = new THREE.Group(); hdrPivot.position.set(-4.5, 0.52, 0); fl.add(hdrPivot);
+  const hdr = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 3.4), mat(0xffffff, { map: hdrTex, side: THREE.DoubleSide, roughness: 0.8 }));
+  hdr.rotation.x = -Math.PI / 2; hdr.position.x = -1.1; hdrPivot.add(hdr);
+  const syr = new THREE.Group(); syr.position.set(0.8, 0.27, 0); fl.add(syr);
+  syr.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 5.4, 18, 1, true), clear(0xffffff, 0.35)), 0));
+  const sSal = ax(new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 4.9, 18), clear(0xd6ecff, 0.45)), 0.2); syr.add(sSal);
+  syr.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.25, 18), mat(0x1c1c1e)), -2.45));
+  const rA = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.07, 0.55), clear(0xffffff, 0.85)); rA.position.x = -3.75; syr.add(rA);
+  const rB = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.55, 0.07), clear(0xffffff, 0.85)); rB.position.x = -3.75; syr.add(rB);
+  syr.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.1, 18), clear(0xffffff, 0.85)), -5.0));
+  const sFl = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.2, 1.6), clear(0xffffff, 0.8)); sFl.position.x = -2.75; syr.add(sFl);
+  syr.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 0.35, 10), clear(0xffffff, 0.8)), 2.85));
+  const wcap = new THREE.Group(); wcap.position.x = 3.3; syr.add(wcap);
+  wcap.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.9, 14), white), 0));
+  for (let i = 0; i < 3; i++) wcap.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.06, 14), white), -0.3 + i * 0.12));
+
+  // ---- the rest of the supplies, laid out: the tourniquet strip, the dressing in its packet, a
+  // needleless cap in its blister, a stack of gauze
+  const tq = new THREE.Mesh(new THREE.BoxGeometry(25, 0.06, 2.5), mat(0xe8875a, { roughness: 0.8 }));
+  tq.position.set(TQ_AT[0], 0.03, TQ_AT[2]); g.add(tq);
+  const tegaTex = canvasTex(256, 288, (c, w, h) => {
+    c.fillStyle = '#f9fafb'; c.fillRect(0, 0, w, h);
+    c.fillStyle = '#1f5fae'; c.fillRect(0, 0, w, 64);
+    c.fillStyle = '#fff'; c.font = 'bold 30px Arial, sans-serif'; c.textAlign = 'center'; c.fillText('Tegaderm™ I.V.', w / 2, 42);
+    c.strokeStyle = '#8fa3b8'; c.lineWidth = 4; c.strokeRect(58, 96, 140, 150);
+    c.strokeStyle = '#9fc0dc'; c.strokeRect(84, 122, 88, 70);
+    c.fillStyle = '#5c6670'; c.font = '16px Arial, sans-serif'; c.fillText('Transparent film dressing', w / 2, 272);
+  });
+  const tega = new THREE.Mesh(new THREE.BoxGeometry(8, 0.15, 9), [mat(0xf2f4f6), mat(0xf2f4f6), mat(0xffffff, { map: tegaTex, roughness: 0.8 }), mat(0xf2f4f6), mat(0xf2f4f6), mat(0xf2f4f6)]);
+  tega.position.set(TEGA_AT[0], 0.08, TEGA_AT[2]); g.add(tega);
+  const capP = new THREE.Group(); capP.position.set(...CAPP_AT); g.add(capP);
+  capP.add(new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.9, 2.6), clear(0xe2edf7, 0.35))).position.y = 0.45;
+  const capIn = new THREE.Group(); capIn.position.y = 0.42; capP.add(capIn);
+  const lav = clear(0xcfc8f2, 0.65);
+  capIn.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.3, 1.6, 14), lav), 0));
+  for (const x of [-0.6, -0.45]) capIn.add(ax(new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.08, 14), lav), x));
+  const gz = new THREE.Group(); gz.position.set(...GAUZE_AT); g.add(gz);
+  for (let i = 0; i < 3; i++) { const sq = new THREE.Mesh(new THREE.BoxGeometry(5, 0.12, 5), mat(0xfcfcfa, { roughness: 0.95 })); sq.position.y = 0.06 + i * 0.13; sq.rotation.y = (i - 1) * 0.12; gz.add(sq); }
+
+  return { group: g, swab: { group: sw, strip, stripGeo, stripRest, pad },
+    pack: { group: pk, lid, lidBack, lidGeo, rest, lc, ltex },
+    sharps: { group: sh, trayPivot }, spent,
+    flush: { group: fl, hdrPivot, syr, wcap, sal: sSal },
+    sup: { tq, tega, capIn, gz } };
+}
+// the sharps container's label: a biohazard mark, the warnings, the fill line
+function paintSharpsLabel(c, W, H) {
+  c.fillStyle = '#f2c418'; c.fillRect(0, 0, W, H);
+  c.fillStyle = '#f7da55'; c.strokeStyle = '#3a3a2a'; c.lineWidth = 4;
+  c.beginPath(); c.roundRect(10, 10, W - 20, H - 20, 60); c.fill(); c.stroke();
+  // the instructions, as pictures
+  for (let i = 0; i < 4; i++) { c.strokeStyle = '#3a3a2a'; c.lineWidth = 3; c.strokeRect(90, 70 + i * 95, 120, 80); c.fillStyle = '#e9ce48'; c.fillRect(104, 92 + i * 95, 92, 36); }
+  // the biohazard mark
+  const bx = 470, by = 230;
+  c.strokeStyle = '#111'; c.lineWidth = 6; c.strokeRect(bx - 95, by - 105, 190, 230);
+  c.lineWidth = 12;
+  for (let k = 0; k < 3; k++) {
+    const a = -Math.PI / 2 + k * 2 * Math.PI / 3;
+    c.beginPath(); c.arc(bx + Math.cos(a) * 34, by + Math.sin(a) * 34, 36, 0, 2 * Math.PI); c.stroke();
+  }
+  c.beginPath(); c.arc(bx, by, 20, 0, 2 * Math.PI); c.stroke();
+  c.fillStyle = '#111'; c.textAlign = 'center'; c.font = 'bold 28px Arial, sans-serif'; c.fillText('BIOHAZARD', bx, by + 100);
+  c.font = 'bold 30px Arial, sans-serif'; c.fillText('Caution : Waste Sharps', bx, by + 168);
+  c.font = 'bold 54px Arial, sans-serif'; c.fillStyle = '#3d6f3a'; c.fillText('Sharps', bx, 110);
+  c.fillStyle = '#111'; c.font = 'bold 22px Arial, sans-serif';
+  c.fillText('↓ DO NOT FILL ABOVE THIS LEVEL ↓', 800, 230);
+  c.lineWidth = 3; c.beginPath(); c.moveTo(640, 244); c.lineTo(960, 244); c.stroke();
+  c.font = 'bold 40px Arial, sans-serif'; c.fillText('↑↑', 800, 340); c.font = '20px Arial, sans-serif'; c.fillText('THIS WAY UP', 800, 372);
+}
+// the swab packet's top strip, torn from the left up to t (0..1)
+function setStrip(t) {
+  const { stripGeo, stripRest } = R3.prep.swab, pos = stripGeo.attributes.position, xf = -2.75 + 5.5 * t;
+  for (let i = 0; i < pos.count; i++) {
+    const x = stripRest[3 * i], y = stripRest[3 * i + 1], d = Math.max(0, xf - x);
+    pos.setXYZ(i, x - d * 0.15, y + d * 0.25, Math.min(2.2, d * 0.6));
+  }
+  pos.needsUpdate = true; stripGeo.computeVertexNormals(); stripGeo.computeBoundingSphere();
 }
 // the lid's label, after the real one: the gauge's band in its colour
 function paintLid() {
@@ -671,7 +828,7 @@ function placePrep(box) {
   if (v3.dot(side, flat(v3.sub(G.toWorld(v3.add(G.O, G.L)), o))) < 0) side = v3.mul(side, -1);
   let half = 0;
   for (const cx of [box.min.x, box.max.x]) for (const cz of [box.min.z, box.max.z]) half = Math.max(half, v3.dot(v3.sub([cx, s0[1], cz], s0), side));
-  const at = v3.add([s0[0], box.min.y + 0.4, s0[2]], v3.mul(side, half + 13));
+  const at = v3.add([s0[0], box.min.y + 0.4, s0[2]], v3.mul(side, half + 15));
   // (the table's +Z runs back toward the patient: X x Y)
   orient(R3.prep.group, at, X, Y);
   R3.prep.group.updateMatrixWorld(true);
@@ -679,23 +836,70 @@ function placePrep(box) {
   paintLid(); setLid(0);
 }
 const prepPoint = (q) => v3.add(R3.prep.O, v3.add(v3.mul(R3.prep.X, q[0]), v3.add(v3.mul(R3.prep.Y, q[1]), v3.mul(R3.prep.Z, q[2]))));
-// each frame: the swab's corner, the pad, the lid, toward where the learner left them
+// each frame: everything on the table toward where the learner left it
 function animatePrep(dt) {
   if (!R3?.prep) return;
-  const k = 1 - Math.exp(-dt * 8);
+  const k = 1 - Math.exp(-dt * 8), P0 = R3.prep;
   const to = (key, want, dragging) => { if (!dragging) PREP[key] += (want - PREP[key]) * k; };
   to('swabT', PREP.swab === 'closed' ? 0 : 1, ptr.kind === 'tear');
+  to('swabPop', PREP.swab === 'closed' ? 0 : 1, false);
   to('swabLift', PREP.swab === 'out' ? 1 : 0, ptr.kind === 'swabOut');
   to('packT', PREP.pack === 'closed' ? 0 : 1, ptr.kind === 'peel');
   to('lift', PREP.pack === 'out' ? 1 : 0, ptr.kind === 'lift');
-  const sw = R3.prep.swab;
-  sw.flapPivot.quaternion.setFromAxisAngle(new ctx.THREE.Vector3(Math.SQRT1_2, -Math.SQRT1_2, 0), PREP.swabT * 2.75);
+  to('flushT', PREP.flush === 'closed' ? 0 : 1, ptr.kind === 'flushTear');
+  to('flushLift', PREP.flush === 'out' || PREP.flush === 'ready' ? 1 : 0, ptr.kind === 'flushLift');
+  to('capOff', PREP.flush === 'ready' ? 1 : 0, ptr.kind === 'flushCap');
+  to('sharpT', PREP.sharps === 'held' ? 0 : 1, ptr.kind === 'toTray');
+  to('flip', 0, ptr.kind === 'flip' || (PREP.sharps === 'done' && PREP.drop < 0.6));
+  to('drop', PREP.sharps === 'done' ? 1 : 0, false);
+  // the swab: its top strip tears off; the pad rides up out of the opening, then out
+  const sw = P0.swab;
+  if (Math.abs(PREP.swabT - (sw.t ?? -1)) > 1e-4) { setStrip(PREP.swabT); sw.t = PREP.swabT; }
+  sw.strip.visible = !(PREP.swab !== 'closed' && PREP.swabT > 0.97);
   const L = PREP.swabLift;
-  sw.pad.position.set(0.707 * 4.5 * L, 0.11 + 2.2 * L, -0.707 * 4.5 * L);
+  // (inside, it stays under the front sheet: only what rides out past the torn edge shows)
+  sw.pad.position.set(0, 0.105 + 2.2 * L, 0.6 - 1.6 * PREP.swabPop - 4.5 * L);
   sw.pad.visible = L < 0.97;
-  if (Math.abs(PREP.packT - (R3.prep.lidT ?? -1)) > 1e-4) { setLid(PREP.packT < 1e-3 ? 0 : PREP.packT); R3.prep.lidT = PREP.packT; }
+  if (Math.abs(PREP.packT - (P0.lidT ?? -1)) > 1e-4) { setLid(PREP.packT < 1e-3 ? 0 : PREP.packT); P0.lidT = PREP.packT; }
+  // the flush: its header torn back, the syringe lifted out, its white cap pulled off
+  const fl = P0.flush;
+  fl.hdrPivot.rotation.z = -2.5 * PREP.flushT;
+  fl.syr.position.set(0.8, 0.27 + 4 * PREP.flushLift, -1.5 * PREP.flushLift);
+  fl.wcap.position.set(3.3 + 2.2 * PREP.capOff, -1.2 * Math.max(0, PREP.capOff - 0.5), 0);
+  fl.wcap.visible = PREP.capOff < 0.98;
+  fl.syr.visible = PREP.flush !== 'ready' || PREP.capOff < 0.98;
+  // used supplies leave the table
+  const S = P0.sup;
+  S.tq.visible = !!A && !(A.tq.on || A.tq.total > 0 || R3.band.visible);
+  S.tega.visible = !!A && !A.dressing.placed;
+  S.capIn.visible = !!A && !(A.cap.on || A.cap.locked);
+  S.gz.visible = !!A && !A.pressure.gauze;
+  // the sharps tray flips up; the needle rides it, then slides off into the container
+  const th = 1.9 * PREP.flip;
+  P0.sharps.trayPivot.rotation.x = -th;
+  placeSpent(th);
 }
-// where a world direction runs on the screen, px per cm
+// the needle out, in the table's own frame: held over the sharps tray, laid on it, tipped in
+function placeSpent(th) {
+  const sp = R3.prep.spent;
+  sp.visible = sharpsStage() || (PREP.sharps === 'done' && PREP.drop < 0.3);
+  if (!sp.visible) return;
+  const S = SHARPS_AT, hinge = [S[0], 10.55, S[2] - 2.4];
+  // on the tray: 2.7 cm in from the hinge, rotated up with it
+  const onTray = (t) => [hinge[0], hinge[1] + 0.45 * Math.cos(t) + 2.7 * Math.sin(t), hinge[2] + 2.7 * Math.cos(t) - 0.45 * Math.sin(t)];
+  const held = [S[0], 15.5, S[2] + 1.0];
+  let p, up = [0, 1, 0];
+  if (PREP.sharps === 'done' || PREP.flip > 0.45) {
+    // slid off the tray, down into the opening
+    const f = PREP.sharps === 'done' ? PREP.drop : 0;
+    p = [hinge[0], hinge[1] + 0.6 - 9 * f, hinge[2] + 1.6];
+  } else {
+    const q = onTray(th), u = PREP.sharpT;
+    p = [held[0] + (q[0] - held[0]) * u, held[1] + (q[1] - held[1]) * u, held[2] + (q[2] - held[2]) * u];
+    up = [0, Math.cos(th * u), -Math.sin(th * u)];
+  }
+  orient(sp, p, [1, 0, 0], up);
+}
 function screenAxis(cam, w, dir) {
   const { THREE } = ctx, r = ctx.three.renderer.domElement.getBoundingClientRect();
   const a = new THREE.Vector3(...w).project(cam), b = new THREE.Vector3(...v3.add(w, dir)).project(cam);
@@ -703,16 +907,35 @@ function screenAxis(cam, w, dir) {
   return { ux: dx / n, uy: dy / n, px: n };
 }
 const hubWorld = () => worldOfKitPart(R3.hub);
+const prepWorldOf = (obj) => { const v = new ctx.THREE.Vector3(); obj.getWorldPosition(v); return [v.x, v.y, v.z]; };
+// is the table where this click works now, and on what? Whatever the camera is showing there,
+// whatever is in hand (a swab still held after the clean must not leave the IV's pack dead)
+function prepJob() {
+  if (!A || A.ended) return null;
+  return { prepSharps: 'sharps', prepFlush: 'flush', prepSwab: 'swab', prepIV: 'iv', prepSeal: 'iv' }[stepView()] || null;
+}
 function prepDown(e, canvas, cam) {
-  const P0 = R3.prep;
+  const P0 = R3.prep, job = prepJob();
   ptr.sx = e.clientX; ptr.sy = e.clientY;
-  if (tool === 'pad' && PREP.swab !== 'out') {
+  if (job === 'sharps') { ptr.kind = PREP.sharps === 'held' ? 'toTray' : 'flip'; return; }
+  if (job === 'flush') {
+    if (PREP.flush === 'closed') {
+      const hit = ray(e, canvas, cam).intersectObject(P0.flush.group, true)[0];
+      if (!hit) return;
+      const q = P0.flush.group.worldToLocal(hit.point.clone());
+      if (q.x > -2.6) { toast('Tear it open at the printed end.'); return; }
+      ptr.ax = screenAxis(cam, prepPoint(FLUSH_AT), P0.X); ptr.kind = 'flushTear'; return;
+    }
+    if (PREP.flush === 'open') { ptr.kind = 'flushLift'; return; }
+    ptr.ax = screenAxis(cam, prepWorldOf(P0.flush.wcap), P0.X); ptr.kind = 'flushCap'; return;
+  }
+  if (job === 'swab') {
     const hit = ray(e, canvas, cam).intersectObject(P0.swab.group, true)[0];
     if (!hit) return;
     if (PREP.swab === 'closed') {
       const q = P0.swab.group.worldToLocal(hit.point.clone());
-      if (q.x - q.z < 2.4) { toast('Tear it open at the notched corner.'); return; }
-      ptr.kind = 'tear'; return;
+      if (q.x > -1.0 || q.z > -0.9) { toast('Tear it from the notch at the top left.'); return; }
+      ptr.ax = screenAxis(cam, prepPoint(SWAB_AT), P0.X); ptr.kind = 'tear'; return;
     }
     ptr.kind = 'swabOut'; return;
   }
@@ -735,17 +958,21 @@ function prepDown(e, canvas, cam) {
   }
   ptr.ax = screenAxis(cam, hubWorld(), P0.X); ptr.slide0 = A.kit.slide; ptr.kind = 'seal';
 }
+const PREP_KINDS = ['tear', 'swabOut', 'peel', 'lift', 'seal', 'flushTear', 'flushLift', 'flushCap', 'toTray', 'flip'];
 function prepMove(e) {
   const dx = e.clientX - ptr.sx, dy = e.clientY - ptr.sy, cl = (v) => Math.max(0, Math.min(1, v));
-  if (ptr.kind === 'tear') PREP.swabT = cl(Math.hypot(dx, dy) / 150);
+  const along = (a) => dx * a.ux + dy * a.uy;
+  if (ptr.kind === 'tear') PREP.swabT = cl(along(ptr.ax) / (ptr.ax.px * 5.5 * 0.75));
   else if (ptr.kind === 'swabOut') PREP.swabLift = cl(Math.hypot(dx, dy) / 140);
-  else if (ptr.kind === 'peel') {
-    const along = Math.max(dx * ptr.ax.ux + dy * ptr.ax.uy, dx * ptr.az.ux + dy * ptr.az.uy);
-    PREP.packT = cl(along / (ptr.ax.px * LID.L * 0.5));
-  }
+  else if (ptr.kind === 'peel') PREP.packT = cl(Math.max(along(ptr.ax), along(ptr.az)) / (ptr.ax.px * LID.L * 0.5));
   else if (ptr.kind === 'lift') PREP.lift = cl(-dy / 130);
+  else if (ptr.kind === 'flushTear') PREP.flushT = cl(along(ptr.ax) / (ptr.ax.px * 2.5));
+  else if (ptr.kind === 'flushLift') PREP.flushLift = cl(-dy / 130);
+  else if (ptr.kind === 'flushCap') PREP.capOff = cl(along(ptr.ax) / (ptr.ax.px * 1.6));
+  else if (ptr.kind === 'toTray') PREP.sharpT = cl(dy / 120);
+  else if (ptr.kind === 'flip') PREP.flip = cl(-dy / 140);
   else if (ptr.kind === 'seal') {
-    const mm = Math.max(0, ptr.slide0 + (dx * ptr.ax.ux + dy * ptr.ax.uy) / (ptr.ax.px / 10));
+    const mm = Math.max(0, ptr.slide0 + along(ptr.ax) / (ptr.ax.px / 10));
     const r = IV.sealSlide(A, mm);
     if (r && r.why) { toast(r.why); ptr.kind = null; return; }
     if (A.kit.off) { sfx('creak'); toast('Too far: the catheter came off.'); ptr.kind = null; refresh(); return; }
@@ -761,16 +988,35 @@ function prepMove(e) {
   }
 }
 function prepUp() {
-  if (ptr.kind === 'tear' && PREP.swabT >= 0.6) { PREP.swab = 'open'; sfx('snap'); refresh(); }
-  else if (ptr.kind === 'swabOut' && PREP.swabLift >= 0.5) { PREP.swab = 'out'; refresh(); }
-  else if (ptr.kind === 'peel' && PREP.packT >= 0.35) { PREP.pack = 'open'; sfx('snap'); refresh(); }
-  else if (ptr.kind === 'lift' && PREP.lift >= 0.5) { PREP.pack = 'out'; refresh(); }
+  const k = ptr.kind;
+  if (k === 'tear' && PREP.swabT >= 0.6) { PREP.swab = 'open'; sfx('snap'); refresh(); }
+  else if (k === 'swabOut' && PREP.swabLift >= 0.5) { PREP.swab = 'out'; refresh(); }
+  else if (k === 'peel' && PREP.packT >= 0.35) { PREP.pack = 'open'; sfx('snap'); refresh(); }
+  else if (k === 'lift' && PREP.lift >= 0.5) { PREP.pack = 'out'; refresh(); }
+  else if (k === 'flushTear' && PREP.flushT >= 0.6) { PREP.flush = 'open'; sfx('snap'); refresh(); }
+  else if (k === 'flushLift' && PREP.flushLift >= 0.5) { PREP.flush = 'out'; refresh(); }
+  else if (k === 'flushCap' && PREP.capOff >= 0.6) { PREP.flush = 'ready'; sfx('click'); refresh(); }
+  else if (k === 'toTray' && PREP.sharpT >= 0.6) { PREP.sharps = 'onTray'; sfx('click'); refresh(); }
+  else if (k === 'flip' && PREP.flip >= 0.6) {
+    const r = IV.disposeNeedle(A);
+    if (r.ok) { PREP.sharps = 'done'; sfx('snap'); } else if (r.why) toast(r.why);
+    refresh();
+  }
 }
-// the step card's own lines while a supply is being opened
+// the step card's own lines while a supply is being opened or put away
 function miniStep() {
   if (!A || A.ended || A.finished) return null;
+  if (sharpsStage()) {
+    return PREP.sharps === 'held' ? { do: 'Lay the needle in the sharps tray.', keys: [['Left-drag ↓', 'needle']] }
+      : { do: 'Flip the tray up to drop it in.', keys: [['Left-drag ↑', 'tray']] };
+  }
+  if (tool === 'syringe' && PREP.flush !== 'ready') {
+    if (PREP.flush === 'closed') return { do: 'Tear the pouch open at its printed end.', keys: [['Left-drag →', 'end']] };
+    if (PREP.flush === 'open') return { do: 'Take the syringe out.', keys: [['Left-drag ↑', 'syringe']] };
+    return { do: 'Pull the white cap off its tip.', keys: [['Left-drag →', 'cap']] };
+  }
   if (tool === 'pad' && PREP.swab !== 'out') {
-    return PREP.swab === 'closed' ? { do: 'Tear the packet open at its corner.', keys: [['Left-drag', 'corner']] }
+    return PREP.swab === 'closed' ? { do: 'Tear the top off, from the notch, left to right.', keys: [['Left-drag →', 'top strip']] }
       : { do: 'Take the swab out.', keys: [['Left-drag', 'swab out']] };
   }
   if (!kitAtSite() && (tool === 'catheter' || IV.currentStep(A) === 'seal')) {
@@ -820,7 +1066,8 @@ function placeKit() {
     const off = A.kit.slide / 10, hubX = -0.15 - 2.5 - 0.45 + off;
     drapeExt(false, hubX);
     R3.needle.position.set(-1.6, 0, 0); R3.needle.visible = true;
-    R3.cathM.position.set(-0.15 - 1.25 + off, 0, 0); R3.cathM.visible = !A.kit.off;
+    R3.cathM.position.set(-0.15 - 1.25 + off, 0, 0); R3.cathM.rotation.z = -Math.PI / 2; R3.cathM.visible = !A.kit.off;
+    R3.bloodTube.geometry.setDrawRange(0, 0);
     R3.hub.position.set(hubX, 0, 0); R3.ext.position.set(hubX, 0, 0);
     R3.housing.position.set(-0.15 - 2.5 - 0.9, 0, 0); R3.housing.visible = true;
     R3.flashFill.visible = false;
@@ -858,8 +1105,16 @@ function placeKit() {
   R3.needle.position.set(-1.6 - back, 0, 0);
   R3.needle.visible = !A.needle.shielded;
   R3.cathM.position.set(-0.15 - 1.25 + thr + off, 0, 0);
+  R3.cathM.rotation.z = -Math.PI / 2;
+  if (settled) {
+    // (lying flat, the hub's nose is at the puncture: the cannula dips straight in, never along the surface)
+    const a = 30 * D, nose = hubX + 0.4;
+    R3.cathM.rotation.z = -Math.PI / 2 - a;
+    R3.cathM.position.set(nose + Math.cos(a) * 1.25, -Math.sin(a) * 1.25, 0);
+  }
   R3.hub.position.set(hubX, 0, 0);
   R3.ext.position.set(hubX, 0, 0);
+  showBlood();
   R3.housing.position.set(-0.15 - 2.5 - 0.9 - back, 0, 0);
   R3.housing.visible = !A.needle.shielded;
   R3.flashFill.scale.set(1, Math.max(0.01, A.flash.level), 1);
@@ -924,10 +1179,30 @@ function drapeExt(on, hubX) {
     pts = X.curve.map((p, i) => (i ? drop(p, 0.11) : p));
     at = { clamp: drop(X.clamp, 0.2), port: drop(X.port, 0.34), cap: drop(X.cap, 0.3) };
   }
-  R3.tubing.geometry.dispose();
-  R3.tubing.geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p))), 40, 0.1, 8, false);
-  R3.clampM.position.set(...at.clamp); R3.port.position.set(...at.port); R3.portCap.position.set(...at.cap);
+  const curve = new THREE.CatmullRomCurve3(pts.map((p) => new THREE.Vector3(...p)));
+  R3.tubing.geometry.dispose(); R3.tubing.geometry = new THREE.TubeGeometry(curve, 40, 0.1, 8, false);
+  const dr = R3.bloodTube.geometry.drawRange.count;
+  R3.bloodTube.geometry.dispose(); R3.bloodTube.geometry = new THREE.TubeGeometry(curve, 40, 0.075, 6, false);
+  R3.bloodTube.geometry.setDrawRange(0, dr);
+  R3.clampM.position.set(...at.clamp); R3.port.position.set(...at.port);
   R3.extAt = at;
+}
+// blood: in the catheter once it is in the lumen, up the line as far as it has come, in the port's
+// clear end when full; at an open port it spills onto the skin
+function showBlood() {
+  const inLumen = A.flash.level > 0 && (A.cathTip === 'lumen' || A.cath.inVein);
+  R3.cathM.material.color.setHex(inLumen ? 0xc9505a : 0xf6f8fa);
+  R3.bloodTube.geometry.setDrawRange(0, Math.floor(A.line.blood * 40) * 6 * 6);
+  R3.portTip.material.color.setHex(A.line.blood >= 1 ? 0x9a1822 : 0xf2f6f9);
+  const leak = R3.leak;
+  leak.visible = A.spill > 0.01 && R3.kit.visible;
+  if (leak.visible) {
+    const tipW = new ctx.THREE.Vector3(-0.6, 0, 0); R3.port.localToWorld(tipW);
+    const { a, l } = G.paramOf(G.fromWorld([tipW.x, tipW.y, tipW.z])), n = G.normalAt(a, l);
+    leak.position.set(...v3.add(G.worldAt(a, l), v3.mul(n, 0.28)));
+    leak.quaternion.setFromUnitVectors(new ctx.THREE.Vector3(0, 1, 0), new ctx.THREE.Vector3(...n));
+    const r = 0.3 + 2.2 * A.spill; leak.scale.set(r, 1, r);
+  }
 }
 function worldOfKitPart(obj) {
   const { THREE } = ctx;
@@ -950,10 +1225,16 @@ function placeSyringe() {
   if (s.visible) {
     orient(s, [pw.x + dir[0] * 0.62, pw.y + dir[1] * 0.62, pw.z + dir[2] * 0.62], v3.mul(dir, -1), v3.cross(v3.mul(dir, -1), [1, 0, 0]));
     // the plunger goes in as the saline goes out; the twist shows as a turn about the axis
-    const left = Math.max(0, P.flush.volumeML - A.syringe.vol) / P.flush.volumeML;
+    const fs = A.syringe, left = Math.max(0, P.flush.volumeML - fs.vol + (fs.drawn || 0)) / P.flush.volumeML;
     R3.plunger.position.x = -0.5 - 5.5 * left;
     R3.saline.scale.set(1, Math.max(0.01, 5.5 * left), 1);
     R3.saline.position.x = -0.5 - 5.5 * left / 2;
+    // blood drawn back clouds into the saline from the tip
+    const bl = Math.min(5.5 * left, 1.2 + 9 * (fs.blood || 0));
+    R3.sBlood.visible = (fs.blood || 0) > 0.01;
+    R3.sBlood.scale.set(1, Math.max(0.01, bl), 1); R3.sBlood.position.x = -0.5 - bl / 2;
+    R3.sBlood.material.opacity = Math.min(0.7, 0.25 + fs.blood);
+    R3.saline.material.color.setHex((fs.blood || 0) > 0.01 ? 0xe9b9bf : 0xd6ecff);
     s.matrix.multiply(new ctx.THREE.Matrix4().makeRotationX((A.syringe.twist || 0) * D));
   }
   if (R3.luer.visible) {
@@ -1014,10 +1295,17 @@ function desiredView() {
     return { pos: [b[0] + 20, b[1] + 28, b[2] - 18], target: b, up: [0, 1, 0] };
   }
   if (key === 'clean') return fitView(s, nrm, alongW, 3.6);
+  if (key === 'syringe' && R3.syringe.visible) {
+    const { THREE } = ctx, sc = new THREE.Vector3(-3.6, 0, 0).applyMatrix4(R3.syringe.matrix), pt = worldOfKitPart(R3.port);
+    const c = [(sc.x + pt[0]) / 2, (sc.y + pt[1]) / 2, (sc.z + pt[2]) / 2];
+    return fitView(c, nrm, alongW, 6.5);
+  }
   if (key.startsWith('prep') && R3.prep?.O) {
     const P0 = R3.prep, n = v3.norm(v3.add(P0.Y, v3.mul(P0.Z, 0.35))), up = v3.mul(P0.Z, -1);
     if (key === 'prepSwab') return fitView(prepPoint(SWAB_AT), n, up, 4.2);
     if (key === 'prepIV') return fitView(prepPoint([PACK_AT[0], 0.6, PACK_AT[2]]), n, up, 7.8);
+    if (key === 'prepFlush') return PREP.flush === 'closed' ? fitView(prepPoint(FLUSH_AT), n, up, 6.6) : fitView(prepWorldOf(P0.flush.syr), n, up, 4.8);
+    if (key === 'prepSharps') return fitView(prepPoint([SHARPS_AT[0], 11, SHARPS_AT[2] + 1]), v3.norm(v3.add(P0.Y, v3.mul(P0.Z, 0.7))), up, 8.5);
     return fitView(hubWorld(), n, up, 2.8);
   }
   if (key === 'site') {
@@ -1030,17 +1318,23 @@ function desiredView() {
   // the needle: three-quarter view from behind and beside the hub, looking along it
   const F = A?.mark ? veinFrame() : null;
   if (!F) return { pos: v3.add(s, v3.mul(nrm, 20)), target: s, up: [0, 1, 0] };
-  const pos = v3.add(F.E, v3.add(v3.mul(F.X, -9), v3.add(v3.mul(F.Y, 6), v3.mul(F.Z, -6))));
-  return { pos, target: v3.add(F.E, v3.mul(F.X, 0.8)), up: v3.mul(F.Z, -1) };
+  const yw = (A.needle.yaw || 0) * D, dirH = v3.add(v3.mul(F.X, Math.cos(yw)), v3.mul(F.Y, Math.sin(yw)));
+  // (behind and above, along the needle: aimed a little behind the entry so tip and hub both show)
+  const pos = v3.add(F.E, v3.add(v3.mul(dirH, -11), v3.mul(F.Z, -9)));
+  return { pos, target: v3.add(F.E, v3.mul(dirH, -1.2)), up: v3.mul(F.Z, -1) };
 }
 function stepView() {
   if (!A) return 'overview';
   const st = IV.currentStep(A);
   if (A.ended) return 'site';
-  // opening supplies, at the table
+  // opening supplies, and putting the needle away, at the table
+  if (sharpsStage()) return 'prepSharps';
+  if (tool === 'syringe' && PREP.flush !== 'ready') return 'prepFlush';
   if (tool === 'pad' && PREP.swab !== 'out') return 'prepSwab';
   if (!kitAtSite() && (tool === 'catheter' || st === 'seal')) return PREP.pack === 'out' ? 'prepSeal' : 'prepIV';
   if (st === 'clean') return 'clean';
+  // the syringe on the port: framed with it
+  if (A.syringe.on && ['syringe', 'clamp2', 'flush', 'clamp3', 'syringeOff'].includes(st)) return 'syringe';
   if (['prep', 'tourniquet'].includes(st)) return 'overview';
   if (['palpate', 'clean', 'dressing'].includes(st)) return 'site';
   if (['seal', 'align', 'anchor', 'insert', 'flash', 'thread', 'withdraw'].includes(st)) return 'needle';
@@ -1127,8 +1421,9 @@ function onDown(e, canvas, cam) {
     return;
   }
   // (the seal step shows the pack whatever is in hand: a click on it picks the IV up)
-  if (!tool && st === 'seal' && !kitAtSite()) setTool('catheter');
-  if ((tool === 'pad' && PREP.swab !== 'out') || (tool === 'catheter' && !kitAtSite())) { prepDown(e, canvas, cam); return; }
+  const job = prepJob();
+  if (job === 'iv' && tool !== 'catheter') setTool('catheter');
+  if (job) { prepDown(e, canvas, cam); return; }
   if (tool === 'pad') { ptr.kind = 'scrub'; return; }
   if (tool === 'tegaderm') {
     const h = hitPatch(e, canvas, cam); if (!h || !A.mark) return;
@@ -1159,7 +1454,7 @@ function onMove(e, canvas, cam, dx, dy, dt) {
   // the palpating finger follows the cursor while F is held
   if (keys.f && !ptr.down) palpateAt(e, canvas, cam);
   if (!ptr.down) { R3.finger.visible = keys.f && !!hitPatch(e, canvas, cam); return; }
-  if (['tear', 'swabOut', 'peel', 'lift', 'seal'].includes(ptr.kind)) { prepMove(e); return; }
+  if (PREP_KINDS.includes(ptr.kind)) { prepMove(e); return; }
   if (ptr.kind === 'scrub') {
     const h = hitPatch(e, canvas, cam); if (!h || !A.mark) return;
     // the swab rides under the cursor, flat on the skin
@@ -1181,9 +1476,16 @@ function onMove(e, canvas, cam, dx, dy, dt) {
     if (r && r.why) toast(r.why);
     if (A.needle.shielded || A.pressure.removed) { sfx('click'); refresh(); }
   } else if (ptr.kind === 'flush') {
-    if (dy < 0) {
-      const ml = -dy * 0.02, r = IV.flush(A, ml, dt);
+    // pulled back first: blood into the syringe if it is in; then pushed (a pause is not a slow push)
+    if (dy > 0) {
+      const r = IV.aspirate(A, dy * 0.01);
+      if (r.why) toast(r.why);
+      else if (r.blood && !ptr.sawBlood) { ptr.sawBlood = true; toast('Blood return: the catheter is in.'); }
+    } else if (dy < 0) {
+      const ml = -dy * 0.02, r = IV.flush(A, ml, Math.min(0.1, dt));
+      if (r.why) toast(r.why);
       if (r.resist) { sfx('creak'); toast(A.clampOpen ? 'Resistance. Swelling?' : 'The clamp is closed.'); }
+      ptr.lastPush = performance.now();
     }
   } else if (ptr.kind === 'press') {
     // holding still on the gauze
@@ -1234,7 +1536,7 @@ function palpateAt(e, canvas, cam) {
     if (A.mode !== 'assessment') toast('That touched the clean site.');
   }
   const now = performance.now() / 1000;
-  if (now - (ptr.lastPalp || 0) < 0.15) return;          // sweep slowly: one pulse at a time
+  if (now - (ptr.lastPalp || 0) < 0.25) return;          // sweep slowly: one pulse at a time
   ptr.lastPalp = now;
   const near = [];
   for (const f of G.feats) {
@@ -1244,7 +1546,8 @@ function palpateAt(e, canvas, cam) {
       valveDist: f.valves ? minDist(f.valves, h.a, h.l) * 10 : null, tan: n.tan });
   }
   const cues = IV.palpationCues(A, near).sort((x, y) => y.strength - x.strength);
-  if (cues.length) spawnRing(h, cues[0], near.find((f) => f.id === cues[0].id));
+  // (a faint cue is felt only some of the time)
+  if (cues.length && Math.random() < Math.pow(cues[0].strength, 1.5)) spawnRing(h, cues[0], near.find((f) => f.id === cues[0].id));
 }
 function scrubAt(h, dt, movedPx) {
   const m = A.mark, cells = cleanCells(), half = (CG.n - 1) / 2;
@@ -1276,10 +1579,11 @@ function spawnRing(h, cue, f) {
   let geo;
   if (cue.kind === 'tendon') geo = new THREE.PlaneGeometry(0.25, 1.6);
   else if (cue.kind === 'valve') geo = new THREE.CircleGeometry(0.22, 16);
-  else geo = new THREE.RingGeometry(0.5, 0.7, 40);
+  else geo = new THREE.RingGeometry(0.3, 0.42, 32);
   const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, depthTest: false, side: THREE.DoubleSide }));
   const n = G.normalAt(h.a, h.l);
-  m.position.set(...v3.add(h.point, v3.mul(n, 0.1)));
+  const jit = [(Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5];
+  m.position.set(...v3.add(v3.add(h.point, v3.mul(n, 0.1)), v3.sub(jit, v3.mul(n, v3.dot(jit, n)))));
   m.lookAt(...v3.add(h.point, v3.mul(n, 5)));
   if (cue.kind === 'tendon' && f?.tan) {
     const along = v3.norm(v3.sub(G.worldAt(h.a + f.tan[0], h.l + f.tan[1]), h.point));
@@ -1293,7 +1597,7 @@ function animateRings(dt) {
   for (const r of R3.rings) {
     r.t += dt;
     const u = r.t / r.life;
-    const a = Math.max(0, Math.sin(Math.PI * Math.min(1, u))) * (0.25 + 0.6 * r.s);
+    const a = Math.max(0, Math.sin(Math.PI * Math.min(1, u))) * (0.05 + 0.3 * r.s);
     r.m.material.opacity = a;
     if (r.kind === 'vein') r.m.scale.setScalar(0.6 + 0.9 * u - 0.25 * Math.sin(u * Math.PI * 2));   // a springy rebound
     if (r.kind === 'artery') r.m.scale.setScalar(0.5 + 1.1 * u);
@@ -1530,8 +1834,9 @@ function refresh() {
       const prep = st === 'prep' ? `<div class="ivs-prep">${P.prep.map((p) => `<button data-prep="${p}" class="${A.prep.has(p) ? 'on' : ''}">${PREP_LABEL[p]}</button>`).join('')}</div>` : '';
       const ks = (assess ? '' : `<div class="ivs-keys">${(mini ? mini.keys : step.keys).map(([k, v]) => chip(k, v)).join('')}</div>`)
         + (mini?.newKit ? '<div class="ivs-prep"><button data-newkit="1">New kit</button></div>' : '');
+      const fprog = st === 'flush' && !assess && A.syringe.locked ? '<div class="ivs-prog" id="ivFlushProg"><i id="ivFlushFill"></i><span id="ivFlushLab"></span></div>' : '';
       const prog = st === 'clean' && !assess && !mini ? '<div class="ivs-prog" id="ivProg"><i id="ivProgFill"></i><span id="ivProgLab"></span></div>' : '';
-      card.innerHTML = title + doLine + prep + ks + prog;
+      card.innerHTML = title + doLine + prep + ks + prog + fprog;
       card.querySelectorAll('[data-prep]').forEach((b) => b.addEventListener('click', () => { IV.tickPrep(A, b.dataset.prep); refresh(); }));
       card.querySelector('[data-newkit]')?.addEventListener('click', () => {
         IV.replaceKit(A); Object.assign(PREP, { pack: 'closed', lift: 0, sealPeak: 0 }); refresh();
@@ -1570,8 +1875,13 @@ function hotspots(cam) {
     if (A.portOpen && (tool === 'syringe' || tool === 'cap')) list.push({ id: 'port', at: worldOfKitPart(R3.port), want: true, icon: '◎', tip: 'Port' });
   }
   if (A.mode !== 'assessment' && R3.prep?.O && !A.ended) {
-    if (tool === 'pad' && PREP.swab === 'closed' && PREP.swabT < 0.05) list.push({ id: 'cueSwab', at: prepPoint([SWAB_AT[0] + 2.2, 0.2, SWAB_AT[2] - 2.2]), cue: true });
-    if (tool === 'pad' && PREP.swab === 'open') list.push({ id: 'cuePad', at: prepPoint([SWAB_AT[0] + 1.2, 0.3, SWAB_AT[2] - 1.2]), cue: true });
+    if (tool === 'pad' && PREP.swab === 'closed' && PREP.swabT < 0.05) list.push({ id: 'cueSwab', at: prepPoint([SWAB_AT[0] - 2.3, 0.3, SWAB_AT[2] - 2.3]), cue: true });
+    if (tool === 'pad' && PREP.swab === 'open') list.push({ id: 'cuePad', at: prepPoint([SWAB_AT[0], 0.5, SWAB_AT[2] - 2.4]), cue: true });
+    if (tool === 'syringe' && PREP.flush !== 'ready' && PREP.flushT < 0.05 || (tool === 'syringe' && PREP.flush !== 'ready' && PREP.flush !== 'closed')) {
+      const fl = R3.prep.flush;
+      list.push({ id: 'cueFlush', at: PREP.flush === 'closed' ? prepPoint([FLUSH_AT[0] - 5.6, 0.6, FLUSH_AT[2]]) : prepWorldOf(PREP.flush === 'open' ? fl.syr : fl.wcap), cue: true });
+    }
+    if (sharpsStage()) list.push({ id: 'cueSharps', at: PREP.sharps === 'held' ? prepWorldOf(R3.prep.spent) : prepPoint([SHARPS_AT[0], 11.2, SHARPS_AT[2] + 2.9]), cue: true });
     if ((tool === 'catheter' || IV.currentStep(A) === 'seal') && !kitAtSite() && !A.kit.off) {
       if (PREP.pack === 'closed') { if (PREP.packT < 0.05) list.push({ id: 'cueTab', at: prepPoint([PACK_AT[0] + LID.x0 + 0.45, LID.y + 0.2, PACK_AT[2] + LID.W / 2 - 0.45]), cue: true }); } else list.push({ id: 'cueKit', at: hubWorld(), cue: true });
     }
@@ -1585,7 +1895,7 @@ function hotspots(cam) {
   const seen = new Set();
   for (const h of list) {
     const v = new THREE.Vector3(...h.at).project(cam);
-    if (v.z > 1) continue;
+    if (v.z > 1 || Math.abs(v.x) > 1 || Math.abs(v.y) > 1) continue;      // (off the view: no button over the panels)
     let el = box.querySelector(`[data-hot="${h.id}"]`);
     if (!el) {
       el = document.createElement('button'); el.dataset.hot = h.id; el.type = 'button';
@@ -1608,7 +1918,10 @@ function hotClick(id) {
   else if (id === 'clamp') { r = IV.toggleClamp(A); if (r.ok) sfx('click'); }
   else if (id === 'portcap') { r = IV.removePortCap(A); if (r.ok) sfx('click'); }
   else if (id === 'port') {
-    if (tool === 'syringe') r = IV.attachSyringe(A, !!A.syringeTouched);
+    if (tool === 'syringe') {
+      if (PREP.flush !== 'ready') { toast('Open the flush first.'); return; }
+      r = IV.attachSyringe(A, !!A.syringeTouched); ptr.sawBlood = false;
+    }
     else if (tool === 'cap') r = IV.attachCap(A, !!A.capTouched);
     if (r.ok) setTool(null);
   } else if (id.startsWith('edge')) r = IV.pressEdge(A, +id.slice(4));
@@ -1718,6 +2031,15 @@ function frame(now) {
     const s = IV.tourniquetTime(A);
     tq.textContent = A.tq.on || s > 0 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '–:––';
     tq.className = 'ivtq ' + (s > P.tourniquet.limitS ? 'over' : s > P.tourniquet.warnS ? 'warn' : A.tq.on ? 'on' : '');
+  }
+  // the flush: drawn back for blood, then pushed; the speed against the catheter's rating
+  const ff = $('ivFlushFill');
+  if (ff && A) {
+    const fs = A.syringe, max = P.gauges[A.gauge].rateMLs, rate = performance.now() - (ptr.lastPush || 0) < 300 ? fs.rate : 0;
+    ff.style.width = (Math.min(1, fs.vol / P.flush.volumeML) * 100).toFixed(1) + '%';
+    $('ivFlushLab').textContent = !fs.checked ? 'Pull back first: blood?'
+      : `${fs.vol.toFixed(1)} / ${P.flush.volumeML} mL \u00b7 ${rate.toFixed(1)} mL/s (1\u2013${max})`;
+    ff.parentElement.classList.toggle('bad', rate > max || (rate > 0 && rate < P.flush.minRateMLs));
   }
   // pressure on the gauze: how long left to hold
   const pr = $('ivPressFill');
