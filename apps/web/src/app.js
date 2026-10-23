@@ -37,6 +37,7 @@ import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
+import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
 import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay } from './dxa.js';
 
 /* ============================================================================
@@ -180,6 +181,13 @@ function initScene(){
       cam.lookAt(0, 6, 0);
       return;
     }
+    if(S.mode==='iv' && three.ivView){
+      const v=three.ivView;
+      if(cam.fov!==42 || cam.near!==0.2){ cam.fov=42; cam.near=0.2; cam.updateProjectionMatrix(); }
+      cam.up.copy(v.up); cam.position.copy(v.pos); cam.lookAt(v.target);
+      return;
+    }
+    if(cam.near!==1){ cam.near=1; cam.updateProjectionMatrix(); }
     if(cam.fov!==42){ cam.fov=42; cam.updateProjectionMatrix(); }
     if(S.mode!=='ct' && S.viewMode==='tube'){
       // look from the tube along the central ray, framed to the hand (bird's eye)
@@ -203,20 +211,26 @@ function initScene(){
     // Ultrasound: grabbing the probe drags it over the skin instead of orbiting the room.
     // The probe is the only thing in that room you can pick up, so a hit on it wins.
     if(S.mode==='us' && usPointer(e,'down',cam,canvas)){ canvas.setPointerCapture(e.pointerId); return; }
+    // IV: every gesture on the bay is the learner's hands (src/iv.js), never the orbit
+    if(S.mode==='iv'){ ivPointer(e,'down',cam,canvas); try{ canvas.setPointerCapture(e.pointerId); }catch(_){ /* a synthetic pointer */ } return; }
     // x-ray: the lead side marker on the receptor can be picked up and moved
     if(S.mode==='xray' && sideMarkerPointer(e,'down',cam,canvas)){ canvas.setPointerCapture(e.pointerId); return; }
     if(S.mode==='ct'){ if(S.ct.pov!=='orbit') return; }   // CT: only the Orbit view drags (AP/Lat are fixed)
     else if(S.viewMode!=='orbit') setCameraView('orbit');
     drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
   canvas.addEventListener('pointermove',e=>{
+    if(S.mode==='iv'){ ivPointer(e,'move',cam,canvas); return; }
     if(S.mode==='us' && usPointer(e,'move',cam,canvas)) return;
     if(S.mode==='xray' && sideMarkerPointer(e,'move',cam,canvas)) return;
     if(!drag)return;
     az+=(e.clientX-lx)*0.008; el+=(e.clientY-ly)*0.006;
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
   canvas.addEventListener('pointerup',e=>{ if(S.mode==='us') usPointer(e,'up',cam,canvas);
+    if(S.mode==='iv') ivPointer(e,'up',cam,canvas);
     if(S.mode==='xray') sideMarkerPointer(e,'up',cam,canvas); drag=false;});
-  canvas.addEventListener('wheel',e=>{ if(!orbitActive())return;
+  canvas.addEventListener('contextmenu',e=>{ if(S.mode==='iv') e.preventDefault(); });   // right-drag sets the needle's angle
+  canvas.addEventListener('wheel',e=>{ if(S.mode==='iv'){ ivWheel(e); return; }
+    if(!orbitActive())return;
     e.preventDefault();rad=Math.max(40,Math.min(700,rad+e.deltaY*0.25));},{passive:false});
 
   let prevW=0, prevH=0;
@@ -1755,6 +1769,7 @@ function syncScene(){
   mammoSyncScene();                             // mammo swaps in the upright unit + clamped breast
   usSyncScene();                                // ultrasound puts a probe on the skin
   dxaSyncScene();                               // DXA shows its own scanning arm, not the x-ray head
+  ivSyncScene();                                // the IV room: an arm board, no x-ray equipment
   sideMarkerSync();                             // the lead R/L tile on the receptor (x-ray only)
   bendVoxelMesh();                              // the mesh bends with the joints (x-ray)
   palpationSync();                              // palpated landmarks stay on the patient's skin
@@ -4128,6 +4143,7 @@ window.addEventListener('load',()=>{
            fluoroMode: (on) => fluoroApplyMode(on),
            mammoMode: (on) => mammoApplyMode(on),
            usMode: (on) => usApplyMode(on),
+           ivMode: (on) => ivApplyMode(on),
            dxaMode: (on) => dxaApplyMode(on) });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
@@ -4175,6 +4191,9 @@ window.addEventListener('load',()=>{
   initDXA({ THREE, S, three, setSubject: (s) => setSubject(s),
             buildPhantom: () => buildPhantom(),
             loadModelUrl, baseUrl: import.meta.env.BASE_URL });
+  initIV({ THREE, S, three, $, setSubject: (s) => setSubject(s), syncScene,
+           phantomPose: () => ({ center: [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
+                                 flip: voxelFlips(), rot: objMat() }) });
   initUS({ THREE, S, three, setSubject: (s) => setSubject(s),
            phantomPose: () => ({ center: [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
                                  flip: voxelFlips(), rot: objMat() }) });

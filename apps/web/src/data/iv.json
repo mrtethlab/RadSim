@@ -1,0 +1,116 @@
+{
+  "_about": "IV simulation mode: every clinical number, every step's on-screen text, the three sites' veins and distractors, and the scoring weights (src/core/ivSim.js reads them; src/iv.js draws them). Instructors tune here, not in code. Lengths in mm unless named _cm; times in s; angles in degrees from the skin.",
+  "_review": "Open clinical questions from the design doc, as built: steps 10-13 run withdraw needle, close clamp, remove port cap, release tourniquet; the tourniquet is above the elbow for the antecubital and forearm sites and on the distal forearm for the hand (the hand model has no elbow); skin prep is an alcohol pad, 10 s scrub and 15 s dry; flush 10 mL, clamp closed before the syringe comes off; gauge gates the vein (minVein); angle windows below.",
+
+  "procedure": {
+    "prep": ["hygiene", "gloves", "patientId", "order"],
+    "tourniquet": { "fillS": 25, "releaseS": 10, "warnS": 60, "limitS": 120 },
+    "clean": { "radiusMM": 25, "coverage": 0.9, "scrubS": 10, "dryS": 15 },
+    "seal": { "breakMinMM": 1, "breakMaxMM": 4, "offMM": 8 },
+    "align": { "tolDeg": 10, "acrossDeg": 45 },
+    "angles": { "pierceMin": 15, "pierceMax": 30, "steepOver": 35, "lowerMin": 5, "lowerMax": 15, "threadMax": 10, "lowerWithinS": 5 },
+    "needle": { "bevelToCathMM": 1.5, "cathLenMM": 25, "needleLenMM": 32, "flashDelayS": 0.3, "flashDelayTqS": 0.15, "flashFillS": 1.0 },
+    "vein": {
+      "wallMM": 0.4, "punctureMM": 1.1, "pushPerMM": 0.45, "maxPushMM": 2.6, "rollPerMM": 0.6, "maxRollMM": 4,
+      "flatPerMM": 0.45, "doubleWallFlat": 0.65, "reboundS": 0.3, "tqSwell": 0.35, "backWallMM": 0.3, "rollOnReleaseMM": 1.2
+    },
+    "thread": { "tickMM": 2.0, "resistTicks": 3 },
+    "flush": { "volumeML": 10, "mlPerMM": 0.25, "maxRateMLs": 1.5, "infiltrationML": 1.5 },
+    "dressing": { "tolMM": 9 },
+    "twistLockDeg": 90,
+    "pressureS": 5,
+    "maxDepthMM": 7,
+    "gauges": {
+      "18": { "odMM": 1.3, "minVeinMM": 4.0, "color": "#2e9e4f" },
+      "20": { "odMM": 1.1, "minVeinMM": 3.0, "color": "#e86aa0" },
+      "22": { "odMM": 0.9, "minVeinMM": 2.4, "color": "#3a7bd5" }
+    }
+  },
+
+  "steps": [
+    { "id": "prep", "title": "Prep", "do": "Tick each item.", "keys": [["Click", "tick"]] },
+    { "id": "tourniquet", "title": "Apply tourniquet", "do": "Above the elbow.", "keys": [["Tool", "tourniquet"], ["Click", "the arm"]] },
+    { "id": "palpate", "title": "Find a vein", "do": "Feel for a bouncy, straight vein, then mark it.", "keys": [["Hold F", "palpate"], ["Click", "mark"]] },
+    { "id": "clean", "title": "Clean the site", "do": "Scrub the whole circle, then let it dry.", "keys": [["Tool", "alcohol pad"], ["Drag", "scrub"]] },
+    { "id": "seal", "title": "Break the seal", "do": "Slide the hub a few mm, then let go.", "keys": [["Drag", "hub forward"], ["Release", "reseat"]] },
+    { "id": "align", "title": "Line up with the vein", "do": "Point the needle along the vein.", "keys": [["Q / E", "rotate"]] },
+    { "id": "anchor", "title": "Anchor the skin", "do": "Hold traction until the catheter is in.", "keys": [["Hold Space", "traction"]] },
+    { "id": "insert", "title": "Insert", "do": "Pierce at 15-30°. Watch the flash chamber.", "keys": [["Hold Space", "traction"], ["Drag ↕", "advance"], ["Right-drag ↕", "angle"]] },
+    { "id": "flash", "title": "Flashback", "do": "Lower the angle, then advance 1-2 mm more.", "keys": [["Right-drag ↕", "angle"], ["Drag ↕", "advance"]] },
+    { "id": "thread", "title": "Thread the catheter", "do": "Keep the needle still; push the catheter in.", "keys": [["Hold Space", "traction"], ["Wheel ↑", "thread"]] },
+    { "id": "withdraw", "title": "Withdraw the needle", "do": "Pull it back into its shield.", "keys": [["Drag ↓", "on the needle"]] },
+    { "id": "clamp1", "title": "Close the clamp", "do": "Before opening the system.", "keys": [["Click", "clamp"]], "critical": true },
+    { "id": "portcap", "title": "Remove the port cap", "do": "", "keys": [["Click", "port cap"]] },
+    { "id": "tqoff", "title": "Release the tourniquet", "do": "", "keys": [["Click", "tourniquet"]], "critical": true },
+    { "id": "dressing", "title": "Apply Tegaderm", "do": "Window over the site, then press each edge.", "keys": [["Tool", "Tegaderm"], ["Click", "site, then edges"]] },
+    { "id": "syringe", "title": "Attach the flush", "do": "", "keys": [["Tool", "syringe"], ["Click", "port"], ["Q / E", "twist"]] },
+    { "id": "clamp2", "title": "Open the clamp", "do": "", "keys": [["Click", "clamp"]] },
+    { "id": "flush", "title": "Flush", "do": "10 mL, steadily. Stop if it swells.", "keys": [["Drag ↑", "plunger"]] },
+    { "id": "clamp3", "title": "Close the clamp", "do": "Before the syringe comes off.", "keys": [["Click", "clamp"]], "critical": true },
+    { "id": "syringeOff", "title": "Remove the flush", "do": "", "keys": [["Q / E", "twist off"]] },
+    { "id": "cap", "title": "Cap the port", "do": "", "keys": [["Tool", "cap"], ["Click", "port"], ["Q / E", "twist"]] }
+  ],
+
+  "sites": {
+    "antecubital": {
+      "label": "Antecubital",
+      "subject": "upperextremity",
+      "_frame": "Rest-frame points (cm, tools/measure_palpation.py and measure_centring.py): the origin at the elbow joint, along = toward the shoulder, lateral = toward the lateral epicondyle, outward = anterior. Veins and distractors are paths of [along_cm, lateral_cm] on the skin; depth and radius in mm.",
+      "frame": { "origin": [0.6, -4.0, 0.4], "along": [-0.12, 0.05, 0.99], "lateral": [0.988, 0.152, 0.0], "outward": [0, 1, 0], "liftCm": 0 },
+      "tourniquetAlongCm": 9,
+      "patch": { "along": [-9, 10], "lateral": [-5.5, 5.5] },
+      "veins": [
+        { "id": "medianCubital", "label": "Median cubital", "path": [[-3.0, 2.8], [0, 0.2], [2.6, -2.7]], "radius": 3.0, "depth": 3.5, "visibility": 0.8, "fragility": 0.4, "roll": 0.6, "valves": [], "joins": [[-3.0, 2.8], [2.6, -2.7]] },
+        { "id": "cephalic", "label": "Cephalic", "path": [[-9, 2.5], [-3.0, 2.8], [3, 3.0], [10, 2.7]], "radius": 2.5, "depth": 4.0, "visibility": 0.6, "fragility": 0.5, "roll": 0.8, "valves": [[5.5, 2.9]], "joins": [[-3.0, 2.8]] },
+        { "id": "basilic", "label": "Basilic", "path": [[-9, -2.2], [2.6, -2.7], [10, -2.6]], "radius": 3.0, "depth": 6.0, "visibility": 0.4, "fragility": 0.6, "roll": 1.3, "valves": [[-5.5, -2.4]], "joins": [[2.6, -2.7]] }
+      ],
+      "distractors": [
+        { "id": "brachialArtery", "kind": "artery", "label": "Brachial artery", "path": [[-3, -0.6], [3, -1.0], [10, -1.2]], "radius": 2.2, "depth": 11 }
+      ]
+    },
+    "forearm": {
+      "label": "Forearm",
+      "subject": "upperextremity",
+      "frame": { "origin": [4.4, -1.4, -14.0], "along": [-0.27, -0.16, 0.95], "lateral": [0.97, 0.0, 0.27], "outward": [0, 1, 0], "liftCm": 0 },
+      "tourniquetAlongCm": 23,
+      "patch": { "along": [-9, 10], "lateral": [-4.8, 4.8] },
+      "veins": [
+        { "id": "cephalic", "label": "Cephalic", "path": [[-9, 2.3], [0, 2.5], [10, 2.6]], "radius": 2.4, "depth": 3.5, "visibility": 0.7, "fragility": 0.5, "roll": 0.9, "valves": [[2.5, 2.5]], "joins": [] },
+        { "id": "medianAntebrachial", "label": "Median antebrachial", "path": [[-8, 0.2], [0, 0.0], [10, 0.4]], "radius": 1.9, "depth": 3.0, "visibility": 0.5, "fragility": 0.6, "roll": 0.9, "valves": [], "joins": [] },
+        { "id": "basilic", "label": "Basilic", "path": [[-9, -2.5], [0, -2.7], [10, -2.9]], "radius": 2.3, "depth": 4.5, "visibility": 0.4, "fragility": 0.5, "roll": 1.1, "valves": [], "joins": [] }
+      ],
+      "distractors": [
+        { "id": "radialArtery", "kind": "artery", "label": "Radial artery", "path": [[-9, 1.4], [-4, 1.3], [1, 1.1]], "radius": 1.3, "depth": 6 }
+      ]
+    },
+    "hand": {
+      "label": "Dorsal hand",
+      "subject": "hand",
+      "_frame": "The hand lies palm down (PA): outward = dorsal (+y), lateral = radial (+x), along = toward the wrist.",
+      "frame": { "origin": [-0.55, 0.45, 1.1], "along": [0.02, 0.28, -0.96], "lateral": [1, 0, 0], "outward": [0, 1, 0], "liftCm": 0 },
+      "tourniquetAlongCm": 6.5,
+      "patch": { "along": [-3.5, 6.5], "lateral": [-5.2, 4.0] },
+      "veins": [
+        { "id": "dm23", "label": "Dorsal metacarpal (2-3)", "path": [[-2.6, 1.0], [0, 1.05], [1.8, 1.4]], "radius": 1.6, "depth": 2.5, "visibility": 0.8, "fragility": 0.7, "roll": 1.2, "valves": [], "joins": [[1.8, 1.4]] },
+        { "id": "dm34", "label": "Dorsal metacarpal (3-4)", "path": [[-2.6, -1.0], [0, -1.05], [2.2, -0.9]], "radius": 1.7, "depth": 2.5, "visibility": 0.8, "fragility": 0.7, "roll": 1.2, "valves": [[-0.8, -1.05]], "joins": [[2.2, -0.9]] },
+        { "id": "dm45", "label": "Dorsal metacarpal (4-5)", "path": [[-2.3, -2.95], [0, -3.0], [1.8, -3.3]], "radius": 1.5, "depth": 2.5, "visibility": 0.7, "fragility": 0.7, "roll": 1.2, "valves": [], "joins": [[1.8, -3.3]] },
+        { "id": "arch", "label": "Dorsal venous arch", "path": [[1.8, 2.3], [1.8, 1.4], [2.2, -0.9], [1.8, -3.3], [1.6, -4.1]], "radius": 2.0, "depth": 3.0, "visibility": 0.7, "fragility": 0.6, "roll": 1.0, "valves": [], "joins": [[1.8, 1.4], [2.2, -0.9], [1.8, -3.3]] },
+        { "id": "cephalicHand", "label": "Cephalic (hand)", "path": [[1.8, 2.3], [4.0, 2.7], [6.2, 2.9]], "radius": 2.1, "depth": 3.0, "visibility": 0.7, "fragility": 0.5, "roll": 1.0, "valves": [], "joins": [[1.8, 2.3]] }
+      ],
+      "distractors": [
+        { "id": "ext2", "kind": "tendon", "label": "Extensor tendon (index)", "path": [[-3.2, 2.15], [5, 2.2]], "radius": 1.5, "depth": 1.5 },
+        { "id": "ext3", "kind": "tendon", "label": "Extensor tendon (middle)", "path": [[-3.2, -0.05], [5, 0.0]], "radius": 1.5, "depth": 1.5 },
+        { "id": "ext4", "kind": "tendon", "label": "Extensor tendon (ring)", "path": [[-3.2, -2.05], [5, -2.0]], "radius": 1.5, "depth": 1.5 },
+        { "id": "ext5", "kind": "tendon", "label": "Extensor tendon (little)", "path": [[-3.0, -3.85], [5, -3.8]], "radius": 1.4, "depth": 1.5 }
+      ]
+    }
+  },
+
+  "score": {
+    "weights": { "sequence": 30, "insertion": 30, "asepsis": 15, "securement": 15, "time": 10 },
+    "orderError": 3,
+    "criticalOrderError": 8,
+    "passMark": 75,
+    "criticalFails": ["acrossVein", "arterial", "infiltration", "portOpen"]
+  }
+}
