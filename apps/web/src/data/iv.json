@@ -21,9 +21,10 @@
     "pressureS": 5,
     "maxDepthMM": 7,
     "gauges": {
-      "18": { "odMM": 1.3, "minVeinMM": 4.0, "color": "#2e9e4f" },
-      "20": { "odMM": 1.1, "minVeinMM": 3.0, "color": "#e86aa0" },
-      "22": { "odMM": 0.9, "minVeinMM": 2.4, "color": "#3a7bd5" }
+      "18": { "odMM": 1.3, "minVeinMM": 4.0, "color": "#3cc88f" },
+      "20": { "odMM": 1.1, "minVeinMM": 3.0, "color": "#f08a9b" },
+      "22": { "odMM": 0.9, "minVeinMM": 2.4, "color": "#33c3d3" },
+      "24": { "odMM": 0.7, "minVeinMM": 1.8, "color": "#f2cd2c" }
     }
   },
 
