@@ -5,7 +5,7 @@
   "procedure": {
     "prep": ["hygiene", "gloves", "patientId", "order"],
     "tourniquet": { "fillS": 25, "releaseS": 10, "warnS": 60, "limitS": 120 },
-    "clean": { "radiusMM": 25, "coverage": 0.9, "scrubS": 10, "dryS": 0 },
+    "clean": { "radiusMM": 25, "coverage": 0.9, "scrubS": 7, "dryS": 0 },
     "seal": { "breakMinMM": 1, "breakMaxMM": 4, "offMM": 8 },
     "align": { "tolDeg": 10, "acrossDeg": 45 },
     "angles": { "pierceMin": 15, "pierceMax": 30, "steepOver": 35, "lowerMin": 5, "lowerMax": 15, "threadMax": 10, "lowerWithinS": 5 },

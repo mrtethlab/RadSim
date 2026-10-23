@@ -536,7 +536,7 @@ const SWAB_AT = [-11, 0, 3], PACK_AT = [4, 0, 0], KIT_IN_PACK = [5.2, 0.45, 0.78
 const PREP = { swab: 'closed', swabT: 0, swabLift: 0, pack: 'closed', packT: 0, lift: 0, sealPeak: 0, atSite: false };
 function resetPrep() { Object.assign(PREP, { swab: 'closed', swabT: 0, swabLift: 0, pack: 'closed', packT: 0, lift: 0, sealPeak: 0, atSite: false }); }
 const kitAtSite = () => !!A && (A.done.has('seal') || A.needle.inSkin || PREP.atSite);
-const LID = { L: 13.6, W: 7.4, x0: -6.8, nx: 72, y: 1.25, curl: 0.35 };
+const LID = { L: 13.6, W: 7.4, x0: -6.8, nx: 72, nz: 8, y: 1.25, curl: 0.35, tab: 1.1 };
 
 function buildPrep(THREE, mat, clear, group) {
   const g = new THREE.Group(); group.add(g);
@@ -589,11 +589,15 @@ function buildPrep(THREE, mat, clear, group) {
   rim.rotation.x = -Math.PI / 2; pk.add(rim);
   // the lid: one sheet, folded back over itself as it peels (label above, plain paper beneath)
   const lidGeo = new THREE.BufferGeometry(), nx = LID.nx, rest = [], uv = [], idx = [];
-  for (let i = 0; i <= nx; i++) for (let j = 0; j <= 1; j++) {
-    const x = LID.x0 + LID.L * i / nx, z = -LID.W / 2 + LID.W * j;
-    rest.push([x, z]); uv.push(i / nx, 1 - j);
+  const nz = LID.nz;
+  for (let i = 0; i <= nx; i++) for (let j = 0; j <= nz; j++) {
+    const x = LID.x0 + LID.L * i / nx, z = -LID.W / 2 + LID.W * j / nz;
+    rest.push([x, z]); uv.push(i / nx, 1 - j / nz);
   }
-  for (let i = 0; i < nx; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); }
+  for (let i = 0; i < nx; i++) for (let j = 0; j < nz; j++) {
+    const a = i * (nz + 1) + j, c = a + nz + 1;
+    idx.push(a, a + 1, c, c, a + 1, c + 1);
+  }
   lidGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(rest.length * 3), 3));
   lidGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   lidGeo.setIndex(idx);
@@ -610,10 +614,9 @@ function paintLid() {
   c.fillStyle = '#eef1f4'; c.fillRect(0, 0, W, H);
   c.fillStyle = '#f8fafb'; c.strokeStyle = '#d3d9df'; c.lineWidth = 3;
   c.beginPath(); c.roundRect(70, 26, W - 100, H - 52, 30); c.fill(); c.stroke();
-  // the pull tab, at the left end
-  c.fillStyle = '#dfe4e9'; c.fillRect(0, 0, 62, H);
-  c.save(); c.translate(38, H / 2); c.rotate(-Math.PI / 2); c.fillStyle = '#7d8790'; c.font = 'bold 24px Arial, sans-serif'; c.textAlign = 'center';
-  c.fillText('PEEL  ▼', 0, 0); c.restore();
+  // the tab's mark: a triangle by the corner, under the band
+  c.strokeStyle = '#8f979f'; c.lineWidth = 7; c.lineJoin = 'miter';
+  c.beginPath(); c.moveTo(96, 478); c.lineTo(96, 540); c.lineTo(156, 540); c.closePath(); c.stroke();
   c.fillStyle = '#5c636b'; c.textAlign = 'left';
   c.font = '600 48px Arial, sans-serif'; c.fillText('BD Nexiva™ Diffusics™', 130, 104);
   c.font = '24px Arial, sans-serif'; c.fillText('Closed IV Catheter System.', 130, 142);
@@ -649,7 +652,11 @@ function setLid(t) {
       const d = h - u;
       if (d < Math.PI * r) { const th = d / r; X = LID.x0 + h - r * Math.sin(th); Y = r * (1 - Math.cos(th)); }
       else { X = LID.x0 + h + (d - Math.PI * r); Y = 2 * r; }
-    } else if (u < 0.6 && t === 0) Y = (0.6 - u) * 0.25;          // the tab, a little proud
+    } else if (t === 0) {
+      // the tab: the corner by the printed triangle, unsealed and a little proud
+      const cu = 1 - u / LID.tab, cz = 1 - (LID.W / 2 - z) / LID.tab;
+      if (cu > 0 && cz > 0) Y = 0.22 * Math.min(cu, cz);
+    }
     pos.setXYZ(i, X, LID.y + Y, z);
   });
   pos.needsUpdate = true; lidGeo.computeVertexNormals(); lidGeo.computeBoundingSphere();
@@ -716,8 +723,9 @@ function prepDown(e, canvas, cam) {
     const hit = ray(e, canvas, cam).intersectObjects([P0.pack.lid, P0.pack.lidBack], false)[0];
     if (!hit) return;
     const q = P0.pack.group.worldToLocal(hit.point.clone());
-    if (q.x > LID.x0 + 1.4) { toast('Peel it back from the tab.'); return; }
-    ptr.ax = screenAxis(cam, prepPoint(PACK_AT), P0.X); ptr.kind = 'peel'; return;
+    if (q.x > LID.x0 + 2.2 || q.z < LID.W / 2 - 2.2) { toast('Peel it from the corner by the triangle.'); return; }
+    ptr.ax = screenAxis(cam, prepPoint(PACK_AT), P0.X); ptr.az = screenAxis(cam, prepPoint(PACK_AT), v3.mul(P0.Z, -1));
+    ptr.kind = 'peel'; return;
   }
   if (PREP.pack === 'open') { ptr.kind = 'lift'; return; }
   // in hand: Practice and Assessment may take it straight to the arm (the skipped seal is theirs)
@@ -731,7 +739,10 @@ function prepMove(e) {
   const dx = e.clientX - ptr.sx, dy = e.clientY - ptr.sy, cl = (v) => Math.max(0, Math.min(1, v));
   if (ptr.kind === 'tear') PREP.swabT = cl(Math.hypot(dx, dy) / 150);
   else if (ptr.kind === 'swabOut') PREP.swabLift = cl(Math.hypot(dx, dy) / 140);
-  else if (ptr.kind === 'peel') PREP.packT = cl((dx * ptr.ax.ux + dy * ptr.ax.uy) / (ptr.ax.px * LID.L * 0.8));
+  else if (ptr.kind === 'peel') {
+    const along = Math.max(dx * ptr.ax.ux + dy * ptr.ax.uy, dx * ptr.az.ux + dy * ptr.az.uy);
+    PREP.packT = cl(along / (ptr.ax.px * LID.L * 0.5));
+  }
   else if (ptr.kind === 'lift') PREP.lift = cl(-dy / 130);
   else if (ptr.kind === 'seal') {
     const mm = Math.max(0, ptr.slide0 + (dx * ptr.ax.ux + dy * ptr.ax.uy) / (ptr.ax.px / 10));
@@ -752,7 +763,7 @@ function prepMove(e) {
 function prepUp() {
   if (ptr.kind === 'tear' && PREP.swabT >= 0.6) { PREP.swab = 'open'; sfx('snap'); refresh(); }
   else if (ptr.kind === 'swabOut' && PREP.swabLift >= 0.5) { PREP.swab = 'out'; refresh(); }
-  else if (ptr.kind === 'peel' && PREP.packT >= 0.55) { PREP.pack = 'open'; sfx('snap'); refresh(); }
+  else if (ptr.kind === 'peel' && PREP.packT >= 0.35) { PREP.pack = 'open'; sfx('snap'); refresh(); }
   else if (ptr.kind === 'lift' && PREP.lift >= 0.5) { PREP.pack = 'out'; refresh(); }
 }
 // the step card's own lines while a supply is being opened
@@ -762,9 +773,9 @@ function miniStep() {
     return PREP.swab === 'closed' ? { do: 'Tear the packet open at its corner.', keys: [['Drag', 'corner']] }
       : { do: 'Take the swab out.', keys: [['Drag', 'swab out']] };
   }
-  if (tool === 'catheter' && !kitAtSite()) {
+  if (!kitAtSite() && (tool === 'catheter' || IV.currentStep(A) === 'seal')) {
     if (A.kit.off) return { do: 'The catheter came off the needle.', keys: [], newKit: true };
-    if (PREP.pack === 'closed') return { do: 'Peel the lid back from its tab.', keys: [['Drag →', 'tab']] };
+    if (PREP.pack === 'closed') return { do: 'Peel the lid back from the corner by the triangle.', keys: [['Drag', 'corner tab']] };
     if (PREP.pack === 'open') return { do: 'Lift the IV out.', keys: [['Drag ↑', 'IV']] };
     return { do: 'Slide the catheter 1 mm off the needle, then back.', keys: [['Drag →', 'break'], ['Drag ←', 'reseat']] };
   }
@@ -1108,6 +1119,8 @@ function onDown(e, canvas, cam) {
     R3.band.visible = true; sfx('snap'); setTool(null); refresh();
     return;
   }
+  // (the seal step shows the pack whatever is in hand: a click on it picks the IV up)
+  if (!tool && st === 'seal' && !kitAtSite()) setTool('catheter');
   if ((tool === 'pad' && PREP.swab !== 'out') || (tool === 'catheter' && !kitAtSite())) { prepDown(e, canvas, cam); return; }
   if (tool === 'pad') { ptr.kind = 'scrub'; return; }
   if (tool === 'tegaderm') {
@@ -1383,27 +1396,53 @@ function drawSection() {
   g.putImageData(img, 0, 0);
   const U = (u) => (u - XS.u0) / (XS.u1 - XS.u0) * XS.w, Z = (z) => (z - XS.z0) / (XS.z1 - XS.z0) * XS.h;
   const pitch = n.pitch * D;
-  // the ghost: the target angle for this phase (Guided)
-  if (A.mode === 'guided') {
+  // the ghost (Guided): the angle to come in at for this phase, drawn outside the skin only, back
+  // from where the needle enters (or would, at that angle, to reach the tip where it is)
+  if (A.mode === 'guided' && !n.shielded && !A.cath.hubbed) {
     const ga = (A.pierce.flashAt == null ? 22 : A.done.has('flash') ? 8 : 12) * D;
-    g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1;
-    const ex = n.inSkin ? tipU - (tip[2] / Math.tan(ga)) : 0;
-    g.beginPath(); g.moveTo(U(ex - 6), Z(-6 * Math.tan(ga))); g.lineTo(U(ex + 14), Z(14 * Math.tan(ga))); g.stroke();
+    const ex = n.inSkin ? tipU - (tip[2] / Math.tan(ga)) : tipU;
+    g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = 1; g.setLineDash([3, 3]);
+    g.beginPath(); g.moveTo(U(ex), Z(0)); g.lineTo(U(ex - 16 * Math.cos(ga)), Z(-16 * Math.sin(ga))); g.stroke(); g.setLineDash([]);
   }
-  // the catheter: a light, see-through sheath from bevelToCath behind the tip; the needle, dark
-  // silver, inside it and out past it to the bevel
-  const tz = tip[2], back = 30;
-  const cath = IV.catheterTip(A), cU = cath[0] * cy + (cath[1] - m.lateral) * sy;
-  if (!n.shielded) {
-    const wd = (A.needle.withdrawn || 0);
-    const nU = tipU - wd * Math.cos(pitch), nz = tz - wd * Math.sin(pitch);
+  // One path for both. The needle is straight along its shaft; the catheter rides on it to 1.5 mm
+  // behind the bevel and, once threaded, runs on along the vein. As the needle comes back it follows
+  // that path, and the catheter ahead of its tip, unsupported, goes limp: it sags to the vein's
+  // floor, and outside the skin the hub's end lies down.
+  const tz = tip[2], back = 30, cp = Math.cos(pitch), sp = Math.sin(pitch);
+  const T = [tipU, tz];
+  const along = (q, mm) => [q[0] - mm * cp, q[1] - mm * sp];               // back along the shaft
+  const Bq = along(T, P.needle.bevelToCathMM);
+  const cath = IV.catheterTip(A), C = A.cath.thread > 0 ? [cath[0] * cy + (cath[1] - m.lateral) * sy, cath[2]] : Bq;
+  const E = tz > 0 && sp > 1e-3 ? along(T, tz / sp) : T;                    // where the shaft crosses the skin
+  const wd = n.shielded ? 99 : (A.needle.withdrawn || 0);
+  const N = along(T, wd);                                                   // the needle's tip now
+  const limp = Math.max(0, Math.min(1, (wd - P.needle.bevelToCathMM) / 5));
+  const far = along(E, 10), farLimp = [E[0] - 10, -0.6];
+  const F0 = [far[0] + (farLimp[0] - far[0]) * limp, far[1] + (farLimp[1] - far[1]) * limp];
+  const cathPath = () => {
+    g.beginPath(); g.moveTo(U(F0[0]), Z(F0[1]));
+    if (limp <= 0) {
+      g.lineTo(U(E[0]), Z(E[1])); g.lineTo(U(Bq[0]), Z(Bq[1])); g.lineTo(U(C[0]), Z(C[1]));
+    } else {
+      // supported as far as the needle still reaches (never back past the skin), limp beyond
+      const S = N[1] > E[1] ? N : E;
+      const floor = cz + 0.45 * b;
+      const Q = [Bq[0] + limp * 1.2, Bq[1] + limp * Math.max(0, Math.min(floor, cz) - Bq[1])];
+      const Cl = [C[0], C[1] + limp * (floor - C[1])];
+      g.lineTo(U(E[0]), Z(E[1])); if (S !== E) g.lineTo(U(S[0]), Z(S[1]));
+      g.quadraticCurveTo(U(Q[0]), Z(Q[1]), U(Cl[0]), Z(Cl[1]));
+    }
+    g.stroke();
+  };
+  if (!n.shielded && N[1] > -12) {
+    const Nb = along(N, back);
     g.strokeStyle = '#5d646d'; g.lineWidth = 2;
-    g.beginPath(); g.moveTo(U(nU), Z(nz)); g.lineTo(U(nU - back * Math.cos(pitch)), Z(nz - back * Math.sin(pitch))); g.stroke();
+    g.beginPath(); g.moveTo(U(N[0]), Z(N[1])); g.lineTo(U(Nb[0]), Z(Nb[1])); g.stroke();
     g.strokeStyle = '#b9c0c8'; g.lineWidth = 1;
-    g.beginPath(); g.moveTo(U(nU), Z(nz) - 0.5); g.lineTo(U(nU - back * Math.cos(pitch)), Z(nz - back * Math.sin(pitch)) - 0.5); g.stroke();
+    g.beginPath(); g.moveTo(U(N[0]), Z(N[1]) - 0.5); g.lineTo(U(Nb[0]), Z(Nb[1]) - 0.5); g.stroke();
   }
-  g.strokeStyle = 'rgba(225,230,236,0.5)'; g.lineWidth = 4;
-  g.beginPath(); g.moveTo(U(cU), Z(cath[2])); g.lineTo(U(cU - back * Math.cos(pitch)), Z(cath[2] - back * Math.sin(pitch))); g.stroke();
+  g.strokeStyle = 'rgba(225,230,236,0.5)'; g.lineWidth = 4; g.lineJoin = 'round'; g.lineCap = 'round';
+  cathPath();
   // the hub's flash chamber, top right
   g.fillStyle = 'rgba(255,255,255,0.25)'; g.fillRect(XS.w - 22, 4, 18, 7);
   g.fillStyle = A.flash.artery ? `rgb(${200 + 55 * pulse},30,30)` : '#a01020';
@@ -1501,7 +1540,7 @@ function refresh() {
   if (cl) cl.innerHTML = guided ? cfg.steps.map((s, i) => `<li class="${A.done.has(IV.STEP_IDS[i]) ? 'done' : i === si ? 'cur' : ''}">${s.title}</li>`).join('') : '';
   $('ivChecklistWrap')?.classList.toggle('hide', !guided);
   // the cross-section shows from the seal to the withdrawal, Guided and Practice
-  const xs = !assess && A.mark && (A.done.has('seal') || A.needle.inSkin) && !A.needle.shielded && !A.finished;
+  const xs = !assess && A.mark && (A.done.has('seal') || A.needle.inSkin || PREP.atSite) && (!A.needle.shielded || st === 'clamp1') && !A.finished;
   $('ivXs')?.classList.toggle('show', !!xs);
   viewKey = stepView();
   paint();
@@ -1521,11 +1560,11 @@ function hotspots(cam) {
     if (!A.portOpen && !A.cap.locked) list.push({ id: 'portcap', at: worldOfKitPart(R3.portCap), want: st === 'portcap', icon: '○', tip: 'Port cap' });
     if (A.portOpen && (tool === 'syringe' || tool === 'cap')) list.push({ id: 'port', at: worldOfKitPart(R3.port), want: true, icon: '◎', tip: 'Port' });
   }
-  if (A.mode === 'guided' && R3.prep?.O && !A.ended) {
+  if (A.mode !== 'assessment' && R3.prep?.O && !A.ended) {
     if (tool === 'pad' && PREP.swab === 'closed' && PREP.swabT < 0.05) list.push({ id: 'cueSwab', at: prepPoint([SWAB_AT[0] + 2.2, 0.2, SWAB_AT[2] - 2.2]), cue: true });
     if (tool === 'pad' && PREP.swab === 'open') list.push({ id: 'cuePad', at: prepPoint([SWAB_AT[0] + 1.2, 0.3, SWAB_AT[2] - 1.2]), cue: true });
-    if (tool === 'catheter' && !kitAtSite() && !A.kit.off) {
-      if (PREP.pack === 'closed') { if (PREP.packT < 0.05) list.push({ id: 'cueTab', at: prepPoint([PACK_AT[0] + LID.x0 + 0.35, LID.y + 0.1, PACK_AT[2]]), cue: true }); } else list.push({ id: 'cueKit', at: hubWorld(), cue: true });
+    if ((tool === 'catheter' || IV.currentStep(A) === 'seal') && !kitAtSite() && !A.kit.off) {
+      if (PREP.pack === 'closed') { if (PREP.packT < 0.05) list.push({ id: 'cueTab', at: prepPoint([PACK_AT[0] + LID.x0 + 0.45, LID.y + 0.2, PACK_AT[2] + LID.W / 2 - 0.45]), cue: true }); } else list.push({ id: 'cueKit', at: hubWorld(), cue: true });
     }
   }
   if (A.dressing.placed && !A.done.has('dressing') && A.dressingAt) {
