@@ -13,7 +13,7 @@
               "kv": 55,
               "mas": 1.0,
               "grid": false,
-              "lut": "extremity",
+              "lut": "hand",
               "sid": 100,
               "coll": [
                 9,
@@ -36,7 +36,7 @@
               "kv": 57,
               "mas": 4.0,
               "grid": false,
-              "lut": "extremity",
+              "lut": "hand",
               "sid": 100,
               "coll": [
                 7,
@@ -64,7 +64,7 @@
               "kv": 55,
               "mas": 1.0,
               "grid": false,
-              "lut": "extremity",
+              "lut": "hand",
               "sid": 100,
               "coll": [
                 14,
@@ -87,7 +87,7 @@
               "kv": 57,
               "mas": 1.0,
               "grid": false,
-              "lut": "extremity",
+              "lut": "hand",
               "sid": 100,
               "coll": [
                 15,
@@ -110,7 +110,7 @@
               "kv": 58,
               "mas": 3.2,
               "grid": false,
-              "lut": "extremity",
+              "lut": "hand",
               "sid": 100,
               "coll": [
                 13,
@@ -138,7 +138,7 @@
               "kv": 58,
               "mas": 1.25,
               "grid": false,
-              "lut": "extremity",
+              "lut": "hand",
               "sid": 100,
               "coll": [
                 10,
@@ -161,7 +161,7 @@
               "kv": 60,
               "mas": 1.6,
               "grid": false,
-              "lut": "extremity",
+              "lut": "hand",
               "sid": 100,
               "coll": [
                 10,
@@ -184,7 +184,7 @@
               "kv": 60,
               "mas": 3.2,
               "grid": false,
-              "lut": "extremity",
+              "lut": "hand",
               "sid": 100,
               "coll": [
                 9,

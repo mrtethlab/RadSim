@@ -23,6 +23,12 @@ CLI:
   ./.venv/Scripts/python.exe -m app.build_hand_skin \
       --donor "…/Hy3D_textured_00009_.glb" \
       --model ../../apps/web/public/models/hand --name hand
+
+After a rebuild of the soft tissue (build_hand.py), colour the new mesh from the old skin
+instead (recolour): a folder holding the previous hand.model.json, hand.mat.bin, hand_skin.glb
+(e.g. from git show HEAD:...):
+  ./.venv/Scripts/python.exe -m app.build_hand_skin --recolour-from <that folder> \
+      --model ../../apps/web/public/models/hand --name hand
 """
 from __future__ import annotations
 
@@ -232,11 +238,55 @@ def build(donor_path, model_dir, name, snap=True):
     print(f'      header: skinMesh = {name}_skin.glb')
 
 
+def recolour(prev_dir, model_dir, name):
+    """Colour a rebuilt hand's mesh from the previous skin: each vertex takes the colour of the
+    nearest vertex of the old one, the two meshes lined up on their bones (the same skeleton;
+    only the soft tissue and so the crop moved). For a rebuild of the envelope, where the donor
+    warp no longer finds its landmarks (the fuller fingers meet near their bases, so a level
+    no longer cuts five separate digits) and only the low-frequency hue was ever kept anyway."""
+    from scipy.spatial import cKDTree
+
+    def bone_corner(d):
+        hdr = json.load(open(os.path.join(d, f'{name}.model.json')))
+        nx, ny, nz = hdr['dims']
+        sp = hdr['spacing'][0]
+        mat = np.fromfile(os.path.join(d, f'{name}.mat.bin'), np.uint8).reshape(nz, ny, nx)
+        zz, yy, xx = np.nonzero(mat == 18)                         # cortical bone
+        return (np.array([xx.min(), yy.min(), zz.min()]) - np.array([nx, ny, nz]) / 2.0) * sp
+
+    shift = bone_corner(model_dir) - bone_corner(prev_dir)
+    old = trimesh.load(os.path.join(prev_dir, f'{name}_skin.glb'))
+    old = old.to_geometry() if hasattr(old, 'to_geometry') else old
+    ours = trimesh.load(os.path.join(model_dir, f'{name}.glb'))
+    ours = ours.to_geometry() if hasattr(ours, 'to_geometry') else ours
+    d, k = cKDTree(np.asarray(old.vertices) + shift).query(np.asarray(ours.vertices))
+    rgba = np.asarray(old.visual.vertex_colors)[k].copy()
+    # blurred over the mesh: only the low-frequency hue is wanted, and the old skin's shading
+    # in its gaps, copied onto fingers that now fill them, drew dark lines on the new hand
+    rgb = inpaint_colours(ours, rgba[:, :3].astype(np.float64), np.zeros(len(rgba), bool), grow=0, smooth=40)
+    rgba[:, :3] = np.clip(rgb, 0, 255).round().astype(np.uint8)
+    ours.visual = trimesh.visual.ColorVisuals(ours, vertex_colors=rgba)
+    out = os.path.join(model_dir, f'{name}_skin.glb')
+    trimesh.Scene(ours).export(out)
+    print(f'      wrote {out}: {len(ours.vertices)} verts coloured from {prev_dir} '
+          f'(bones {np.round(shift, 1)} mm apart; nearest old vertex median {np.median(d):.1f}, '
+          f'p95 {np.percentile(d, 95):.1f} mm)')
+    hp = os.path.join(model_dir, f'{name}.model.json')
+    hdr = json.load(open(hp))
+    hdr['skinMesh'] = f'{name}_skin.glb'
+    json.dump(hdr, open(hp, 'w'), indent=2)
+
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
-    ap.add_argument('--donor', required=True, help='photo-textured hand .glb')
+    ap.add_argument('--donor', help='photo-textured hand .glb')
+    ap.add_argument('--recolour-from', help='a folder with the previous <name>.model.json, .mat.bin '
+                    'and _skin.glb: colour the rebuilt mesh from that skin instead of the donor')
     ap.add_argument('--model', required=True, help='model folder (holds <name>.mat.bin/.glb)')
     ap.add_argument('--name', default='hand')
     ap.add_argument('--no-snap', action='store_true')
     a = ap.parse_args()
-    build(a.donor, a.model, a.name, snap=not a.no_snap)
+    if a.recolour_from:
+        recolour(a.recolour_from, a.model, a.name)
+    else:
+        build(a.donor, a.model, a.name, snap=not a.no_snap)
