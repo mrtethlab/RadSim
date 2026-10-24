@@ -40,7 +40,7 @@ export function initTutorial(context) {
       wm.hidden = !open;
       wb.setAttribute('aria-expanded', String(open));
       wb.querySelector('.wb-t').textContent = open ? 'Hide the welcome message'
-                                                   : 'Welcome \u2014 read this first';
+                                                   : 'Welcome: read this first';
       if (open) wm.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
   }

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>RADSIM — X-ray Positioning Simulator</title>
+<title>RADSIM: Medical Imaging Simulator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 </head>
@@ -23,10 +23,10 @@
 <div class="home" id="homeScreen">
   <div class="home-inner">
     <h1 class="home-title">RAD<span>SIM</span></h1>
-    <p class="home-sub">Physics-based radiography and CT — position, expose, reconstruct</p>
+    <p class="home-sub">A physics-based medical imaging simulator</p>
     <div class="home-welcome-row">
       <button class="home-welcome-btn" id="welcomeBtn" aria-expanded="false" aria-controls="welcomeMsg">
-        <span class="wb-i">&#9432;</span><span class="wb-t">Welcome &mdash; read this first</span><span class="wb-c">&#9662;</span>
+        <span class="wb-i">&#9432;</span><span class="wb-t">Welcome: read this first</span><span class="wb-c">&#9662;</span>
       </button>
     </div>
     <div class="home-welcome" id="welcomeMsg" hidden>
@@ -48,13 +48,9 @@
           features may not be fully functional because the AI believed they were working
           correctly. Take the simulations with a grain of salt.</li>
 
-        <li><b>There are two compute engines.</b> Browser mode runs on your computer's CPU and is
-          what you get if you are using this online. It computes quickly but the images are
-          coarser. If you have a dedicated GPU you can download and run the software locally,
-          which unlocks the Python GPU engine and with it much larger, much more detailed
-          simulations. A few features stay locked in browser mode simply because they would take
-          tens of minutes to compute otherwise &mdash; the contrast injector is the main one, so
-          it falls back to a fixed preset timeline you can watch but not reprogram.</li>
+        <li><b>Everything runs in your browser.</b> The images are computed on your own device,
+          so a phone or an older laptop will be slower than a desktop. The CT contrast injector
+          plays a fixed preset timeline you can watch but not reprogram.</li>
 
         <li><b>The EI and DI values can be finicky.</b> With no real machine to benchmark against
           they do not carry much weight. Manual chest technique reads about right; lateral chest,
@@ -70,21 +66,22 @@
       </ul>
 
       <p class="hw-tip">If you are new, start with a mode's <b>Tutorial</b> button rather than
-        <b>Open</b> &mdash; it walks the whole workflow control by control and explains what each
-        one does to the beam and to the image.</p>
+        <b>Open</b>. It walks the whole workflow control by control and explains what each one
+        does to the beam and to the image.</p>
 
       <p class="hw-sign">Enjoy. Working on this has ironed out a few of my own misunderstandings,
-        so hopefully it does the same for you.<br><span>&mdash;Matt&mdash;</span></p>
+        so hopefully it does the same for you.<br><span>Matt</span></p>
     </div>
     <div class="home-grid">
       <div class="home-card hc-xray" data-mode="xray">
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">X-ray</div>
-          <div class="hc-tag">Projection radiography — AEC, grids, technique</div>
-          <div class="hc-desc">Position the subject, set the technique or let the AEC chambers
-            meter it, and expose. Polyenergetic ray-casting through real voxel anatomy, with
-            scatter, grids, beam hardening and an exposure index you can miss.</div>
+          <div class="hc-tag">Projection radiography with AEC, grids and technique</div>
+          <div class="hc-desc">Position the patient at the table, the wall stand or a free
+            detector, set the technique or let the AEC meter it, and expose. Polyenergetic ray
+            casting through voxel anatomy, with scatter, grids, beam hardening and an exposure
+            index.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="xray">Open</button>
             <button class="hc-trainer" title="Routine series marked like a practical exam: position, centre, collimate, expose, then see what went wrong">Trainer</button>
@@ -97,7 +94,7 @@
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">CT</div>
-          <div class="hc-tag">Scout, plan, acquire, reconstruct</div>
+          <div class="hc-tag">Scouts, scan planning, acquisition and reconstruction</div>
           <div class="hc-desc">Zero the table, take scouts, plan scan groups and recons, then
             watch the gantry acquire. Filtered back-projection with contrast timing and
             bolus tracking on the console.</div>
@@ -112,28 +109,25 @@
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">IV Placement</div>
-          <div class="hc-tag">Peripheral IV for contrast &mdash; feel, aim, flash, thread</div>
+          <div class="hc-tag">Peripheral IV placement for contrast</div>
           <div class="hc-desc">A closed-system catheter in the antecubital fossa, the radial
-            forearm or the back of the hand. Feel for the vein, prep, break the seal, pierce at
-            the right angle, lower on the flash and thread &mdash; then clamp, dress, flush and
-            cap. Guided, practice and assessment.</div>
+            forearm or the back of the hand. Feel for the vein, prep the site, insert at the
+            right angle, lower on the flash and thread, then clamp, dress, flush and cap. Guided,
+            practice and assessment modes.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="iv">Open</button>
           </div>
-          <div class="hc-mobnote">Desktop only &mdash; it needs a mouse and a keyboard.</div>
         </div>
       </div>
 
-      <!-- Modes on the roadmap but not yet in the build: parked in plain sight, not clickable.
-           No data-mode, so the card wiring skips them entirely. -->
       <div class="home-card hc-fluoro" data-mode="fluoro">
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Fluoroscopy</div>
-          <div class="hc-tag">Live screening &mdash; a beam you drive with your foot</div>
-          <div class="hc-desc">Pulsed screening on a GE OEC C-arm: hold the pedal, pick a pulse
-            rate, and trade dose for noise in real time. Last-image hold, beam-on timer, and a
-            C-arm you orbit around the patient.</div>
+          <div class="hc-tag">Live pulsed fluoroscopy on a C-arm</div>
+          <div class="hc-desc">Pulsed screening on a GE OEC C-arm: hold the pedal, choose a
+            pulse rate and see dose and noise trade off in real time. Last-image hold, a beam-on
+            timer and a C-arm you can orbit around the patient.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="fluoro">Open</button>
             <button class="hc-tut" data-tut="fluoro" title="Walk through this mode control by control">&#9654; Tutorial</button>
@@ -144,10 +138,9 @@
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Mammography</div>
-          <div class="hc-tag">Soft-tissue contrast at 26&ndash;32 kV</div>
-          <div class="hc-desc">Target/filter combinations, compression that visibly earns its
-            contrast and dose, an AEC tuned for a beam an order of magnitude softer than
-            radiography's, and CC / MLO views of a high-resolution breast phantom.</div>
+          <div class="hc-tag">Low-energy breast imaging at 26 to 32 kV</div>
+          <div class="hc-desc">Target and filter combinations, compression, an AEC tuned for a
+            low-energy beam, and CC and MLO views of a high-resolution breast phantom.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="mammo">Open</button>
             <button class="hc-tut" data-tut="mammo" title="Walk through this mode control by control">&#9654; Tutorial</button>
@@ -158,11 +151,10 @@
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Bone densitometry</div>
-          <div class="hc-tag">DXA &mdash; two energies, one number</div>
-          <div class="hc-desc">The smallest physics here and the most report-shaped output.
-            One exposure cannot tell a thin bone under fat from a dense one under none;
-            two energies can, because bone's attenuation falls away far faster than soft
-            tissue's. The soft tissue cancels, and what is left is areal density.</div>
+          <div class="hc-tag">Dual-energy x-ray absorptiometry</div>
+          <div class="hc-desc">A scan at two energies separates bone from soft tissue: the soft
+            tissue cancels and what is left is the areal bone mineral density, written up in a
+            densitometry report.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="dxa">Open</button>
             <button class="hc-tut" data-tut="dxa" title="Walk through this mode control by control">&#9654; Tutorial</button>
@@ -173,12 +165,10 @@
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Ultrasound</div>
-          <div class="hc-tag">B-mode, M-mode &amp; colour Doppler</div>
-          <div class="hc-desc">No ionising radiation at all: a probe on the skin and pulse-echo
-            imaging through the same voxel anatomy. Speckle, acoustic shadowing and
-            post-cystic enhancement are not drawn &mdash; they fall out of one scanline march,
-            the way they do in a real beam. The heart beats, M-mode measures it, and colour
-            is one dot product with the flow.</div>
+          <div class="hc-tag">B-mode, M-mode and colour Doppler</div>
+          <div class="hc-desc">Pulse-echo imaging through the same voxel anatomy, with speckle,
+            acoustic shadowing and post-cystic enhancement coming from the scanline physics. A
+            beating heart for M-mode and colour Doppler of the flow.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="us">Open</button>
             <button class="hc-tut" data-tut="us" title="Walk through this mode control by control">&#9654; Tutorial</button>
@@ -190,15 +180,44 @@
         <div class="hc-body">
           <div class="hc-name">Model Editor</div>
           <div class="hc-tag">Paint voxel phantoms slice by slice</div>
-          <div class="hc-desc">Build or alter a phantom directly: paint materials onto
-            transverse slices with a live 3D preview, then save it as a subject the scanners
-            can image.</div>
+          <div class="hc-desc">Build or alter a phantom: paint materials onto transverse slices
+            with a live 3D preview, then save it as a subject the scanners can image.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="editor">Open</button>
             <button class="hc-tut" data-tut="editor" title="Walk through this mode control by control">&#9654; Tutorial</button>
           </div>
-          <div class="hc-mobnote">Desktop only &mdash; slice painting wants a wide screen
-            and a fine pointer.</div>
+          <div class="hc-mobnote">Desktop only: slice painting needs a wide screen and a fine
+            pointer.</div>
+        </div>
+      </div>
+      <!-- Experimental: the X-ray and CT rooms on the Python GPU engine at its finest settings.
+           Run locally only; on the website the cards are greyed out (app.js, COMPUTE_LOCAL). -->
+      <div class="home-card hc-real hc-realx" data-mode="xray" data-real="xray">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">Realistic X-ray</div>
+          <div class="hc-tag">Experimental: full-resolution radiography on the GPU engine</div>
+          <div class="hc-desc">The X-ray mode with the most realistic images: full DR matrices
+            computed by the Python GPU backend. Needs RadSim running locally with the backend;
+            disabled on the website.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="xray">Open</button>
+          </div>
+          <div class="hc-mobnote">Desktop only</div>
+        </div>
+      </div>
+      <div class="home-card hc-real hc-realct" data-mode="ct" data-real="ct">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">Realistic CT</div>
+          <div class="hc-tag">Experimental: full-physics CT on the GPU engine</div>
+          <div class="hc-desc">The CT mode with the most realistic images: the fine-pitch
+            detector, every physics feature and full reconstruction, computed by the Python GPU
+            backend. Needs RadSim running locally with the backend; disabled on the website.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="ct">Open</button>
+          </div>
+          <div class="hc-mobnote">Desktop only</div>
         </div>
       </div>
     </div>
@@ -220,6 +239,7 @@
       <div class="ivxs-row"><canvas id="ivXsStrip" width="160" height="28"></canvas><span id="ivXsAngle" class="ivxs-angle"></span></div>
     </div>
     <div class="iv-only ivtray" id="ivTray" aria-label="Supply tray"><div class="ivtools" id="ivTools"></div></div>
+    <div class="iv-only ivtouch" id="ivTouch" aria-label="Touch controls"></div>
     <div class="iv-only ivangle" id="ivAngle"><span>ANGLE</span><b id="ivAngleV">0°</b></div>
     <div class="iv-only ivflash" id="ivFlash" title="Flash chamber"><span>FLASH</span><i><b id="ivFlashFill"></b></i></div>
     <div class="iv-only ivviews" id="ivViews"><button data-view="overview" type="button">Arm</button><button data-view="site" type="button">Site</button><button data-view="needle" type="button">Needle</button></div>
@@ -240,6 +260,27 @@
           <span class="flmon-lock" id="flMonLock">LIVE LOCK</span><canvas id="flMonLive"></canvas></div>
         <div class="flmon-scr"><span class="flmon-lab" id="flMonRefLab">REFERENCE</span>
           <canvas id="flMonRef"></canvas><div class="flmon-empty" id="flMonRefEmpty">NO REFERENCE &mdash; FILM or SAVE, then pick one from the directory</div></div>
+      </div>
+    </div>
+    <!-- X-RAY ROOM SET-UP (app.js setRoom, room.js): the wall stand, the table or a free detector.
+         The wall stand stands the patient upright; the table and the detector lay them supine. -->
+    <div class="roomsel" id="roomSel" role="group" aria-label="Room set-up">
+      <div class="roomsel-t">ROOM</div>
+      <div class="roomsel-g">
+        <button type="button" data-room="wall" title="Wall stand: the patient standing" aria-label="Wall stand">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="18" cy="10" r="4.6"/>
+            <rect x="12" y="16" width="12" height="15" rx="4.5"/><rect x="12.6" y="28" width="4.8" height="15" rx="2.2"/>
+            <rect x="18.6" y="28" width="4.8" height="15" rx="2.2"/><rect x="31" y="5" width="7" height="38" rx="2"/></svg>
+        </button>
+        <button type="button" data-room="table" title="Table: the patient lying on the table" aria-label="Table">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="9.5" cy="20.5" r="4.4"/>
+            <rect x="15" y="17" width="28" height="7.5" rx="3.6"/><rect x="4" y="27" width="40" height="4" rx="1.5"/>
+            <rect x="20" y="31" width="8" height="9.5"/><rect x="13" y="40.5" width="22" height="3.2" rx="1.2"/></svg>
+        </button>
+        <button type="button" data-room="detector" class="on" title="Free detector: the patient lying on the plate" aria-label="Free detector">
+          <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="9" y="6" width="30" height="36" rx="4.5"/>
+            <rect class="cut" x="14" y="11" width="20" height="26" rx="1.5"/></svg>
+        </button>
       </div>
     </div>
     <div class="modebar" id="modeBar">
@@ -784,7 +825,7 @@
         </div>
       </div>
 
-      <div class="grp ct-only" id="ctDetectorGrp">
+      <div class="grp ct-only real-only" id="ctDetectorGrp">
         <div class="lab">Detector</div>
         <div class="bod">
           <div class="row"><div class="rl">CT detector</div>
@@ -950,6 +991,9 @@
         <div class="lab">Simulation</div>
         <div class="bod">
           <div class="xray-only">
+            <!-- the compute engine and the full DR matrices belong to Realistic X-ray only
+                 (body.realistic): in the browser they would take minutes per image -->
+            <div class="real-only">
             <div class="row"><div class="rl">Compute engine</div>
               <div class="valchip" id="backendStatusX">checking…</div></div>
             <div class="seg" id="backendSegX">
@@ -957,8 +1001,6 @@
               <button data-be="python" disabled>Python GPU</button>
             </div>
             <div class="note" id="computeNoteX" style="margin-top:4px"></div>
-            <!-- the ray-cast matrix: a simulation cost, not a clinical setting, so it sits with
-                 the engine that pays for it -->
             <div class="row" style="margin-top:12px"><div class="rl">Detector resolution <small>ray-cast matrix</small></div>
               <div class="valchip" id="resV">320×400</div></div>
             <div class="seg" id="resSeg">
@@ -967,13 +1009,15 @@
               <button data-res="std">Std</button>
               <button data-res="high">High</button>
             </div>
-            <div class="note warn" id="resWarn" style="margin-top:4px; display:none">⚠ Full-resolution ray-casting is computationally heavy — expect long processing times. A detected GPU (Python compute engine) is strongly recommended.</div>
+            <div class="note warn" id="resWarn" style="margin-top:4px; display:none">Full-resolution ray casting is heavy: expect long processing times on the Python GPU engine.</div>
+            </div>
             <div class="row" style="margin-top:12px"><div class="rl">Scatter <small>veiling fog</small></div>
               <div class="val" id="scatterVal">100 %</div></div>
             <input type="range" id="scatterSld" min="0" max="200" step="5" value="100">
             <div class="note" id="scatterNote" style="margin-top:4px"></div>
           </div>
           <div class="ct-only">
+            <div class="real-only">
             <div class="row"><div class="rl">Compute engine</div>
               <div class="valchip" id="backendStatusCT">checking…</div></div>
             <div class="seg" id="backendSegCT">
@@ -981,6 +1025,7 @@
               <button data-be="python" disabled>Python GPU</button>
             </div>
             <div class="note" id="computeNoteCT" style="margin-top:4px"></div>
+            </div>
             <div class="detfeat" id="ctDetFeat">
               <div class="detfeat-lab">Physics simulation <span class="detfeat-hint">— turn off to speed up processing</span></div>
               <label class="ftog"><input type="checkbox" data-feat="beamHardening"><span>Beam hardening<small>polyenergetic — metal / bone artifacts</small></span></label>

@@ -906,7 +906,13 @@ function wireModeToggle() {
     // "open the mode" — it stops the event itself (see tutorial.js).
     card.addEventListener('click', (e) => {
       if (e.target.closest('.hc-tut')) return;
+      if (card.classList.contains('hc-dev')) return;      // greyed out (the realistic modes, online)
+      // the editor and the realistic modes are desktop-only: on a phone the card says so and
+      // opens nothing
+      if ((card.dataset.mode === 'editor' || card.dataset.real)
+        && document.body.classList.contains('mobile')) return;
       applyMode(card.dataset.mode);
+      if (card.dataset.real) ctx.setRealistic?.(card.dataset.real);
     });
   });
 }

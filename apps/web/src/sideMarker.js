@@ -56,7 +56,7 @@ export function initSideMarker(context) {
   grab = new THREE.Mesh(new THREE.BoxGeometry(5, 3, 5), new THREE.MeshBasicMaterial({ visible: false }));
   tile.add(grab);
   tile.visible = false;
-  three.scene.add(tile);
+  (three.rig || three.scene).add(tile);         // in the room's frame: on the receptor, upright at the wall
 
   const $ = ctx.$;
   document.querySelectorAll('#mkSeg button').forEach((b) => b.addEventListener('click', () => {
@@ -110,7 +110,8 @@ export function sideMarkerSync() {
     // light field should still be findable
     tile.material.map = tex; tile.material.emissiveMap = tex; tile.material.needsUpdate = true;
   }
-  tile.position.set(m.x, TABLE_Y, m.z);
+  // on the surface over the receptor (the tabletop, the wall stand's cover)
+  tile.position.set(m.x, TABLE_Y + (ctx.receptorGap?.() || 0), m.z);
   syncUI();
 }
 
@@ -128,7 +129,9 @@ export function sideMarkerPointer(e, phase, cam, canvas) {
   if (!dragging) return false;
   if (phase === 'up') { dragging = false; return true; }
   const hit = new THREE.Vector3();
-  if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -TABLE_Y), hit)) return true;
+  // the drag plane is the receptor's, in the room frame (stood upright at the wall stand)
+  if (tile.parent) ray.ray.applyMatrix4(tile.parent.matrixWorld.clone().invert());
+  if (!ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), -tile.position.y), hit)) return true;
   S.marker.x = Math.max(-28, Math.min(28, hit.x));
   S.marker.z = Math.max(-28, Math.min(28, hit.z));
   sideMarkerSync();

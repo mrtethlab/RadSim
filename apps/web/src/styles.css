@@ -149,7 +149,7 @@
     body{overflow:auto}
   }
   .bay{position:relative; background:linear-gradient(180deg,#0c0f13,#0a0c0f); min-height:340px;}
-  #view{position:absolute; inset:0; width:100%; height:100%; display:block}
+  #view{position:absolute; inset:0; width:100%; height:100%; display:block; touch-action:none}
   .baytag{position:absolute; top:12px; left:14px; z-index:5; pointer-events:none}
   .baytag .k{font-family:var(--seg); color:var(--cyan); letter-spacing:2px; font-size:12px}
   .baytag .s{color:var(--muted); font-size:12px; letter-spacing:3px; text-transform:uppercase}
@@ -1236,6 +1236,22 @@ body.mode-home .home{display:block}
    uses this at the moment — every mode on the roadmap now ships — but it is the pattern
    to reach for when the next one is announced ahead of being built. */
 .home-card.hc-dev{cursor:default; opacity:.6; filter:saturate(.45)}
+/* the realistic modes' controls: only in Realistic X-ray / Realistic CT */
+body:not(.realistic) .real-only{display:none !important}
+/* Realistic X-ray and CT: the same marks as their rooms, darker, under a fine detector matrix */
+.hc-realx .hc-art{background:linear-gradient(160deg,#141f2e,#2a3f5c 55%,#5d7a9c)}
+.hc-realx .hc-art::before{content:''; position:absolute; inset:0;
+  background:repeating-linear-gradient(90deg, rgba(255,255,255,.10) 0 1px, transparent 1px 6px),
+             repeating-linear-gradient(0deg, rgba(255,255,255,.10) 0 1px, transparent 1px 6px)}
+.hc-realx .hc-art::after{content:''; position:absolute; left:16%; right:16%; bottom:16px;
+  height:12px; border-radius:2px; background:rgba(226,236,248,.8); box-shadow:0 0 22px rgba(190,215,245,.4)}
+.hc-realct .hc-art{background:linear-gradient(160deg,#10231f,#1f4a40 55%,#3f7f6c)}
+.hc-realct .hc-art::before{content:''; position:absolute; inset:0;
+  background:repeating-linear-gradient(90deg, rgba(255,255,255,.08) 0 1px, transparent 1px 6px),
+             repeating-radial-gradient(circle at 50% 52%, rgba(255,255,255,.16) 0 1.5px, transparent 1.5px 13px)}
+.hc-realct .hc-art::after{content:''; position:absolute; left:50%; top:52%; width:74px; height:74px;
+  margin:-37px 0 0 -37px; border-radius:50%; background:rgba(4,16,13,.6);
+  box-shadow:inset 0 0 0 3px rgba(226,248,240,.7), 0 0 26px rgba(110,210,180,.3)}
 .home-card.hc-dev:hover{border-color:var(--edge2); box-shadow:none}
 .hc-badge{position:absolute; top:12px; right:12px; z-index:1; font-family:var(--seg);
   font-size:10px; letter-spacing:2px; text-transform:uppercase; color:#e8d9a0;
@@ -1348,6 +1364,25 @@ body.mode-home .home{display:block}
 .hc-tag{color:var(--sub); font-size:13.5px; margin:5px 0 11px}
 .hc-desc{color:var(--dim); font-size:13.5px; line-height:1.62}
 /* the mode bar is now just the way out */
+/* ---- x-ray room set-up: three icon tiles in a 2 x 2 grid, the selected one blue ---- */
+.roomsel{display:none; position:absolute; top:12px; left:34px;    /* (clear of the flyout tabs on the left edge) */ z-index:10; padding:7px 8px 8px;
+  background:rgba(10,14,18,.78); border:1px solid var(--edge2); border-radius:10px;
+  -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px)}
+body.mode-xray .roomsel{display:block}
+body.mode-home .roomsel, body.bay-flat .roomsel{display:none}
+.roomsel-t{font-family:var(--seg); font-size:10px; letter-spacing:3px; color:var(--muted); margin:0 0 6px 2px}
+.roomsel-g{display:grid; grid-template-columns:repeat(2,46px); gap:6px}
+.roomsel button{width:46px; height:46px; padding:5px; border:0; border-radius:8px; cursor:pointer;
+  background:#d9dde2; color:#5d656e; box-shadow:inset 0 -2px 0 rgba(0,0,0,.12); transition:background .15s, color .15s}
+.roomsel button:hover{background:#e8ebee}
+.roomsel button.on{background:#2f80dc; color:#fff; box-shadow:0 0 0 2px rgba(47,128,220,.35)}
+.roomsel svg{display:block; width:100%; height:100%; fill:currentColor}
+.roomsel svg .cut{fill:none; stroke:#d9dde2; stroke-width:1.6}
+.roomsel button:hover svg .cut{stroke:#e8ebee}
+.roomsel button.on svg .cut{stroke:#2f80dc}
+body.mobile .roomsel{top:52px; left:8px; padding:5px 6px 6px}
+body.mobile .roomsel-g{grid-template-columns:repeat(2,38px); gap:5px}
+body.mobile .roomsel button{width:38px; height:38px; padding:4px}
 .modebar-cur{font-family:var(--seg); font-size:11px; letter-spacing:3px; color:var(--muted);
   padding:0 14px 0 12px; align-self:center; border-left:1px solid var(--edge2); line-height:1}
 #homeBtn{font-family:var(--disp); font-weight:700; letter-spacing:3px; font-size:14px;
@@ -1508,6 +1543,15 @@ body.mobile .consec{
   overflow-y:auto; overflow-x:hidden; background:var(--bg); z-index:5}
 body.mobile .bay{overflow:hidden; height:auto; min-height:0}
 body.mobile .mpage-on, body.mobile .app > .col.mpage-on{display:block}
+/* the page behind the room never scrolls or bounces under a drag on it */
+body.mobile{overflow:hidden; overscroll-behavior:none}
+/* IV and the Trainer: the Setup tab is their own column; no Console or Image */
+body.mobile.mode-iv .mtabs button[data-mpage=console], body.mobile.mode-iv .mtabs button[data-mpage=image],
+body.mobile.trainer .mtabs button[data-mpage=console], body.mobile.trainer .mtabs button[data-mpage=image]{display:none}
+body.mobile.trainer .app > .col.trainer-col{display:none}
+body.mobile.trainer .app > .col.trainer-col.mpage-on{display:block}
+body.mobile.mode-iv .app > .col.iv-col{display:none}
+body.mobile.mode-iv .app > .col.iv-col.mpage-on{display:block}
 /* the setup/console pages keep their column styling but full-width */
 body.mobile .app > .col{width:auto; border:0}
 
@@ -1528,6 +1572,10 @@ body.mobile .mdock.has{display:block; position:fixed; left:0; right:0; z-index:2
   padding:8px 10px; background:rgba(10,14,18,.94); border-top:1px solid var(--edge2);
   -webkit-backdrop-filter:blur(6px); backdrop-filter:blur(6px)}
 body.mobile .mdock .btns2 button{min-height:46px}
+/* the dock keeps the controls and the live status; the how-to paragraphs stay on desktop */
+body.mobile .mdock .note:not([id]){display:none}
+/* a held pedal or exposure on iOS: no text selection, callout or scroll under the thumb */
+body.mobile .mdock button{-webkit-user-select:none; user-select:none; -webkit-touch-callout:none; touch-action:none}
 body.mobile .mdock.has ~ * .mpage-on{bottom:calc(120px + env(safe-area-inset-bottom))}
 /* pages must not hide content under the dock: pad their scroll end instead */
 body.mobile .app > .col.mpage-on,
@@ -1549,10 +1597,10 @@ body.mobile select{min-height:42px; font-size:14px}
 body.mobile .mini button{min-height:40px}
 body.mobile .imgtools button{min-width:44px; min-height:40px}
 
-/* ---- editor is desktop-only on the mobile layout ---- */
+/* ---- the editor and the realistic modes are desktop-only on the mobile layout ---- */
 .hc-mobnote{display:none}
-body.mobile .hc-editor .hc-acts{display:none}
-body.mobile .hc-editor .hc-mobnote{display:block; margin-top:14px; font-family:var(--seg);
+body.mobile .hc-editor .hc-acts, body.mobile .hc-real .hc-acts{display:none}
+body.mobile .hc-editor .hc-mobnote, body.mobile .hc-real .hc-mobnote{display:block; margin-top:14px; font-family:var(--seg);
   font-size:11px; letter-spacing:1px; color:var(--muted); text-transform:uppercase}
 
 /* ---- flyouts become bottom sheets ----
@@ -1836,6 +1884,11 @@ body.mode-us #film, body.mode-us #bigFilm{cursor:crosshair}
   border-radius:6px; box-shadow:0 8px 28px rgba(0,0,0,.55); resize:both; overflow:hidden;
   flex-direction:column}
 body.mode-fluoro .flmon{display:flex}
+/* a phone: the monitors sit along the bottom of the room, full width, fixed (no drag-resize) */
+body.mobile .flmon{left:6px; right:6px; bottom:6px; width:auto; height:40%; min-width:0; min-height:150px; resize:none}
+.flmon-bar, .flmon-live canvas{touch-action:none}
+body.mobile .flmon-hint{visibility:hidden}        /* (mouse and keyboard hints) */
+body.mode-dxa #film{touch-action:none}
 body.mode-fluoro .flmon.off{display:none}
 .flmon-bar{display:flex; align-items:center; gap:10px; padding:4px 8px; cursor:move; user-select:none;
   background:#0d151c; border-bottom:1px solid #22303b; font-family:var(--seg); font-size:9px;
@@ -2061,6 +2114,31 @@ body.mode-iv .ivangle{display:none}
 body.mode-iv .ivangle.show{display:block}
 /* IV has its own views (Arm, Site, Needle): the bay's view options are not for it */
 body.mode-iv #viewDrop{display:none}
+/* ---- IV on a phone: the room fills the screen; the card on top, the tray along the bottom,
+   the touch pad up the right, the section small in a corner ---- */
+.ivtouch{display:none !important}
+body.mobile.mode-iv .ivtouch.any{display:flex !important; position:absolute; right:8px; top:50%; transform:translateY(-55%);
+  z-index:18; flex-direction:column; gap:8px}
+.ivtouch button{display:none; width:52px; height:52px; border-radius:50%; border:1px solid rgba(255,255,255,0.18);
+  background:rgba(12,18,26,0.82); color:#e8edf2; font:700 12px/1 var(--disp); letter-spacing:.04em; touch-action:none;
+  user-select:none; -webkit-user-select:none}
+.ivtouch button.show{display:block}
+.ivtouch button.down, .ivtouch button.on{background:#163038; border-color:var(--cyan); color:#fff}
+body.mobile.mode-iv .ivstep{top:52px; left:8px; right:8px; transform:none; min-width:0; max-width:none; padding:8px 10px}
+body.mobile.mode-iv .ctrst{display:none !important}                /* (the X-ray room's flyouts) */
+body.mobile.mode-iv .ivstep .ivs-do{font-size:12px}
+body.mobile.mode-iv .ivtray{top:auto; bottom:8px; left:8px; right:8px; transform:none; padding:6px; border-radius:12px}
+body.mobile.mode-iv .ivtools{grid-template-columns:repeat(7,1fr); gap:5px}
+body.mobile.mode-iv .ivtools button{height:46px}
+body.mobile.mode-iv .ivtools button span{display:none}
+body.mobile.mode-iv .ivtools button svg{width:30px; height:30px}
+body.mobile.mode-iv .ivxs, body.mobile.mode-iv .ivangle{left:8px; bottom:76px; transform:scale(.62); transform-origin:bottom left}
+body.mobile.mode-iv .ivflash{bottom:76px; right:8px}
+body.mobile.mode-iv .ivviews{top:auto; bottom:76px; left:50%; right:auto; transform:translateX(-50%)}
+body.mobile.mode-iv .ivdebrief{align-items:flex-start; overflow-y:auto; padding:10px 0}
+body.mobile.mode-iv .ivd-card{max-width:calc(100% - 16px)}
+body.mobile.mode-iv .ivd-row{grid-template-columns:1fr}
+body.mobile.mode-iv .ivtoast{top:auto; bottom:140px}
 body.mode-iv .ivviews{top:14px}
 @keyframes ivpulse{50%{filter:brightness(1.6)}}
 .ivviews{position:absolute; right:14px; top:52px; z-index:16}
@@ -2092,4 +2170,4 @@ body.mode-iv .ivdebrief.show{display:flex}
 .ivd-btns{display:flex; gap:8px; margin-top:14px}
 .ivd-btns button{padding:9px 16px; border-radius:9px; border:1px solid var(--edge2); background:#1d2731; color:#fff; cursor:pointer}
 .ivd-btns button:first-child{background:var(--cyan); color:#05252a; border:0; font-weight:700}
-body.mobile .hc-iv .hc-open{display:none}
+/* (IV has its own phone layout: see body.mobile.mode-iv) */

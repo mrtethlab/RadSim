@@ -15,6 +15,14 @@ const MQ = '(max-width: 820px), ((pointer: coarse) and (max-width: 1024px))';
 // page name -> the element that becomes that page. conGen/conView are the two halves of
 // the desktop console column, wrapped in index.html for exactly this purpose.
 const PAGES = { bay: '.bay', setup: '.app > .col:not(#consoleCol)', console: '#conGen', image: '#conView' };
+// The Setup page is the mode's own column where it has one: IV's setup and checklist, the
+// Trainer's chooser and verdicts (both replace the usual columns, as on desktop).
+const pageSel = (name) => {
+  if (name !== 'setup') return PAGES[name];
+  if (document.body.classList.contains('mode-iv')) return '#ivCol';
+  if (document.body.classList.contains('trainer')) return '#trainerCol';
+  return PAGES.setup;
+};
 
 let ctx = null;
 let active = 'bay';
@@ -26,8 +34,8 @@ const isMobile = () => document.body.classList.contains('mobile');
 /* Which pager page an element lives on, or null (fixed overlays, home screen). */
 export function mobilePageFor(el) {
   if (!el || !el.closest) return null;
-  for (const [name, sel] of Object.entries(PAGES)) {
-    const page = q(sel);
+  for (const name of Object.keys(PAGES)) {
+    const page = q(pageSel(name));
     if (page && (el === page || page.contains(el))) return name;
   }
   return null;
@@ -42,9 +50,8 @@ export function mobileShowPageFor(el) {
 
 function setPage(name) {
   active = name;
-  for (const [n, sel] of Object.entries(PAGES)) {
-    q(sel)?.classList.toggle('mpage-on', n === name);
-  }
+  document.querySelectorAll('.mpage-on').forEach((el) => el.classList.remove('mpage-on'));
+  q(pageSel(name))?.classList.add('mpage-on');
   document.querySelectorAll('#mtabs button').forEach((b) =>
     b.classList.toggle('on', b.dataset.mpage === name));
   // the bay page owns the live 3D viewport; leaving it pauses the render loop (app.js
@@ -110,10 +117,14 @@ function sync() {
     || document.body.classList.contains('mode-fluoro')
     || document.body.classList.contains('mode-mammo')
     || document.body.classList.contains('mode-us')
-    || document.body.classList.contains('mode-dxa');
-  const show = isMobile() && inMode;
+    || document.body.classList.contains('mode-dxa')
+    || document.body.classList.contains('mode-iv');
+  // (at boot the home screen sits over the default x-ray room: both classes are on)
+  const show = isMobile() && inMode && !document.body.classList.contains('mode-home');
   $('mtabs')?.classList.toggle('show', show);
-  if (show) setPage(active === 'editor' ? 'bay' : active);
+  // (IV and the Trainer have no Console or Image page: from one of those, back to the room)
+  const own = document.body.classList.contains('mode-iv') || document.body.classList.contains('trainer');
+  if (show) setPage(own && (active === 'console' || active === 'image') ? 'bay' : active);
   else document.querySelectorAll('.mpage-on').forEach((el) => el.classList.remove('mpage-on'));
   dockControls();
 }
@@ -135,4 +146,11 @@ export function initMobile(context) {
   apply();
   // the tutorial needs these without importing us (avoids a cycle)
   window.__mobilePageFor = mobileShowPageFor;
+  // a mode that knows which page its next step is on (IV's setup, the Trainer's chooser)
+  // (called mid mode-switch the tab bar may not show yet: the page is remembered for sync)
+  window.__mobileSetPage = (name) => {
+    if (!isMobile()) return;
+    active = name;
+    if ($('mtabs')?.classList.contains('show')) setPage(name);
+  };
 }

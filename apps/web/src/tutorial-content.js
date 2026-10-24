@@ -38,6 +38,21 @@ export const XRAY_STEPS = [
       + 'in the image. Drag in the bay to orbit, scroll to zoom.',
   },
   {
+    sel: '#roomSel',
+    title: 'The room set-up',
+    text: 'Where the patient is imaged. <b>Table</b>: lying on the tabletop with the receptor in '
+      + 'the bucky tray under it. <b>Wall stand</b>: standing, the receptor behind them in the '
+      + 'upright bucky, at the 180 cm a PA chest is taken from. <b>Free detector</b>: lying '
+      + 'directly on the plate. The tabletop and the cover of the stand keep the patient a few '
+      + 'centimetres off the receptor, and that gap is real object-to-image distance: the image is '
+      + 'a little magnified and blurred by it.',
+    goal: {
+      label: 'Try another room set-up',
+      arm: () => S().room,
+      done: (a) => S().room !== a,
+    },
+  },
+  {
     sel: '#subjectGrp',
     title: 'Subject',
     text: 'Pick the body part on the table — it lives at the top of the positioning column, '
@@ -221,14 +236,11 @@ export const XRAY_STEPS = [
   },
   {
     sel: '#simGrp',
-    title: 'Compute engine',
-    text: 'Where the physics runs. <b>Browser</b> ray-casts on the CPU in this tab — always '
-      + 'available, and fine at quick resolution. <b>Python GPU</b> hands the projection to the '
-      + 'compute backend if you have it running, which is dramatically faster and makes full '
-      + 'resolution practical. Nothing about the image changes, only how long you wait for it. '
-      + 'Below it, <b>Detector resolution</b> is the ray-cast matrix: Quick is a coarse grid that '
-      + 'returns in a moment; Low, Std and High are true DR matrices, far sharper and far slower, '
-      + 'and worth the Python GPU engine.',
+    title: 'Simulation',
+    text: 'How the image is made and shown. <b>Scatter</b> scales the veiling fog that scattered '
+      + 'photons lay over the image: collimating tighter and fitting a grid are what remove it. '
+      + '<b>Automatic rescaling</b> and <b>detail enhancement</b> are the processing a DR system '
+      + 'applies before you see the image; turn them off to see the raw exposure.',
   },
   {
     sel: '#rotor',
@@ -422,16 +434,16 @@ export const CT_STEPS = [
     block: false,
   },
   {
-    sel: '#ctDetectorGrp',
-    title: 'Detector configuration',
-    text: 'How many detector rows you switch on, times the element size, gives the total beam '
-      + 'collimation. More rows cover more anatomy per rotation, so the scan is quicker — which is '
-      + 'why wide detectors matter for a breath-hold or a moving heart. Preview mode reconstructs '
-      + 'fast and roughly; the realistic detector adds the physics and is much slower.',
+    sel: '#ctDetFeat',
+    title: 'Physics simulation',
+    text: 'Which physics the scanner simulates. Beam hardening, multi-slice cone rays and '
+      + 'focal-spot blur each make the image truer and the reconstruction slower; quantum noise '
+      + 'costs almost nothing. Full-quality reconstruction trades the real-time preview for the '
+      + 'finished image.',
     goal: {
-      label: 'Try a different detector configuration',
-      arm: () => $('ctDetModeV')?.textContent,
-      done: (a) => $('ctDetModeV')?.textContent !== a,
+      label: 'Change a physics setting',
+      arm: () => JSON.stringify(S().ct.features),
+      done: (a) => JSON.stringify(S().ct.features) !== a,
     },
   },
   {
@@ -588,14 +600,13 @@ export const CONTRAST_STEPS = [
       + 'scale in time. Each phase carries a volume and a flow rate. Flow rate '
       + 'sets how tight the bolus is — 4–5 mL/s for a CTA, slower for a portal-venous study. The '
       + 'saline chaser is not padding: it pushes the tail of the contrast out of the arm veins and '
-      + 'into the circulation, so all of what you paid for is doing work. With the Python compute '
-      + 'service running, tap a phase to reprogram it on the keypad.',
+      + 'into the circulation, so all of what you paid for is doing work. Where the injector can '
+      + 'be programmed, tap a phase to change it on the keypad.',
     goal: {
       label: 'Open a phase and change a value',
-      when: () => !!S().computeInfo,
-      unless: 'Nothing to change on the browser engine: the protocol is fixed on the shipped '
-        + 'preset timeline. Programming the injector needs the Python compute service to solve '
-        + 'the haemodynamics for whatever you enter.',
+      when: () => !!S().computeInfo && S().realistic === 'ct',
+      unless: 'Nothing to change here: the protocol is a fixed preset timeline. Programming the '
+        + 'injector is part of Realistic CT.',
       arm: () => JSON.stringify(S().contrast.params),
       done: (a) => JSON.stringify(S().contrast.params) !== a,
     },
@@ -638,10 +649,9 @@ export const CONTRAST_STEPS = [
       + 'move — then think about what a fixed 25-second delay would have done to that patient.',
     goal: {
       label: 'Change the heart rate or stroke volume',
-      when: () => !!S().computeInfo,
-      unless: 'Nothing to change on the browser engine: the preset timeline is one fixed '
-        + 'patient. Moving these needs the Python compute service, which is what re-solves the '
-        + 'circulation each time you do.',
+      when: () => !!S().computeInfo && S().realistic === 'ct',
+      unless: 'Nothing to change here: the preset timeline is one fixed patient. Changing the '
+        + 'circulation is part of Realistic CT.',
       arm: () => S().contrast.params.cardiac_output_l_min,
       done: (a) => S().contrast.params.cardiac_output_l_min !== a,
     },

@@ -36,7 +36,7 @@ export function setPalpated(key, on) {
     new THREE.MeshBasicMaterial({ color: 0xff3030, transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthTest: false }));
   mesh.add(halo);
   mesh.renderOrder = 10; halo.renderOrder = 11;
-  three.scene.add(mesh);
+  (three.rig || three.scene).add(mesh);         // in the room's frame, with the patient
   marks.set(key, { mesh, halo, skin, dir: d.dir });
   markSubject = S.subject;
   palpationSync();
@@ -44,7 +44,7 @@ export function setPalpated(key, on) {
 }
 function drop(key) {
   const m = marks.get(key); if (!m) return;
-  ctx.three.scene.remove(m.mesh);
+  m.mesh.parent?.remove(m.mesh);
   m.mesh.geometry.dispose(); m.mesh.material.dispose();
   marks.delete(key);
 }
@@ -68,6 +68,9 @@ export function palpationSync() {
     m.mesh.position.set(p[0] + c[0], p[1] + c[1], p[2] + c[2]);
     // the halo faces out of the skin
     const d = rot(dl);
-    m.halo.lookAt(m.mesh.position.x + d[0], m.mesh.position.y + d[1], m.mesh.position.z + d[2]);
+    // (lookAt takes a world point: the room frame may be stood upright)
+    const out = new ctx.THREE.Vector3(m.mesh.position.x + d[0], m.mesh.position.y + d[1], m.mesh.position.z + d[2]);
+    m.mesh.updateMatrixWorld(true);
+    m.halo.lookAt(m.mesh.parent ? m.mesh.parent.localToWorld(out) : out);
   }
 }
