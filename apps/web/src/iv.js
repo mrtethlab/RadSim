@@ -1146,28 +1146,39 @@ function miniStep() {
 }
 // a camera that keeps an area of radius R round t in the clear part of the screen (left of the
 // tray, under the step card), looking along -n
+// What the overlays take of the view, as fractions of it from each side: the step card at the
+// top, the tray on the right (desktop) or along the bottom (phone), the touch pad on a phone.
+function overlayInsets() {
+  const cv = ctx.three.renderer.domElement.getBoundingClientRect(), W = cv.width || 1, H = cv.height || 1;
+  const out = { l: 0, r: 0, t: 0, b: 0 }, cl = (v, m) => Math.max(0, Math.min(m, v));
+  const card = $('ivStep')?.getBoundingClientRect();
+  if (card && card.height) out.t = cl((card.bottom - cv.top + 8) / H, 0.35);
+  for (const id of ['ivTray', 'ivTouch']) {
+    const r = $(id)?.getBoundingClientRect();
+    if (!r || !r.width || !r.height) continue;
+    if (r.width > W * 0.6) out.b = Math.max(out.b, cl((cv.bottom - r.top + 8) / H, 0.35));   // along the bottom
+    else out.r = Math.max(out.r, cl((cv.right - r.left + 8) / W, 0.4));                        // up the right side
+  }
+  return out;
+}
 function fitView(t, n, up, R) {
   const cv = ctx.three.renderer.domElement.getBoundingClientRect();
-  const tray = $('ivTray')?.getBoundingClientRect(), card = $('ivStep')?.getBoundingClientRect();
-  const fx = tray && tray.width ? Math.max(0, Math.min(0.4, (cv.right - tray.left + 8) / cv.width)) : 0;
-  const fy = card && card.height ? Math.max(0, Math.min(0.35, (card.bottom - cv.top + 8) / cv.height)) : 0;
+  const o = overlayInsets();
   const tn = Math.tan(21 * D), asp = cv.width / Math.max(1, cv.height);
-  const d = Math.max(R / (tn * asp * (1 - fx)), R / (tn * (1 - fy)));
+  const d = Math.max(R / (tn * asp * (1 - o.l - o.r)), R / (tn * (1 - o.t - o.b)));
   const u0 = v3.norm(v3.sub(up, v3.mul(n, v3.dot(up, n)))), r0 = v3.cross(v3.mul(n, -1), u0);
   const Hh = d * tn, Hw = Hh * asp;
-  const tgt = v3.add(t, v3.add(v3.mul(r0, fx * Hw), v3.mul(u0, fy * Hh)));
+  const tgt = v3.add(t, v3.add(v3.mul(r0, (o.r - o.l) * Hw), v3.mul(u0, (o.t - o.b) * Hh)));
   return { pos: v3.add(tgt, v3.mul(n, d)), target: tgt, up: u0, fitted: true };
 }
 // any other view: moved sideways so what it centres on sits in the clear part of the screen
 function clearOfOverlays(w) {
   const cv = ctx.three.renderer.domElement.getBoundingClientRect();
-  const tray = $('ivTray')?.getBoundingClientRect(), card = $('ivStep')?.getBoundingClientRect();
-  const fx = tray && tray.width ? Math.max(0, Math.min(0.4, (cv.right - tray.left + 8) / cv.width)) : 0;
-  const fy = card && card.height ? Math.max(0, Math.min(0.35, (card.bottom - cv.top + 8) / cv.height)) : 0;
+  const o = overlayInsets();
   const f = v3.sub(w.target, w.pos), d = Math.hypot(...f), fn = v3.mul(f, 1 / (d || 1));
   const u0 = v3.norm(v3.sub(w.up, v3.mul(fn, v3.dot(w.up, fn)))), r0 = v3.cross(fn, u0);
   const Hh = d * Math.tan(21 * D), Hw = Hh * cv.width / Math.max(1, cv.height);
-  const sh = v3.add(v3.mul(r0, fx * Hw), v3.mul(u0, fy * Hh));
+  const sh = v3.add(v3.mul(r0, (o.r - o.l) * Hw), v3.mul(u0, (o.t - o.b) * Hh));
   return { pos: v3.add(w.pos, sh), target: v3.add(w.target, sh), up: w.up };
 }
 
@@ -1519,6 +1530,8 @@ export function ivPointer(e, phase, cam, canvas) {
 }
 function onDown(e, canvas, cam) {
   const st = IV.currentStep(A);
+  // Feel on (a touchscreen's F): the finger palpates wherever it is dragged
+  if (keys.f && e.pointerType !== 'mouse' && !A.ended) { ptr.kind = 'feel'; palpateAt(e, canvas, cam); return; }
   // every drag is a left-drag but the needle's angle, which is a right-drag
   if (e.button === 2) {
     if (!A.ended && R3.kit.visible && kitAtSite() && !A.cath.hubbed) { ptr.kind = 'angle'; ptr.pitchRaw = A.needle.pitch; }
@@ -1576,6 +1589,7 @@ function onDown(e, canvas, cam) {
   }
 }
 function onMove(e, canvas, cam, dx, dy, dt) {
+  if (ptr.kind === 'feel') { palpateAt(e, canvas, cam); return; }
   // the palpating finger follows the cursor while F is held
   if (keys.f && !ptr.down) palpateAt(e, canvas, cam);
   if (!ptr.down) { R3.finger.visible = keys.f && !!hitPatch(e, canvas, cam); return; }
@@ -1982,9 +1996,60 @@ function refresh() {
   const xs = !assess && A.mark && (A.done.has('seal') || A.needle.inSkin || PREP.atSite) && (!A.needle.shielded || st === 'clamp1') && !A.finished;
   $('ivXs')?.classList.toggle('show', !!xs);
   viewKey = stepView();
+  const want = touchPadFor(st);
+  document.querySelectorAll('#ivTouch [data-t]').forEach((b) => b.classList.toggle('show', want.has(b.dataset.t)));
+  $('ivTouch')?.classList.toggle('any', want.size > 0);
   paint();
 }
 const chip = (k, v) => `<span class="ivk"><b>${k}</b>${v}</span>`;
+
+/* ---------------------------------------------------------------- the touch pad
+   A phone has no right button, no wheel and no keys: these buttons stand in for them, the same
+   handlers behind them. Hold for traction; tap or hold the arrows to angle (▲▼) and turn or
+   twist (◀▶); Thread is the wheel; Feel makes a finger drag palpate. Each shows only when its
+   step wants it. */
+const TOUCH = [
+  { id: 'feel', label: 'Feel', toggle: true },
+  { id: 'traction', label: 'Hold', hold: ' ' },
+  { id: 'up', label: '\u25B2', rep: 'x', tip: 'Steeper' },
+  { id: 'down', label: '\u25BC', rep: 'z', tip: 'Flatter' },
+  { id: 'left', label: '\u25C0', rep: 'q', tip: 'Turn / twist' },
+  { id: 'right', label: '\u25B6', rep: 'e', tip: 'Turn / twist' },
+  { id: 'thread', label: 'Thread', thread: true },
+];
+const fakeKey = (k, down) => onKey({ key: k, code: k === ' ' ? 'Space' : 'Key' + k.toUpperCase(), repeat: false, preventDefault() {} }, down);
+function wireTouchPad() {
+  const pad = $('ivTouch'); if (!pad) return;
+  pad.innerHTML = TOUCH.map((b) => `<button type="button" data-t="${b.id}" title="${b.tip || b.label}">${b.label}</button>`).join('');
+  for (const b of TOUCH) {
+    const el = pad.querySelector(`[data-t="${b.id}"]`);
+    let timer = 0;
+    const stop = () => { clearInterval(timer); timer = 0; if (b.hold) fakeKey(b.hold, false); el.classList.remove('down'); };
+    el.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      try { el.setPointerCapture(e.pointerId); } catch { /* */ }
+      if (!A) return;
+      if (b.toggle) { keys.f = !keys.f; el.classList.toggle('on', keys.f); if (!keys.f && R3) R3.finger.visible = false; return; }
+      el.classList.add('down');
+      if (b.hold) { fakeKey(b.hold, true); return; }
+      const once = () => (b.thread ? ivWheel({ deltaY: -100, preventDefault() {} }) : (fakeKey(b.rep, true), fakeKey(b.rep, false)));
+      once(); timer = setInterval(once, b.thread ? 260 : 120);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'lostpointercapture']) el.addEventListener(ev, stop);
+  }
+}
+// which of the pad's buttons this moment wants
+function touchPadFor(st) {
+  const show = new Set();
+  if (!A || A.finished || A.ended) return show;
+  if (['palpate', 'clean'].includes(st) || keys.f) show.add('feel');
+  const atSite = kitAtSite() && !A.cath.hubbed;
+  if (atSite && ['align', 'anchor', 'insert', 'flash', 'thread'].includes(st)) { show.add('traction'); show.add('left'); show.add('right'); }
+  if (atSite && ['anchor', 'insert', 'flash', 'thread'].includes(st)) { show.add('up'); show.add('down'); }
+  if (A.pierce.front && !A.cath.hubbed) show.add('thread');
+  if ((A.syringe.on && (st === 'syringe' || st === 'syringeOff')) || (A.cap.on && !A.cap.locked)) { show.add('left'); show.add('right'); }
+  return show;
+}
 const PREP_LABEL = { hygiene: 'Hand hygiene', gloves: 'Gloves', patientId: 'Patient ID', order: 'Order' };
 
 /* Hotspots: round buttons over the small things there are to click (clamp, port, tourniquet,
@@ -2208,6 +2273,9 @@ function showSetup(on) {
   $('ivSetup')?.classList.toggle('show', on);
   $('ivRun')?.classList.toggle('show', !on);
   if (on) { $('ivStep').innerHTML = ''; $('ivStep').classList.add('empty'); $('ivXs')?.classList.remove('show'); }
+  // a phone: the setup is its own page, the attempt is in the room (after the pager has caught
+  // up with the mode change)
+  setTimeout(() => window.__mobileSetPage?.(on ? 'setup' : 'bay'), 0);
 }
 async function loadSite() {
   const site = cfg.sites[setup.site], S = ctx.S;
@@ -2299,6 +2367,7 @@ export function initIV(context) {
   $('ivStart')?.addEventListener('click', () => { attempts = 0; start(); });
   $('ivRestart')?.addEventListener('click', restart);
   $('ivEnd')?.addEventListener('click', () => { if (A && !A.finished) IV.finish(A); });
+  wireTouchPad();
   $('ivBack')?.addEventListener('click', () => { if (A && !A.finished && !confirm('Leave this attempt?')) return; A = null; showSetup(true); });
   const tools = $('ivTools');
   if (tools) {

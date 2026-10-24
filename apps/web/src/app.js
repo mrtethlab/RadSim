@@ -38,6 +38,7 @@ import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from '
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
 import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
+import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR } from './room.js';
 import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay } from './dxa.js';
 
 /* ============================================================================
@@ -59,15 +60,20 @@ function initScene(){
   const amb=new THREE.AmbientLight(0x6b7785,0.9); scene.add(amb);
   const key=new THREE.DirectionalLight(0xbfe9ff,0.9); key.position.set(40,90,60); scene.add(key);
   const rim=new THREE.DirectionalLight(0x35c6d6,0.35); rim.position.set(-50,20,-40); scene.add(rim);
+  // THE X-RAY ROOM GROUP. The receptor, tube, lamp and patient live in the physics frame
+  // (receptor plane y=0, beam down -y, long axis +z); at the wall stand the whole group is stood
+  // upright (syncScene roomFrame), so the physics never knows the room changed. Identity in
+  // every other mode: they share the patient group.
+  const rig=new THREE.Group(); scene.add(rig);
 
   // detector (bucky) at y=0 — receives the collimator light + hand shadow.
   // Matte, non-reflective top (no sheen, no grid) so the projected light field
   // and hand shadow read cleanly; the exposure area is marked by corner brackets.
   const det=new THREE.Mesh(new THREE.BoxGeometry(24,1.2,30),
     new THREE.MeshStandardMaterial({color:0x11161b,metalness:0,roughness:1}));
-  det.position.y=-0.6; det.receiveShadow=true; scene.add(det);
+  det.position.y=-0.6; det.receiveShadow=true; rig.add(det);
   // white L-shaped corner markers outlining the 24x30 receptor area (x-ray only)
-  const detMarks=new THREE.Group(); scene.add(detMarks);
+  const detMarks=new THREE.Group(); rig.add(detMarks);
   (function cornerMarkers(){
     const markMat=new THREE.MeshBasicMaterial({color:0xffffff});
     const hx=12, hz=15, arm=3.2, th=0.35, yy=0.07;
@@ -84,7 +90,7 @@ function initScene(){
   // AEC ionisation chambers: three outlined cells on the receptor (bucky pattern —
   // outer pair toward the head end, centre cell lower). Shown only when AEC is on;
   // selected cells fill translucent cyan. Fixed to the bucky (never scale with the plate).
-  const aecGroup=new THREE.Group(); scene.add(aecGroup);
+  const aecGroup=new THREE.Group(); rig.add(aecGroup);
   const aecCellMeshes={};
   for(const [k,p] of Object.entries(AEC_CELLS)){
     const fill=new THREE.Mesh(new THREE.PlaneGeometry(AEC_W,AEC_L),
@@ -119,7 +125,7 @@ function initScene(){
     const head=new THREE.Mesh(new THREE.ConeGeometry(0.55,1.1,12),m);
     head.rotation.x=Math.PI/2; head.position.set(0,0.07,0.55); detArrow.add(head);
   })();
-  scene.add(detArrow);
+  rig.add(detArrow);
 
   // ---- COLLIMATOR LAMP -------------------------------------------------
   // A shadow-casting spotlight at the focal spot projects a "cookie" texture
@@ -137,27 +143,29 @@ function initScene(){
   lamp.shadow.camera.near=8; lamp.shadow.camera.far=280;
   lamp.shadow.camera.up.set(0,0,-1);                    // deterministic cookie orientation
   lamp.shadow.bias=-0.0006;
-  scene.add(lamp); scene.add(lamp.target);
+  rig.add(lamp); rig.add(lamp.target);
 
   // retired flat overlays (kept as hidden refs for compatibility)
   const lf={visible:false}, lfFill={visible:false,geometry:{dispose(){}}},
         lfCross={visible:false,geometry:{dispose(){}}};
 
-  // tube head — a manual collimator box modeled to the reference photos, with a LIVE LCD strip
+  // tube head: a ceiling-suspended tube and touchscreen collimator (room.js); the column it
+  // hangs from is world scenery, placed each sync from the tube's mount
   const tube=new THREE.Group();
-  const collLCD=buildCollimatorHead(THREE,tube);
-  scene.add(tube);
+  const collLCD=buildTubeHead(tube);
+  rig.add(tube);
+  const room=buildRoom(scene,{aecCells:AEC_CELLS});
 
   // central ray
   const crGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(),new THREE.Vector3()]);
   const cr=new THREE.Line(crGeo,new THREE.LineBasicMaterial({color:0x35c6d6,transparent:true,opacity:.4}));
-  scene.add(cr);
+  rig.add(cr);
 
   const beam=new THREE.Group(); scene.add(beam);         // retired (unused)
-  const handGroup=new THREE.Group(); scene.add(handGroup);
+  const handGroup=new THREE.Group(); rig.add(handGroup);
 
   three={renderer,scene,cam,tube,cr,lf,lfFill,lfCross,beam,handGroup,det,detMarks,detArrow,
-         amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD,aecGroup,aecCellMeshes};
+         amb,key,lamp,cookieCanvas,cookieTex,lampAngle,collLCD,aecGroup,aecCellMeshes,rig,room};
   // Observability: a same-stack render + readback for headless verification (the
   // Browser pane cannot screenshot when hidden; WebGL backbuffers do not persist).
   window.__snap3d = () => { renderer.render(scene, cam); return renderer.domElement.toDataURL('image/png'); };
@@ -189,19 +197,28 @@ function initScene(){
     }
     if(cam.near!==1){ cam.near=1; cam.updateProjectionMatrix(); }
     if(cam.fov!==42){ cam.fov=42; cam.updateProjectionMatrix(); }
+    // (both views are worked out in the physics frame and carried into the room by the rig:
+    // at the wall stand that frame stands upright)
+    rig.updateMatrixWorld();
+    const toRoom=(x,y,z)=>new THREE.Vector3(x,y,z).applyMatrix4(rig.matrixWorld);
     if(S.mode!=='ct' && S.viewMode==='tube'){
       // look from the tube along the central ray, framed to the hand (bird's eye)
       const s=sourcePos(), t=[S.tubeX,0,S.tubeZ];
       let dx=s[0]-t[0], dy=s[1]-t[1], dz=s[2]-t[2];
-      const L=Math.hypot(dx,dy,dz)||1, D=46;   // framing distance from detector
-      cam.up.set(0,0,1);                        // fingertips (+z) toward top of view
-      cam.position.set(t[0]+dx/L*D, t[1]+dy/L*D, t[2]+dz/L*D);
-      cam.lookAt(t[0],t[1],t[2]);
+      // framing distance from the receptor: 46 cm frames a hand; a thicker patient is cleared
+      // (its top is about twice its centre's height) so the view is never inside the body
+      const L=Math.hypot(dx,dy,dz)||1, D=Math.min(L*0.9, Math.max(46, 2*restHeight()+S.objOff.y+30));
+      cam.up.set(0,0,1).applyQuaternion(rig.quaternion);   // fingertips (+z) toward top of view
+      cam.position.copy(toRoom(t[0]+dx/L*D, t[1]+dy/L*D, t[2]+dz/L*D));
+      cam.lookAt(toRoom(t[0],t[1],t[2]));
     } else {
       cam.up.set(0,1,0);
+      // the orbit turns about the patient (the physics point above the receptor's centre),
+      // shifted by the two-finger pan
+      const c=toRoom(0,6,0).add(new THREE.Vector3(tx,ty-6,tz));
       const cx=Math.cos(el)*Math.cos(az), cy=Math.sin(el), cz=Math.cos(el)*Math.sin(az);
-      cam.position.set(tx+cx*rad, ty+cy*rad, tz+cz*rad);
-      cam.lookAt(tx,ty,tz);
+      cam.position.set(c.x+cx*rad, c.y+cy*rad, c.z+cz*rad);
+      cam.lookAt(c);
     }
   }
   let drag=false,lx=0,ly=0;
@@ -217,17 +234,43 @@ function initScene(){
     if(S.mode==='xray' && sideMarkerPointer(e,'down',cam,canvas)){ canvas.setPointerCapture(e.pointerId); return; }
     if(S.mode==='ct'){ if(S.ct.pov!=='orbit') return; }   // CT: only the Orbit view drags (AP/Lat are fixed)
     else if(S.viewMode!=='orbit') setCameraView('orbit');
-    drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId)});
+    drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture(e.pointerId);
+    // a second finger turns the orbit into a pinch (zoom) and a two-finger pan
+    touches.set(e.pointerId,[e.clientX,e.clientY]);
+    if(touches.size===2){ pinch=pinchState(); }});
+  // fingers on the canvas, for the pinch and the two-finger pan
+  const touches=new Map(); let pinch=null;
+  const pinchState=()=>{ const [a,b]=[...touches.values()];
+    return { d:Math.hypot(a[0]-b[0],a[1]-b[1])||1, rad, mx:(a[0]+b[0])/2, my:(a[1]+b[1])/2 }; };
   canvas.addEventListener('pointermove',e=>{
     if(S.mode==='iv'){ ivPointer(e,'move',cam,canvas); return; }
     if(S.mode==='us' && usPointer(e,'move',cam,canvas)) return;
     if(S.mode==='xray' && sideMarkerPointer(e,'move',cam,canvas)) return;
+    if(touches.has(e.pointerId)) touches.set(e.pointerId,[e.clientX,e.clientY]);
+    if(pinch && touches.size===2){
+      const now=pinchState();
+      rad=Math.max(40,Math.min(700,pinch.rad*pinch.d/now.d));
+      // the pan: the target slides with the fingers' midpoint, in the view's own plane
+      const k=rad/canvas.clientHeight*0.8, dx=(now.mx-pinch.mx)*k, dy=(now.my-pinch.my)*k;
+      const rx=Math.sin(az), rz=-Math.cos(az);            // the view's right, on the floor
+      tx-=dx*rx; tz-=dx*rz; ty+=dy;
+      pinch={...now, rad};
+      return;
+    }
     if(!drag)return;
     az+=(e.clientX-lx)*0.008; el+=(e.clientY-ly)*0.006;
     el=Math.max(0.12,Math.min(1.45,el)); lx=e.clientX;ly=e.clientY;});
+  const endTouch=(e)=>{ touches.delete(e.pointerId); if(touches.size<2) pinch=null;
+    if(touches.size===1){ const [p]=[...touches.values()]; lx=p[0]; ly=p[1]; } };
   canvas.addEventListener('pointerup',e=>{ if(S.mode==='us') usPointer(e,'up',cam,canvas);
     if(S.mode==='iv') ivPointer(e,'up',cam,canvas);
-    if(S.mode==='xray') sideMarkerPointer(e,'up',cam,canvas); drag=false;});
+    if(S.mode==='xray') sideMarkerPointer(e,'up',cam,canvas); endTouch(e); if(!touches.size) drag=false;});
+  // a touch the browser took back (a system gesture, a call coming in) ends the drag too
+  canvas.addEventListener('pointercancel',e=>{ if(S.mode==='iv') ivPointer(e,'up',cam,canvas);
+    endTouch(e); if(!touches.size) drag=false;});
+  three.resetOrbitTarget=()=>{ tx=0; ty=6; tz=0; };
+  // observability: set the orbit from the console (headless checks of the room)
+  window.__orbit=(a,e,r,t)=>{ if(a!=null) az=a; if(e!=null) el=e; if(r!=null) rad=r; if(t){ [tx,ty,tz]=t; } };
   canvas.addEventListener('contextmenu',e=>{ if(S.mode==='iv') e.preventDefault(); });   // right-drag sets the needle's angle
   canvas.addEventListener('wheel',e=>{ if(S.mode==='iv'){ ivWheel(e); return; }
     if(!orbitActive())return;
@@ -675,7 +718,12 @@ function skinSample(vm){
   }
   return Float32Array.from(out);
 }
-function restHeight(){
+/* The patient's centre above the receptor: resting on whatever surface the room puts over it
+   (the tabletop, the wall stand's cover: ROOM_GAP, real object-to-image distance), plus the
+   lift slider. Every consumer (the physics, the scene, the trainer) reads it from here. */
+function receptorGap(){ return S.mode==='xray' ? (ROOM_GAP[S.room]||0) : 0; }
+function restHeight(){ return restHeightOnReceptor() + receptorGap(); }
+function restHeightOnReceptor(){
   const vm=S.voxelModel;
   if(!vm) return 5;
   if(!vm.data) return (vm.extentMM[1]/2)/10;             // backend-only: no volume in the browser
@@ -803,6 +851,7 @@ const S = {
   // oid is DERIVED, not set: it is the air gap under the object, i.e. the height offset.
   // It used to be a stepper that changed only this number — the geometry never moved, so
   // magnification never changed, which is what "OID is broken" meant.
+  room:'detector',             // the x-ray set-up: 'table' | 'wall' | 'detector' (room.js, setRoom)
   spread:0.45, sid:100, oid:0, tubeZ:0, tubeX:0, angLM:0, angCC:0,
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
@@ -1646,7 +1695,7 @@ async function contrastSolve(){
   // but a SOLVED timeline is just data — the whole timing exercise (start the injector, judge
   // the moment, scan) is client-side and works exactly the same. Only reprogramming the
   // injector needs the service, so those controls get locked rather than the feature removed.
-  if(!S.computeInfo){
+  if(!contrastLive()){
     if(!vm.hasPresetContrast){
       C.error='Python compute service unreachable, and this model ships no preset timeline.';
       C.timeline=null; return false;
@@ -1721,6 +1770,7 @@ window.radsimContrast={
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
+  roomFrame();                                  // the physics frame into the room (upright at the wall)
   // The voxel model is placed by ctSyncScene in CT mode; in x-ray it rests on the receptor.
   const ox=S.mode!=='ct'?S.objOff.x:0, oz=S.mode!=='ct'?S.objOff.z:0;   // x-ray object offset sliders
   three.handGroup.rotation.z = 0;
@@ -1733,7 +1783,7 @@ function syncScene(){
   const src=sourcePos();
   const aim=[S.tubeX,0,S.tubeZ];
   three.tube.position.set(src[0],src[1],src[2]);
-  three.tube.lookAt(new THREE.Vector3(...aim)); three.tube.rotateX(Math.PI/2);
+  three.tube.lookAt(three.rig.localToWorld(new THREE.Vector3(...aim))); three.tube.rotateX(Math.PI/2);
   three.tube.rotateY(-Math.PI/2);  // square the housing with the light field it projects (field W along x, L along z)
   updateCollimatorLCD();           // live LCD strip: filter / field size / status / SID
   three.cr.geometry.setFromPoints([new THREE.Vector3(...src), new THREE.Vector3(...aim)]);
@@ -1773,6 +1823,7 @@ function syncScene(){
   sideMarkerSync();                             // the lead R/L tile on the receptor (x-ray only)
   bendVoxelMesh();                              // the mesh bends with the joints (x-ray)
   palpationSync();                              // palpated landmarks stay on the patient's skin
+  roomSync();                                   // the table / wall stand / column (last: overrides the receptor)
   // object rotate/tilt (applies last, in both modes): rotate the visible object about
   // its centre to match the traced phantom. A voxel mesh is centred at its own origin
   // so it rotates in place inside handGroup.
@@ -1805,163 +1856,81 @@ function updateCookie(){
   t.cookieTex.needsUpdate=true;
 }
 
-/* ---- X-RAY COLLIMATOR HEAD ------------------------------------------------
-   The tube head modeled as a real manual collimator (reference photos): beige
-   box, dark tube-port cone + white dome on top, vented top plate, printed
-   front panel (groove, blue LCD bezel with white tick marks, red/blue
-   crosshatch knob scales, tape-measure badge), a LIVE LCD strip, the round
-   key row (light / M / − / +), the square lamp key between the twin grey
-   field-size knobs, on a grey base with corner feet.
-   Local frame: origin = focal spot, −y = beam direction, +z = front panel. */
-function collRBox(THREE,w,h,d,r,bev){
-  bev=bev===undefined?0.5:bev;
-  const s=new THREE.Shape(), x=w/2, y=h/2;
-  s.moveTo(-x+r,-y); s.lineTo(x-r,-y); s.absarc(x-r,-y+r,r,-Math.PI/2,0,false);
-  s.lineTo(x,y-r); s.absarc(x-r,y-r,r,0,Math.PI/2,false);
-  s.lineTo(-x+r,y); s.absarc(-x+r,y-r,r,Math.PI/2,Math.PI,false);
-  s.lineTo(-x,-y+r); s.absarc(-x+r,-y+r,r,Math.PI,Math.PI*1.5,false);
-  const g=new THREE.ExtrudeGeometry(s,{depth:Math.max(0.1,d-2*bev),bevelEnabled:true,
-    bevelThickness:bev,bevelSize:bev,bevelSegments:5,curveSegments:24});
-  g.translate(0,0,-(d-2*bev)/2); g.computeVertexNormals(); return g;
-}
-function collGlyphTex(THREE,draw){
-  const sz=128, cv=document.createElement('canvas'); cv.width=cv.height=sz;
-  const g=cv.getContext('2d'); g.clearRect(0,0,sz,sz); draw(g,sz);
-  const t=new THREE.CanvasTexture(cv); t.anisotropy=4; return t;
-}
-/* Printed front panel: everything flat lives in ONE hi-res texture (14.6×9.8
-   units at 70 px/unit); knobs, keys and the live LCD glass are 3D on top. */
-function makeCollPanelTex(THREE){
-  const W=1024,H=688,k=70,cx=W/2, cv=document.createElement('canvas'); cv.width=W; cv.height=H;
-  const g=cv.getContext('2d');
-  const py=(d)=>(d-5.1)*k;                       // d = distance below the focal spot (panel top at 5.1)
-  const rr=(x,y,w,h,r)=>{ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r);
-    g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); };
-  g.fillStyle='#eae6da'; g.fillRect(0,0,W,H);
-  g.strokeStyle='#d2cdbd'; g.lineWidth=3; g.strokeRect(10,10,W-20,H-20);    // panel groove
-  // deep-blue LCD bezel; the glass area is dark (the live LCD plane sits over it)
-  const bw=12.7*k, bh=2.9*k, by=py(7.2)-bh/2;
-  rr(cx-bw/2,by,bw,bh,14); g.fillStyle='#203d80'; g.fill();
-  rr(cx-bw/2+18,by+16,bw-36,bh-32,8); g.fillStyle='#101d2b'; g.fill();
-  // white marks printed on the bezel: centring triangle, tick pairs, patient icon
-  g.strokeStyle='#e8ecf2'; g.lineWidth=3;
-  g.beginPath(); g.moveTo(cx-8,by+13); g.lineTo(cx+8,by+13); g.lineTo(cx,by+3); g.closePath(); g.stroke();
-  [-250,250].forEach(dx=>{ g.beginPath(); g.moveTo(cx+dx-5,by+4); g.lineTo(cx+dx-5,by+13);
-    g.moveTo(cx+dx+5,by+4); g.lineTo(cx+dx+5,by+13); g.stroke(); });
-  g.beginPath(); g.arc(cx+bw/2-28,by+8,4,0,Math.PI*2); g.moveTo(cx+bw/2-28,by+12); g.lineTo(cx+bw/2-28,by+16); g.stroke();
-  // printed glyphs beside the key row (field-length / field-width marks)
-  g.strokeStyle='#3c3b34'; g.lineWidth=4;
-  const ky=py(9.5);
-  g.beginPath(); for(let i=-1;i<=1;i++){ g.moveTo(cx-3.2*k-16,ky+i*9); g.lineTo(cx-3.2*k+16,ky+i*9); } g.stroke();
-  g.beginPath(); for(let i=-1;i<=1;i++){ g.moveTo(cx+1.0*k+i*9,ky-14); g.lineTo(cx+1.0*k+i*9,ky+14); } g.stroke();
-  // red / blue crosshatch scale marks flanking the knobs (ref)
-  const hash=(x,y,col)=>{ g.strokeStyle=col; g.lineWidth=5; g.save(); g.translate(x,y); g.rotate(0.32);
-    g.beginPath(); g.moveTo(-8,-20); g.lineTo(-8,20); g.moveTo(8,-20); g.lineTo(8,20);
-    g.moveTo(-20,-7); g.lineTo(20,-7); g.moveTo(-20,7); g.lineTo(20,7); g.stroke(); g.restore(); };
-  const kn=py(12.7);
-  hash(cx-6.1*k,kn,'#a8322c'); hash(cx-1.65*k,kn,'#a8322c');
-  hash(cx+1.65*k,kn,'#2f4f9e'); hash(cx+6.1*k,kn,'#2f4f9e');
-  // tape-measure badge at the bottom lip
-  g.fillStyle='#efece1'; g.strokeStyle='#8a877c'; g.lineWidth=3;
-  g.beginPath(); g.ellipse(cx,py(14.55),80,26,0,0,Math.PI*2); g.fill(); g.stroke();
-  g.fillStyle='#4a473e'; g.font='bold 24px Arial'; g.textAlign='center'; g.fillText('0 cm',cx+22,py(14.55)+8);
-  g.strokeStyle='#4a473e'; g.strokeRect(cx-52,py(14.55)-11,30,22);
-  g.beginPath(); g.moveTo(cx-22,py(14.55)); g.lineTo(cx-8,py(14.55)); g.stroke();
-  const t=new THREE.CanvasTexture(cv); t.anisotropy=8; return t;
-}
-function buildCollimatorHead(THREE,tube){
-  // the tube group's lookAt+rotateX puts the BEAM along local +y — build in a shell
-  // flipped π about x so the model's "down toward the patient" (−y here) matches it
-  const shell=new THREE.Group(); shell.rotation.x=Math.PI; tube.add(shell); tube=shell;
-  const std=(c,r,m)=>new THREE.MeshStandardMaterial({color:c,roughness:r===undefined?0.55:r,metalness:m===undefined?0.06:m});
-  // tube-port dome + dark cone dropping into the box top (refs 1–3)
-  const dome=new THREE.Mesh(new THREE.SphereGeometry(3.1,40,24), std(0xe9e7e0,0.5));
-  dome.scale.set(1,0.72,1); dome.position.set(0,0.5,0); tube.add(dome);
-  const cone=new THREE.Mesh(new THREE.CylinderGeometry(1.9,3.7,4.4,56), std(0x2f3438,0.4,0.3));
-  cone.position.set(0,-2.3,0); tube.add(cone);
-  const collar=new THREE.Mesh(new THREE.TorusGeometry(4.05,0.3,14,64), std(0xd8d4c8,0.5));
-  collar.rotation.x=Math.PI/2; collar.position.set(0,-4.35,0); tube.add(collar);
-  const bracket=new THREE.Mesh(new THREE.BoxGeometry(1.7,1.1,1.1), std(0x8e9296,0.45,0.2));
-  bracket.position.set(0,-3.95,-3.1); tube.add(bracket);       // −z here = the FRONT after the shell flip
-  // main beige housing (rounded vertical edges + bevelled top/bottom)
-  const body=new THREE.Mesh(collRBox(THREE,16,11,13,0.9,0.6), std(0xe7e3d6,0.6));
-  body.position.set(0,-10,0); tube.add(body);
-  // vent slat groups on the top plate + small sensor screw
-  [-4.6,4.6].forEach(sx=>{ for(let i=0;i<5;i++){
-    const slat=new THREE.Mesh(new THREE.BoxGeometry(3.4,0.1,0.34), std(0x4c4f52,0.5));
-    slat.position.set(sx,-4.42,-(2.6+i*0.62)); tube.add(slat);  // front half of the top plate
-  }});
-  const screw=new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,0.12,16), std(0x3a3d40,0.4,0.3));
-  screw.position.set(2.3,-4.42,-1.6); tube.add(screw);
-  // printed front panel + live LCD glass
-  const panel=new THREE.Mesh(new THREE.PlaneGeometry(14.6,9.8),
-    new THREE.MeshStandardMaterial({map:makeCollPanelTex(THREE),roughness:0.75,metalness:0.02}));
-  panel.position.set(0,-10,6.55); tube.add(panel);
-  const cv=document.createElement('canvas'); cv.width=640; cv.height=120;
-  const tex=new THREE.CanvasTexture(cv); tex.anisotropy=8;
-  const glass=new THREE.Mesh(new THREE.PlaneGeometry(12.2,2.2),
-    new THREE.MeshStandardMaterial({map:tex,emissive:0xffffff,emissiveMap:tex,emissiveIntensity:0.55,roughness:0.35}));
-  glass.position.set(0,-7.2,6.6); tube.add(glass);
-  // round key row: collimator light, Memory, − , +
-  const mkBtn=(x,drawIcon)=>{
-    const b=new THREE.Mesh(new THREE.CylinderGeometry(0.62,0.66,0.55,36), std(0xb9bbb7,0.4));
-    b.rotation.x=Math.PI/2; b.position.set(x,-9.5,6.85); tube.add(b);
-    const ic=new THREE.Mesh(new THREE.PlaneGeometry(0.9,0.9),
-      new THREE.MeshBasicMaterial({map:collGlyphTex(THREE,drawIcon),transparent:true}));
-    ic.position.set(x,-9.5,7.14); tube.add(ic);
-  };
-  const txtGlyph=(t,f)=>(g,s)=>{ g.fillStyle='#33322c'; g.font=f||'bold 84px Arial'; g.textAlign='center'; g.fillText(t,s/2,s/2+30); };
-  mkBtn(-4.9,(g,s)=>{ g.strokeStyle='#33322c'; g.lineWidth=8; g.beginPath();
-    g.moveTo(s/2,18); g.lineTo(s/2,s-40); g.moveTo(s/2-16,s-58); g.lineTo(s/2,s-38); g.lineTo(s/2+16,s-58);
-    g.moveTo(24,s-18); g.lineTo(s-24,s-18); g.stroke(); });
-  mkBtn(-1.5,txtGlyph('M'));
-  mkBtn(2.7,txtGlyph('−','bold 96px Arial'));
-  mkBtn(4.5,txtGlyph('+','bold 96px Arial'));
-  // square lamp key between the knobs (light-field icon: square + diagonals)
-  const lb=new THREE.Mesh(collRBox(THREE,1.9,1.9,0.6,0.32,0.14), std(0xb9bbb7,0.4));
-  lb.position.set(0,-12.7,6.85); tube.add(lb);
-  const li=new THREE.Mesh(new THREE.PlaneGeometry(1.2,1.2),
-    new THREE.MeshBasicMaterial({map:collGlyphTex(THREE,(g,s)=>{ g.strokeStyle='#33322c'; g.lineWidth=7;
-      g.strokeRect(28,28,s-56,s-56); g.beginPath(); g.moveTo(28,28); g.lineTo(s-28,s-28);
-      g.moveTo(s-28,28); g.lineTo(28,s-28); g.stroke(); }),transparent:true}));
-  li.position.set(0,-12.7,7.22); tube.add(li);
-  // twin field-size knobs with knurled rim + white pointer tab (refs)
-  [-3.6,3.6].forEach(x=>{
-    const knb=new THREE.Mesh(new THREE.CylinderGeometry(1.62,1.75,1.3,48), std(0xb4b6b4,0.38));
-    knb.rotation.x=Math.PI/2; knb.position.set(x,-12.7,7.2); tube.add(knb);
-    const grip=new THREE.Mesh(new THREE.TorusGeometry(1.45,0.16,12,48), std(0xa9aba9,0.42));
-    grip.position.set(x,-12.7,7.86); tube.add(grip);
-    const tab=new THREE.Mesh(collRBox(THREE,0.5,0.75,0.5,0.12,0.08), std(0xf1f0ea,0.35));
-    tab.position.set(x,-14.42,7.45); tube.add(tab);
-  });
-  // grey base plinth, corner feet, and the dark beam-exit aperture underneath
-  const plinth=new THREE.Mesh(collRBox(THREE,16.4,13.4,1.2,0.6,0.3), std(0x9ba0a4,0.5,0.15));
-  plinth.rotation.x=-Math.PI/2; plinth.position.set(0,-16.1,0); tube.add(plinth);
-  [[-6.9,-5.7],[6.9,-5.7],[-6.9,5.7],[6.9,5.7]].forEach(([fx,fz])=>{
-    const foot=new THREE.Mesh(new THREE.BoxGeometry(1.6,0.7,1.6), std(0x6f7377,0.5,0.2));
-    foot.position.set(fx,-17.0,fz); tube.add(foot);
-  });
-  const apert=new THREE.Mesh(new THREE.BoxGeometry(4.6,0.1,4.2), std(0x14181c,0.3,0.4));
-  apert.position.set(0,-16.75,0); tube.add(apert);
-  return {cv,tex,last:''};
-}
-/* Redraw the collimator's live LCD when its values change: filter, light-field
-   size (the collimation sliders), mode/status, and the actual SID. */
+/* Redraw the collimator's touchscreen when its values change: the light-field size (the
+   collimation sliders), filtration, mode/status and the actual SID. */
 function updateCollimatorLCD(){
   const L=three.collLCD; if(!L) return;
   const fx=(S.collX||0).toFixed(1), fz=(S.collZ||0).toFixed(1), sid=Math.round(S.sid||100);
   const k=fx+'x'+fz+'@'+sid; if(k===L.last) return; L.last=k;
   const g=L.cv.getContext('2d'), W=L.cv.width, H=L.cv.height;
-  const grad=g.createLinearGradient(0,0,0,H); grad.addColorStop(0,'#b6c6c9'); grad.addColorStop(1,'#9fb1b5');
+  const grad=g.createLinearGradient(0,0,0,H); grad.addColorStop(0,'#0e2236'); grad.addColorStop(1,'#08131f');
   g.fillStyle=grad; g.fillRect(0,0,W,H);
-  g.fillStyle='#8ea1a6'; g.fillRect(W*0.27,6,3,H-12); g.fillRect(W*0.73,6,3,H-12);
-  g.fillStyle='#233238'; g.textAlign='center';
-  g.font='bold 30px "Courier New", monospace'; g.fillText('0 mm Cu',W*0.135,H*0.62);
-  g.font='24px "Courier New", monospace'; g.fillText('Manual',W*0.5,H*0.36);
-  g.font='bold 30px "Courier New", monospace'; g.fillText(fx+' cm x '+fz+' cm',W*0.5,H*0.78);
-  g.font='24px "Courier New", monospace'; g.fillText('Ready',W*0.865,H*0.36);
-  g.font='bold 30px "Courier New", monospace'; g.fillText(sid+' cm',W*0.865,H*0.78);
+  g.fillStyle='#16324c'; g.fillRect(0,0,W,52);
+  g.textAlign='left'; g.fillStyle='#cfe7f7'; g.font='bold 26px Arial'; g.fillText('Manual',20,35);
+  g.textAlign='right'; g.fillStyle='#5fe08a'; g.fillText('Ready',W-20,35);
+  g.textAlign='center'; g.fillStyle='#ffffff'; g.font='bold 58px Arial';
+  g.fillText(fx+' × '+fz,W/2,138);
+  g.fillStyle='#8fb3cc'; g.font='24px Arial'; g.fillText('cm field',W/2,172);
+  g.fillStyle='#1d3b57'; g.fillRect(16,200,W/2-24,84); g.fillRect(W/2+8,200,W/2-24,84);
+  g.fillStyle='#8fb3cc'; g.font='22px Arial'; g.fillText('SID',W/4+4,232); g.fillText('Filter',W*3/4-4,232);
+  g.fillStyle='#ffffff'; g.font='bold 32px Arial'; g.fillText(sid+' cm',W/4+4,270); g.fillText('0 mm Cu',W*3/4-4,270);
   L.tex.needsUpdate=true;
+}
+
+/* ---- THE ROOM SET-UP (room.js): table, wall stand or free detector ----
+   The wall stand stands the physics frame upright: physics +y (toward the tube) becomes the
+   room's +z, physics +z (the head) becomes up, so the patient stands facing the tube with the
+   receptor behind them. Only in the x-ray room; every other mode shares the patient group and
+   needs the frame flat. */
+const WALL_Q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(
+  -1,0,0,0,  0,0,1,0,  0,1,0,0,  0,0,0,1));
+function roomFrame(){
+  const wall=S.mode==='xray' && S.room==='wall';
+  three.rig.quaternion.copy(wall ? WALL_Q : new THREE.Quaternion());
+  three.rig.updateMatrixWorld(true);
+  // the lamp's cookie is laid out by its shadow camera's up: the long axis, carried with the frame
+  three.lamp.shadow.camera.up.set(0,0,-1).applyQuaternion(three.rig.quaternion);
+}
+function roomSync(){
+  const r=three.room; if(!r) return;
+  const room=S.mode==='xray' ? S.room : null;
+  r.table.visible=room==='table';
+  r.wall.visible=room==='wall';
+  r.floor.visible=room==='table' || room==='wall';
+  r.floor.position.y=room==='wall' ? WALL_FLOOR : TABLE_FLOOR;
+  // the receptor sits inside the bucky (under the tabletop, behind the cover): its outline,
+  // the AEC chambers and the hang arrow are shown on the surface the patient touches
+  if(room==='table' || room==='wall') three.det.visible=false;
+  const top=receptorGap();
+  three.detMarks.position.y=top; three.aecGroup.position.y=top; three.detArrow.position.y=top;
+  if(room==='wall') r.setWallSid(S.sid);
+  // the tube hangs from a telescoping ceiling column wherever the x-ray tube is shown
+  r.column.visible=S.mode==='xray' && three.tube.visible;
+  if(r.column.visible){
+    three.tube.updateMatrixWorld(true);
+    r.placeColumn(three.collLCD.mount.getWorldPosition(new THREE.Vector3()), room==='wall' ? WALL_FLOOR : TABLE_FLOOR);
+  }
+}
+const ROOM_SID={ table:100, wall:180, detector:100 };
+const ROOM_ORBIT={ table:190, wall:230, detector:115 };
+function setRoom(room){
+  if(!ROOM_SID[room]) return;
+  S.room=room;
+  document.querySelectorAll('#roomSel button').forEach(b=>b.classList.toggle('on', b.dataset.room===room));
+  // the set-up's usual distance (180 cm at the wall stand, the PA chest's), with the grid focused to it
+  S.sid=ROOM_SID[room]; S.gridFocus=S.sid; setGridFocusUI();
+  const sv=$('sidV'); if(sv) sv.textContent=S.sid+' cm';
+  const sr=$('sidRo'); if(sr) sr.innerHTML=S.sid+'<small>cm</small>';
+  // standing at the wall is erect for the barium study's gravity; the table and detector recumbent
+  if(S.barium.erect!==(room==='wall')) document.querySelector('#giStandSeg [data-erect="'+(room==='wall'?1:0)+'"]')?.click();
+  syncOidUI();
+  three.setOrbitRad?.(ROOM_ORBIT[room]); three.resetOrbitTarget?.();
+  syncScene();
+}
+/* OID is the patient's height over the receptor: the lift, plus the tabletop or cover. */
+function syncOidUI(){
+  S.oid=+(S.objOff.y+receptorGap()).toFixed(1);
+  const o=$('oidV'); if(o) o.textContent=S.oid+' cm';
 }
 
 /* Tube geometry frame. The central ray is angulated by TWO independent tilts,
@@ -2060,8 +2029,9 @@ function setContent(c){
   const seg=$('contentSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.c===c));
   const img=(c==='image');
   const slices=(c==='slices');   // CT cross-sectional viewer (reconstructed transverse slices)
+  document.body.classList.toggle('bay-flat', c!=='3d');   // (the room's 3D-only overlays step aside)
   const recons=(c==='recons');   // CT reconstruction planning / multiplanar viewer
-  if(c==='3d' && three.setOrbitRad) three.setOrbitRad(S.mode==='ct'?260:115);   // frame the large CT rig vs the hand
+  if(c==='3d' && three.setOrbitRad) three.setOrbitRad(S.mode==='ct'?260:S.mode==='xray'?ROOM_ORBIT[S.room]:115);   // frame the large CT rig, the x-ray room's set-up, the hand
   // switching the bay to 3D in CT defaults to Orbit (whole-scene view), not a fixed PoV
   if(!img && !slices && !recons && S.mode==='ct') setCTPov('orbit');
   // In CT with scouts acquired, the Image (Scout) view IS the scout window (AP+LAT
@@ -2124,7 +2094,7 @@ function bind(){
     $(id)?.addEventListener('input',e=>{ S.objOff[ax]=parseFloat(e.target.value);
       $(id+'v').textContent=S.objOff[ax]+' cm'; resetPrep(); syncScene();
       // the height offset IS the OID — the readout in Tube & distance follows it
-      if(ax==='y'){ S.oid=S.objOff.y; const o=$('oidV'); if(o) o.textContent=S.oid+' cm'; }
+      if(ax==='y') syncOidUI();
     });
   }
   $('legRot')?.addEventListener('input',e=>{ S.legRot=parseInt(e.target.value);
@@ -2133,7 +2103,7 @@ function bind(){
     S.legRot=0; syncLegRotUI(); S.joints={}; renderJointUI();
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
-    S.oid=0; const o=$('oidV'); if(o) o.textContent='0 cm';
+    syncOidUI();
     resetPrep(); syncScene(); });
   // sliders that only affect geometry (update chips + scene)
   const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ'];
@@ -2243,6 +2213,7 @@ function bind(){
   $('contentSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b || b.disabled)return; setContent(b.dataset.c);});
   // camera: free orbit  <->  tube POV bird's-eye (x-ray)
   $('camSeg').addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCameraView(b.dataset.cam);});
+  document.querySelectorAll('#roomSel button').forEach(b=>b.addEventListener('click',()=>setRoom(b.dataset.room)));
   // CT camera: AP-PoV  <->  Lat-PoV
   $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
   // subject: analytic hand  <->  any voxel model
@@ -3389,8 +3360,9 @@ async function refreshComputeStatus(){
            b.title=on ? '' : 'Compute backend offline — click to look for it'; }
   }
   // if the backend vanished while selected, drop back to the browser engine — unless
-  // a backend-only model is loaded (it has no browser volume, so local can't render it)
-  if(!on && !S.backendOnly){
+  // a backend-only model is loaded (it has no browser volume, so local can't render it),
+  // or a realistic mode holds the GPU engine (it is used the moment the backend answers)
+  if(!on && !S.backendOnly && !S.realistic){
     if(S.xrayBackend==='python') setBackend('xray','local');
     if(S.ct.backend==='python') setBackend('ct','local');
   }
@@ -3456,6 +3428,37 @@ function updateScatterNote(){
     + `(S/P ${i.spr.toFixed(2)})${i.grid?', grid fitted':' — no grid'}. `
     + `Field size sets ${Math.round(i.areaF*100)} % of the maximum; collimating tighter is `
     + 'what actually removes it.';
+}
+/* ---- the realistic modes ----
+   Realistic X-ray and Realistic CT are the ordinary rooms with the Python GPU engine forced on
+   at its finest settings: High DR matrix; the fine-pitch detector with every physics feature and
+   the full reconstruction. An experiment, run locally; online the cards are greyed out. Any mode
+   change leaves them (onModeChange), back to the browser-safe defaults. */
+function setRealistic(mode){
+  const was=S.realistic; S.realistic=mode||null;
+  document.body.classList.toggle('realistic', !!S.realistic);
+  const lockLocal=(on)=>{
+    for(const segId of ['backendSegX','backendSegCT']){
+      const b=document.querySelector('#'+segId+' button[data-be="local"]'); if(b) b.disabled=on;
+    }
+  };
+  if(S.realistic==='xray'){
+    $('resSeg')?.querySelector('[data-res="high"]')?.click();
+    setBackend('xray','python'); lockLocal(true);
+    refreshComputeStatus();
+    const cur=$('modeCur'); if(cur) cur.textContent='REALISTIC X-RAY';
+  } else if(S.realistic==='ct'){
+    $('ctDetModeSeg')?.querySelector('[data-dm="realistic"]')?.click();
+    setBackend('ct','python'); lockLocal(true);
+    refreshComputeStatus().then(()=>ctrstBackendChanged());
+    const cur=$('modeCur'); if(cur) cur.textContent='REALISTIC CT';
+  } else if(was){
+    lockLocal(false);
+    $('resSeg')?.querySelector('[data-res="quick"]')?.click();
+    $('ctDetModeSeg')?.querySelector('[data-dm="quick"]')?.click();
+    setBackend('xray','local'); setBackend('ct','local');
+    ctrstBackendChanged();
+  }
 }
 function setBackend(mode,val){
   if(mode==='xray') S.xrayBackend=val; else S.ct.backend=val;
@@ -3862,12 +3865,14 @@ function ctrstDrawCurve(){
    iodine column perfectly well — what needs the Python service is the haemodynamic SOLVE,
    which has no JS implementation. Gating on the engine toggle would take away a combination
    that works. The gate is service reachability. */
+// the haemodynamic solver (a reprogrammable injector) is Realistic CT's, on the Python backend
+const contrastLive=()=>!!S.computeInfo && S.realistic==='ct';
 function ctrstBlocker(){
   const vm=S.voxelModel;
   if(!vm || !vm.hasVessels)
     return ['Contrast unavailable — '+S.subject+' has no vessel map (build_vessels not run)'];
-  if(!S.computeInfo && !(vm.hasPresetContrast))
-    return ['Contrast unavailable — needs the Python compute service, and this model ships no preset'];
+  if(!contrastLive() && !(vm.hasPresetContrast))
+    return ['Contrast unavailable: this model ships no preset timeline'];
   return null;
 }
 
@@ -3901,10 +3906,9 @@ function ctrstApply(keepStatus){
   const lock=$('ctrstLock');
   if(lock){
     lock.style.display = (live && S.contrast.static) ? '' : 'none';
-    lock.textContent = 'Preset timeline — protocol locked. The haemodynamic solver runs on the '
-      + 'Python compute service; without it the shipped solve is used, so the injector settings '
-      + 'cannot be changed. The injection site still switches — each site ships its own solved '
-      + 'timeline. Timing, scanning and bolus tracking all still work.';
+    lock.textContent = 'Preset timeline: the injection protocol is fixed. The injection site '
+      + 'still switches, as each site has its own solved timeline, and timing, scanning and bolus '
+      + 'tracking all work. Reprogramming the injector is part of Realistic CT.';
   }
   ctrstRenderBar();          // the phase buttons take their enabled state from `editable` too
   $('ctrstGo').disabled = !live || !S.contrast.timeline;
@@ -3918,10 +3922,10 @@ function ctrstApply(keepStatus){
    Contrast that is already solved keeps working — the timeline is client-side by then. */
 function ctrstBackendChanged(){
   if(!$('ctrstPanel')) return;
-  if(S.contrast.on && !S.computeInfo && !S.contrast.timeline){ S.contrast.on=false; }
+  if(S.contrast.on && !contrastLive() && !S.contrast.timeline){ S.contrast.on=false; }
   // Service back: unlock. The preset timeline stays in place until something is actually
   // changed, so the image on screen does not silently move under the user.
-  if(S.computeInfo && S.contrast.static) S.contrast.static=false;
+  if(contrastLive() && S.contrast.static) S.contrast.static=false;
   ctrstApply(true);
 }
 
@@ -4099,6 +4103,7 @@ function initExtras(){
   syncFeatureToggles();
   updateComputeNote('xray'); updateComputeNote('ct'); updateDetWarn(); updateScatterNote();
   startComputePoll();
+  greyRealisticCards();
 }
 /* WHEN TO LOOK FOR THE BACKEND. It used to be fetched every 5 s, forever, on every page — the
    public site included, where no visitor has a backend, so each one logged a refused
@@ -4109,6 +4114,18 @@ function initExtras(){
    minute while it stays down. */
 const COMPUTE_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
   || !!import.meta.env.VITE_COMPUTE_URL;
+// The realistic modes need the Python backend, which only a local run has: online their cards
+// are greyed out, inert, and say so.
+function greyRealisticCards(){
+  if(COMPUTE_LOCAL) return;
+  document.querySelectorAll('#homeScreen .home-card[data-real]').forEach((c)=>{
+    c.classList.add('hc-dev');
+    c.querySelectorAll('button').forEach((b)=>{ b.disabled=true; });
+    if(!c.querySelector('.hc-badge')){
+      const t=document.createElement('div'); t.className='hc-badge'; t.textContent='Local only'; c.prepend(t);
+    }
+  });
+}
 function startComputePoll(){
   if(!COMPUTE_LOCAL) return;
   let fails=0;
@@ -4124,7 +4141,7 @@ window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
-  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => trainerOnMode(m),
+  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); }, setRealistic,
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram, contrastLatch: ctrstLatch,
@@ -4200,7 +4217,7 @@ window.addEventListener('load',()=>{
   initSideMarker({ THREE, S, three, $, syncScene,
     rightVec: () => { const R=objMat(); return [R[0], R[3], R[6]]; },   // the patient's right, in the room
     bilateral: () => BILATERAL.has(S.subject),
-    midlineX: () => S.objOff.x });
+    midlineX: () => S.objOff.x, receptorGap });
   initTutorial({ applyMode: ctApplyMode });
   initPalpation({ THREE, three, S, voxelFlips, objMat, poseLoc,
     modelCentre: () => [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z] });

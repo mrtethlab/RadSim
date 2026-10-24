@@ -43,6 +43,7 @@ function openTrainer() {
   document.body.classList.add('trainer');
   showCompare(false);
   renderChooser();
+  window.__mobileSetPage?.('setup');                 // (a phone: the chooser is its own page)
 }
 
 function closeTrainer() {
@@ -59,8 +60,8 @@ function renderChooser() {
   col.innerHTML = `
     <div class="tr-head"><div class="tr-title">Trainer</div>
       <button class="tr-x" id="trHome" title="Back to the home screen">&times;</button></div>
-    <div class="tr-intro">Pick a series. Each view is set up in order &mdash; position, centre,
-      collimate &mdash; then exposed and marked against the criteria an instructor uses. The film
+    <div class="tr-intro">Pick a series. Each view is set up in order (position, centre,
+      collimate), then exposed and marked against the criteria an instructor uses. The film
       hangs beside a reference made with the ideal setup.</div>
     <div class="tr-series">${SERIES.map((s) => `<button class="tr-sbtn" data-s="${s.id}">${esc(s.name)}
       <small>${s.views.map((v) => esc(v.label)).join(' · ')}</small></button>`).join('')}</div>`;
