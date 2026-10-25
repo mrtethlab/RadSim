@@ -32,6 +32,7 @@ test('every tutorial step names controls the page has', () => {
 test('the new features each have their step', () => {
   const titles = (k) => T[k].map((s) => s.title).join(' | ');
   assert.match(titles('XRAY_STEPS'), /Bend the joints/);
+  assert.match(titles('XRAY_STEPS'), /pasting/i);
   assert.match(titles('FLUORO_STEPS'), /guidewire/i);
   assert.match(titles('FLUORO_STEPS'), /ankle reduction/i);
   assert.match(titles('DXA_STEPS'), /forearm/i);

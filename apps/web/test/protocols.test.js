@@ -18,7 +18,7 @@ const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'headneck', 'chestabdopelvis'
   'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
-  assert.equal(all.length, 47);
+  assert.equal(all.length, 50);
   for (const p of all) assert.ok(BROWSER_SUBJECTS.has(p.subject), `${p.proj}: subject ${p.subject}`);
 });
 

@@ -1308,7 +1308,111 @@
           ]
         }
       ]
+    },
+    {
+      "part": "Long length",
+      "regions": [
+        {
+          "region": "Pasting",
+          "projections": [
+            {
+              "proj": "Leg length study",
+              "kv": 80,
+              "mas": 16,
+              "grid": true,
+              "aec": "c",
+              "lut": "pasteLimb",
+              "sid": 180,
+              "coll": [
+                20,
+                43
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -23,
+                "cc": 0,
+                "centre": "knee"
+              },
+              "paste": {
+                "coi": 8,
+                "limits": [
+                  "ASIS",
+                  "lateral malleolus"
+                ]
+              }
+            },
+            {
+              "proj": "Scoliosis study",
+              "kv": 100,
+              "mas": 100,
+              "grid": true,
+              "aec": "c",
+              "lut": "pasteSpine",
+              "sid": 180,
+              "coll": [
+                30,
+                43
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "centre": "lumbar"
+              },
+              "paste": {
+                "coi": 16,
+                "limits": [
+                  "EAM / C1",
+                  "iliac crests"
+                ]
+              }
+            },
+            {
+              "proj": "Femur pasting",
+              "kv": 75,
+              "mas": 32,
+              "grid": true,
+              "aec": "c",
+              "lut": "pasteLimb",
+              "sid": 180,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -23,
+                "cc": 0,
+                "centre": "femur"
+              },
+              "paste": {
+                "coi": 8,
+                "limits": [
+                  "hip joint",
+                  "knee joint"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
-  "_pose": "pose.roll: degrees about the long axis from the subject's rest pose (body subjects rest supine/AP; the hand rests PA); +roll lifts world +x. pose.cc: central-ray angle, negative = cephalic. pose.centre: a landmark in landmarks.json (measured by tools/measure_landmarks.py) that the patient is moved to put under the central ray. pose.fidelity \"approx\" marks a view a rigid model cannot truly achieve; pose.note says why."
+  "_pose": "pose.roll: degrees about the long axis from the subject's rest pose (body subjects rest supine/AP; the hand rests PA); +roll lifts world +x. pose.cc: central-ray angle, negative = cephalic. pose.centre: a landmark in landmarks.json (measured by tools/measure_landmarks.py) that the patient is moved to put under the central ray. pose.fidelity \"approx\" marks a view a rigid model cannot truly achieve; pose.note says why.",
+  "_paste": "paste: a long-length study stitched from several images (src/pasting.js, src/core/pasting.js), taken at the wall stand or the table with the tube tilted about its focal spot over a tracking bucky. paste.coi: the default centre of interest, cm of the anatomy above the cover or tabletop (the plane the stitched image's ruler is calibrated at); paste.limits: the landmarks the superior and inferior limits are set just beyond. mAs is written for 180 cm and follows the room's pasting distance by the inverse square."
 }

@@ -19,6 +19,16 @@ Shadows were knife edges because each scanline was a single ray. Each line is no
 - **Doppler.** Everything was already there except audio. PW now plays its own spectrum (`core/dopplerAudio.js`): toward the probe in the left channel, away in the right, aliasing with the trace (*Audio* and *Volume* in the PW panel). Colour averages its autocorrelation over neighbouring gates, so a lumen fills solidly instead of as salt and pepper. The ultrasound toggles now show their on state.
 
 **Checked:** in the app, before and after at six seats (RUQ liver/gallbladder, Morison's pouch, bowel gas, ribs, lung base, the aorta). Penetration is 21 / 17 / 12.5 / 8.3 / 5.4 cm at 2.5–12 MHz. The aorta PW still reads PSV 54–55, EDV 12, RI 0.78. Colour aliasing is 0 / 3 / 25 / 49 % at v_nyq 54 / 26 / 19 / 13 cm/s. `npm test` passes; the new beam and audio tests caught 10 of 10 re-introduced bugs.
+### Long-length (pasting) studies: leg length, scoliosis, femur
+Three protocols under **Long length**, at the wall stand or the table (the free detector has no tracking bucky: the protocols are off there, and the free-detector room is off while one is in). The field length is held at 43 cm on the 43×43.
+
+**The console** (`pasting.js`), over the room set-up while a pasting protocol is in, with the real console's icons in RadSim's styling: **COI** (ruler, cm field, + / −), **accept superior**, **accept inferior**, **confirm**, **reset**, and its own CR ceph/caud slider. After confirm: *Image status: 0/X*, counting up as each image is taken.
+
+**The geometry** (`core/pasting.js`): the angled-tube technique. The focal spot stays put and the tube only tilts, the bucky driving along under each field. A limit is where the central ray meets the receptor; confirm plans the images (43 cm each, at least 4 cm overlap, spread evenly from the upper limit to the lower, 2–3 for these studies, at most 5) and drives to the first. Holding the switch takes them all, re-tilting and stepping between; letting go leaves the study incomplete. Every image comes from one focal spot, so they join by receptor position with no parallax at any depth. The COI (height of the anatomy above the cover or tabletop) sets the magnification the stitched image's ruler and length are calibrated at.
+
+**The stitch**: each image is read out with its own exposure's noise, then gain-matched over the overlap (an AEC ending each image differently) and feathered across it, and the long image goes through the console's processing once (equalised LUTs `pasteLimb`, `pasteSpine`), with a ruler burned in down the right edge. The EI is of the unmatched receptor dose.
+
+**Checked:** in the app, all three studies at the wall and the table, manual and AEC, released early (incomplete), DI within ±1 at the chart technique; 12 new unit tests (geometry, image count, tile layout, stitch placement, gain matching, feathering, ruler); `npm test`, build.
 
 ### Process animations for every mode — [#88](https://github.com/mrtethlab/RadSim/pull/88)
 An **Animation** button on each mode's card opens a film of that mode's whole process, start to finish.
