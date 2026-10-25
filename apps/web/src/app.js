@@ -11,7 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
-import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent, motionAngle } from './core/jointPose.js';
+import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
@@ -561,17 +561,18 @@ function applyVoxelMeshTransform(grp){
    straightens there. */
 const chainCache={};
 /* A FIELD joint (the neck) carries its weights in a grid beside the model (fieldData, loaded with
-   the subject by loadJointFields); until the grid is in, the joint is not offered. */
+   the subject by loadJointFields); until the grid is in, the joint is not offered. A joint's RIDER
+   (the knee's patella) has a grid too; until it is in, the joint bends without it. */
 const fieldData={};
 async function loadJointFields(subject){
   const js=jointData[subject]; if(!js) return;
-  for(const j of Object.values(js)){
-    const f=j.field?.file, k=subject+'/'+f;
+  for(const f of Object.values(js).flatMap(j=>[j.field?.file, j.rider?.file])){
+    const k=subject+'/'+f;
     if(!f || fieldData[k]) continue;
     try {
       const r=await fetch(import.meta.env.BASE_URL+'models/'+k);
       if(r.ok){ fieldData[k]=new Uint8Array(await r.arrayBuffer()); delete chainCache[subject]; }
-    } catch { /* the joint stays unoffered */ }
+    } catch { /* the joint stays unoffered (a rider: the joint bends without it) */ }
   }
 }
 function jointChain(subject){
@@ -581,12 +582,16 @@ function jointChain(subject){
   // proximal first, as joints.json lists them
   const ch=Object.values(js).filter(j=>!j.field || fieldData[subject+'/'+j.field.file]).map(j=>({ ...j,
     ...(j.field ? { field: { ...j.field, data: fieldData[subject+'/'+j.field.file] } } : {}),
+    ...(j.rider ? { rider: { ...j.rider, data: fieldData[subject+'/'+j.rider.file] || null } } : {}),
     motions: j.motions.map(m=>({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
   return chainCache[subject]=ch.length ? ch : null;
 }
+// the rooms that bend the patient: the x-ray room and fluoroscopy (which images the same
+// posed volume in its pulse workers: fluoro.js syncPose)
+const JOINT_MODES=new Set(['xray','fluoro']);
 function jointsActive(){
   const ch=jointChain(S.subject);
-  return S.mode==='xray' && ch && anyBent(ch, S.joints) ? ch : null;
+  return JOINT_MODES.has(S.mode) && ch && anyBent(ch, S.joints) ? ch : null;
 }
 // a rest-frame point (landmark, required anatomy, palpation) where the bent patient has it
 function poseLoc(p){ const ch=jointsActive(); return ch ? forwardChain(p, ch, S.joints) : p; }
@@ -629,26 +634,66 @@ function posers(){
 function askPoser(w, msg, transfer=[]){
   return new Promise(res=>{ const id=++poseSeq; poseWaits.set(id, { res, w }); w.postMessage({ ...msg, id }, transfer); });
 }
-// a pose from the pool: { data, dims, pad } or { error }
-async function posePooled(pool, base){
+/* A pose from the pool: { data, dims, pad, box } or { error }. In stages, each over the pool side
+   by side (core/poseWorker.js):
+     the plan's pass: each worker samples its range of input slices; the extents are merged here;
+       each marks the cells its moved samples land in; one worker ORs and grows them. Every worker
+       then builds its plan from that (it used to make the whole plan itself: ~0.15 s each);
+     the rows: chunks of output slices, handed out as workers come free;
+     the fold: in slabs of the crooks' slices, with their halo (one worker did it all: ~0.15 s);
+     the riders (the patella), set down by one worker.
+   The volume is the same, voxel for voxel, as one worker posing it whole. */
+async function posePooled(pool, base, vm){
   if(pool.length===1) return askPoser(pool[0], { ...base, type:'pose' });
-  const m=pool.length*POSE_CHUNKS;
-  let next=0, out=null, dims=null, pad=null, failed=null;
+  const n=pool.length, nz=vm.dims[2], { chain, ...rest }=base;
+  const ranges=pool.map((_, i)=>[Math.floor(i*nz/n), Math.floor((i+1)*nz/n)]);
+  const err=(rs)=>rs.find(r=>r.error);
+  const samples=await Promise.all(pool.map((w, i)=>askPoser(w, { ...base, type:'sample', k0:ranges[i][0], k1:ranges[i][1] })));
+  if(err(samples)) return err(samples);
+  const S=mergeSample(samples.map(r=>r.sample));
+  const occs=await Promise.all(pool.map((w, i)=>askPoser(w, { ...rest, chain, type:'occ', S, k0:ranges[i][0], k1:ranges[i][1] })));
+  if(err(occs)) return err(occs);
+  const parts=occs.map(r=>r.occ);
+  const g=await askPoser(pool[0], { key:base.key, type:'grow', S, parts }, parts.map(o=>o.buffer));
+  if(g.error) return g;
+  const pre={ ...S, occ:g.occ };
+  // a worker's first message of the pose carries the chain and the shared pass; later ones not
+  const planKey=JSON.stringify([base.key, base.flips, base.angles]);   // (a new model resets a worker's plan)
+  const ask=(w, msg, tr=[])=>{
+    const first=w._planFor!==planKey; w._planFor=planKey;
+    return askPoser(w, { ...rest, ...(first ? { chain, pre } : {}), ...msg }, tr);
+  };
+  const m=n*POSE_CHUNKS;
+  let next=0, out=null, dims=null, pad=null, box=null, failed=null;
   await Promise.all(pool.map(async (w)=>{
-    let first=true;
     while(next<m && !failed){
       const c=next++;
-      const { chain, ...rest }=base;
-      const r=await askPoser(w, { ...rest, ...(first ? { chain } : {}), type:'chunk', c, m });
-      first=false;
-      if(r.error){ failed=r; return; }
-      if(!out){ dims=r.dims; pad=r.pad; out=new Uint8Array(dims[0]*dims[1]*dims[2]); }
+      const r=await ask(w, { type:'chunk', c, m });
+      if(r.error){ failed=r; w._planFor=null; return; }
+      if(!out){ dims=r.dims; pad=r.pad; box=r.box; out=new Uint8Array(dims[0]*dims[1]*dims[2]); }
       out.set(r.data, r.k0*dims[0]*dims[1]);
     }
   }));
   if(failed) return failed;
-  const f=await askPoser(pool[0], { ...base, type:'fold', data:out }, [out.buffer]);
-  return f.error ? f : { data:f.data, dims, pad };
+  // the fold, in slabs: each reads its halo from the unfolded volume, writes only its own slices
+  const sp=vm.spacingMM.map(v=>v/10), span=foldSpan(dims, base.flips, sp, chain, base.angles), sl=dims[0]*dims[1];
+  if(span){
+    const k0s=pool.map((_, i)=>span[0]+Math.floor(i*(span[1]+1-span[0])/n));
+    const done=await Promise.all(pool.map((w, i)=>{
+      const k0=k0s[i], k1=i+1<n ? k0s[i+1] : span[1]+1;
+      const rr=k1>k0 ? foldRange(dims, base.flips, sp, chain, base.angles, k0, k1) : null;
+      if(!rr) return null;
+      const data=out.slice(rr[0]*sl, rr[1]*sl);
+      return ask(w, { type:'foldslab', data, base:rr[0], k0, k1 }, [data.buffer]).then(r=>({ r, k0, k1, base:rr[0] }));
+    }));
+    for(const d of done){
+      if(!d) continue;
+      if(d.r.error) return d.r;
+      out.set(d.r.data.subarray((d.k0-d.base)*sl, (d.k1-d.base)*sl), d.k0*sl);
+    }
+  }
+  const f=await ask(pool[0], { type:'ride', data:out }, [out.buffer]);
+  return f.error ? f : { data:f.data, dims, pad, box };
 }
 function poseCache(vm){ return vm._jcache || (vm._jcache=new Map()); }
 /* A pose's key: every motion's angle as it is applied (unset = the model's own). It was the
@@ -672,7 +717,7 @@ function keepPose(vm, key, posed){
    the exposure finds the pose made. */
 async function ensureJointVolume(vm, angles=S.joints){
   const ch=jointChain(S.subject);
-  if(S.mode!=='xray' || !ch || !anyBent(ch, angles) || !vm?.data) return;
+  if(!JOINT_MODES.has(S.mode) || !ch || !anyBent(ch, angles) || !vm?.data) return;
   const key=poseKey(ch, angles);
   if(poseCache(vm).has(key)) return;
   const pool=posers(); if(!pool.length) return;       // jointPosedVolume poses it here instead
@@ -680,16 +725,18 @@ async function ensureJointVolume(vm, angles=S.joints){
   if(!vm._jpending.has(key)){
     const mk=vm.url||S.subject;
     // each worker holds one model: send this one where another (or none) is held
-    for(const w of pool) if(w._modelKey!==mk){ w.postMessage({ type:'model', key:mk, dims:vm.dims, spacingMM:vm.spacingMM, data:vm.data }); w._modelKey=mk; }
-    vm._jpending.set(key, posePooled(pool, { key:mk, flips:voxelFlips(), chain:ch, angles:{ ...angles } })
-      .then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad }); }));
+    for(const w of pool) if(w._modelKey!==mk){ w.postMessage({ type:'model', key:mk, dims:vm.dims, spacingMM:vm.spacingMM, data:vm.data }); w._modelKey=mk; w._planFor=null; }
+    vm._jpending.set(key, posePooled(pool, { key:mk, flips:voxelFlips(), chain:ch, angles:{ ...angles } }, vm)
+      .then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad, box:r.box }); }));
   }
   await vm._jpending.get(key);
 }
 function jointPosedVolume(vm){
   const ch=jointsActive(); if(!ch || !vm.data) return null;
   const key=poseKey(ch, S.joints);
-  if(!poseCache(vm).has(key)) keepPose(vm, key, poseVolume(vm, voxelFlips(), ch, S.joints));
+  // (fluoroscopy never poses here: its dose traces build a phantom every pulse, and seconds of
+  // posing on the main thread would stall the screening; it takes the worker's pose when made)
+  if(!poseCache(vm).has(key)){ if(S.mode==='fluoro') return null; keepPose(vm, key, poseVolume(vm, voxelFlips(), ch, S.joints)); }
   return poseCache(vm).get(key);
 }
 /* REST ON THE TABLE. A patient lies on the receptor whichever way they are turned. The model
@@ -913,7 +960,7 @@ const S = {
            abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0,
            // staff and skin (core/staffDose.js): tube over the table, where the operator
            // stands, what lead they wear, and the doses those choices buy
-           over:false, opSide:1, opDist:60,
+           over:false, opSide:0, opDist:60,      // opSide 0: at the C-arm's controls (fluoro.js operatorAt)
            prot:{ apron:true, collar:true, glasses:false, ceiling:false, skirt:false },
            staff:{ eyes:0, thyroid:0, trunk:0, gonads:0, legs:0, neckBare:0 }, skinMGy:0,
            // Phase C: motion clocks (phases accumulated here; the worker is stateless)
@@ -4176,6 +4223,14 @@ window.addEventListener('load',()=>{
     // where the central ray enters the patient (cm from the focus, or null): the same phantom
     // the worker images, traced on the main thread for the skin and staff doses
     skinEntry: (src, dir, maxLen) => entranceFsd(buildPhantom(), src, dir, maxLen),
+    // the patient's pose, for the pulse workers: its key ('' unbent) and its volume once the
+    // posing worker has made it (null until then: the workers keep imaging the last one)
+    posedVolume: () => {
+      const ch=jointsActive(), vm=S.voxelModel;
+      if(!ch || !vm?.data) return { key:'' };
+      const key=poseKey(ch, S.joints);
+      return { key, vol: poseCache(vm).get(key) || null };
+    },
     // Phase D: the LIVE barium study rides the pulses. bariumLUT() rebuilds only when the
     // study clock moved; null while the panel is off or the subject has no gut.
     bariumPulse: () => {

@@ -231,7 +231,8 @@ function traceMu(ox, oy, oz, dx, dy, dz) {
 onmessage = (e) => {
   const m = e.data;
   if (m.type === 'init') {
-    ph = new VoxelPhantom({ dims: m.dims, vs: m.vs, data: new Uint8Array(m.data) },
+    // (the volume arrives as this worker's own copy: kept as it is, not copied again)
+    ph = new VoxelPhantom({ dims: m.dims, vs: m.vs, data: m.data instanceof Uint8Array ? m.data : new Uint8Array(m.data) },
       m.center, m.flip, m.rot || null);
     vsMM = m.vsMM || [2, 2, 2];
     anim = null;
