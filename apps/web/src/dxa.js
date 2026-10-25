@@ -1350,6 +1350,7 @@ export function dxaApplyMode(on) {
 /* THE ROOM'S MACHINE (dxaRoom.js): the table stands still; the arm (pillar, head, and the source
    carriage under the table) travels along it. */
 let room = null, laser = null, block = null, holder = null, legs = null, legsKey = '';
+const HOLDER_AT = 82;                 // cm from the thighs' stumps to the foot holder: the heels
 export function dxaSyncScene() {
   if (!ctx || !room) return;
   const on = ctx.S.mode === 'dxa';
@@ -1430,7 +1431,7 @@ function syncProps() {
   const st = thighStumps(ctx.S.voxelModel);
   const prop = D.props || null;
   if (!block) { block = buildBlock(); ctx.three.handGroup.parent.add(block); }
-  if (!holder) { holder = buildHolder(-1); ctx.three.handGroup.parent.add(holder); }
+  if (!holder) { holder = buildHolder(); ctx.three.handGroup.parent.add(holder); }
   block.visible = prop === 'block'; holder.visible = prop === 'holder';
   if (!pose || !st) { if (legs) legs.visible = false; return; }
   const R = pose.rot, c = pose.center;
@@ -1443,13 +1444,14 @@ function syncProps() {
   const n = Math.hypot(along[0], along[2]) || 1, ax = along[0] / n, az = along[2] / n;
   block.position.set(mid[0] + ax * (12 + BLOCK.D / 2), 0, mid[2] + az * (12 + BLOCK.D / 2));
   block.rotation.y = Math.atan2(ax, az);
-  holder.position.set(mid[0] + ax * 78, 0, mid[2] + az * 78);
+  holder.position.set(mid[0] + ax * HOLDER_AT, 0, mid[2] + az * HOLDER_AT);
   holder.rotation.y = Math.atan2(ax, az);
   const key = JSON.stringify([prop, stumps.map((s) => s.p.map((v) => v.toFixed(1))), D.legRot]);
   if (key !== legsKey) {
     legsKey = key;
     if (legs) { legs.parent?.remove(legs); legs.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }); }
-    legs = buildLegs(stumps, prop === 'block' ? 'block' : 'holder', along, { turn: prop === 'holder' ? (D.legRot || 0) : 0 });
+    legs = buildLegs(stumps, prop === 'block' ? 'block' : 'holder', along,
+      { holderAt: prop === 'holder' ? [holder.position.x, 0, holder.position.z] : null });
     ctx.three.handGroup.parent.add(legs);
   }
   legs.visible = true;

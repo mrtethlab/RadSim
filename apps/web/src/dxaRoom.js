@@ -180,30 +180,24 @@ export function buildBlock() {
   g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return g;
 }
-// The foot holder (the hip's): an A-frame between the feet, which are strapped against its sides
-// turned in, so the femoral necks lie flat. Origin: its base, centred, the frame across x.
-export const HOLDER = { W: 24, H: 24, D: 14 };
-export function buildHolder(strapSide = -1) {
+// The foot holder (the hip's): a wooden triangle standing between the feet, apex up, each foot
+// turned in and resting flat on one of its sloped sides, so both femoral necks lie flat.
+// Origin: the middle of its base; the triangle across x, its thickness along z (the legs).
+export const HOLDER = { W: 26, H: 22, D: 16 };
+export function buildHolder() {
   const M = mats();
-  const g = new THREE.Group();
   const { W, H, D } = HOLDER;
-  const len = Math.hypot(W / 2, H), ang = Math.atan2(H, W / 2);
-  for (const s of [-1, 1]) {
-    const board = mesh(rbox(len, 2, D, 0.8), M.wood, s * W / 4, H / 2, 0);
-    board.rotation.z = s * ang;
-    g.add(board);
-    g.add(mesh(rbox(12, 1.2, D + 2, 0.5), M.wood, s * (W / 2 - 4), 0.6, 0));   // the foot plates
-  }
-  const pin = mesh(new THREE.CylinderGeometry(1.4, 1.4, D + 1, 16), M.wood, 0, H, 0);
-  pin.rotation.x = Math.PI / 2;
-  g.add(pin);
-  // the strap over the scanned side's foot
-  const strap = mesh(rbox(3, 16, D + 4, 1), M.strap, strapSide * (W / 2 - 2), 8, 0);
-  strap.rotation.z = strapSide * 0.5;
-  g.add(strap);
-  g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  const tri = new THREE.Shape();
+  tri.moveTo(-W / 2, 0); tri.lineTo(W / 2, 0); tri.lineTo(0, H); tri.lineTo(-W / 2, 0);
+  const geo = new THREE.ExtrudeGeometry(tri, { depth: D, bevelEnabled: true, bevelThickness: 0.8, bevelSize: 0.8, bevelSegments: 2 });
+  geo.translate(0, 0.8, -D / 2);
+  const g = new THREE.Group();
+  const m = new THREE.Mesh(geo, M.wood); m.castShadow = m.receiveShadow = true;
+  g.add(m);
   return g;
 }
+// where a foot rests on the holder: the angle of its sides from the vertical
+export const HOLDER_LEAN = Math.atan2(HOLDER.W / 2, HOLDER.H);
 
 /* THE LEGS, as phantoms: semi-transparent, drawn from each thigh's cut end (stumps: room cm,
    { p: [x, y, z], r }) in one of two poses, along the patient's long axis (`down`: the unit
@@ -226,9 +220,10 @@ export function buildLegs(stumps, pose, down, opts = {}) {
   const g = new THREE.Group();
   const d = new THREE.Vector3(...down).setY(0).normalize();
   const side = new THREE.Vector3(-d.z, 0, d.x);                    // across the patient
+  const mid = new THREE.Vector3(...stumps.reduce((m, q) => m.map((v, k) => v + q.p[k] / stumps.length), [0, 0, 0]));
   for (const st of stumps) {
     const P = new THREE.Vector3(...st.p), r = st.r;
-    const s = Math.sign(side.dot(P.clone())) || 1;                // which side of the midline
+    const s = Math.sign(side.dot(P.clone().sub(mid))) || 1;       // which side of the patient's midline
     if (pose === 'block') {
       // the thigh rises from the stump to the knee over the block's near edge; the calf lies
       // along the block's top; the foot hangs past its far edge
@@ -239,16 +234,34 @@ export function buildLegs(stumps, pose, down, opts = {}) {
       const toe = ankle.clone().addScaledVector(d, 6).setY(BLOCK.H + 16);
       g.add(limb(ankle.toArray(), toe.toArray(), 4.2, 3.4, mat));
     } else {
-      // straight: thigh, calf, then the foot standing up, turned in by `turn` degrees
+      // straight along the table; at the holder (opts.holderAt: its base's centre, room cm) each
+      // foot stands up from its heel and leans in, its inner edge flat on the triangle's side
+      const out = side.clone().multiplyScalar(s);                   // away from the midline
+      if (!opts.holderAt) {
+        // no holder: the feet up, falling a little outward as they do at rest
+        const knee = P.clone().addScaledVector(d, 36).setY(6.3);
+        const ankle = knee.clone().addScaledVector(d, 40).setY(4.2);
+        const heel = ankle.clone().addScaledVector(d, 3).setY(3.2);
+        const toe = heel.clone().add(new THREE.Vector3(0, 19, 0).addScaledVector(out, 7));
+        g.add(limb(P.toArray(), knee.toArray(), r, 6.3, mat));
+        g.add(limb(knee.toArray(), ankle.toArray(), 6.1, 3.9, mat));
+        g.add(limb(heel.toArray(), toe.toArray(), 4.4, 3.6, mat));
+        continue;
+      }
+      const at = new THREE.Vector3(...opts.holderAt).setY(0);
+      const lean = HOLDER_LEAN, FOOT_R = 4;
+      // the side's outward normal, and the foot's long axis up along it
+      const nrm = out.clone().multiplyScalar(Math.cos(lean)).add(new THREE.Vector3(0, Math.sin(lean), 0));
+      const up = new THREE.Vector3(0, Math.cos(lean), 0).addScaledVector(out, -Math.sin(lean));
+      const heel = at.clone().addScaledVector(out, HOLDER.W / 2).addScaledVector(nrm, FOOT_R).setY(FOOT_R);
+      const ankle = heel.clone().addScaledVector(d, -5).setY(4.4);
       const knee = P.clone().addScaledVector(d, 36).setY(6.3);
-      const ankle = knee.clone().addScaledVector(d, 40).setY(4.2);
+      knee.addScaledVector(out, out.dot(ankle.clone().sub(knee)) * 0.4);
       g.add(limb(P.toArray(), knee.toArray(), r, 6.3, mat));
       g.add(limb(knee.toArray(), ankle.toArray(), 6.1, 3.9, mat));
-      const turn = (opts.turn ?? 0) * Math.PI / 180;
-      const toeDir = new THREE.Vector3(0, 1, 0).applyAxisAngle(d, -s * turn).normalize();
-      const heel = ankle.clone().addScaledVector(d, 3).setY(3.2);
-      const toe = heel.clone().addScaledVector(toeDir, 21).addScaledVector(d, 3);
-      g.add(limb(heel.toArray(), toe.toArray(), 4.4, 3.6, mat));
+      g.add(limb(ankle.toArray(), heel.toArray(), 4.2, FOOT_R, mat));
+      const toe = heel.clone().addScaledVector(up, 20);
+      g.add(limb(heel.toArray(), toe.toArray(), FOOT_R + 0.3, 3.4, mat));
     }
   }
   return g;
