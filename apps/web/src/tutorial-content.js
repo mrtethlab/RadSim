@@ -1413,8 +1413,8 @@ export const DXA_STEPS = [
     title: 'The foot brace',
     text: 'A femur is scanned with the leg turned IN 15–25°, which lays the femoral neck flat '
       + 'under the arm. Scan the left hip with the leg neutral and again with it in the brace: '
-      + 'the neck BMD reads about <b>8 % higher</b> neutral (0.757 against 0.701 g/cm²), and '
-      + 'turned out 20° the trochanter overlaps the neck and it reads a third higher. A '
+      + 'the neck BMD reads about <b>3 % higher</b> neutral (0.766 against 0.743 g/cm²), and '
+      + 'turned out 20° the trochanter overlaps the neck and it reads a quarter higher. A '
       + 'positioning change between visits can look exactly like a change in the bone.',
     goal: {
       label: 'Scan a hip with the leg out of the brace',
