@@ -1750,9 +1750,43 @@
             <button data-mag="1">Mag &times;1.8</button>
           </div>
           <div class="ctrst-note">Craniocaudal compresses top-down; the mediolateral oblique
-            turns the gantry 45&deg; so the pectoral margin comes into the field. The MAG
+            turns the gantry 40&ndash;60&deg;, parallel to her pectoral muscle, so the muscle
+            comes into the field. The MAG
             stand raises the subject toward the tube: a &times;1.8 spot view that overfills
             the receptor and pays the inverse-square price on the dose meter.</div>
+        </div>
+      </div>
+      <div class="grp mm-only">
+        <div class="lab">Positioning</div>
+        <div class="bod">
+          <div class="note" id="mmPatient">&mdash;</div>
+          <div class="row" style="margin-top:9px"><div class="rl">Pull the breast forward</div>
+            <div class="valchip" id="mmPullV">45 %</div></div>
+          <input type="range" id="mmPull" min="0" max="100" value="45" step="1">
+          <div class="row" style="margin-top:9px"><div class="rl">Lift the fold (IMF)</div>
+            <div class="valchip" id="mmLiftV">30 %</div></div>
+          <input type="range" id="mmLift" min="0" max="100" value="30" step="1">
+          <div id="mmAngleRow"><div class="row" style="margin-top:9px"><div class="rl">C-arm angle</div>
+            <div class="valchip" id="mmAngleV">45&deg;</div></div>
+          <input type="range" id="mmAngle" min="30" max="70" value="45" step="1"></div>
+          <div id="mmRotRow"><div class="row" style="margin-top:9px"><div class="rl">Rotation (lateral &harr; medial)</div>
+            <div class="valchip" id="mmRotV">square</div></div>
+          <input type="range" id="mmRot" min="-100" max="100" value="0" step="5"></div>
+          <div class="row" style="margin-top:9px"><div class="rl">Nipple roll</div>
+            <div class="valchip" id="mmRollV">0&deg;</div></div>
+          <input type="range" id="mmRoll" min="-100" max="100" value="0" step="4">
+          <div class="ctrst-note">Each view is placed on its own. Pull the tissue off the chest
+            wall; on the CC set the receptor at the fold&rsquo;s natural height and keep the
+            medial breast on; on the MLO match the C-arm to her pectoral muscle and lift the
+            breast up and out. Roll the nipple into profile. Then judge the FILM, not the
+            sliders.</div>
+        </div>
+      </div>
+      <div class="grp mm-only">
+        <div class="lab">Image evaluation</div>
+        <div class="bod">
+          <div id="mmEval"><div class="note">Expose a CC and an MLO &mdash; each is judged on its own image.</div></div>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="mmOverlay" checked><span>Draw the PNL on the film</span></label>
         </div>
       </div>
       <div class="expose mm-only" id="mmExposeRow">
