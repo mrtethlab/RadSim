@@ -233,6 +233,7 @@ const MODALS = [
   ['#ctPop.show', '.ctpop-inner'],
   ['#kpad.open', '.kpad-win'],
   ['#ctBtrk.show', null],
+  ['#dxModal.show', '.dxm-card'],          // the DXA exam's intake form and its intro
 ];
 
 function openModal() {

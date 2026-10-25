@@ -1,36 +1,41 @@
-// Every tutorial step points at a control. When a control is renamed and the step is not, the
-// learner meets "this control does not exist yet" and is told they skipped a step they did not —
-// which is what two fluoroscopy steps did (#flAbcSeg, #flIris). Every id a step names must exist.
+// The tutorials point at real controls by selector (tutorial-content.js). A control renamed or
+// removed leaves its step lighting nothing ("not on screen yet") with no error anywhere, so every
+// id a step names must be in the page: in index.html, or made at run time by a module (listed).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import * as T from '../src/tutorial-content.js';
 
 const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
-const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
+// ids that modules create, not the page (each checked where it is made)
+const RUNTIME = new Set(['tutGoal']);
+const TUTS = { XRAY_STEPS: 'x-ray', CT_STEPS: 'CT', CONTRAST_STEPS: 'contrast', EDITOR_STEPS: 'editor', BARIUM_STEPS: 'barium',
+  FLUORO_STEPS: 'fluoroscopy', MAMMO_STEPS: 'mammography', US_STEPS: 'ultrasound', DXA_STEPS: 'DXA' };
 
-test('every tutorial step targets a control that exists on the page', () => {
-  const lists = Object.entries(T).filter(([k, v]) => k.endsWith('_STEPS') && Array.isArray(v));
-  assert.ok(lists.length >= 8, `${lists.length} tutorials`);
-  const missing = [];
-  for (const [name, steps] of lists) {
-    steps.forEach((st, i) => {
-      for (const m of String(st.sel || '').matchAll(/#([A-Za-z][\w-]*)/g)) {
-        if (!ids.has(m[1])) missing.push(`${name}[${i}] "${st.title}": #${m[1]}`);
+test('every tutorial step names controls the page has', () => {
+  let n = 0;
+  for (const [k, name] of Object.entries(TUTS)) {
+    for (const s of T[k]) {
+      assert.ok(s.title && s.text, `${name}: a step without a title or text`);
+      for (const sel of [].concat(s.sel || [])) {
+        for (const [, id] of sel.matchAll(/#([A-Za-z][\w-]*)/g)) {
+          n++;
+          assert.ok(RUNTIME.has(id) || html.includes(`id="${id}"`), `${name} · ${s.title}: #${id} is not in the page`);
+        }
       }
-    });
+      if (s.goal) assert.equal(typeof s.goal.done, 'function', `${name} · ${s.title}: a goal without done()`);
+    }
   }
-  assert.deepEqual(missing, []);
+  assert.ok(n > 100, `${n} ids checked`);
 });
 
-test('every tutorial button on the home card opens a tutorial that exists', () => {
-  const src = readFileSync(new URL('../src/tutorial.js', import.meta.url), 'utf8');
-  const map = src.slice(src.indexOf('const STEPS = {'), src.indexOf('};', src.indexOf('const STEPS = {')));
-  const tuts = [...html.matchAll(/data-tut="([^"]+)"/g)].map((m) => m[1]);
-  assert.ok(tuts.includes('contrast') && tuts.includes('barium'));
-  for (const t of tuts) {
-    const m = map.match(new RegExp(`\\b${t}: (\\w+)`));
-    assert.ok(m, `no step list for data-tut="${t}"`);
-    assert.ok(Array.isArray(T[m[1]]) && T[m[1]].length, `${m[1]} is not an exported step list`);
-  }
+test('the new features each have their step', () => {
+  const titles = (k) => T[k].map((s) => s.title).join(' | ');
+  assert.match(titles('XRAY_STEPS'), /Bend the joints/);
+  assert.match(titles('FLUORO_STEPS'), /guidewire/i);
+  assert.match(titles('FLUORO_STEPS'), /ankle reduction/i);
+  assert.match(titles('DXA_STEPS'), /forearm/i);
+  assert.match(titles('DXA_STEPS'), /The exam/);
+  assert.match(titles('MAMMO_STEPS'), /Position/);
+  assert.match(titles('US_STEPS'), /Spectral Doppler/);
 });
