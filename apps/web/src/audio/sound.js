@@ -8,6 +8,7 @@ const FILES = {
   end: 'sounds/xray/end.wav', cooldown: 'sounds/xray/cooldown.wav',
   breathIn: 'sounds/CTBreathIn.wav', breathNormal: 'sounds/CTBreathNormal.wav',
   tableMove: 'sounds/TableMovement.wav', ctExposureS1: 'sounds/CTExposure_S1.wav',
+  dxaStep: 'sounds/dxa/scanStep.mp3',          // the densitometer's arm stepping between passes
 };
 // What each room needs. CT borrows the x-ray buzz as its classic scan tone, and its timing
 // (breath-hold, the contrast acquisition clock) reads the breath sounds' DURATIONS — so
@@ -15,6 +16,7 @@ const FILES = {
 const MODE_SOUNDS = {
   xray: ['press', 'start', 'buzz', 'end', 'cooldown'],
   ct: ['breathIn', 'breathNormal', 'tableMove', 'ctExposureS1', 'buzz'],
+  dxa: ['dxaStep'],
 };
 
 export const Sound=(()=>{

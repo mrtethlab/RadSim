@@ -134,19 +134,6 @@
           </div>
         </div>
       </div>
-      <div class="home-card hc-mammo" data-mode="mammo">
-        <div class="hc-art"></div>
-        <div class="hc-body">
-          <div class="hc-name">Mammography</div>
-          <div class="hc-tag">Low-energy breast imaging at 26 to 32 kV</div>
-          <div class="hc-desc">Target and filter combinations, compression, an AEC tuned for a
-            low-energy beam, and CC and MLO views of a high-resolution breast phantom.</div>
-          <div class="hc-acts">
-            <button class="hc-open" data-mode="mammo">Open</button>
-            <button class="hc-tut" data-tut="mammo" title="Walk through this mode control by control">&#9654; Tutorial</button>
-          </div>
-        </div>
-      </div>
       <div class="home-card hc-dxa" data-mode="dxa">
         <div class="hc-art"></div>
         <div class="hc-body">
@@ -158,6 +145,19 @@
           <div class="hc-acts">
             <button class="hc-open" data-mode="dxa">Open</button>
             <button class="hc-tut" data-tut="dxa" title="Walk through this mode control by control">&#9654; Tutorial</button>
+          </div>
+        </div>
+      </div>
+      <div class="home-card hc-mammo" data-mode="mammo">
+        <div class="hc-art"></div>
+        <div class="hc-body">
+          <div class="hc-name">Mammography</div>
+          <div class="hc-tag">Low-energy breast imaging at 26 to 32 kV</div>
+          <div class="hc-desc">Target and filter combinations, compression, an AEC tuned for a
+            low-energy beam, and CC and MLO views of a high-resolution breast phantom.</div>
+          <div class="hc-acts">
+            <button class="hc-open" data-mode="mammo">Open</button>
+            <button class="hc-tut" data-tut="mammo" title="Walk through this mode control by control">&#9654; Tutorial</button>
           </div>
         </div>
       </div>
@@ -264,6 +264,9 @@
     </div>
     <!-- X-RAY ROOM SET-UP (app.js setRoom, room.js): the wall stand, the table or a free detector.
          The wall stand stands the patient upright; the table and the detector lay them supine. -->
+    <!-- THE DXA EXAM (dxaExam.js): the checklist over the room, and the intro / intake form -->
+    <div class="dxexam" id="dxExam"></div>
+    <div class="dxmodal" id="dxModal"></div>
     <div class="roomsel" id="roomSel" role="group" aria-label="Room set-up">
       <div class="roomsel-t">ROOM</div>
       <div class="roomsel-g">
@@ -672,16 +675,6 @@
             </div>
           </div>
         </div>
-        <!-- Which couch you scan on is scenery, not technique: it changes nothing about the
-             beam or the numbers, so it belongs with the other things you set once and forget
-             rather than on the console beside the controls you actually operate. -->
-        <div class="dx-only">
-          <div class="cl">Scanner table</div>
-          <div class="segmini" id="dxRigSeg">
-            <button data-rig="v2" class="on">Mk II</button>
-            <button data-rig="v1">Mk I</button>
-          </div>
-        </div>
       </div>
       </div>
       <div class="baydrop ct-only" id="soundDrop">
@@ -745,7 +738,7 @@
           <div class="row" style="margin-top:8px"><div class="rl">Roll <small>long axis</small></div>
             <div class="valchip" id="objRotZv">0°</div></div>
           <input type="range" id="objRotZ" min="-180" max="180" value="0" step="1">
-          <div class="xray-only flkeep">
+          <div class="xray-only flkeep dxkeep">
             <div class="row" style="margin-top:8px"><div class="rl">Offset <small>long axis</small></div>
               <div class="valchip" id="objOffZv">0 cm</div></div>
             <input type="range" id="objOffZ" min="-55" max="55" value="0" step="0.5">
@@ -1665,6 +1658,7 @@
       </div>
       <div class="expose dx-only" id="dxScanRow">
         <button class="flpedal" id="dxScan">&#9655; SCAN</button>
+        <label class="cttoggle dxspeed"><input type="checkbox" id="dxSpeed"><span>Fast-forward &times;5 <small>(the scan takes 30 s at its real speed)</small></span></label>
         <div class="note" id="dxStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
       <!-- ============ MAMMOGRAPHY console (mm-only) ============ -->

@@ -20,6 +20,7 @@ import { BodyMaterials } from './core/materials.js';
 import { muAtEnergy } from './core/voxelPhantom.js';
 import { dockConsole } from './core/paneDock.js';
 import { makePatient, drawAgeChart, reportHTML } from './dxaReport.js';
+import { Sound } from './audio/sound.js';
 
 let ctx = null, D = null;
 const $ = (id) => document.getElementById(id);
@@ -63,10 +64,20 @@ export const REGIONS = {
    gives the iliac crest — the top of the pelvic hump — which is the landmark a
    technologist actually uses, since the L4-L5 disc sits at the crest. */
 let landmarks = null, landmarksFor = null;
+/* Cached per subject and leg rotation (turning the leg moves the greater trochanter), measured
+   on the volume and carried to wherever the patient now lies on the table: the long-axis
+   landmarks move with the patient's offset (the operator slides the patient between the
+   lines), the lateral ones are from the patient's own midline. */
 export function findLandmarks(ph) {
-  // keyed on the leg rotation too: turning the leg moves the greater trochanter
   const key = `${ctx.S.subject}|${D?.legRot || 0}`;
-  if (landmarks && landmarksFor === key) return landmarks;
+  if (!(landmarks && landmarksFor === key)) { landmarks = measureLandmarks(ph); landmarksFor = key; }
+  const dz = ph.min[2] - landmarks.min2;
+  if (!dz) return landmarks;
+  const sh = (t) => (t ? { ...t, zCm: t.zCm + dz } : t);
+  return { ...landmarks, lumbarCm: landmarks.lumbarCm + dz, crestCm: landmarks.crestCm + dz,
+    troch: landmarks.troch && { L: sh(landmarks.troch.L), R: sh(landmarks.troch.R) } };
+}
+function measureLandmarks(ph) {
   const M = BodyMaterials;
   const aOf = boneEquivById();
   const nx = ph.nx, ny = ph.ny, nz = ph.nz, data = ph.data;
@@ -118,12 +129,10 @@ export function findLandmarks(ph) {
   }
   const dirSup = Math.sign(landmarkSupDir(mid, nz)) || 1;
   const troch = findTrochanters(ph, aOf, crestZ, dirSup);
-  landmarks = { lumbarZ, crestZ, dirSup,
-                lumbarCm: (lumbarZ + 0.5) * vs[2] + ph.min[2],
-                crestCm: (crestZ + 0.5) * vs[2] + ph.min[2],
-                troch };
-  landmarksFor = key;
-  return landmarks;
+  return { lumbarZ, crestZ, dirSup, min2: ph.min[2],
+           lumbarCm: (lumbarZ + 0.5) * vs[2] + ph.min[2],
+           crestCm: (crestZ + 0.5) * vs[2] + ph.min[2],
+           troch };
 }
 
 /* THE GREATER TROCHANTER, MEASURED. It used to be assumed at "crest minus ~7 cm", which is
@@ -261,7 +270,23 @@ export function boneEquivById() {
   return out;
 }
 
-export function acquire(onRow, onDone) {
+/* THE SCAN AS THE MACHINE RUNS IT (GE Lunar Prodigy, its spec sheet): a narrow fan beam of
+   4.5 degrees, lying along the patient's long axis, with AP spine and femur each taking about
+   30 s in the standard mode. At the patient, some 35 cm from the focus, the fan is 2.75 cm
+   long; the passes overlap by about an eighth, so the arm STEPS 2.4 cm along the table between
+   passes, and during each pass the fan sweeps across the field, the source under the table and
+   the detector in the head moving together. The femur's field is half the spine's length and
+   is run in the same 30 s: half as many passes, each swept at half the speed.
+   The picture builds the same way: one band of rows per pass, filled across as the fan sweeps. */
+export const SCAN = { STEP_CM: 2.4, SITE_S: { spine: 30, hipL: 30, hipR: 30 }, MOVE_S: 0.78 };   // (the step sound's length)
+export function scanPlan(region) {
+  const reg = REGIONS[region] || REGIONS.spine;
+  const passes = Math.max(1, Math.round(reg.wz / SCAN.STEP_CM));
+  return { passes, stepCm: reg.wz / passes, passS: (SCAN.SITE_S[region] || 30) / passes };
+}
+let scanClock = null;            // the running scan's timing (null when idle)
+
+export function acquire(onRow, onDone, onPass) {
   const ph = ctx.buildPhantom?.();
   if (!ph || ph.geometryOnly) { setStatus('This subject has no browser volume to scan.'); return; }
   const reg = REGIONS[D.region] || REGIONS.spine;
@@ -285,10 +310,8 @@ export function acquire(onRow, onDone) {
      from the ASIS to T11, the femur from two inches below the trochanter to the acetabulum.
      Drive the arm to the wrong place and the wrong bones land in the window — which is the
      lesson. positionError() tells the console how far off it is. */
-  const cen = ph.min.map((m, i) => (m + ph.max[i]) / 2);
   const lm = findLandmarks(ph);
-  const spine = D.region === 'spine';
-  const cxW = cen[0] + D.crossX;
+  const cxW = D.crossX;                            // the laser, across the table (room cm)
   const czW = D.headZ + lm.dirSup * reg.wz / 2;   // the cross is the INFERIOR edge, both sites
   const x0 = cxW - reg.wx / 2, z0 = czW - reg.wz / 2;
   const yBelow = ph.min[1] - 5, yLen = (ph.max[1] - ph.min[1]) + 10;
@@ -301,13 +324,23 @@ export function acquire(onRow, onDone) {
     trochZ: tro ? tro.zCm : null, trochX: tro ? (D.region === 'hipL' ? -tro.x : tro.x) : null,
     headX: tro && tro.headX != null ? (D.region === 'hipL' ? -tro.headX : tro.headX) : null,
     headR: tro && tro.headR != null ? tro.headR : null };
+  const pb = basis(), pdet = pb.bLo * pb.sHi - pb.bHi * pb.sLo;
+  const prev = scan.preview = new Float32Array(nx * nz);
   rasterRow = 0; scanning = true;
+  const plan = scanPlan(D.region);
+  const rowsPer = nz / plan.passes;
+  scanClock = { t: 0, last: performance.now(), pass: -1, plan, rowsPer, z0, x0, nx, nz, done: false };
 
   const step = () => {
     if (!scanning) return;
     const t0 = performance.now();
-    // draw as many rows as fit in a frame budget, so the raster is smooth but honest
-    while (rasterRow < nz && performance.now() - t0 < 12) {
+    // trace as many rows as fit in a frame budget (well ahead of the fan, which needs them only
+    // when its pass reaches them)
+    // (longer when the fan is about to reach rows not traced yet: a slow frame rate must not
+    // stall the scan's clock)
+    const need = scanClock ? Math.min(nz, Math.ceil((Math.floor(scanClock.t / scanClock.plan.passS) + 2) * scanClock.rowsPer)) : nz;
+    const budget = rasterRow < need ? 40 : 10;
+    while (rasterRow < nz && performance.now() - t0 < budget) {
       const z = z0 + (rasterRow + 0.5) * PX_CM;
       for (let i = 0; i < nx; i++) {
         const x = x0 + (i + 0.5) * PX_CM;
@@ -324,18 +357,49 @@ export function acquire(onRow, onDone) {
         }
         const k = rasterRow * nx + i;
         lo[k] = aLo; hi[k] = aHi; truth[k] = mineral;
+        // the preview is the bone map the study will show, solved as each ray comes in (the low
+        // energy alone is mostly soft tissue, and drew the building image washed out white)
+        prev[k] = Math.max(0, (aLo * pb.sHi - aHi * pb.sLo) / pdet) * HA_FRACTION;
       }
       rasterRow++;
     }
-    onRow?.(rasterRow, nz);
-    if (rasterRow >= nz) { scanning = false; onDone?.(scan); }
+    // the scan's clock: it runs at the operator's chosen speed, and waits for the traced rows
+    // if the fan would reach rows not traced yet
+    const C = scanClock, now = performance.now();
+    const dt = Math.min(0.5, (now - C.last) / 1000) * (D.scanSpeed || 1);
+    C.last = now;
+    const total = C.plan.passes * C.plan.passS;
+    const tNext = Math.min(total, C.t + dt);
+    const passAt = (t) => Math.min(C.plan.passes - 1, Math.floor(t / C.plan.passS));
+    const rowsNeeded = Math.min(nz, Math.ceil((passAt(tNext) + 1) * C.rowsPer));
+    if (rasterRow >= rowsNeeded) C.t = tNext;
+    const p = passAt(C.t), tin = C.t - p * C.plan.passS;
+    if (p !== C.pass) { C.pass = p; onPass?.(p, C.plan); }
+    // the arm steps to this pass (the first MOVE_S of it), then the fan sweeps across, the
+    // sweep reversing each pass
+    const move = Math.min(1, tin / Math.min(SCAN.MOVE_S, C.plan.passS * 0.3));
+    const sweep = Math.max(0, Math.min(1, (tin - Math.min(SCAN.MOVE_S, C.plan.passS * 0.3)) / (C.plan.passS * 0.7)));
+    const r0 = Math.round(p * C.rowsPer), r1 = Math.min(nz, Math.round((p + 1) * C.rowsPer));
+    const fwd = p % 2 === 0;
+    const cols = Math.round(sweep * nx);
+    // (the arm eases from the last pass's centre to this one's)
+    C.state = { pass: p, passes: C.plan.passes, move, sweep, r0, r1, traced: rasterRow, c0: fwd ? 0 : nx - cols, c1: fwd ? cols : nx,
+      armZ: z0 + (Math.max(0, p - 1 + move) + 0.5) * PX_CM * C.rowsPer,
+      sweepX: x0 + (fwd ? sweep : 1 - sweep) * nx * PX_CM, frac: C.t / total };
+    onRow?.(C.state);
+    if (C.t >= total && rasterRow >= nz) { scanning = false; scanClock = null; onDone?.(scan); }
     else rasterTimer = requestAnimationFrame(step);
   };
   step();
   return scan;
 }
 
-export function abortScan() { scanning = false; if (rasterTimer) cancelAnimationFrame(rasterTimer); }
+export function abortScan() {
+  scanning = false; scanClock = null;
+  if (rasterTimer) cancelAnimationFrame(rasterTimer);
+  if (D) { D.scanArmZ = null; syncHead(); }
+}
+export function isScanning() { return scanning; }
 export function lastScan() { return scan; }
 
 /* ---- the 2x2 solve ---------------------------------------------------------
@@ -823,14 +887,14 @@ function setStatus(t) { const el = $('dxStatus'); if (el) el.textContent = t; }
 
 /* ---- display ---------------------------------------------------------------- */
 let dxCanvas = null;
-export function render(sc, bmd, upto) {
+export function render(sc, bmd, upto, part = null) {
   const film = $('film'); if (!film || !sc) return;
   const { nx, nz } = sc;
   if (!dxCanvas) { dxCanvas = document.createElement('canvas'); }
   if (dxCanvas.width !== nx || dxCanvas.height !== nz) { dxCanvas.width = nx; dxCanvas.height = nz; }
   const g = dxCanvas.getContext('2d');
   const img = g.createImageData(nx, nz);
-  const rows = upto == null ? nz : Math.min(nz, upto);
+  const rows = part ? part.r1 : upto == null ? nz : Math.min(nz, upto);
   // window on the bone-mineral map: 0 to ~1.6 g/cm2 covers spine and hip
   /* WINDOW ON A PERCENTILE, NOT THE PEAK. Scaling to the brightest pixel works at the spine,
      where the brightest thing IS the anatomy. At the hip a single ray can catch ilium,
@@ -839,7 +903,8 @@ export function render(sc, bmd, upto) {
      Clipping at the 99th percentile throws away that one hot ray and gives the femur the
      range instead. It is a display window and nothing more: no measurement reads this. */
   const src = bmd || sc.lo;
-  const n = rows * nx;
+  // (the window over every row traced, not just the ones shown: it holds still as the image builds)
+  const n = (part ? Math.max(rows, part.traced || 0) : rows) * nx;
   let hiV = 0;
   if (n > 0) {
     const sample = new Float32Array(n);
@@ -857,9 +922,10 @@ export function render(sc, bmd, upto) {
   for (let dy = 0; dy < nz; dy++) {
     const sy = nz - 1 - dy;                       // superior at the top
     const scanned = sy < rows;                    // so the raster now fills upward
+    const inPass = part && sy >= part.r0;         // (the pass under way: only what the fan has crossed)
     for (let dx = 0; dx < nx; dx++) {
       const sx = nx - 1 - dx;                     // patient's right to the viewer's left
-      const v = scanned ? Math.min(1, src[sy * nx + sx] / hiV) ** 0.7 * 255 : 0;
+      const v = scanned && (!inPass || (sx >= part.c0 && sx < part.c1)) ? Math.min(1, src[sy * nx + sx] / hiV) ** 0.7 * 255 : 0;
       const k = dy * nx + dx;
       img.data[k * 4] = img.data[k * 4 + 1] = img.data[k * 4 + 2] = v;
       img.data[k * 4 + 3] = 255;
@@ -1126,6 +1192,7 @@ export function report(sc) {
    Ten deep, newest first, matching the x-ray archive. */
 export const HISTORY_MAX = 10;
 function patientOf() {
+  if (D.intake && D.patient?.fromIntake === D.intake.seed) return D.patient;
   if (!D.patient || D.patient.sex !== D.sex) {
     D.patient = makePatient(D.sex, D.age, (D.patientSeed ||= (Math.random() * 4294967296) >>> 0));
     D.patient.sex = D.sex;
@@ -1148,6 +1215,8 @@ function fileStudy(sc) {
     area: areaT, bmc: bmcT,
     age: D.age, weight: D.weight, sex: D.sex,
     when: new Date(), patient: patientOf(),
+    intake: D.intake ? { indication: D.intake.indication, risks: D.intake.risks.slice(),
+      answers: D.intake.fields.map((f) => [f.q, f.a]) } : null,
     img: film ? film.toDataURL('image/png') : null,
   });
   if (D.history.length > HISTORY_MAX) D.history.length = HISTORY_MAX;
@@ -1269,7 +1338,7 @@ export function dxaApplyMode(on) {
   dockConsole(on, $('dxScanRow'));
   if (on) {
     if (ctx.S.subject !== 'chestabdopelvis') ctx.setSubject?.('chestabdopelvis');
-    ensureScannedRig();
+    Sound.need('dxa');
     setStatus('Ready — pick a region and scan.');
     D.region = D.region || 'spine';
     setTimeout(() => parkWhenReady(), 60);   // as soon as the subject's volume is in place
@@ -1277,37 +1346,21 @@ export function dxaApplyMode(on) {
   dxaSyncScene();
 }
 
-/* THE ROOM'S MACHINES. Two photogrammetry scans of a densitometer, each split offline into
-   'bed' and 'head' nodes by tools/split_dxa_rig.js. Both put the whole arm above y = 0 in
-   their own frame, so one split plane serves both — but they were scanned lying different
-   ways and everything downstream has to know which. Measured per model, not assumed:
-
-     v2  long axis is already z, so no turn, and travel runs with local +z. Table surface
-         at y = -0.09: the only large upward-facing plane between the pedestal and the arm
-         (the bigger one at -0.58 is the base plate). Arm sits mid-table on the -x side.
-     v1  long axis x, so the room turns it a quarter turn, which maps its local +x onto
-         world -z — hence the negative travel. Surface at y = -0.03, arm parked at one END.
-
-   TABLE_LEN_CM is the real machine's, and it sets the scale of everything else: get it
-   wrong and the patient is the wrong size relative to the couch they are lying on. */
-const TABLE_LEN_CM = 287;
-const RIGS = {
-  v2: { label: 'Mk II', url: 'models/rigs/dxa_rig_v2.glb',
-        rotY: 0,           surfaceY: -0.09, travelAxis: 'z', travelSign: +1 },
-  v1: { label: 'Mk I',  url: 'models/rigs/dxa_rig.glb',
-        rotY: Math.PI / 2, surfaceY: -0.03, travelAxis: 'x', travelSign: -1 },
-};
-const RIG_DEFAULT = 'v2';
-let rig = null, armMesh = null, scannedRig = null, headHome = null, laser = null;
+/* THE ROOM'S MACHINE (dxaRoom.js): the table stands still; the arm (pillar, head, and the source
+   carriage under the table) travels along it. */
+// (the room's model is loaded when the room is built: it needs three.js, and the analysis in this
+// module is tested in node without it)
+let R3 = null, room = null, laser = null, block = null, holder = null, legs = null, legsKey = '';
+const TABLE_LEN_CM = 263;            // the table's length (dxaRoom.js LUNAR.LEN)
+const HOLDER_AT = 82;                 // cm from the thighs' stumps to the foot holder: the heels
 export function dxaSyncScene() {
-  if (!ctx || !rig) return;
+  if (!ctx || !room) return;
   const on = ctx.S.mode === 'dxa';
-  // the scanned machine wins once it arrives; the boxes are only the fallback
-  rig.visible = on && !scannedRig;
-  if (scannedRig) scannedRig.visible = on;
+  room.table.visible = room.arm.visible = on;
   const three = ctx.three;
   if (!on) { dxaHideExtras(); return; }
   syncHead();
+  syncProps();
   // A densitometer carries its own source and detector inside the scanning arm, so none of
   // the radiographic room belongs in this scene. syncScene() re-shows that hardware every
   // frame, which is why this runs from there rather than only on the mode switch.
@@ -1322,39 +1375,89 @@ export function dxaSyncScene() {
 
 /* Leaving the mode has to take the laser with it — it is parented to the room, not to the
    rig group, so that it can sit above the patient rather than inside the machine. */
-export function dxaHideExtras() { if (laser) laser.visible = false; }
+export function dxaHideExtras() {
+  if (laser) laser.visible = false;
+  for (const o of [block, holder, legs]) if (o) o.visible = false;
+}
 
-/* THE ROOM. A densitometer is a table with a scanning arm riding over it, and the arm is
-   the only part that moves. The scanned machine (public/models/rigs/dxa_rig.glb) came off
-   photogrammetry as one fused mesh of 50k triangles, so it was split offline the same way
-   the OEC was: everything above y = 0.15 in the scan's own frame lies in x [-0.94, -0.58]
-   — a narrow band at one end of the 2.0-long table — and spans the full width, which is a
-   scanning arm and nothing else. That became the 'head' node (7 857 faces); the remaining
-   42 143 are 'bed'. Both share one vertex buffer and one texture, so the split cost two
-   index views.
-   The box rig below it is the fallback if the fetch fails — the mode still has to work. */
-let rigCfg = RIGS[RIG_DEFAULT];       // which machine is standing in the room
-let bedNode = null, headNode = null, rigScale = 1, bedTopY = 0, bedLenCm = 0, headCentreHomeZ = 0;
-/* Drive the arm and its laser to wherever the pad has put them. The head travels along the
+/* Drive the arm and its laser to wherever the pad has put them. The arm travels along the
    couch only; the laser's cross slides across the table independently, which is what the
-   left/right keys on a real console do — they re-centre the measuring field, not the arm. */
+   left/right keys on a real console do: they re-centre the measuring field, not the arm.
+   During a scan the arm follows the passes (D.scanArmZ) and the laser is off. */
 function syncHead() {
-  if (!headNode || !headHome) return;
-  const { THREE } = ctx;
-  /* headZ is where the LASER is, in cm along the couch, and the arm has to straddle it: the
-     laser is projected from the head, so the two cannot drift apart. The scan's arm does not
-     sit at the origin of its own frame — it is parked at one end of the table — so the head's
-     home centre is measured once after load and subtracted here. Without that, headZ = 0 put
-     the cross at the table's middle and the arm 65 cm away at the end of its rails.
-     The node lives in the scan's frame, before the quarter turn that stands the table up,
-     and that turn maps local +x onto world −z, so travel toward +z is NEGATIVE in x. */
-  headNode.position.copy(headHome);
-  headNode.position[rigCfg.travelAxis] +=
-    rigCfg.travelSign * (D.headZ - headCentreHomeZ) / rigScale;
+  if (!room) return;
+  const z = D.scanArmZ ?? D.headZ;
+  room.arm.position.set(0, 0, z);
   if (laser) {
-    laser.visible = true;
+    laser.visible = ctx.S.mode === 'dxa' && D.scanArmZ == null;
     laser.position.set(D.crossX, LASER_Y, D.headZ);
   }
+}
+
+/* THE KNEE BLOCK, THE FOOT HOLDER AND THE LEGS. D.props is what the operator has placed:
+   'block' (spine), 'holder' (hip) or null. The legs are drawn from the volume's thigh stumps,
+   carried with the patient, in the pose the prop gives them; with no prop they lie straight. */
+let stumpsFor = null, stumpsRest = null;
+function thighStumps(vm) {
+  // the volume's INFERIOR end (the landmarks know which way is up), a couple of centimetres in:
+  // the tissue lateral of the midline on each side is a thigh, its centroid and radius the
+  // stump the phantom leg is drawn from (rest frame, cm). The pelvis volume ends below the
+  // buttocks with the thighs still joined across the perineum, so they are split at the midline.
+  if (stumpsFor === vm && stumpsRest) return stumpsRest;
+  stumpsFor = vm; stumpsRest = null;
+  if (!vm?.data) return null;
+  let up = 1;
+  try { const ph = ctx.buildPhantom?.(); if (ph?.data) up = findLandmarks(ph).dirSup || 1; } catch { /* keep +z */ }
+  const [nx, ny, nz] = vm.dims, sp = vm.spacingMM.map((v) => v / 10), d = vm.data;
+  const end = up > 0 ? 0 : nz - 1, dir = up > 0 ? 1 : -1;
+  let k = end;
+  const count = (kk) => { let n = 0; for (let j = 0; j < ny; j += 2) for (let i = 0; i < nx; i += 2) if (d[(kk * ny + j) * nx + i]) n++; return n; };
+  while (k >= 0 && k < nz && count(k) < 400) k += dir;
+  k += dir * Math.round(2 / sp[2]);
+  if (k < 0 || k >= nz) return null;
+  const st = [{ n: 0, x: 0, y: 0 }, { n: 0, x: 0, y: 0 }];
+  for (let j = 0; j < ny; j += 2) for (let i = 0; i < nx; i += 2) {
+    if (!d[(k * ny + j) * nx + i]) continue;
+    const x = (i - (nx - 1) / 2) * sp[0], y = (j - (ny - 1) / 2) * sp[1];
+    if (Math.abs(x) < 2) continue;
+    const s2 = st[x < 0 ? 0 : 1]; s2.n++; s2.x += x; s2.y += y;
+  }
+  if (st.some((q) => q.n < 20)) return null;
+  stumpsRest = st.map((q) => ({ p: [q.x / q.n, q.y / q.n, (k - (nz - 1) / 2) * sp[2]],
+    r: Math.min(9, Math.max(5.5, Math.sqrt(q.n * 4 * sp[0] * sp[1] / Math.PI) * 0.8)), down: -up }));
+  return stumpsRest;
+}
+function syncProps() {
+  if (!R3) return;
+  const { buildBlock, buildHolder, buildLegs, BLOCK } = R3;
+  const pose = ctx.phantomPose?.();
+  const st = thighStumps(ctx.S.voxelModel);
+  const prop = D.props || null;
+  if (!block) { block = buildBlock(); ctx.three.handGroup.parent.add(block); }
+  if (!holder) { holder = buildHolder(); ctx.three.handGroup.parent.add(holder); }
+  block.visible = prop === 'block'; holder.visible = prop === 'holder';
+  if (!pose || !st) { if (legs) legs.visible = false; return; }
+  const R = pose.rot, c = pose.center;
+  const toRoom = (q) => [c[0] + R[0] * q[0] + R[1] * q[1] + R[2] * q[2], c[1] + R[3] * q[0] + R[4] * q[1] + R[5] * q[2],
+    c[2] + R[6] * q[0] + R[7] * q[1] + R[8] * q[2]];
+  const stumps = st.map((s) => ({ p: toRoom(s.p), r: s.r }));
+  const along = toRoom([0, 0, st[0].down]).map((v, i) => v - c[i]);       // toward the feet, in the room
+  const mid = [(stumps[0].p[0] + stumps[1].p[0]) / 2, 0, (stumps[0].p[2] + stumps[1].p[2]) / 2];
+  // the block's near face a hand's breadth past the buttocks; the holder between the heels
+  const n = Math.hypot(along[0], along[2]) || 1, ax = along[0] / n, az = along[2] / n;
+  block.position.set(mid[0] + ax * (12 + BLOCK.D / 2), 0, mid[2] + az * (12 + BLOCK.D / 2));
+  block.rotation.y = Math.atan2(ax, az);
+  holder.position.set(mid[0] + ax * HOLDER_AT, 0, mid[2] + az * HOLDER_AT);
+  holder.rotation.y = Math.atan2(ax, az);
+  const key = JSON.stringify([prop, stumps.map((s) => s.p.map((v) => v.toFixed(1))), D.legRot]);
+  if (key !== legsKey) {
+    legsKey = key;
+    if (legs) { legs.parent?.remove(legs); legs.traverse((o) => { if (o.isMesh) o.geometry.dispose(); }); }
+    legs = buildLegs(stumps, prop === 'block' ? 'block' : 'holder', along,
+      { holderAt: prop === 'holder' ? [holder.position.x, 0, holder.position.z] : null });
+    ctx.three.handGroup.parent.add(legs);
+  }
+  legs.visible = true;
 }
 
 /* WHERE THE ARM IS SUPPOSED TO BE. These are the landmarks a technologist actually uses,
@@ -1376,6 +1479,7 @@ function landmarkTargets() {
   let lm = null;
   try { lm = findLandmarks(ph); } catch { return null; }
   if (!lm) return null;
+  const cx = (ph.min[0] + ph.max[0]) / 2;        // the patient's midline on the table
   if (D.region === 'spine') {
     /* The landmark scan finds the ILIAC CREST, whose summit sits about the L4-L5 interspace.
        The ASIS is a good 7 cm inferior to it — not the 2 cm this used to assume, which put
@@ -1383,7 +1487,7 @@ function landmarkTargets() {
        goes 1 inch up, and that marks the INFERIOR edge of the sweep, so the window opens at
        L5-S1 and runs superiorly to T11-T12. */
     const asis = lm.crestCm - lm.dirSup * 7;
-    return { z: asis + lm.dirSup * INCH, x: 0, label: '1 in above the ASIS midline' };
+    return { z: asis + lm.dirSup * INCH, x: cx, label: '1 in above the ASIS midline' };
   }
   /* The trochanter is measured off the phantom, not paced out from the crest — but the
      measurement is of the femoral HEAD, used as a stand-in for the trochanter tip on the
@@ -1395,7 +1499,7 @@ function landmarkTargets() {
   const t = lm.troch?.[D.region === 'hipL' ? 'L' : 'R'];
   const gt = (t ? t.zCm : lm.crestCm - lm.dirSup * 9) - lm.dirSup * GT_DROP;
   const lat = (t ? t.x : 8) + GT_LAT;
-  return { z: gt - lm.dirSup * 2 * INCH, x: D.region === 'hipL' ? -lat : lat,
+  return { z: gt - lm.dirSup * 2 * INCH, x: cx + (D.region === 'hipL' ? -lat : lat),
     label: '2 in below the greater trochanter' };
 }
 /* How far the operator is from that mark, in cm — what the console reports back and what
@@ -1441,7 +1545,7 @@ function nudge(dir) {
   else if (dir === 'inf') D.headZ -= STEP;
   else if (dir === 'left') D.crossX -= STEP;       // toward the patient's right
   else if (dir === 'right') D.crossX += STEP;
-  D.headZ = Math.max(-TABLE_LEN_CM / 2, Math.min(TABLE_LEN_CM / 2, D.headZ));
+  D.headZ = Math.max(-TABLE_LEN_CM / 2 + 40, Math.min(TABLE_LEN_CM / 2 - 40, D.headZ));
   D.crossX = Math.max(-25, Math.min(25, D.crossX));
   syncHead(); syncPad();
 }
@@ -1468,28 +1572,21 @@ function syncPad() {
 }
 
 function buildRig() {
-  const { THREE, three } = ctx;
-  rig = new THREE.Group();
-  const mat = new THREE.MeshStandardMaterial({ color: 0xdfe6ec, roughness: 0.5 });
-  const head = new THREE.Mesh(new THREE.BoxGeometry(26, 7, 14), mat);
-  head.position.set(0, 34, 0);
-  const base = new THREE.Mesh(new THREE.BoxGeometry(26, 6, 14), mat);
-  base.position.set(0, -6, 0);
-  const post = new THREE.Mesh(new THREE.BoxGeometry(6, 46, 10),
-    new THREE.MeshStandardMaterial({ color: 0xb9c3cc, roughness: 0.6 }));
-  post.position.set(-22, 14, 0);
-  rig.add(head, base, post);
-  armMesh = rig;
-  rig.visible = false;
-  three.handGroup.parent.add(rig);
+  const { three } = ctx;
   buildLaser();
-  // the scanned machine is fetched on first entry to the room: see ensureScannedRig()
+  import('./dxaRoom.js').then((m) => {
+    R3 = m;
+    room = m.buildLunar();
+    room.table.visible = room.arm.visible = false;
+    three.handGroup.parent.add(room.table, room.arm);
+    dxaSyncScene();
+  });
 }
 
 /* The centring laser: a thin cross projected on the patient, which is the only thing the
    operator actually aims with. Drawn slightly above the couch so it reads ON the body
    rather than through it, and left depth-testing off so it stays visible over the skin. */
-const LASER_Y = 22;                   // just above a supine torso
+const LASER_Y = 33;                   // on the front of a supine torso
 const LASER_IN = 2;                   // the cross is 2 in across, as on the machine
 function buildLaser() {
   const { THREE, three } = ctx;
@@ -1505,89 +1602,35 @@ function buildLaser() {
   three.handGroup.parent.add(laser);
 }
 
-/* Load the selected machine and stand it in the room: turned so its long axis lies along
-   the couch, scaled so the table is TABLE_LEN_CM end to end, and dropped so the patient
-   surface sits at y = 0 — the plane every mode already lies its subject on. */
-/* Swap machines. The old one is taken out of the scene and its GPU buffers released — a
-   scanned rig is 3.5 MB of texture and geometry, and leaving both resident to toggle
-   between them would cost more than re-fetching the rare times anyone switches. */
-export function setRig(key) {
-  if (!RIGS[key] || rigCfg === RIGS[key]) return;
-  rigCfg = RIGS[key];
-  if (ctx?.S?.dxa) ctx.S.dxa.rig = key;
-  if (scannedRig) {
-    scannedRig.parent?.remove(scannedRig);
-    scannedRig.traverse((o) => {
-      if (!o.isMesh) return;
-      o.geometry?.dispose();
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
-      mats.forEach((m) => { m?.map?.dispose(); m?.dispose(); });
-    });
-    scannedRig = null; bedNode = null; headNode = null; headHome = null;
-  }
-  rigRequested = true;
-  loadScannedRig();
-  document.querySelectorAll('#dxRigSeg button')
-    .forEach((b) => b.classList.toggle('on', b.dataset.rig === key));
-}
-
-/* 3.2 MB — the single largest thing the site downloaded at boot, for a room most visitors
-   never open. Fetch it the first time the DXA room is entered instead; the box stand-in
-   is drawn until it lands, as it always was while the fetch was in flight. */
-let rigRequested = false;
-function ensureScannedRig() { if (rigRequested) return; rigRequested = true; loadScannedRig(); }
-function loadScannedRig() {
-  const { THREE, three } = ctx;
-  if (!ctx.loadModelUrl) return;
-  const want = rigCfg;
-  ctx.loadModelUrl(ctx.baseUrl + want.url).then((g) => {
-    if (rigCfg !== want) return;                   // switched again while this was in flight
-    g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
-    let bed = null, hd = null;
-    g.traverse((o) => {
-      const n = (o.name || '').toLowerCase();
-      if (!bed && n === 'bed') bed = o;
-      else if (!hd && n === 'head') hd = o;
-    });
-    if (!bed || !hd) return;                       // keep the boxes
-    // Scale from the BED alone. Each part carries its own vertex buffer precisely so this
-    // measures the table and not the whole machine — see the note on the splitter.
-    const bedBox = new THREE.Box3().setFromObject(bed);
-    const size = bedBox.getSize(new THREE.Vector3());
-    rigScale = TABLE_LEN_CM / Math.max(size.x, size.y, size.z);
-    bedLenCm = TABLE_LEN_CM;
-    scannedRig = new THREE.Group();
-    scannedRig.add(g);
-    g.scale.setScalar(rigScale);
-    g.rotation.y = want.rotY;                      // lay the long axis along the couch
-    /* Seat the PATIENT SURFACE at y = 0, which is the plane every mode lies its subject on.
-       NOT the bed's bounding-box top — on v1 that is the rail the arm rides, and dropping
-       by it leaves the body floating 20 cm clear. Each model's surface was measured as the
-       largest upward-facing plane in its bed and is recorded in RIGS. */
-    bedTopY = want.surfaceY * rigScale;
-    g.position.y -= bedTopY;
-    scannedRig.visible = false;
-    three.handGroup.parent.add(scannedRig);
-    bedNode = bed; headNode = hd; scannedRig.userData.rigKey = want.key;
-    headHome = hd.position.clone();
-    // where the arm sits before anyone drives it, in room cm — syncHead subtracts this so
-    // the head straddles the laser rather than trailing it by the length of the table
-    scannedRig.updateMatrixWorld(true);
-    const hb = new THREE.Box3().setFromObject(hd);
-    headCentreHomeZ = (hb.min.z + hb.max.z) / 2;
-    dxaSyncScene();
-  }).catch(() => { /* the box rig remains */ });
-}
+/* The guided exam (dxaExam.js) hangs its checks on the scan here. */
+let exam = null;
+export function registerExam(hooks) { exam = hooks; }
+export const dxa = {
+  get D() { return D; }, get ctx() { return ctx; }, REGIONS, scanPlan, positionError, landmarkTargets,
+  parkAtLandmark, syncHead: () => { syncHead(); syncPad(); }, syncProps: () => syncProps(), setStatus,
+  isScanning: () => scanning, abortScan, findLandmarks, lastScan: () => scan,
+};
 
 export function initDXA(context) {
   ctx = context;
   D = ctx.S.dxa;
   buildRig();
   $('dxScan')?.addEventListener('click', () => {
+    if (scanning) return;
+    const why = exam?.canScan?.();
+    if (why) { setStatus(why); return; }
+    Sound.resume?.();
     setStatus('Scanning…');
     acquire(
-      (row, n) => { if (scan) render(scan, null, row); setStatus(`Scanning… ${Math.round(100 * row / n)} %`); },
+      (st) => {
+        if (scan) render(scan, scan.preview, null, st);
+        D.scanArmZ = st.armZ; syncHead();
+        if (room) { room.sweep.position.x = st.sweepX; room.sweep.material.opacity = st.sweep > 0 && st.sweep < 1 ? 0.85 : 0; }
+        setStatus(`Scanning… pass ${st.pass + 1} of ${st.passes} · ${Math.round(100 * st.frac)} %`);
+      },
       (sc) => {
+        D.scanArmZ = null; syncHead();
+        if (room) room.sweep.material.opacity = 0;
         const { bmd } = decompose(sc);
         sc.bmdMap = bmd;
         /* A analysis that throws used to take the whole completion callback with it: no
@@ -1608,7 +1651,10 @@ export function initDXA(context) {
         report(sc);
         fileStudy(sc);
         setStatus(`Done — ${REGIONS[sc.region].label}.`);
-      });
+        exam?.onScanDone?.(sc);
+      },
+      // each pass: the arm steps, and steps audibly
+      () => Sound.play('dxaStep'));
   });
   $('dxLoss')?.addEventListener('input', (e) => {
     D.loss = (+e.target.value) / 100;
@@ -1646,7 +1692,8 @@ export function initDXA(context) {
       D.region = b.dataset.region;
       document.querySelectorAll('#dxRegionSeg button').forEach((x) => x.classList.toggle('on', x === b));
       setStatus(`${REGIONS[D.region].label} selected — press SCAN.`);
-      parkAtLandmark();
+      // (in an exam the operator drives the arm to the mark: the preset does not do it for them)
+      if (!exam?.active?.()) parkAtLandmark();
     });
   });
   // ---- the arm pad. Held keys repeat, because nudging 20 cm one press at a time is not
@@ -1663,16 +1710,13 @@ export function initDXA(context) {
     b.addEventListener('pointercancel', stop);
   });
   $('dxLaserHome')?.addEventListener('click', () => { D.crossX = 0; syncHead(); syncPad(); });
+  $('dxSpeed')?.addEventListener('change', (e) => { D.scanSpeed = e.target.checked ? 5 : 1; });
   // clicking a stored study reviews it, in whichever of the two views is showing
   $('dxStrip')?.addEventListener('click', (e) => {
     const b = e.target.closest('.dxthumb'); if (!b) return;
     D.histIdx = +b.dataset.i;
     if (ctx.S.bayContent === 'report') dxaReportToBay(); else dxaImageToBay();
   });
-  document.querySelectorAll('#dxRigSeg button').forEach((b) => {
-    b.addEventListener('click', () => { setRig(b.dataset.rig); parkAtLandmark(); });
-  });
-  if (D.rig && RIGS[D.rig]) rigCfg = RIGS[D.rig];
   // The regions are dragged on the film itself, so the handlers live on that canvas rather
   // than going through the 3D pointer router — nothing else competes for it in this mode.
   const film = $('film');
@@ -1710,6 +1754,6 @@ export function initDXA(context) {
   if (typeof window !== 'undefined') window.__dxa = () => ({ D, scan, acquire, decompose, basis,
     E_LO, E_HI, REGIONS, findLevels, findFemur, analyse, measure, scores, diagnosis, ageMean, REF, CAL,
     THREE: ctx.THREE,
-    rig: { scannedRig, bedNode, headNode, laser, rigScale, bedTopY, bedLenCm },
+    room, laser, scanPlan, thighStumps: () => thighStumps(ctx.S.voxelModel),
     landmarkTargets, positionError, parkAtLandmark, nudge });
 }

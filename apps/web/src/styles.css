@@ -2171,3 +2171,65 @@ body.mode-iv .ivdebrief.show{display:flex}
 .ivd-btns button{padding:9px 16px; border-radius:9px; border:1px solid var(--edge2); background:#1d2731; color:#fff; cursor:pointer}
 .ivd-btns button:first-child{background:var(--cyan); color:#05252a; border:0; font-weight:700}
 /* (IV has its own phone layout: see body.mobile.mode-iv) */
+
+/* ============ DXA EXAM (dxaExam.js): the checklist over the room, the intro and intake form ============ */
+body.mode-dxa .dxkeep{display:block}        /* the patient is slid between the pad's lines */
+body.mode-dxa #legRotRow{display:none}       /* (DXA turns the legs with its own control) */
+.dxspeed{margin-top:8px; justify-content:center}
+.dxexam{display:none; position:absolute; top:56px; left:34px; z-index:10; width:300px; max-width:calc(100% - 60px);
+  padding:10px 12px 12px; background:rgba(10,14,18,.84); border:1px solid var(--edge2); border-radius:10px;
+  -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px); color:var(--txt, #dfe6ec); font-size:12px}
+body.mode-dxa .dxexam{display:block}
+body.mode-home .dxexam, body.bay-flat .dxexam{display:none}
+.dxe-t{font-family:var(--seg); font-size:11px; letter-spacing:2px; color:#9fd3ff; text-transform:uppercase}
+.dxe-s{color:var(--muted); margin:2px 0 6px}
+.dxe-h{font-weight:600; margin:6px 0 4px; color:#fff}
+.dxe-step{display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap; padding:5px 0; border-top:1px solid rgba(255,255,255,.06)}
+.dxe-step > span:nth-child(2){flex:1; min-width:0}
+.dxe-step small{display:block; color:var(--muted); margin-top:2px; line-height:1.35}
+.dxe-step.ok .dxe-i{color:#3fd07a} .dxe-step.go .dxe-i{color:#ffcf3a} .dxe-step.go{color:#ffcf3a; font-weight:600}
+.dxe-i{width:14px; flex:0 0 14px; text-align:center; color:#7d8893}
+.dxe-b{display:block; width:100%; margin-top:8px; padding:7px 10px; border-radius:7px; border:1px solid #2f80dc;
+  background:#2f80dc; color:#fff; font:inherit; font-weight:600; cursor:pointer}
+.dxe-b:hover{filter:brightness(1.1)} .dxe-b:disabled{opacity:.45; cursor:not-allowed; filter:none}
+.dxe-b.sm{display:inline-block; width:auto; margin:4px 0 0 22px; padding:4px 8px; font-size:11px}
+.dxe-b.ghost{background:transparent; color:#cfe3f3; border-color:rgba(255,255,255,.25)}
+.dxe-b.warn{background:#b8503b; border-color:#b8503b}
+.dxe-b.big{font-size:14px; padding:10px}
+.dxe-res{margin-top:6px; padding:6px 8px; background:rgba(255,255,255,.05); border-radius:6px; line-height:1.4}
+.dxe-res span{color:#ffcf3a}
+.dxe-sum{margin-top:8px; line-height:1.4}
+.dxmodal{display:none; position:absolute; inset:0; z-index:20; align-items:center; justify-content:center;
+  background:rgba(4,7,10,.62); padding:16px; overflow:auto}
+.dxmodal.show{display:flex}
+body:not(.mode-dxa) .dxmodal{display:none}
+.dxm-card{max-width:760px; width:100%; max-height:100%; overflow:auto; background:#141b22; border:1px solid var(--edge2);
+  border-radius:12px; padding:18px 20px; color:#dfe6ec; box-shadow:0 10px 40px rgba(0,0,0,.5)}
+.dxm-t{font-size:20px; font-weight:700; margin-bottom:8px}
+.dxm-card p{line-height:1.5; color:#c4ced7}
+.dxm-acts{display:flex; gap:10px; flex-wrap:wrap; margin-top:12px}
+.dxm-acts .dxe-b{width:auto; flex:1 1 200px}
+.dxf-paper{background:#fbfaf6; color:#1d2228; border-radius:6px; padding:16px 18px; font-family:system-ui, sans-serif}
+.dxf-hd{border-bottom:2px solid #1d2228; padding-bottom:8px; margin-bottom:8px}
+.dxf-title{font-size:16px; font-weight:800; letter-spacing:.3px}
+.dxf-pt{display:flex; flex-wrap:wrap; gap:6px 18px; margin-top:6px; font-size:13px}
+.dxf-grid{display:grid; grid-template-columns:1fr; gap:6px}
+.dxf-row{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.3fr); gap:10px; align-items:center;
+  padding:5px 0; border-bottom:1px dotted #b8b4aa; font-size:13px}
+.dxf-q{font-weight:600}
+.dxf-a{min-height:30px; border-radius:4px; border:0; text-align:left; padding:5px 9px; font:inherit; cursor:pointer;
+  background:#111; color:#888; position:relative}
+.dxf-a:hover:not(.shown){background:#222}
+.dxf-a.shown{background:transparent; cursor:default; border-bottom:1px solid #8a9aa8; border-radius:0}
+.dxf-hint{font-style:italic; font-size:11px; color:#a5a5a5}
+.dxf-ink{font-family:'Segoe Print','Bradley Hand','Comic Sans MS',cursive; color:#1a3fa0; font-size:14px}
+.dxf-note{margin-top:8px; color:#9aa5b0; font-size:12px; text-align:center}
+.dxf-verdict{margin-top:12px; padding:10px 12px; border-radius:8px; line-height:1.45}
+.dxf-verdict.right{background:rgba(63,208,122,.12); border:1px solid #3fd07a}
+.dxf-verdict.wrong{background:rgba(232,85,58,.12); border:1px solid #e8553a}
+.dxf-verdict ul{margin:6px 0 0 18px; padding:0}
+@media (max-width:600px){ .dxf-row{grid-template-columns:1fr} .dxexam{width:auto; right:12px; left:12px; top:52px} }
+.dxrep-hx{border:1px solid #444; padding:6px 8px; margin-bottom:12px; font-size:11px; line-height:1.45}
+.dxrep-qa{width:100%; border-collapse:collapse; margin-top:4px}
+.dxrep-qa td{padding:1px 4px; border-top:1px dotted #bbb; vertical-align:top; font-size:10.5px}
+.dxrep-qa td:first-child{width:45%; color:#555}
