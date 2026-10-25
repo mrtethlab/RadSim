@@ -3,7 +3,7 @@
    image. Its sets: the x-ray room (room.js, the app's own), the tube's insides (xray/tube.js),
    the patient sets and the detector (built by their chapters). One set shows at a time. */
 import * as THREE from 'three';
-import { buildRoom, buildTubeHead, ROOM_GAP } from '../../room.js';
+import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR } from '../../room.js';
 import { Materials } from '../../core/materials.js';
 import { lights } from '../kit/stage.js';
 import { buildTubeInsert } from './xray/tube.js';
@@ -21,12 +21,13 @@ export async function build(api) {
   const room = new THREE.Group(); scene.add(room);
   const r = buildRoom(room, { aecCells: { l: { x: 7.5, z: 4.5 }, c: { x: 0, z: -4.5 }, r: { x: -7.5, z: 4.5 } } });
   r.table.visible = true; r.floor.visible = true; r.column.visible = true;
+  r.floor.position.y = TABLE_FLOOR;                // (buildRoom leaves it at the origin: app.js sets it per room)
   const tube = new THREE.Group(); tube.position.set(0, 100, 0); room.add(tube);
   const head = buildTubeHead(tube);
   // aimed as the app aims it (app.js syncScene): down the central ray, the housing squared to the field
   tube.lookAt(0, 0, 0); tube.rotateX(Math.PI / 2); tube.rotateY(-Math.PI / 2);
   room.updateMatrixWorld(true);
-  r.placeColumn(head.mount.getWorldPosition(new THREE.Vector3()), -80);
+  r.placeColumn(head.mount.getWorldPosition(new THREE.Vector3()), TABLE_FLOOR);
   const hand = new THREE.Group(); room.add(hand);
   api.loadGlb('models/hand/hand_skin.glb').then((g) => {
     g.scale.setScalar(0.1);
