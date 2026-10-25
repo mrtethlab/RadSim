@@ -1970,6 +1970,11 @@ body.mode-fluoro .flmon.off{display:none}
 .flmon-body{flex:1; display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; min-height:0}
 .flmon.tall .flmon-body{grid-template-columns:1fr; grid-template-rows:1fr 1fr}
 .flmon-scr{position:relative; background:#000; border:1px solid #182129; min-height:0; min-width:0}
+/* a flat panel's field is square, so its monitors are: the window's height follows its width (a
+   drag sizes the width only) and the square image runs edge to edge on both screens, no bands */
+.flmon.fpd{height:auto !important; resize:horizontal}
+.flmon.fpd .flmon-body{flex:none}
+.flmon.fpd .flmon-scr{aspect-ratio:1}
 .flmon-scr canvas{position:absolute; inset:0; width:100%; height:100%}
 .flmon-live canvas{cursor:grab}
 .flmon-live canvas.dragging{cursor:grabbing}

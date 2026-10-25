@@ -1675,6 +1675,7 @@ export function initFluoro(context) {
   $('flFpd')?.addEventListener('change', (e) => {
     F.fpd = e.target.checked;
     setReceptor(carm, F.fpd);
+    $('flMon')?.classList.toggle('fpd', F.fpd);
     recFresh = true;                              // a new detector starts its average afresh
     panelSync();
     setStatus(F.fpd ? 'Flat panel: a square field, edge to edge on the monitor.' : 'Image intensifier: the round 9" field.');
