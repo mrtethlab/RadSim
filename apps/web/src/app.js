@@ -851,20 +851,35 @@ function jointMoved(){
   if(!jointFrame) jointFrame=requestAnimationFrame(()=>{ jointFrame=0; resetPrep?.(); syncScene(); });
   prepareJointVolume();
 }
-/* The sandbox's joint sliders, one per motion the current subject has. */
+/* The sandbox's joint sliders, one per motion the current subject has. A hand's digits curl, one
+   slider a digit (its joints' motions share the key, m.curl): five upright sliders under the rest,
+   numbered as the digits are (1 the thumb), in 10 % stations: extension at the top (-20 %), the
+   hand as scanned a station below it (0, ticked), a fist at the bottom (100 %). */
+const CURL_STEP = 10;
 function renderJointUI(){
   const host=$('jointRows'); if(!host) return;
   const ch=jointChain(S.subject);
   if(!ch){ host.innerHTML=''; return; }
-  host.innerHTML=ch.map(j=>j.motions.map(m=>{
+  const curls=[...new Map(ch.flatMap(j=>j.motions.filter(m=>m.curl).map(m=>[m.key, m]))).values()];
+  host.innerHTML=ch.map(j=>j.motions.filter(m=>!m.curl).map(m=>{
     const v=Math.round(S.joints[m.key] ?? m.rest ?? 0);   // anatomical: the model as scanned when unset
     return `<div class="row" style="margin-top:8px"><div class="rl">${j.label} <small>${m.label.toLowerCase()} (${m.neg} &minus; / ${m.pos} +)</small></div>`
       +`<div class="valchip" id="jv_${m.key.replace('.','_')}">${v}°</div></div>`
-      +`<input type="range" class="jointSl" data-key="${m.key}" min="${m.range[0]}" max="${m.range[1]}" step="${JOINT_STEP}" value="${v}">`;
-  }).join('')).join('');
+      +`<input type="range" class="jointSl" data-key="${m.key}" data-unit="°" min="${m.range[0]}" max="${m.range[1]}" step="${JOINT_STEP}" value="${v}">`;
+  }).join('')).join('')
+    +(curls.length ? `<div class="row" style="margin-top:10px"><div class="rl">Fingers <small>${curls[0].label.toLowerCase()} (${curls[0].neg} &minus; / ${curls[0].pos} +)</small></div></div>`
+      +`<datalist id="curlZero"><option value="0"></option></datalist>`
+      +`<div style="display:flex;justify-content:space-around;margin-top:4px">`+curls.map(m=>{
+        const k=m.key, v=Math.round(S.joints[k] ?? 0), n=k.split('.')[1];
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px">`
+          +`<div class="valchip" id="jv_${k.replace('.','_')}" style="min-width:0">${v}%</div>`
+          +`<input type="range" class="jointSl" data-key="${k}" data-unit="%" min="${m.range[0]}" max="${m.range[1]}" step="${CURL_STEP}" value="${v}" `
+          +`list="curlZero" title="Digit ${n}: ${m.range[0]}% extension to ${m.range[1]}% flexion, 0 as scanned" style="writing-mode:vertical-lr;width:auto;height:104px">`
+          +`<div class="rl" style="text-align:center">${n}</div></div>`;
+      }).join('')+`</div>` : '');
   host.querySelectorAll('.jointSl').forEach(el=>el.addEventListener('input',()=>{
     S.joints[el.dataset.key]=+el.value;
-    const t=$('jv_'+el.dataset.key.replace('.','_')); if(t) t.textContent=el.value+'°';
+    const t=$('jv_'+el.dataset.key.replace('.','_')); if(t) t.textContent=el.value+el.dataset.unit;
     jointMoved();
   }));
 }

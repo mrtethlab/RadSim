@@ -1,7 +1,7 @@
 // Joint posing: bending a rigid CT at a joint, for the volume, the mesh and the landmarks alike.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, posePlan, poseChunk, compileChain, forwardCompiled, forwardSkin, planSample, mergeSample, planOcc, growOcc, foldSpan, foldRange } from '../src/core/jointPose.js';
+import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, posePlan, poseChunk, compileChain, forwardCompiled, forwardSkin, planSample, mergeSample, planOcc, growOcc, foldSpan, foldRange, motionAngle } from '../src/core/jointPose.js';
 
 const near = (a, b, t = 1e-9) => Math.abs(a - b) <= t;
 // a wrist at the origin, the hand along +z; ulnar deviation turns the hand toward -x
@@ -357,5 +357,118 @@ test('the pose pool, in stages, makes the very volume one worker poses whole', (
       for (let i = 0; i < whole.data.length; i++) if (pooled.data[i] !== whole.data[i]) diff++;
       assert.equal(diff, 0, `${JSON.stringify(angles)} in ${n}: ${diff} voxels differ`);
     }
+  }
+});
+
+/* ---- the digits: field joints read at the rest point, nested, one territory a digit ----
+   two fingers along +z on 2.5 mm voxels, digit 1 at x = -1 and digit 2 at x = +1, a voxel of air
+   between them; each an MCP at z = 0 and a PIP at z = 4, flexing toward -y; a bone core in pieces:
+   the metacarpal (z <= -0.5), the proximal phalanx (0.5..3.5), the middle one (4.5..8) */
+const FSP = 0.25, flex = axisToward([0, 0, 1], [0, -1, 0]);
+const inCore = (x, y, x0) => Math.abs(x - x0) <= 0.26 && Math.abs(y) <= 0.26;
+const pieceOf = (z) => (z <= -0.49 ? 0 : z >= 0.49 && z <= 3.51 ? 1 : z >= 4.49 ? 2 : -1);
+// a digit's grid as measure_joints writes it: 85 a joint (band), its bones whole or none, its soft
+// tissue a crease across each joint, over its own side only
+function digitGrid(x0, edit = () => null) {
+  const origin = [x0 < 0 ? -2.5 : 0.25, -2.5, -3], dims = [10, 21, 49], data = new Uint8Array(dims[0] * dims[1] * dims[2]);
+  for (let k = 0; k < dims[2]; k++) for (let j = 0; j < dims[1]; j++) for (let i = 0; i < dims[0]; i++) {
+    const x = origin[0] + i * FSP, y = origin[1] + j * FSP, z = origin[2] + k * FSP, pc = pieceOf(z);
+    const bone = inCore(x, y, x0) && pc >= 0;
+    const w0 = bone ? +(pc >= 1) : blendWeight(z, 0.5), w1 = bone ? +(pc >= 2) : blendWeight(z - 4, 0.5);
+    data[(k * dims[1] + j) * dims[0] + i] = edit(x, y, z) ?? Math.round(85 * (w0 + w1));
+  }
+  return { dims, sp: FSP, origin, data };
+}
+const fingerOf = (dg, x0, grid) => ['MCP', 'PIP'].map((label, b) => ({ label, c: [x0, 0, 4 * b], distal: [0, 0, 1], blend: 0, digit: dg,
+  field: { ...grid, band: b }, motions: [{ key: 'd' + dg, axis: flex, range: [-20, 100], curl: [90, 1, b ? 5 : 20] }] }));
+const hand2 = (g1 = digitGrid(-1)) => [...fingerOf(1, -1, g1), ...fingerOf(2, 1, digitGrid(1))];
+function fingersVolume() {
+  const nx = 21, ny = 17, nz = 49, data = new Uint8Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x = (i - 10) * FSP, y = (j - 8) * FSP, z = (k - 24) * FSP;
+    const x0 = x < 0 ? -1 : 1;
+    if (Math.abs(x - x0) > 0.76 || Math.abs(y) > 0.76 || z > 8) continue;
+    data[(k * ny + j) * nx + i] = inCore(x, y, x0) && pieceOf(z) >= 0 ? 18 : 10;
+  }
+  return { dims: [nx, ny, nz], spacingMM: [2.5, 2.5, 2.5], data };
+}
+const posedAt = (r) => (x, y, z) => {
+  const [Nx, Ny, Nz] = r.dims, i = Math.round(x / FSP + (Nx - 1) / 2), j = Math.round(y / FSP + (Ny - 1) / 2), k = Math.round(z / FSP + (Nz - 1) / 2);
+  return i < 0 || j < 0 || k < 0 || i >= Nx || j >= Ny || k >= Nz ? 0 : r.data[(k * Ny + j) * Nx + i];
+};
+
+test("a digit's curl sets its joints each its own way, and extends them below 0", () => {
+  const m = { key: 'd', curl: [105, 0.85, 5], range: [-20, 100] };
+  assert.equal(motionAngle({}, m), 0, 'unset: the hand as scanned');
+  assert.equal(motionAngle({ d: 0 }, m), 0);
+  assert.equal(motionAngle({ d: 100 }, m), 105);
+  assert.ok(motionAngle({ d: 50 }, m) > 105 / 2, 'the PIP leads (power under 1)');
+  assert.equal(motionAngle({ d: -20 }, m), -5, 'full extension');
+  assert.equal(motionAngle({ d: -10 }, m), -2.5, 'in proportion');
+  assert.equal(motionAngle({ d: -40 }, m), -5, 'and no further');
+});
+
+test("a digit's joints read their shares where the point was at rest: the fingertip follows the MCP", () => {
+  const ch = hand2(), tip = [-1, 0, 7];
+  // the PIP turns it 90 degrees to (-1, -3, 4), under the finger, outside every grid; the MCP then
+  // turns it, by the share it had at rest, 90 more
+  const q = forwardChain(tip, ch, { d1: 100 });
+  assert.ok(Math.hypot(q[0] + 1, q[1] + 4, q[2] + 3) < 1e-9, `curled: ${q}`);
+  // extended: the MCP 20 degrees and the PIP 5 back toward the dorsum (+y)
+  const e = forwardChain(tip, ch, { d1: -20 });
+  const r1 = rotate([0, 0, 3], flex, -5 * Math.PI / 180), r = rotate([r1[0], r1[1], 4 + r1[2]], flex, -20 * Math.PI / 180);
+  assert.ok(Math.hypot(e[0] + 1 - r[0], e[1] - r[1], e[2] - r[2]) < 1e-9 && e[1] > 1, `extended: ${e}`);
+  assert.deepEqual(forwardChain(tip, ch, { d1: 0, d2: 0 }), tip, '0 is the hand as scanned');
+});
+
+test('a curled digit does not drag the one beside it', () => {
+  const ch = hand2();
+  for (const p of [[1, 0, 7], [0.25, -0.75, 2], [1, 0.5, -1]]) assert.deepEqual(forwardChain(p, ch, { d1: 100 }), p, `${p}`);
+  // and each moves by its own: both curled, the second's tip is where it would be alone
+  assert.deepEqual(forwardChain([1, 0, 7], ch, { d1: 100, d2: 60 }), forwardChain([1, 0, 7], ch, { d2: 60 }));
+});
+
+test("every posed point of a digit has its rest point among the pre-images", () => {
+  const ch = hand2(), angles = { d1: 70, d2: -15 };
+  for (const p of [[-1, 0, 7], [-1, 0.5, 0.1], [-1.5, -0.6, 3.9], [-1, 0, 2], [-0.5, 0.7, -2], [1, 0, 7], [1.5, -0.5, 4.2], [0.5, 0, 1]]) {
+    const q = forwardChain(p, ch, angles);
+    const back = preimagesChain(q, ch, angles);
+    assert.ok(back.some((b) => Math.hypot(b[0] - p[0], b[1] - p[1], b[2] - p[2]) < 0.02), `rest point of ${p}: ${JSON.stringify(back)}`);
+  }
+});
+
+test('the posed volume carries a curled finger whole, and leaves its neighbour and its own place', () => {
+  const vm = fingersVolume(), ch = hand2();
+  const r = poseVolume(vm, [false, false, false], ch, { d1: 100 }), at = posedAt(r);
+  // the middle phalanx's bone, turned by the PIP then the MCP: (-1, 0, 6) -> (-1, -2, 4) -> (-1, -4, -2)
+  assert.equal(at(-1, -4, -2), 18, 'the middle phalanx is under the palm');
+  assert.equal(at(-1, -3, 0), 18, 'the proximal phalanx points palmar');
+  assert.equal(at(-1, 0, 6), 0, 'and the finger has left its place');
+  assert.equal(at(-1, 0, -2), 18, 'the metacarpal stays');
+  for (const z of [-2, 1, 3, 5, 5.75]) { assert.equal(at(1, 0, z), 18, `the neighbour's bone at z ${z}`); assert.equal(at(1.5, 0.5, z), 10); }
+  const count = (d, v) => d.reduce((n, x) => n + (x === v), 0);
+  const b0 = count(vm.data, 18), b1 = count(r.data, 18);
+  assert.ok(Math.abs(b1 - b0) <= 0.05 * b0, `bone kept: ${b0} -> ${b1}`);
+  assert.deepEqual(poseVolume(vm, [false, false, false], ch, { d1: 0, d2: 0 }).data, vm.data, '0 is the hand as scanned');
+});
+
+test('a bone turns whole or not at all, though its grid blends it with the soft tissue beside it', () => {
+  // a row across the middle phalanx given 0.6 of the PIP's share (as a cell beside a joint space is)
+  const g = digitGrid(-1, (x, y, z) => (inCore(x, y, -1) && Math.abs(z - 5.5) < 0.01 ? Math.round(85 * 1.6) : null));
+  const r = poseVolume(fingersVolume(), [false, false, false], hand2(g), { d1: 100 }), at = posedAt(r);
+  // with the rest of the phalanx: (-1, 0, 5.5) -> (-1, -1.5, 4) -> (-1, -4, -1.5); not 0.9 cm off at
+  // (-1, -4.88, -1.21), where 0.6 of the PIP's turn would take it
+  for (const x of [-1.25, -1, -0.75]) assert.equal(at(x, -4, -1.5), 18, `the row, x ${x}`);
+});
+
+test('the pose pool makes the very volume of curled and extended digits one worker poses whole', () => {
+  const vm = fingersVolume(), ch = hand2(), angles = { d1: 80, d2: -20 };
+  const whole = poseVolume(vm, [false, false, false], ch, angles);
+  for (const n of [2, 5]) {
+    const pooled = posePooledHere(vm, [false, false, false], ch, angles, n);
+    assert.deepEqual(pooled.dims, whole.dims);
+    let diff = 0;
+    for (let i = 0; i < whole.data.length; i++) if (pooled.data[i] !== whole.data[i]) diff++;
+    assert.equal(diff, 0, `${n} workers: ${diff} voxels differ`);
   }
 });
