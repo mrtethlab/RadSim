@@ -856,6 +856,7 @@ function restHeightOnReceptor(){
    per pose, not once per vertex, and the normals, the dearest part, are redone once the joint has
    rested: while it moves the shading lags a frame or two, which no one sees. */
 let normalsTimer=null, normalsDue=new Set();
+const BONE_IN=0.07;          // cm: most of a 1 mm voxel, past the blur's half a voxel
 function bendVoxelMesh(){
   const wrap=three.chestGroup; if(!wrap) return;
   const ch=jointsActive();
@@ -867,15 +868,24 @@ function bendVoxelMesh(){
     for(let x=o; x && x!==wrap; x=x.parent) if(!x.visible) return;   // only what is on show (the skin, or the bone)
     const g=o.geometry, pos=g.attributes.position;
     if((g.userData.bentKey||'')===key) return;
-    if(!g.userData.rest){ if(!cc) return; g.userData.rest=Float32Array.from(pos.array); }
+    const bone=!!o.userData.bone;
+    if(!g.userData.rest){
+      if(!cc) return;
+      g.userData.rest=Float32Array.from(pos.array);
+      if(bone){ if(!g.attributes.normal) g.computeVertexNormals(); g.userData.restN=Float32Array.from(g.attributes.normal.array); }
+    }
     g.userData.bentKey=key;
-    const rest=g.userData.rest, a=pos.array, bone=!!o.userData.bone;
+    const rest=g.userData.rest, a=pos.array, N=g.userData.restN;
+    // where a bone vertex's digit share is read: BONE_IN cm inside the bone it bounds (on the surface
+    // the share blends into the joint space beside it, and a metacarpal head's rim went with the finger)
+    const at=(v)=>{ const i=3*v, p=[f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10];
+      return N ? [p, [p[0]-BONE_IN*f[0]*N[i], p[1]-BONE_IN*f[1]*N[i+1], p[2]-BONE_IN*f[2]*N[i+2]]] : [p, p]; };
     // bone: rigid on each side of a joint, as the volume moves it (the skin's crease map would bend
     // a condyle across the joint); the skin: taut over a bend, folded inside it
-    const map=bone ? forwardBone : forwardSkin;
     if(!cc){ a.set(rest); }
     else for(let i=0;i<a.length;i+=3){
-      const q=map([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], cc);
+      const [p, pin]=at(i/3);
+      const q=bone ? forwardBone(p, cc, pin) : forwardSkin(p, cc);
       a[i]=f[0]*q[0]*10; a[i+1]=f[1]*q[1]*10; a[i+2]=f[2]*q[2]*10;
     }
     if(bone && g.index){
@@ -886,7 +896,7 @@ function bendVoxelMesh(){
       if(!cc) g.index.array.set(I);
       else {
         const side=new Int32Array(rest.length/3);
-        for(let v=0;v<side.length;v++) side[v]=boneSide([f[0]*rest[3*v]/10, f[1]*rest[3*v+1]/10, f[2]*rest[3*v+2]/10], cc);
+        for(let v=0;v<side.length;v++){ const [p, pin]=at(v); side[v]=boneSide(p, cc, pin); }
         const out=g.index.array;
         for(let t=0;t<I.length;t+=3){
           const A=I[t], B=I[t+1], C=I[t+2], keep=side[A]===side[B] && side[B]===side[C];

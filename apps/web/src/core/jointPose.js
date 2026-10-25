@@ -376,19 +376,21 @@ function boneOne(p, J, rest) {
   if (J.rd && J.T) { const w = fieldWeight(J.rd, p); if (w > 0) return riderBlend(p, J, w, bonePlain(p, J)); }
   return bonePlain(p, J);
 }
-export function forwardBone(p, cc) {
+// at: where a digit's share is read, a point just inside the bone the rest point p bounds (a mesh
+// vertex sits on the bone's surface, where the share blends into the joint space beside it)
+export function forwardBone(p, cc, at = p) {
   let q = p;
-  for (let i = cc.length - 1; i >= 0; i--) q = boneOne(q, cc[i], p);
+  for (let i = cc.length - 1; i >= 0; i--) q = boneOne(q, cc[i], at);
   return q;
 }
 // which rigid piece a rest point is on: one bit per plain joint (past its plane, within its limb)
 // and per digit joint (its snapped share). A triangle of the bone mesh with corners on two pieces
 // would stretch across the bent joint.
-export function boneSide(p, cc) {
+export function boneSide(p, cc, at = p) {
   let k = 0;
   for (let i = 0; i < cc.length; i++) {
     const J = cc[i];
-    if (J.dg) { if (fieldWeight(J.wf, p) >= BONE_SNAP) k |= 1 << i; continue; }
+    if (J.dg) { if (fieldWeight(J.wf, at) >= BONE_SNAP) k |= 1 << i; continue; }
     if (J.wf) continue;
     const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], s = dot(d, J.d);
     if (s >= 0 && inLimb(d, J, s)) k |= 1 << i;

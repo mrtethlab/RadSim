@@ -25,7 +25,7 @@ import sys
 import numpy as np
 from scipy import ndimage as ndi
 
-from app.build_model import TRABECULAR, CORTICAL, TITANIUM, STEEL, ALUMINUM, LEAD, BONE_GRADES
+from app.build_model import TRABECULAR, CORTICAL, CARTILAGE, TITANIUM, STEEL, ALUMINUM, LEAD, BONE_GRADES
 from app.build_limbs import MODELS
 
 BONE = [TRABECULAR, CORTICAL] + [b[0] for b in BONE_GRADES]
@@ -40,6 +40,7 @@ BONE_RGBA = (236, 228, 205, 255)          # an ivory, as the plain mesh's bone
 # so it keeps within a fraction of a voxel of the bone at any of these.
 EDGE_MM = {'hand': 1.0, 'foot': 1.0, 'headneck': 3.0, 'chestabdopelvis': 4.0, 'wholebody': 4.0, 'totalhipreplacement': 3.0}
 METAL_RGBA = (154, 165, 176, 255)
+CLOSE_MM = 2.0                            # the widest cortical gap bridged, each bone by itself
 
 
 def surface(mask, s, step=1, sigma_vox=0.6, taubin=6):
@@ -55,6 +56,30 @@ def surface(mask, s, step=1, sigma_vox=0.6, taubin=6):
     if taubin:
         m = trimesh.smoothing.filter_taubin(m, lamb=0.5, nu=-0.53, iterations=taubin)
     return m
+
+
+def close_pieces(mask, allowed, it, s):
+    """A thin or porous cortex (a carpal's, a vertebral body's) leaves its marrow, labelled fat or
+    soft tissue, open to the outside through gaps a voxel or two across, and the surface came out as
+    lace. Each bone (a piece of 0.1 cm^3 or more) is closed by itself over `it` voxels, taking in the
+    loose crumbs of its own lace, never into cartilage and never within a voxel of another bone, so
+    no two bones are joined and a joint space stays as open as the film shows it; the marrow is
+    then enclosed, and fill_holes fills it."""
+    st = ndi.generate_binary_structure(3, 1)
+    lab, n = ndi.label(mask)
+    sizes = ndi.sum(mask, lab, range(1, n + 1)) * s ** 3
+    big = np.zeros(n + 1, bool); big[1:] = sizes >= 100.0
+    bones = big[lab]
+    out = mask.copy()
+    for k, sl in enumerate(ndi.find_objects(lab), start=1):
+        if sl is None or not big[k]:
+            continue
+        sl = tuple(slice(max(0, a.start - it - 1), min(dim, a.stop + it + 1)) for a, dim in zip(sl, mask.shape))
+        own = (lab[sl] == k) | (mask[sl] & ~bones[sl])
+        others = ndi.binary_dilation(bones[sl] & (lab[sl] != k), structure=st)
+        grown = ndi.binary_closing(np.pad(own, it + 1), structure=st, iterations=it)[(slice(it + 1, -it - 1),) * 3]
+        out[sl] |= grown & allowed[sl] & ~others
+    return out
 
 
 def build(name):
@@ -74,6 +99,8 @@ def build(name):
         # the outside of the bone is what the eye sees: a marrow cavity enclosed by its cortex,
         # and specks of bone-dense voxels loose in the soft tissue (calcification, noise), only
         # added surfaces no one could look at (a third of a trunk's faces)
+        if label == 'bone':
+            mask = close_pieces(mask, mat != CARTILAGE, max(1, round(CLOSE_MM / s)), s)
         mask = ndi.binary_fill_holes(mask)
         lab, n = ndi.label(mask)
         if n > 1:
@@ -81,6 +108,9 @@ def build(name):
             keep = np.zeros(n + 1, bool); keep[1:] = sizes * s ** 3 >= 100.0      # 0.1 cm^3
             mask = keep[lab]
         m = surface(mask, s, step=max(1, round(EDGE_MM.get(name, 2.0) / s)))
+        # and the crumbs the coarser triangles leave, specks of a few mm^3 (a 1 mm voxel is 1)
+        parts = m.split(only_watertight=False)
+        m = trimesh.util.concatenate([q for q in parts if abs(q.volume) >= 20.0])
         m.vertices -= centre
         m.visual.vertex_colors = np.tile(np.array(rgba, np.uint8), (len(m.vertices), 1))
         scene.add_geometry(m, node_name=label, geom_name=label)
