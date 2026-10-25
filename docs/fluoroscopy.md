@@ -73,8 +73,10 @@ camera — it is a chain of tiny exposures.
   breathing animation + the **breath-hold button** turn "hold your breath" from a rubric
   into a visible artifact you cause and then fix. Pixel-shift and remask controls included.
 - **Roadmapping**: peak-opacification image (max of the DSA run) held as an overlay under
-  live fluoro — the navigation mode. V1 overlays the map; wire/catheter simulation is
-  explicitly out of scope.
+  live fluoro — the navigation mode. V1 overlaid the map; wire/catheter simulation was
+  explicitly out of scope. *As built since:* the roadmap is SUBTRACTED, vessels white and
+  devices black, and a 0.035" guidewire rides the vessel tree — see "Guidewire on the
+  roadmap" below.
 - **Video recording**: `MediaRecorder` on the fluoro canvas — record loops, replay them in
   a cine strip (the image-history pattern), download as .webm. DSA runs auto-record.
 
@@ -150,6 +152,8 @@ seconds on desktop. Fluoro's budget per §2's physics:
 - CONTRAST panel (injection sites and all) is reachable in fluoro for DSA.
 - Subject selector limited to models with something to screen: chest, CAP, head/neck, plus
   the extremities for ortho C-arm work (static is fine there — a wrist doesn't breathe).
+  As built the room takes the shared selector, so the Foot (cut from the lower extremity)
+  screens like any other subject; the ankle case below loads it itself.
 
 ## 6. What does NOT change
 
@@ -260,3 +264,122 @@ one every 7 s, and the amplitude is halved.
 The swallow wave had the same defect from the other end — it ran to the cardia and simply
 STOPPED at full 90 % depth, which pops off the image exactly like a teleport — so it takes
 the same envelope.
+
+## Ankle ORIF — a Weber B reduced under the C-arm
+
+The ortho C-arm's commonest job, as a case on the Foot (`core/fracture.js`, the ANKLE ORIF
+panel). START CASE loads the Foot, breaks its fibula, floats the ankle to the isocentre and
+lifts the leg on a radiolucent bump (the height offset): the OEC cannot drop its isocentre
+below its own column, so without the bump a horizontal beam passes under the ankle — which is
+why every ankle list keeps one on the trolley. The views move the C alone, as they do under
+the drapes: **AP** square to the table, **MORTISE** turned toward the lateral side until the
+beam is square to the line through both malleoli, **LATERAL** horizontal, medial to lateral.
+
+**The fibula is found on the volume, not read from the landmarks.** In this Foot the shipped
+ankle points sit low — `lateralMalleolus` about 2.4 cm below the fibula's actual tip, the
+ankle joint centre several centimetres below the plafond — and the lower-extremity models are
+being re-cut, so a fracture placed from them would land in the calcaneus. In the proximal
+slices a leg is two bone islands; the slender one is the fibula, and the side it lies on IS
+lateral (either leg, no landmark). It is followed down slice by slice as the island
+overlapping the one above. Where it touches the tibia (the incisura) or the talus the islands
+fuse; the fused island is eroded until the bridge breaks, each voxel is given to the core it
+is nearest along the bone, and the fibula keeps the cores that lie inside its own section
+above. Two things had to be learned from the volume: a distal fibula is a cortical RING round
+marrow the segmentation calls soft tissue, and an erosion destroys a ring — without it the
+split lost the fibula at the syndesmosis, 162 voxels to 20 between two slices — so each slice's
+marrow is filled in first (and the fragment carries its marrow with it, as a real one does);
+and a split that would shrink the section by half is refused in favour of the slice above's
+section, cut on the far side of the midline to the neighbour. Measured: 10.5 cm of fibula, its
+largest section 3.25 cm² (a slice that took in the tibia would pass 4).
+
+**The fracture** is a plane rising 55° from anteroinferior at the joint line to
+posterosuperior, centred 3 cm above the malleolar tip — Lauge-Hansen SER, Weber B: at the
+level of the syndesmosis, which is what makes it a B. The distal fragment measures 5.8 cm³
+(6 % marrow), reaches 3.9 cm above the tip, and its top edge climbs 1.29 cm per cm toward the
+back on a lateral. It presents **4 mm lateral, 3 mm short, 10° externally rotated**.
+
+**The displacement is applied to the workers' own copies of the volume**, the way the knee's
+rider carries the patella (`core/jointPose.js` rideAlong): the fragment's bone is lifted out —
+soft tissue where it was — and set down where the move takes it, eight points a voxel so a
+turned grid leaves no holes, marrow first and cortex over it. The box the fragment can reach
+is saved as scanned when the fragment arrives and put back before every stamp, so the volume
+is always the scanned one plus ONE fragment, wherever it is: reduced to anatomic it is the
+scanned ankle byte for byte (tested after several moves), and a case that ends leaves nothing
+behind. A move is three numbers and a version with each pulse; the fragment itself (~6000
+voxels) goes to each worker once. Measured in the room with a fixed noise seed and the
+recursive filter off: two reduced frames are pixel-identical, and displaced against reduced
+differs in 10 047 of 310 736 displayed pixels (3.2 % of the field) by a mean 21 grey levels.
+
+**The forceps** (tap 0.5 mm or 1°, hold to run): medial/lateral, pull to length/shorten,
+anterior/posterior, internal/external rotation. Nothing on the console says where the fragment
+is — the image does, which is the exercise. **CHECK REDUCTION** scores it the way a list
+would: length restored within 2 mm (short or long), translation within 2 mm, rotation within
+5°, each with what view shows it (length and rotation on the MORTISE, front-to-back only on
+the LATERAL), and the screening it took since the case began: beam time, pulses, air kerma,
+DAP. The MORTISE angle is this ankle's own: the distal 1.5 cm of fibula against the most medial
+bone at the same level and within front-to-back reach of it (the navicular further forward
+can be as medial), 20.3° measured, 20° on the button (clamped to 10-25).
+
+Limits: the fragment is rigid and single (no butterfly, no medial or posterior malleolus, no
+syndesmotic widening — the talus does not shift with the fibula); bone that overrides bone
+reads as bone once, not twice (a voxel holds one material); the case needs the ankle as
+scanned (bent joints make another grid, and the panel says so).
+
+## Guidewire on the roadmap
+
+A 0.035" (0.89 mm) wire through a femoral sheath (`core/guidewire.js`, the GUIDEWIRE panel):
+pick the right or left groin, INSERT, then advance/withdraw (tap 5 mm, hold ~4.5 cm/s) and
+torque the tip (15° a tap).
+
+**The route is the contrast solver's own geometry.** Every vessel voxel carries its
+normalised geodesic arclength (`sVol`, the map that puts iodine in the pulses, shared with the
+CONTRAST panel and the ultrasound colour box), so a centreline is the centroid of each
+arclength bin, smoothed and resampled at 2 mm. On both vessel models 100 % of centreline
+points lie within a voxel of their own vessel (98-100 % in the very voxel). A two-means split
+for labels that fork within a bin was built, measured to change nothing on the shipped data,
+and removed. **Junctions** are where two vessels' voxels touch AND one of them ends there,
+arteries with arteries and veins with veins — an iliac artery lies against its vein for its
+whole length, and without the rule the two are joined; stray contacts are rejected by requiring the
+contact on both centrelines. On CAP: the aortic bifurcation (both iliacs), the arch
+(brachiocephalic trunk, left carotid, left subclavian), and the brachiocephalic's own
+bifurcation. The iliac veins do not reach the IVC in the segmentation (a ~4 cm gap), so the
+panel offers arterial access only; the chest alone, with no iliacs, starts from the
+descending aorta's cut end.
+
+**The wire** follows the route with an angled tip (45° over its last 8 mm, less in a vessel
+too narrow to hold it) and 15 cm outside the groin through the sheath. At a branch it goes
+where the tip points — taken when the tip faces the branch's take-off (cos ≥ 0.64, ≥ 0.8 for a
+turn past 90°), otherwise straight on; at a vessel's end it follows a gentle way on (< 60°) by
+itself; a sharp turn the tip is not facing stops it, and the panel says so. Withdrawn past a
+branch it forgets the choice. Pushed from the right groin with the tip toward the table it
+climbs the iliac and the aorta and stops at the aortic root (86 cm on CAP); turning the tip
+takes it into the brachiocephalic, the left subclavian, or over the bifurcation into the left
+iliac. Torque 0 points the tip at the patient's anterior; the console starts at 180.
+
+**The image is attenuation, not a drawing.** The wire is far below a voxel (1-2 mm), so it is
+not voxelised — that would image it 2-5 times too thick. The worker adds its exact chord to
+each ray at the beam's three spectrum bins, as steel less the blood it displaces (the same
+`muOverBins` tables as every voxel), averaged over a 3x3 grid of rays across the detector
+pixel, because a pixel integrates photons over its face: at the coarsest sampling tier a
+pixel is 1.24 mm at the isocentre, and rays through pixel centres alone image a 0.89 mm wire
+dashed or not at all. Measured: the imaged integral of chord is 0.997 of the wire's true
+volume; at 112 px every column it crosses sees it, ±2.5 %; through 12.8 cm of water at 70 kV
+the pixel it is centred on falls to 0.30 of the water's transmission, the rows beside it are
+untouched, and the frame without the wire is the water's exactly. It goes through the
+breathing warp first (a cell at z shows the anatomy from z + s(z), so the wire at z0 is drawn
+where z + s(z) = z0), then the flips and the patient's turn — tested against a bone rod
+off-centre on every axis, unflipped, flipped and turned. Cost: within the noise of the pulse
+(CAP 54 against 58 ms/pulse with and without it, 15 pps, 0 dropped).
+
+**The roadmap is now subtracted**, as the angio suite shows it. The V1 overlay darkened the
+vessels on live fluoro — black, exactly the colour of a wire inside them. Now live fluoro is
+subtracted against the DSA run's own mask with the iodine put back: the anatomy cancels to
+grey, the vessels (iodine in the map, not in the patient now) stand WHITE, and anything that
+arrived since — the wire — draws BLACK inside them; a fifth of the plain image is mixed back
+for landmarks, and the level is matched on the vessel-free field so a beam a few kV off the
+mask still cancels (tested: background 0.50, vessel 1.00, wire 0.21, unchanged under a 0.3
+log-unit shift). A wire already in place when the mask was taken cancels; where it moved away
+from leaves a faint white ghost; move the table or the C and the map no longer fits — all
+real behaviour. In the room the femoral preset (a venous injection: IVC 33 mgI/mL at 33 s,
+iliac arteries 11 at 55 s) only arms the roadmap at a manual ~66 kV, and the pelvic roadmap at
+that dose is noisy; the wire still reads black inside the white vessel.

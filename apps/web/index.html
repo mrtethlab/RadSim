@@ -1285,7 +1285,60 @@
           <div class="ctrst-note">Arm DSA, inject (CONTRAST panel), and screen: the first frame
             is the mask, and everything that has not changed vanishes &mdash; only the iodine
             draws. Breathing wrecks the subtraction; BREATH HOLD is the rescue. The run's peak
-            opacification becomes the ROADMAP, held under live fluoro for navigation.</div>
+            opacification becomes the ROADMAP: live fluoro subtracted against it, the vessels
+            WHITE and anything new &mdash; the wire &mdash; black. Move the table or the C and it
+            no longer fits.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Guidewire &middot; 0.035&Prime;</div>
+        <div class="bod">
+          <div class="seg" id="flWireSeg">
+            <button data-acc="43" class="on" title="Right common femoral artery puncture">R femoral</button>
+            <button data-acc="44" title="Left common femoral artery puncture">L femoral</button>
+            <button id="flWireIn" title="Pass the wire through the sheath (or pull it out)">Insert</button>
+          </div>
+          <div class="orpad"><div class="orpill" id="flWirePad">
+            <button class="orbtn" id="flWireBack" title="Withdraw &mdash; tap a little, hold to keep pulling">&#9660;</button>
+            <button class="orbtn" id="flWireCCW" title="Torque the tip anticlockwise">&#8634;</button>
+            <button class="orbtn" id="flWireCW" title="Torque the tip clockwise">&#8635;</button>
+            <button class="orbtn" id="flWireFwd" title="Advance &mdash; tap a little, hold to keep pushing">&#9650;</button>
+          </div></div>
+          <div class="flro">
+            <div><div class="k">Inserted</div><div class="v" id="flWireLenV">&mdash;</div></div>
+            <div style="grid-column:span 3"><div class="k">Tip in</div><div class="v" id="flWireTipV">&mdash;</div></div>
+          </div>
+          <div class="ctrst-note">A steel wire 0.89 mm across, imaged as what it is: the beam's own
+            attenuation through it, not a drawing. It follows the vessel tree the contrast solver
+            runs on; at a branch it goes where its angled tip points &mdash; torque the tip toward
+            the branch, then advance. Withdraw past a branch and the choice is undone. Make a
+            roadmap first (DSA, inject, screen) and steer on it.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Ankle ORIF &middot; Weber B</div>
+        <div class="bod">
+          <div class="mini">
+            <button id="flAnkleStart" title="Load the Foot with a displaced distal fibula fracture, set up for the C-arm">&#9654; Start case</button>
+            <button id="flAnkleCheck" title="Judge the reduction and the screening it took" disabled>&#10003; Check reduction</button>
+          </div>
+          <div class="row" style="margin-top:8px"><div class="rl">C-arm <small>views</small></div></div>
+          <div class="seg" id="flAnkleViewSeg">
+            <button data-view="ap">AP</button>
+            <button data-view="mortise">Mortise</button>
+            <button data-view="lat">Lateral</button>
+          </div>
+          <div class="row" style="margin-top:8px"><div class="rl">Distal fragment <small>reduction forceps &mdash; tap, or hold</small></div></div>
+          <div id="flFragPad">
+            <div class="seg"><button data-frag="lat,-1">&#9664; Medial</button><button data-frag="lat,1">Lateral &#9654;</button></div>
+            <div class="seg" style="margin-top:4px"><button data-frag="prox,-1">&#9660; Pull to length</button><button data-frag="prox,1">Shorten &#9650;</button></div>
+            <div class="seg" style="margin-top:4px"><button data-frag="ant,1">Anterior</button><button data-frag="ant,-1">Posterior</button></div>
+            <div class="seg" style="margin-top:4px"><button data-frag="rot,-1">&#8630; Int. rotate</button><button data-frag="rot,1">Ext. rotate &#8631;</button></div>
+          </div>
+          <div class="ctrst-note" id="flAnkleResult">A displaced Weber B: the distal fibula broken
+            obliquely at the syndesmosis, short, shifted out and turned out. Screen, reduce, and
+            check: out to length and in line within 2 mm and 5&deg;. Length and rotation show on
+            the MORTISE, front-to-back on the LATERAL. Every second of beam is the patient's.</div>
         </div>
       </div>
       <div class="grp fl-only">
