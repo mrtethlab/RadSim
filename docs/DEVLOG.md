@@ -8,6 +8,35 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### Bones only, the fingers curl, the OEC 9800's panel — [#87](https://github.com/mrtethlab/RadSim/pull/87)
+**Bones only.** A checkbox under the model hides everything but the skeleton in the 3D room (never the image).
+- *The mesh* (`build_bone_mesh.py`, `<name>_bone.glb`) is cut from the shipped material volume, in the frame of every other mesh of the model, from the bone materials only. Cartilage is left out, so the joint spaces stay open. Each bone is closed by itself over 2 mm, never into cartilage or another bone, so a thin cortex's marrow no longer leaves the carpus as lace; crumbs are dropped.
+- *Posing* follows the volume's own rule for bone (`forwardBone`): rigid past a joint's plane, the patella by its rider, a digit by its share read inside the bone at its rest place. A triangle across two pieces is left out while bent.
+
+**The hand's digits curl.** There are five upright sliders, 1 (the thumb) to 5, from −20 % extension to a fist at 100 %.
+- MCP, PIP and DIP (the thumb's CMC, MCP and IP) move progressively, each with its own curve.
+- Each digit is a measured field joint with band-coded share grids (`hand.digitN.bin`), read at the rest point and nested within a digit.
+- The fist's MCP and CMC turns were solved so the fingers lie under their knuckles and the thumb across them.
+
+**Display and x-ray.**
+- *Automatic rescaling* now sets the response curve to the anatomy's VOI, which the histogram shades. It did nothing before: the curve was seeded only on a new image.
+- *Edge enhancement* (was detail enhancement) is off by default. Both settings are now in Display · window / level.
+- The scatter readout is one line. The marker critique is gone. Orientation is locked on the square 43×43.
+
+**The room.**
+- No text sits behind View Options or the pull-out tabs in any mode. The tabs step aside on image views, which keep their settings.
+- The tabs show their feature at work: chevrons running down, blue for saline, green for iodine, grey idle, yellow for barium, red for palpation.
+
+**Fluoroscopy.**
+- *Control panel:* the OEC 9800's own buttons and functions.
+- *Flat-panel option:* a square receptor on the C-arm, and square monitors so its image fills them.
+- *Layout:* one set of monitors (the docked viewer stands down while they are up); the C-arm window under the console; the grey notes gone.
+- *Motion* is off by default; its window sits under Object · rotate / tilt.
+
+**Checked:**
+- In the app: the bones-only view against the film with the wrist bent, the knee with its patella, and a fist; every mode's 3D and image views (each with an image) for overlaps; each tab's chevron state; the flat-panel monitors.
+- `npm test`: 285 pass. The bone-mesh tests fail when a digit's share is read at the moved point or when the phalanges share a side.
+
 ### The tutorials, audited — [#86](https://github.com/mrtethlab/RadSim/pull/86)
 Every tutorial was run end to end in the app, each goal performed through the controls, and each step's control checked on screen.
 - **Function:** all nine run; every goal can be met. The checks that first failed were the harness's own (a typed CT value, a couch still moving); none was the tutorial's.
