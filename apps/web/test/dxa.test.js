@@ -2,7 +2,7 @@
 // from a technologist: these tests are those corrections, written down.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { scores, diagnosis, classify, priorScan, ageMean, REF, hipDiagnosis, findLevels, findFemur, measure } from '../src/dxa.js';
+import { scores, diagnosis, classify, priorScan, ageMean, REF, hipDiagnosis, findLevels, findFemur, measure, scanPlan, SCAN, REGIONS } from '../src/dxa.js';
 
 // ---------------------------------------------------------------- scoring
 test('T compares against a young adult, so it does not depend on age', () => {
@@ -222,4 +222,16 @@ test('femur: regions measure as area x mean density, and Total area is the sum',
   const A = Object.fromEntries(m.map((r) => [r.label, r.area]));
   assert.ok(Math.abs(A.Total - (A.Neck + A.Troch + A.Inter)) < 1e-9);
   for (const r of m) assert.ok(Math.abs(r.bmcRaw / r.area - r.bmdRaw) < 1e-9, `${r.label} BMD = BMC / area`);
+});
+
+test('the scan runs as the Lunar does: 2.4 cm steps between passes, 30 s a site', () => {
+  for (const r of ['spine', 'hipL', 'hipR']) {
+    const p = scanPlan(r);
+    assert.ok(Math.abs(p.passes * p.passS - 30) < 1e-9, `${r}: ${p.passes} passes of ${p.passS} s`);
+    assert.ok(Math.abs(p.stepCm * p.passes - REGIONS[r].wz) < 1e-9, `${r}: the passes cover the field`);
+    assert.ok(Math.abs(p.stepCm - SCAN.STEP_CM) < 0.3, `${r}: steps of about the fan's footprint: ${p.stepCm}`);
+  }
+  assert.equal(scanPlan('spine').passes, 10);
+  // the 4.5 degree fan, some 35 cm from the focus at the patient, is 2.75 cm long: the steps overlap it
+  assert.ok(SCAN.STEP_CM < 2 * 35 * Math.tan((4.5 / 2) * Math.PI / 180));
 });

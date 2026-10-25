@@ -172,6 +172,11 @@ export function reportHTML(entry, history, charts) {
         <td class="k">Ethnicity:</td><td>${esc(p.ethnicity)}</td></tr>
     <tr><td class="k">Age:</td><td>${entry.age}</td><td class="k">Scan Mode:</td><td>Standard &middot; 146.0 &micro;Gy</td></tr>
   </table>
+  ${entry.intake ? `<div class="dxrep-hx"><div class="dxrep-cap">Clinical history (intake questionnaire)</div>
+    <div><b>Indication:</b> ${esc(entry.intake.indication)}</div>
+    <div><b>Risk factors:</b> ${entry.intake.risks.length ? entry.intake.risks.map(esc).join('; ') : 'none reported'}</div>
+    <table class="dxrep-qa">${entry.intake.answers.filter(([q]) => !/^(Age|Height|Weight)$/.test(q))
+      .map(([q, a]) => `<tr><td>${esc(q)}</td><td>${esc(a)}</td></tr>`).join('')}</table></div>` : ''}
   <div class="dxrep-body">
     <div class="dxrep-col">
       <div class="dxrep-cap">${esc(label)} Bone Density</div>

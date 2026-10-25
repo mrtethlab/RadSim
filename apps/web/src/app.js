@@ -40,6 +40,7 @@ import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ult
 import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
 import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR } from './room.js';
 import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay } from './dxa.js';
+import { initDxaExam, dxaExamMode } from './dxaExam.js';
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -991,7 +992,6 @@ const S = {
         // has to be chosen rather than averaged; Z compares against the patient's own age
         sex:'f', age:62, weight:70,
         showRois:true, editRois:false,   // the green scored map, and whether it can be dragged
-        rig:'v2',                        // which scanned table is standing in the room
         // Where the operator has driven the arm. headZ is the scanning head's centre along
         // the couch (cm, + toward the head end); crossX slides only the laser's centring
         // mark across the table, because the head is wide enough to cover the full width
@@ -4210,7 +4210,7 @@ window.addEventListener('load',()=>{
            mammoMode: (on) => mammoApplyMode(on),
            usMode: (on) => usApplyMode(on),
            ivMode: (on) => ivApplyMode(on),
-           dxaMode: (on) => dxaApplyMode(on) });
+           dxaMode: (on) => { dxaApplyMode(on); dxaExamMode(on); } });
   // The tutorials drive the real UI, so they need the mode switch and the live state.
   window.__radsimState = S;
   initMobile({ S });                            // pager + dock; inert above the breakpoint
@@ -4264,7 +4264,11 @@ window.addEventListener('load',()=>{
   // roll slider moved the body in the room and nothing on the monitor
   initDXA({ THREE, S, three, setSubject: (s) => setSubject(s),
             buildPhantom: () => buildPhantom(),
+            // where the patient lies (their legs are drawn from it), and the bay's views
+            phantomPose: () => ({ center: [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z], flip: voxelFlips(), rot: objMat() }),
+            setContent: (c) => setContent(c), syncScene,
             loadModelUrl, baseUrl: import.meta.env.BASE_URL });
+  initDxaExam();
   initIV({ THREE, S, three, $, setSubject: (s) => setSubject(s), syncScene,
            phantomPose: () => ({ center: [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
                                  flip: voxelFlips(), rot: objMat() }) });
