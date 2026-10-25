@@ -623,7 +623,8 @@ export const CONTRAST_STEPS = [
     sel: '.grp:has(#ctrstSite)',
     title: 'Injection site',
     text: 'Where the needle is changes when — and how sharply — the bolus arrives. The basilic '
-      + 'vein is the reference route every timing chart assumes. A central line\'s tip already '
+      + 'vein is the reference route every timing chart assumes; a cannula in a hand vein caps the '
+      + 'flow rate at about 1.5 mL/s whatever its gauge, too slow for an arterial phase. A central line\'s tip already '
       + 'sits at the cavoatrial junction, so its bolus skips the peripheral veins and arrives '
       + 'earliest and sharpest. The arterial sites are the instructive ones: a radial or femoral '
       + 'bolus must first cross the limb\'s capillary bed before it can return to the heart, so '
@@ -1176,13 +1177,27 @@ export const MAMMO_STEPS = [
     sel: '.grp:has(#mmViewSeg)',
     title: 'CC, MLO, and the magnifier',
     text: 'Craniocaudal compresses top-down; the mediolateral oblique swings the gantry '
-      + '45° so the pectoral margin comes into the field — the two views that make '
+      + '40–60°, parallel to her pectoral muscle, so the muscle comes into the field — the two views that make '
       + 'a screening pair. The MAG stand raises the breast toward the tube for a '
       + '×1.8 spot view: bigger, sharper on small detail, and it pays for that '
       + 'magnification on the dose meter.',
     goal: {
       label: 'Turn the gantry to MLO',
       done: () => S().mammo.view === 'mlo',
+    },
+  },
+  {
+    sel: '.grp:has(#mmPull)',
+    title: 'Position, then let the film judge you',
+    text: 'A view is good by how much tissue it brought onto the receptor. Pull the breast '
+      + 'off the chest wall, lift the fold, match the C-arm to her pectoral muscle on the MLO, '
+      + 'keep the medial breast on the CC, roll the nipple into profile. Each film is then '
+      + 'graded the PGMI way on its OWN image: the posterior nipple line measured nipple to '
+      + 'muscle, the muscle reaching it, the fold open, and the CC’s PNL within 1 cm of the '
+      + 'MLO’s. The yellow line on the film is the PNL it measured.',
+    goal: {
+      label: 'Expose an MLO and read its grade',
+      done: () => !!(S().mammo.evals && S().mammo.evals.mlo),
     },
   },
   {
@@ -1315,14 +1330,29 @@ export const US_STEPS = [
   {
     sel: '.grp:has(#usPrf)',
     title: 'Make it alias, then make the frame rate pay',
-    text: 'Wind the scale down and watch the aliasing arrive: at a Nyquist velocity of 99 cm/s '
-      + 'none of the aorta reads wrong, at 28 cm/s <b>a quarter of it does</b>. And look at the '
-      + 'fps: the box fires an ensemble of pulses on every line inside it, so a half-width box '
-      + 'takes 20 fps down to <b>4.5</b>. That is the real reason a sonographer keeps the box '
-      + 'small and puts it only where the question is.',
+    text: 'Wind the scale down and watch the aliasing arrive: on the aorta seat at peak systole, '
+      + 'at a Nyquist velocity of 32 cm/s none of the aorta reads wrong, at 19 cm/s <b>a third of '
+      + 'it does</b> — bright red straight into bright cyan, no black between. Depth caps the scale '
+      + '(PRF ≤ c/2d), so a deep vessel cannot be rescued by the knob. And look at the fps: the box '
+      + 'fires eight pulses per line at the colour PRF, so a half-width box at 16 cm takes 25 fps '
+      + 'down to <b>6</b>. That is why a sonographer keeps the box small.',
     goal: {
-      label: 'Drop the scale below 2.5 kHz',
-      done: () => S().us.prf <= 2500,
+      label: 'Drop the scale to 1.5 kHz or below',
+      done: () => S().us.prf <= 1500,
+    },
+  },
+  {
+    sel: '.grp:has(#usPwGate)',
+    title: 'Spectral Doppler: what the gate hears',
+    text: 'Press <i>seat on the aorta</i>. The gate is a depth and a length on one line, and the '
+      + 'trace is every scatterer inside it: a 3 mm gate on the axis gives a thin band with a clear '
+      + 'window beneath, a 20 mm gate fills the window from the slow blood at the wall. The machine '
+      + 'measures a <b>shift</b>; the angle cursor is your claim about the vessel. A 5° misjudgement '
+      + 'costs 6 % at 30° and <b>18 % at 60°</b> — past 60 it runs away. PSV, EDV and RI come off '
+      + 'the last whole beat.',
+    goal: {
+      label: 'Switch the display to PW Doppler',
+      done: () => S().us.disp === 'pw',
     },
   },
   {
@@ -1413,8 +1443,8 @@ export const DXA_STEPS = [
     title: 'The foot brace',
     text: 'A femur is scanned with the leg turned IN 15–25°, which lays the femoral neck flat '
       + 'under the arm. Scan the left hip with the leg neutral and again with it in the brace: '
-      + 'the neck BMD reads about <b>8 % higher</b> neutral (0.757 against 0.701 g/cm²), and '
-      + 'turned out 20° the trochanter overlaps the neck and it reads a third higher. A '
+      + 'the neck BMD reads about <b>3 % higher</b> neutral (0.766 against 0.743 g/cm²), and '
+      + 'turned out 20° the trochanter overlaps the neck and it reads a quarter higher. A '
       + 'positioning change between visits can look exactly like a change in the bone.',
     goal: {
       label: 'Scan a hip with the leg out of the brace',

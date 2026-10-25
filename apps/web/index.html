@@ -165,10 +165,10 @@
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Ultrasound</div>
-          <div class="hc-tag">B-mode, M-mode and colour Doppler</div>
+          <div class="hc-tag">B-mode, M-mode, colour and spectral Doppler</div>
           <div class="hc-desc">Pulse-echo imaging through the same voxel anatomy, with speckle,
             acoustic shadowing and post-cystic enhancement coming from the scanline physics. A
-            beating heart for M-mode and colour Doppler of the flow.</div>
+            beating heart for M-mode, and colour and pulsed-wave Doppler of pulsatile flow.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="us">Open</button>
             <button class="hc-tut" data-tut="us" title="Walk through this mode control by control">&#9654; Tutorial</button>
@@ -267,6 +267,8 @@
     <!-- THE DXA EXAM (dxaExam.js): the checklist over the room, and the intro / intake form -->
     <div class="dxexam" id="dxExam"></div>
     <div class="dxmodal" id="dxModal"></div>
+    <!-- a model that did not arrive (the server down, the connection gone): said over the room, with a retry -->
+    <div class="loaderr" id="loadErr" role="alert" hidden><span id="loadErrMsg"></span><button id="loadErrRetry" type="button">Retry</button><button id="loadErrClose" type="button" aria-label="Dismiss">✕</button></div>
     <div class="roomsel" id="roomSel" role="group" aria-label="Room set-up">
       <div class="roomsel-g">
         <button type="button" data-room="wall" title="Wall stand: the patient standing" aria-label="Wall stand">
@@ -1285,7 +1287,60 @@
           <div class="ctrst-note">Arm DSA, inject (CONTRAST panel), and screen: the first frame
             is the mask, and everything that has not changed vanishes &mdash; only the iodine
             draws. Breathing wrecks the subtraction; BREATH HOLD is the rescue. The run's peak
-            opacification becomes the ROADMAP, held under live fluoro for navigation.</div>
+            opacification becomes the ROADMAP: live fluoro subtracted against it, the vessels
+            WHITE and anything new &mdash; the wire &mdash; black. Move the table or the C and it
+            no longer fits.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Guidewire &middot; 0.035&Prime;</div>
+        <div class="bod">
+          <div class="seg" id="flWireSeg">
+            <button data-acc="43" class="on" title="Right common femoral artery puncture">R femoral</button>
+            <button data-acc="44" title="Left common femoral artery puncture">L femoral</button>
+            <button id="flWireIn" title="Pass the wire through the sheath (or pull it out)">Insert</button>
+          </div>
+          <div class="orpad"><div class="orpill" id="flWirePad">
+            <button class="orbtn" id="flWireBack" title="Withdraw &mdash; tap a little, hold to keep pulling">&#9660;</button>
+            <button class="orbtn" id="flWireCCW" title="Torque the tip anticlockwise">&#8634;</button>
+            <button class="orbtn" id="flWireCW" title="Torque the tip clockwise">&#8635;</button>
+            <button class="orbtn" id="flWireFwd" title="Advance &mdash; tap a little, hold to keep pushing">&#9650;</button>
+          </div></div>
+          <div class="flro">
+            <div><div class="k">Inserted</div><div class="v" id="flWireLenV">&mdash;</div></div>
+            <div style="grid-column:span 3"><div class="k">Tip in</div><div class="v" id="flWireTipV">&mdash;</div></div>
+          </div>
+          <div class="ctrst-note">A steel wire 0.89 mm across, imaged as what it is: the beam's own
+            attenuation through it, not a drawing. It follows the vessel tree the contrast solver
+            runs on; at a branch it goes where its angled tip points &mdash; torque the tip toward
+            the branch, then advance. Withdraw past a branch and the choice is undone. Make a
+            roadmap first (DSA, inject, screen) and steer on it.</div>
+        </div>
+      </div>
+      <div class="grp fl-only">
+        <div class="lab">Ankle ORIF &middot; Weber B</div>
+        <div class="bod">
+          <div class="mini">
+            <button id="flAnkleStart" title="Load the Foot with a displaced distal fibula fracture, set up for the C-arm">&#9654; Start case</button>
+            <button id="flAnkleCheck" title="Judge the reduction and the screening it took" disabled>&#10003; Check reduction</button>
+          </div>
+          <div class="row" style="margin-top:8px"><div class="rl">C-arm <small>views</small></div></div>
+          <div class="seg" id="flAnkleViewSeg">
+            <button data-view="ap">AP</button>
+            <button data-view="mortise">Mortise</button>
+            <button data-view="lat">Lateral</button>
+          </div>
+          <div class="row" style="margin-top:8px"><div class="rl">Distal fragment <small>reduction forceps &mdash; tap, or hold</small></div></div>
+          <div id="flFragPad">
+            <div class="seg"><button data-frag="lat,-1">&#9664; Medial</button><button data-frag="lat,1">Lateral &#9654;</button></div>
+            <div class="seg" style="margin-top:4px"><button data-frag="prox,-1">&#9660; Pull to length</button><button data-frag="prox,1">Shorten &#9650;</button></div>
+            <div class="seg" style="margin-top:4px"><button data-frag="ant,1">Anterior</button><button data-frag="ant,-1">Posterior</button></div>
+            <div class="seg" style="margin-top:4px"><button data-frag="rot,-1">&#8630; Int. rotate</button><button data-frag="rot,1">Ext. rotate &#8631;</button></div>
+          </div>
+          <div class="ctrst-note" id="flAnkleResult">A displaced Weber B: the distal fibula broken
+            obliquely at the syndesmosis, short, shifted out and turned out. Screen, reduce, and
+            check: out to length and in line within 2 mm and 5&deg;. Length and rotation show on
+            the MORTISE, front-to-back on the LATERAL. Every second of beam is the patient's.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1502,6 +1557,7 @@
           <div class="seg" id="usDispSeg">
             <button data-disp="b" class="on">B-mode</button>
             <button data-disp="m">M-mode</button>
+            <button data-disp="pw">PW Doppler</button>
           </div>
           <div class="row" style="margin-top:9px"><div class="rl">M cursor <small>where the line cuts</small></div></div>
           <input type="range" id="usMLine" min="0" max="1" value="0.5" step="0.01">
@@ -1533,12 +1589,78 @@
           <input type="range" id="usDopH" min="0.10" max="0.80" value="0.40" step="0.01">
           <div class="row" style="margin-top:8px"><div class="rl">Box width</div></div>
           <input type="range" id="usDopW" min="0.15" max="1.00" value="0.50" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Box across <small>left / right</small></div></div>
+          <input type="range" id="usDopX" min="0.10" max="0.90" value="0.50" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Steer <small>linear array</small></div>
+            <div class="valchip" id="usSteerV">linear only</div></div>
+          <input type="range" id="usSteer" min="-20" max="20" value="0" step="5">
+          <div class="row" style="margin-top:8px"><div class="rl">Colour gain</div>
+            <div class="valchip" id="usCGainV">0 dB</div></div>
+          <input type="range" id="usCGain" min="-15" max="15" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Wall filter</div>
+            <div class="valchip" id="usCWallV">100 Hz</div></div>
+          <input type="range" id="usCWall" min="25" max="800" value="100" step="25">
+          <div class="row" style="margin-top:8px"><div class="rl">Baseline</div>
+            <div class="valchip" id="usCBaseV">centre</div></div>
+          <input type="range" id="usCBase" min="-0.8" max="0.8" value="0" step="0.1">
+          <div class="row" style="margin-top:8px"><div class="rl">Write priority <small>grey level</small></div>
+            <div class="valchip" id="usCPriV">60 %</div></div>
+          <input type="range" id="usCPri" min="0" max="100" value="60" step="5">
+          <div class="mini" style="margin-top:8px"><button id="usCInv">&#8645; Invert</button></div>
+          <div class="note" id="usDopRead" style="margin-top:6px">&mdash;</div>
           <div class="ctrst-note">Colour is the component of flow <b>along the beam</b>, so a
             vessel crossed at 90&deg; shows nothing however fast it runs &mdash; rock the probe
-            and it appears. Red toward, blue away. Drop the scale and the fast middle of a
-            vessel wraps to the opposite colour: that is aliasing, and it is the same phase
-            wrap as anywhere else. The box costs frame rate because the machine fires an
-            ensemble of pulses inside it instead of one.</div>
+            (or steer a linear array) and it appears. Red toward, blue away, as the bar says.
+            Drop the scale and the fast middle of a vessel wraps to the opposite colour, bright to
+            bright with no black between: that is aliasing, the same phase wrap as anywhere else.
+            Depth caps the scale (PRF &le; c/2d). Colour gain decides how much power counts as
+            flow &mdash; too high and noise speckles the box; the wall filter removes slow shifts
+            &mdash; too low and the moving liver flashes, too high and slow veins vanish.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">Spectral Doppler &middot; PW</div>
+        <div class="bod">
+          <button class="fldose-rst" id="usAorta" style="width:100%">seat on the aorta, gate in the lumen</button>
+          <div class="row" style="margin-top:9px"><div class="rl">Gate line <small>across the fan</small></div></div>
+          <input type="range" id="usPwLine" min="0" max="1" value="0.5" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Gate depth</div>
+            <div class="valchip" id="usPwDepthV">8.0 cm</div></div>
+          <input type="range" id="usPwDepth" min="1" max="24" value="8" step="0.1">
+          <div class="row" style="margin-top:8px"><div class="rl">Gate size</div>
+            <div class="valchip" id="usPwGateV">3 mm</div></div>
+          <input type="range" id="usPwGate" min="1" max="20" value="3" step="0.5">
+          <div class="row" style="margin-top:8px"><div class="rl">Angle correction</div>
+            <div class="valchip" id="usPwAngleV">60&deg;</div></div>
+          <input type="range" id="usPwAngle" min="-85" max="85" value="60" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Scale <small>PRF</small></div>
+            <div class="valchip" id="usPwPrfV">4.0 kHz</div></div>
+          <input type="range" id="usPwPrf" min="500" max="15000" value="4000" step="250">
+          <div class="row" style="margin-top:8px"><div class="rl">Baseline</div>
+            <div class="valchip" id="usPwBaseV">centre</div></div>
+          <input type="range" id="usPwBase" min="-0.8" max="0.8" value="0" step="0.1">
+          <div class="row" style="margin-top:8px"><div class="rl">Wall filter</div>
+            <div class="valchip" id="usPwWallV">100 Hz</div></div>
+          <input type="range" id="usPwWall" min="25" max="1000" value="100" step="25">
+          <div class="row" style="margin-top:8px"><div class="rl">Spectral gain</div>
+            <div class="valchip" id="usPwGainV">0 dB</div></div>
+          <input type="range" id="usPwGain" min="-20" max="20" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Sweep</div></div>
+          <div class="seg" id="usPwSweepSeg">
+            <button data-sweep="2">2 s</button><button data-sweep="4" class="on">4 s</button>
+            <button data-sweep="6">6 s</button><button data-sweep="8">8 s</button>
+          </div>
+          <div class="mini" style="margin-top:8px"><button id="usPwInv">&#8645; Invert</button></div>
+          <div class="note" id="usPwRead" style="margin-top:6px">&mdash;</div>
+          <div class="note" id="usPwPrfRead">&mdash;</div>
+          <div class="note" id="usPwTruth" style="color:#8fb3c4">&mdash;</div>
+          <div class="ctrst-note">Choose <b>PW Doppler</b> in the display row. The gate is a depth
+            and a length on one line; what it hears is every scatterer inside, so a small gate on
+            the axis gives a thin trace with a clear window under it, and a gate as wide as the
+            lumen fills the window from the slow blood at the wall. The machine measures a
+            <i>shift</i>: the angle cursor is your claim about the vessel, and the velocity is only
+            as right as that claim &mdash; past 60&deg; a few degrees of misjudgement is a large
+            error (the grey line shows what the simulator knows and a machine cannot).</div>
         </div>
       </div>
       <div class="expose us-only" id="usScanRow">
@@ -1559,6 +1681,8 @@
             <button data-region="spine" class="on">AP spine</button>
             <button data-region="hipL">Left hip</button>
             <button data-region="hipR">Right hip</button>
+            <button data-region="forearmL">L forearm</button>
+            <button data-region="forearmR">R forearm</button>
           </div>
           <div class="ctrst-note">The AP lumbar field covers L1&ndash;L4; the hip fields sit over
             the proximal femur. A densitometer scans a WINDOW, not a whole patient &mdash; the
@@ -1606,7 +1730,7 @@
           <input type="range" id="dxLeg" min="-30" max="30" value="20" step="1">
           <div class="ctrst-note">The foot brace turns the leg in 15&ndash;25&deg;, which lays the
             femoral neck flat under the arm. Without it the neck turns toward the beam, projects
-            shorter and reads denser &mdash; about 8&nbsp;% higher with the leg left neutral, far
+            shorter and reads denser &mdash; about 3&nbsp;% higher with the leg left neutral, far
             more turned out &mdash; so a positioning change between visits can look like a change
             in the bone.</div>
           <div class="ctrst-note">The T-score compares this patient with a <b>young adult of
@@ -1750,9 +1874,43 @@
             <button data-mag="1">Mag &times;1.8</button>
           </div>
           <div class="ctrst-note">Craniocaudal compresses top-down; the mediolateral oblique
-            turns the gantry 45&deg; so the pectoral margin comes into the field. The MAG
+            turns the gantry 40&ndash;60&deg;, parallel to her pectoral muscle, so the muscle
+            comes into the field. The MAG
             stand raises the subject toward the tube: a &times;1.8 spot view that overfills
             the receptor and pays the inverse-square price on the dose meter.</div>
+        </div>
+      </div>
+      <div class="grp mm-only">
+        <div class="lab">Positioning</div>
+        <div class="bod">
+          <div class="note" id="mmPatient">&mdash;</div>
+          <div class="row" style="margin-top:9px"><div class="rl">Pull the breast forward</div>
+            <div class="valchip" id="mmPullV">45 %</div></div>
+          <input type="range" id="mmPull" min="0" max="100" value="45" step="1">
+          <div class="row" style="margin-top:9px"><div class="rl">Lift the fold (IMF)</div>
+            <div class="valchip" id="mmLiftV">30 %</div></div>
+          <input type="range" id="mmLift" min="0" max="100" value="30" step="1">
+          <div id="mmAngleRow"><div class="row" style="margin-top:9px"><div class="rl">C-arm angle</div>
+            <div class="valchip" id="mmAngleV">45&deg;</div></div>
+          <input type="range" id="mmAngle" min="30" max="70" value="45" step="1"></div>
+          <div id="mmRotRow"><div class="row" style="margin-top:9px"><div class="rl">Rotation (lateral &harr; medial)</div>
+            <div class="valchip" id="mmRotV">square</div></div>
+          <input type="range" id="mmRot" min="-100" max="100" value="0" step="5"></div>
+          <div class="row" style="margin-top:9px"><div class="rl">Nipple roll</div>
+            <div class="valchip" id="mmRollV">0&deg;</div></div>
+          <input type="range" id="mmRoll" min="-100" max="100" value="0" step="4">
+          <div class="ctrst-note">Each view is placed on its own. Pull the tissue off the chest
+            wall; on the CC set the receptor at the fold&rsquo;s natural height and keep the
+            medial breast on; on the MLO match the C-arm to her pectoral muscle and lift the
+            breast up and out. Roll the nipple into profile. Then judge the FILM, not the
+            sliders.</div>
+        </div>
+      </div>
+      <div class="grp mm-only">
+        <div class="lab">Image evaluation</div>
+        <div class="bod">
+          <div id="mmEval"><div class="note">Expose a CC and an MLO &mdash; each is judged on its own image.</div></div>
+          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="mmOverlay" checked><span>Draw the PNL on the film</span></label>
         </div>
       </div>
       <div class="expose mm-only" id="mmExposeRow">

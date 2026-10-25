@@ -37,6 +37,15 @@ BAKE = {
     'lowerextremity': [{'ankle.invert': 0}, {'ankle.flex': 0}, {'ankle.roll': 0}, {'ankle.invert': 0}],
     'upperextremity': [{'elbow.roll': 0}],
 }
+# What a bake leaves to take out afterwards, on the shipped model (python -m app.bake_pose --trim):
+# the leg's last pass left its foot turned 11 degrees out and inverted 10 (each stage turns by the
+# angle measured before it, and the carry and reskin moved the bones the next measure reads), so the
+# sliders opened at -11 and +10 where the anatomical position is 0.
+TRIM = {
+    # (2026-10-25: -10.7 / +9.9 -> +0.7 / +4.0 after the first two, +0.8 / +1.9 after the third: the inversion again as the bake
+    # does it twice: read on a foot near upright, the second pass lands closer)
+    'lowerextremity': [{'ankle.roll': 0}, {'ankle.invert': 0}, {'ankle.invert': 0}],
+}
 TOOLS = ROOT / 'tools'
 
 # After the bake, the surface of what was bent is laid again (reskin). z035's foot lay pointed and
@@ -450,7 +459,13 @@ def finish(name, v=None):
 
 
 if __name__ == '__main__':
-    if sys.argv[1:2] == ['--carry']:              # the bake's last steps again, from its saved volumes
+    if sys.argv[1:2] == ['--trim']:               # the angles a bake left, taken out (TRIM)
+        for n in sys.argv[2:] or list(TRIM):
+            for stage in TRIM[n]:
+                pose(n, stage)
+            finish(n)
+            print(f'{n}: trimmed {TRIM[n]}')
+    elif sys.argv[1:2] == ['--carry']:              # the bake's last steps again, from its saved volumes
         for n in sys.argv[2:]:
             c = np.load(carry_path(n))
             finish(n, carried(n, c['raw'], c['raw_marks'], c['raw_sheet'], c['baked'], c['marks'], c['sheet']))

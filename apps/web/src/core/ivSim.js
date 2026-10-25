@@ -24,6 +24,13 @@
    through a flattened vein's two walls at once. In the lumen the bevel draws blood into the
    flash chamber; then the angle has to come down before the last 1-2 mm that bring the
    catheter's tip in, and lower still to thread it.
+
+   THE SITE changes the technique, not the steps. A site's `technique` in data/iv.json is laid
+   over the procedure's numbers for that attempt (A.P): the back of the hand comes in at 10-15°
+   over a thin-walled vein pinned on bone and tendon, rolls further when the skin is let go,
+   hurts more, and takes no more than 1.5 mL/s (ACR, for a hand or wrist vein). Its own words
+   for the steps and the errors (the tourniquet goes above the wrist) are laid over the same way,
+   and every {name} in a step or a tip is filled from the attempt's own numbers.
    ============================================================================ */
 
 export const STEP_IDS = ['prep', 'tourniquet', 'palpate', 'clean', 'seal', 'align', 'anchor', 'insert', 'flash',
@@ -41,25 +48,31 @@ export const ERRORS = {
   siteValve: { end: false, cat: 'insertion', pts: 3, msg: 'Site over a valve or a junction', tip: 'A valve or a fork stops the catheter: pick a straight segment between them.' },
   siteSmall: { end: false, cat: 'insertion', pts: 3, msg: 'Vein too small for the gauge', tip: 'Choose a vein at least twice the catheter, or a smaller gauge.' },
   siteDeep: { end: false, cat: 'insertion', pts: 3, msg: 'Vein too deep', tip: 'A vein you can barely feel is hard to hit: find a shallower one.' },
+  valveAhead: { end: false, cat: 'insertion', pts: 2, msg: 'A valve within the catheter\'s length', tip: 'Feel along the vein for a valve (a small knot): the catheter needs {cathLen} mm clear ahead of the mark.' },
+  siteJoint: { end: false, cat: 'insertion', pts: 3, msg: 'The catheter would lie across a joint', tip: 'Keep the catheter off joints: every bend kinks it and works it out of the vein.' },
+  siteNerve: { end: false, cat: 'insertion', pts: 3, msg: 'Site over a nerve', tip: 'Avoid the radial side of the wrist: the superficial radial nerve runs with the cephalic vein there.' },
+  gaugeLarge: { end: false, cat: 'technique', pts: 2, msg: 'Catheter too large for the site', tip: 'Choose the smallest gauge that does the job: {gauges} G here.' },
+  flinch: { end: false, cat: 'insertion', pts: 2, msg: 'The patient flinched', tip: 'Probing hurts, on the back of the hand most: one smooth puncture, the hand held firm.' },
+  valveHit: { end: false, cat: 'insertion', pts: 4, msg: 'Catheter stopped at a valve', tip: 'Never force a catheter on against a valve: mark where the vein runs clear for the catheter\'s length.' },
   insertWet: { end: false, cat: 'asepsis', pts: 5, msg: 'Inserted before the site dried', tip: 'Let the prep dry: wet alcohol does not disinfect and it stings.' },
   touchedClean: { end: false, cat: 'asepsis', pts: 4, msg: 'Touched the cleaned site', tip: 'Once the site is clean, do not palpate it again without re-cleaning.' },
   sealOff: { end: false, cat: 'technique', pts: 4, msg: 'Catheter slid off the needle', tip: 'Break the seal with a few millimetres, no more.' },
   acrossVein: { end: true, cat: 'insertion', pts: 15, msg: 'Inserted across the vein', tip: 'A catheter only goes in along the vein: line the needle up with it first.' },
   misaligned: { end: false, cat: 'insertion', pts: 3, msg: 'Inserted out of line with the vein', tip: 'Point the needle along the vein before you go in.' },
-  tooShallow: { end: false, cat: 'insertion', pts: 2, msg: 'Too shallow: the vein was pushed away', tip: 'Come in at 15-30°: shallower just pushes the vein away.' },
-  tooSteep: { end: false, cat: 'insertion', pts: 2, msg: 'Too steep on entry', tip: 'Over 35° leaves little lumen ahead of the tip.' },
+  tooShallow: { end: false, cat: 'insertion', pts: 2, msg: 'Too shallow: the vein was pushed away', tip: 'Come in at {pierceMin}-{pierceMax}°: shallower just pushes the vein away.' },
+  tooSteep: { end: false, cat: 'insertion', pts: 2, msg: 'Too steep on entry', tip: 'Over {steepOver}° leaves little lumen ahead of the tip.' },
   missed: { end: false, cat: 'insertion', pts: 2, msg: 'Missed the vein', tip: 'Withdraw to just under the skin and redirect along the vein.' },
-  notLowered: { end: false, cat: 'insertion', pts: 3, msg: 'Angle not lowered after the flash', tip: 'On flash, drop to 10-15° before the last 1-2 mm.' },
+  notLowered: { end: false, cat: 'insertion', pts: 3, msg: 'Angle not lowered after the flash', tip: 'On flash, drop to {lowerMax}° or under before the last 1-2 mm.' },
   stoppedAtFlash: { end: false, cat: 'insertion', pts: 2, msg: 'Threaded at the first flash', tip: 'At first flash only the bevel is in: advance 1-2 mm so the catheter tip is too.' },
-  threadSteep: { end: false, cat: 'insertion', pts: 3, msg: 'Threading at a steep angle', tip: 'Thread at 10° or less, or the catheter meets the back wall.' },
+  threadSteep: { end: false, cat: 'insertion', pts: 3, msg: 'Threading at a steep angle', tip: 'Thread at {threadMax}° or less, or the catheter meets the back wall.' },
   tractionEarly: { end: false, cat: 'insertion', pts: 3, msg: 'Traction released before the vein was punctured', tip: 'Keep the skin anchored until the needle is in the vein: that is what stops it rolling.' },
   reinsert: { end: false, cat: 'insertion', pts: 4, msg: 'Needle pushed back into the catheter', tip: 'Never re-advance the needle into a threaded catheter: it can shear it.' },
   backWall: { end: true, cat: 'insertion', pts: 10, msg: 'Through the back wall', tip: 'After the flash, lower the angle before advancing.' },
   sideWall: { end: true, cat: 'insertion', pts: 10, msg: 'Out through the side wall', tip: 'Line the needle up with the vein before inserting.' },
-  doubleWall: { end: true, cat: 'insertion', pts: 10, msg: 'Through both walls of a flattened vein', tip: 'Too shallow flattens the vein: enter at 15-30°.' },
+  doubleWall: { end: true, cat: 'insertion', pts: 10, msg: 'Through both walls of a flattened vein', tip: 'Too shallow flattens the vein: enter at {pierceMin}-{pierceMax}°.' },
   arterial: { end: true, cat: 'insertion', pts: 15, msg: 'Arterial puncture', tip: 'A pulsing, bright flash is an artery: feel for the pulse before you mark.' },
   threadOutside: { end: true, cat: 'insertion', pts: 10, msg: 'Threaded with the tip outside the vein', tip: 'Thread only once the catheter tip is in the lumen.' },
-  bunched: { end: false, cat: 'insertion', pts: 5, msg: 'Catheter caught on the back wall', tip: 'Thread at 10° or less, and stop at resistance.' },
+  bunched: { end: false, cat: 'insertion', pts: 5, msg: 'Catheter caught on the back wall', tip: 'Thread at {threadMax}° or less, and stop at resistance.' },
   spill: { end: false, cat: 'securement', pts: 4, msg: 'Blood at the open port', tip: 'Close the clamp before the port is opened.' },
   tqWarn: { end: false, cat: 'time', pts: 0, msg: 'Tourniquet on over a minute', tip: '' },
   tqOver: { end: false, cat: 'time', pts: 5, msg: 'Tourniquet on too long', tip: 'Release the tourniquet within two minutes.' },
@@ -68,11 +81,11 @@ export const ERRORS = {
   syringeDirty: { end: false, cat: 'asepsis', pts: 4, msg: 'Syringe tip contaminated', tip: 'Keep the syringe tip off every surface but the port.' },
   capDirty: { end: false, cat: 'asepsis', pts: 4, msg: 'Cap contaminated', tip: 'Keep the cap off every surface but the port.' },
   flushClosed: { end: false, cat: 'securement', pts: 2, msg: 'Flushed against a closed clamp', tip: 'Open the clamp before you flush.' },
-  flushFast: { end: false, cat: 'securement', pts: 2, msg: 'Flushed faster than the catheter is rated for', tip: 'Keep the push under the rate printed on the port for its gauge.' },
-  flushSlow: { end: false, cat: 'securement', pts: 2, msg: 'Flushed too slowly', tip: 'Push steadily, at least 1 mL a second.' },
+  flushFast: { end: false, cat: 'securement', pts: 2, msg: 'Flushed faster than the line is rated for', tip: 'Keep the push under {rate} mL/s: the rate printed on the port for its gauge, or the vein\'s own limit where it is lower.' },
+  flushSlow: { end: false, cat: 'securement', pts: 2, msg: 'Flushed too slowly', tip: 'Push steadily, at least {minRate} mL a second.' },
   noBloodCheck: { end: false, cat: 'securement', pts: 3, msg: 'Flushed without checking for blood return', tip: 'Pull back on the syringe first: blood in it confirms the catheter is in the vein.' },
   sharpsLeft: { end: false, cat: 'sequence', pts: 4, msg: 'Needle not put in the sharps container', tip: 'The needle goes straight into the sharps container once it is out.' },
-  infiltration: { end: true, cat: 'securement', pts: 10, msg: 'Infiltration', tip: 'Swelling or blanching at the tip: stop, the catheter is out of the vein.' },
+  infiltration: { end: true, cat: 'securement', pts: 10, msg: 'Infiltration', tip: 'Swelling or blanching at the tip: stop. The catheter is out of the vein, or the vein is leaking round it: push no faster than it takes.' },
   disconnectOpen: { end: false, cat: 'securement', pts: 4, msg: 'Syringe off with the clamp open', tip: 'Close the clamp before you disconnect.' },
   portOpen: { end: false, cat: 'securement', pts: 5, msg: 'Port left uncapped', tip: 'Cap the port with a sterile Luer-lock cap.' },
 };
@@ -83,10 +96,18 @@ const CRITICAL = new Set(['clamp1', 'clamp3', 'tqoff']);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const D = Math.PI / 180;
 
+// the site's technique laid over the procedure: objects merged key by key, anything else replaced
+const over = (a, b) => {
+  if (!b || typeof b !== 'object' || Array.isArray(b) || !a || typeof a !== 'object') return b === undefined ? a : b;
+  const o = { ...a };
+  for (const k of Object.keys(b)) if (k[0] !== '_') o[k] = over(a[k], b[k]);
+  return o;
+};
 export function createAttempt(cfg, opts = {}) {
-  const P = cfg.procedure;
+  const site = typeof opts.site === 'string' ? opts.site : 'antecubital', S = cfg.sites?.[site] || {};
+  const P = over(cfg.procedure, S.technique);
   return {
-    cfg, P, mode: opts.mode || 'guided', site: opts.site || 'antecubital', gauge: String(opts.gauge || 20),
+    cfg, P, S, mode: opts.mode || 'guided', site, gauge: String(opts.gauge || 20),
     number: opts.number || 1,
     t: 0, step: 0, done: new Set(), log: [], errors: [], flags: [], ended: null, finished: false,
     prep: new Set(),
@@ -108,17 +129,41 @@ export function createAttempt(cfg, opts = {}) {
     dressing: { placed: false, ok: false, edges: [false, false, false, false] },
     syringe: { on: false, twist: 0, locked: false, dirty: false, vol: 0, lastT: 0, drawn: 0, blood: 0, checked: false, rate: 0, pushT: 0 },
     cap: { on: false, twist: 0, locked: false, dirty: false },
-    spill: 0, hematoma: 0, infiltration: 0,
+    spill: 0, hematoma: 0, infiltration: 0, pain: 0, flinched: false,
     pressure: { removed: false, gauze: false, held: 0, done: false },
     trace: [],
   };
 }
 
+/* ---- the site's limits and words ---------------------------------------------------------- */
+// the fastest a push may go through this line: the catheter's rating, or the vein's own limit
+// where that is lower (a hand vein: what CT power injection there may run at, too)
+export const rateLimit = (A) => Math.min(A.P.gauges[A.gauge].rateMLs, A.P.flush.veinMaxMLs ?? Infinity);
+// {name} in a step's or a tip's words, from this attempt's numbers
+export function fill(A, s) {
+  if (!s || !s.includes('{')) return s;
+  const v = { ...A.P.angles, rate: rateLimit(A), minRate: A.P.flush.minRateMLs, cathLen: A.P.needle.cathLenMM,
+    gauges: (A.S.gauges || Object.keys(A.P.gauges)).join(' or ') };
+  return s.replace(/\{(\w+)\}/g, (m, k) => (v[k] ?? m));
+}
+// an error as this site words it
+export function errorText(A, code) {
+  const e = { ...ERRORS[code], ...(A.S.errors?.[code] || {}) };
+  return { ...e, msg: fill(A, e.msg), tip: fill(A, e.tip) };
+}
+// a step as this site words it: { id, title, do, keys }
+export function stepText(A, i) {
+  const s = A.cfg.steps[i];
+  if (!s) return { title: 'Done', do: '', keys: [] };
+  const o = { ...s, ...(A.S.steps?.[s.id] || {}) };
+  return { ...o, do: fill(A, o.do) };
+}
+
 /* ---- the log, errors and step order ----------------------------------------------------- */
 function log(A, type, extra = {}) { A.log.push({ t: A.t, step: STEP_IDS[A.step], type, ...extra }); }
 export function addError(A, code, extra = {}) {
-  const e = ERRORS[code];
-  if (!e) return;
+  if (!ERRORS[code]) return;
+  const e = errorText(A, code);
   // a standing condition is logged once
   if (!extra.repeat && A.errors.some((x) => x.code === code)) return;
   A.errors.push({ t: A.t, code, step: STEP_IDS[A.step], ...e });
@@ -203,15 +248,22 @@ export function palpationCues(A, near) {
   return out;
 }
 /* The site: { veinId, lateral (mm, from the vein's centre), radius, depth, atValve, atJoin,
-   roll, fragility } — or null when the click is on no vein. Marking again replaces it. */
+   roll, fragility } and, where the room has measured them along the vein toward the heart,
+   valveAheadMM (to the next valve) and jointMM (to the first joint the catheter would cross; 0
+   on one), and nerve (over one) — or null when the click is on no vein. Marking again replaces it. */
 export function markSite(A, site) {
   const g = gate(A, 'palpate'); if (!g.ok) return g;
   if (A.done.has('clean')) addError(A, 'touchedClean');
   if (!site) { addError(A, 'siteOffVein', { repeat: true }); A.mark = null; return { ok: false, why: 'No vein under the mark.' }; }
-  const gauge = A.P.gauges[A.gauge];
+  const gauge = A.P.gauges[A.gauge], len = A.P.needle.cathLenMM;
   const reasons = [];
   if (Math.abs(site.lateral) > site.radius + 1.0) reasons.push('siteOffVein');
   if (site.atValve || site.atJoin) reasons.push('siteValve');
+  // the catheter runs on its whole length up the vein: a valve there stops it, a joint bends it
+  else if (site.valveAheadMM != null && site.valveAheadMM < len) reasons.push('valveAhead');
+  if (site.jointMM != null && site.jointMM < len) reasons.push('siteJoint');
+  if (site.nerve) reasons.push('siteNerve');
+  if (A.S.gauges && !A.S.gauges.includes(A.gauge)) reasons.push('gaugeLarge');
   if (2 * site.radius < gauge.minVeinMM) reasons.push('siteSmall');
   if (site.depth > A.P.maxDepthMM) reasons.push('siteDeep');
   A.mark = { ...site, reasons };
@@ -266,6 +318,25 @@ export function replaceKit(A) {
 
 /* ---- 5-10 the insertion -------------------------------------------------------------------- */
 const veinR = (A) => A.mark.radius * (1 + A.P.vein.tqSwell * A.tq.fill);
+// how far this vein rolls: its own looseness, and the site's (a hand vein on bone and tendon
+// under thin, loose skin slides further than one in the fat of the forearm)
+const rollOf = (A) => (A.mark.roll || 1) * (A.P.vein.mobility ?? 1);
+/* What the needle costs the patient. The skin is felt once; every millimetre drawn back or swept
+   sideways in the tissue (probing for the vein) is felt again — on the back of the hand, thin
+   skin over tendon and bone, about three times as much. Past the threshold the patient flinches
+   the limb away: a hand held firm (traction) stays put, a loose one takes the vein with it. */
+function hurt(A, x) {
+  const p = A.P.pain;
+  if (!p || x <= 0) return;
+  A.pain += x;
+  if (A.pain < p.flinchAt || A.flinched) return;
+  A.flinched = true;
+  addError(A, 'flinch');
+  const limb = A.S.subject === 'hand' ? 'hand' : 'arm';
+  if (A.mode !== 'assessment') A.flags.push({ t: A.t, msg: A.traction ? `Ouch: the patient flinched. The ${limb} was held.` : `Ouch: the patient pulled the ${limb} away.` });
+  if (!A.traction && !A.pierce.front) A.vein.dy = clamp(A.vein.dy + p.flinchMM * rollOf(A) * Math.sign(A.mark.lateral || 1), -A.P.vein.maxRollMM, A.P.vein.maxRollMM);
+  log(A, 'flinch', { pain: +A.pain.toFixed(2) });
+}
 export const needleDir = (A) => {
   const p = A.needle.pitch * D, y = A.needle.yaw * D;
   return [Math.cos(p) * Math.cos(y), Math.cos(p) * Math.sin(y), Math.sin(p)];
@@ -313,7 +384,7 @@ export function setTraction(A, on) {
     if (g.ok) complete(A, 'anchor');
   } else if (A.needle.inSkin && !A.pierce.front && !A.ended) {
     addError(A, 'tractionEarly');
-    A.vein.dy += (A.mark.roll || 1) * A.P.vein.rollOnReleaseMM * Math.sign(A.mark.lateral || 1);   // the vein drifts
+    A.vein.dy += rollOf(A) * A.P.vein.rollOnReleaseMM * Math.sign(A.mark.lateral || 1);   // the vein drifts
   }
   log(A, on ? 'tractionOn' : 'tractionOff');
 }
@@ -324,8 +395,9 @@ export function setYaw(A, deg) {
   if (n.inSkin && A.pierce.front) return;
   if (n.inSkin) {
     const d0 = needleDir(A), t = n.tip;
-    const E = [t[0] - n.s * d0[0], t[1] - n.s * d0[1], t[2] - n.s * d0[2]];
+    const E = [t[0] - n.s * d0[0], t[1] - n.s * d0[1], t[2] - n.s * d0[2]], y0 = n.yaw;
     n.yaw = clamp(deg, -90, 90);
+    hurt(A, n.s * Math.abs(n.yaw - y0) * D * A.P.pain.perMM);      // (the tip swept through the tissue)
     const d1 = needleDir(A);
     n.tip = [E[0] + n.s * d1[0], E[1] + n.s * d1[1], E[2] + n.s * d1[2]];
     A.pierce.indent = 0; A.vein.pushing = false;
@@ -363,7 +435,8 @@ export function advance(A, mm) {
       A.needle.inSkin = true; A.needle.yawAtEntry = A.needle.yaw; A.needle.tip = [0, A.mark.lateral, 0];
       log(A, 'skinEntry', { pitch: A.needle.pitch, yaw: A.needle.yaw });
       if (!A.done.has('clean')) addError(A, 'order', { repeat: true, skipped: 'clean', did: 'insert' });
-      else if (!A.clean.dry) addError(A, 'insertWet');
+      else if (!A.clean.dry) { addError(A, 'insertWet'); hurt(A, A.P.pain.skin); }     // (wet alcohol stings)
+      hurt(A, A.P.pain.skin);
       if (Math.abs(A.needle.yaw) > A.P.align.tolDeg) addError(A, 'misaligned');
     }
   }
@@ -378,6 +451,7 @@ export function advance(A, mm) {
       A.pierce.front = false; A.pierce.indent = 0; A.tip = 'outside'; A.cathTip = 'outside';
       break;
     }
+    if (moved < 0) hurt(A, -moved * A.P.pain.perMM);
     interact(A, moved);
     if (A.ended) break;
   }
@@ -414,7 +488,7 @@ function interact(A, ds) {
       const shallowS = incS < A.P.angles.pierceMin ? (incS / A.P.angles.pierceMin) ** 2 : 1;
       // (loose, it slides off about as fast as it is pushed — until it can go no further; held, hardly
       // at all. Only what the needle gains on it goes into the wall)
-      const roll = ds * (A.traction ? 0.1 : 1.1) * (A.mark.roll || 1) * (0.4 + 0.6 * inward);
+      const roll = ds * (A.traction ? 0.1 : 1.1) * rollOf(A) * (0.4 + 0.6 * inward);
       const dy0 = A.vein.dy;
       A.vein.dy = clamp(A.vein.dy - Math.sign(across) * roll, -P.maxRollMM, P.maxRollMM);
       const gain = Math.max(0, ds * d[1] * -Math.sign(across) - Math.abs(A.vein.dy - dy0));
@@ -436,7 +510,7 @@ function interact(A, ds) {
       A.vein.dz = Math.min(P.maxPushMM, q[2] - A.mark.depth);          // the wall follows the tip
       const push = ds * (1 - nIn) * P.pushPerMM / stiff;
       A.vein.flat = Math.min(0.9, A.vein.flat + push * P.flatPerMM / A.mark.radius * 2);
-      const roll = ds * (A.traction ? 0.15 : 1) * (A.mark.roll || 1) * P.rollPerMM * (1 - nIn)
+      const roll = ds * (A.traction ? 0.15 : 1) * rollOf(A) * P.rollPerMM * (1 - nIn)
         * (Math.abs(n.yaw) > 4 || Math.abs(across) > 0.5 ? 1 : 0.35);
       const away = -Math.sign(across || n.yaw || A.mark.lateral || 1);
       A.vein.dy = clamp(A.vein.dy + away * roll, -P.maxRollMM, P.maxRollMM);
@@ -525,6 +599,12 @@ export function thread(A, ticks = 1) {
     }
     if (!inLumen) { A.cath.resist++; continue; }
     if (!A.traction && A.vein.dy !== 0 && Math.abs(A.vein.dy) > veinR(A)) { A.cath.resist++; continue; }
+    // a valve ahead: the catheter's tip stops at it; pushed on, it is forced through
+    const v = A.mark.valveAheadMM;
+    if (v != null && !A.cath.pastValve && catheterTip(A)[0] + P.thread.tickMM > v) {
+      if (++A.cath.resist < P.thread.resistTicks) continue;
+      A.cath.pastValve = true; A.cath.resist = 0; addError(A, 'valveHit'); log(A, 'valveForced');
+    }
     A.cath.thread += P.thread.tickMM;
     const need = P.needle.cathLenMM - A.needle.s + P.needle.bevelToCathMM;
     if (A.cath.thread >= need) { A.cath.hubbed = true; log(A, 'hubbed'); complete(A, 'thread'); if (!A.done.has('flash')) complete(A, 'flash'); }
@@ -658,13 +738,17 @@ export function flush(A, ml, dtS) {
     s.pushT += dt; s.pushed = (s.pushed || 0) + pushed;
     const k = Math.min(1, dt / 0.3);
     s.rate = s.rate * (1 - k) + (pushed / dt) * k;
-    if (s.rate > A.P.gauges[A.gauge].rateMLs) addError(A, 'flushFast');
+    if (s.rate > rateLimit(A)) addError(A, 'flushFast');
   }
   const tipIn = A.cath.inVein && A.cath.hubbed && !A.pierce.back && !A.pierce.side;
-  if (!tipIn) {
-    A.infiltration += ml;
+  // a small, thin-walled vein pushed faster than it takes leaks round the catheter even with
+  // the tip in it: its share of what goes in grows with the overrun and the vein's fragility
+  // (extravasation is twice as common on the back of the hand as in the antecubital fossa)
+  const overrun = P.veinMaxMLs && tipIn ? Math.min(1, s.rate / P.veinMaxMLs - 1) : 0;
+  if (!tipIn || overrun > 0) {
+    A.infiltration += ml * (tipIn ? overrun * (A.mark.fragility ?? 0.5) : 1);
     if (A.infiltration >= P.infiltrationML) addError(A, 'infiltration');
-    return { ok: true, resist: true };
+    if (!tipIn || A.ended) return { ok: true, resist: true };
   }
   if (A.tq.on) addError(A, 'tqLeft');
   if (s.vol >= P.volumeML && !A.done.has('flush')) {
@@ -733,7 +817,7 @@ export function update(A, dt) {
   }
   // the vein drifts off an unanchored needle while it is in the skin
   if (A.needle.inSkin && !A.traction && !A.pierce.front && A.mark) {
-    A.vein.dy = clamp(A.vein.dy + Math.sign(A.mark.lateral || 1) * (A.mark.roll || 1) * 0.15 * dt, -P.vein.maxRollMM, P.vein.maxRollMM);
+    A.vein.dy = clamp(A.vein.dy + Math.sign(A.mark.lateral || 1) * rollOf(A) * 0.15 * dt, -P.vein.maxRollMM, P.vein.maxRollMM);
   }
   // a breached vein bleeds into the tissue
   if (A.pierce.back || A.pierce.side || A.pierce.artery) A.hematoma = clamp(A.hematoma + dt * (A.pierce.artery ? 0.25 : 0.12), 0, 1);
@@ -793,11 +877,13 @@ export function score(A) {
 export function debrief(A) {
   const s = score(A);
   const steps = STEP_IDS.map((id, i) => ({
-    id, title: A.cfg.steps[i].title,
+    id, title: stepText(A, i).title,
     t: A.log.find((e) => e.type === 'stepDone' && e.id === id)?.t ?? null,
     errors: A.errors.filter((e) => e.step === id).map((e) => e.msg),
   }));
   const byLoss = [...A.errors].filter((e) => e.tip).sort((a, b) => b.pts - a.pts);
   const tips = [...new Set(byLoss.map((e) => e.tip))].slice(0, 2);
-  return { score: s, steps, errors: A.errors, tips, trace: A.trace, flashAt: A.pierce.flashAt, ended: A.ended };
+  // (what the line will take: the contrast's flow rate on the injector may not go past it)
+  return { score: s, steps, errors: A.errors, tips, trace: A.trace, flashAt: A.pierce.flashAt, ended: A.ended,
+    rateLimit: rateLimit(A), pain: A.pain };
 }

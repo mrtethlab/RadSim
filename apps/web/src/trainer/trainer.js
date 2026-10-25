@@ -172,7 +172,7 @@ function stepHTML(view, S) {
   if (T.step === 'position') {
     return `<div class="tr-sec">
       ${slider('trRoll', 'Rotate <small>about the long axis</small>', -180, 180, 1, S.objRot.z, '°')}
-      ${slider('trTilt', 'Tilt <small>side to side</small>', -30, 30, 1, S.objRot.x, '°')}
+      ${slider('trTilt', 'Tilt <small>raise one end (a flexed knee raises the leg)</small>', -75, 75, 1, S.objRot.x, '°')}
       ${slider('trTurn', 'Turn <small>in the plane of the table</small>', -30, 30, 1, S.objRot.y, '°')}
       ${slider('trOffZ', 'Patient <small>along the table</small>', -55, 55, 0.1, S.objOff.z, ' cm')}
       ${slider('trOffX', 'Patient <small>across the table</small>', -55, 55, 0.1, S.objOff.x, ' cm')}
@@ -254,9 +254,9 @@ function limbTurn(rot = H.S.objRot) {
 
 /* THE SOLE ON THE RECEPTOR: the angle between the foot's long axis (the point midway between the
    malleoli to the base of the 3rd metatarsal, centring.json, through the pose) and the receptor,
-   signed (+ toes up). An AP or oblique foot is taken with the sole flat; this leg is straight on
-   the table and its foot rests plantarflexed, toes 17 degrees up, so the student lowers them:
-   by tilting the leg (as raising the knee does) or by plantarflexing further. */
+   signed (+ toes up). An AP or oblique foot is taken with the sole flat; the foot rests at 90
+   degrees to the leg, toes up, so the student lowers them: by raising the leg (tilt, as flexing
+   the knee does) and plantarflexing (the protocol's pose: tilt -57 with 30 of plantarflexion). */
 function soleAngle(rot = H.S.objRot) {
   const P = (n) => { const p = H.landmarkLocal(n); return p ? H.poseLoc(p) : null; };
   const a = P('intermalleolar'), b = P('mt3Base');

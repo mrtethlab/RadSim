@@ -3,36 +3,36 @@
   "lowerextremity": {
     "knee": {
       "x": 1.3,
-      "y": 4.76,
-      "z": -5.2,
+      "y": 4.81,
+      "z": -5.3,
       "how": "joint-space valley between the condyles and the plateau (prominence 14.1 cm2)",
       "confidence": "high"
     },
     "ankle": {
-      "x": 4.5,
-      "y": 1.54,
-      "z": -43.0,
+      "x": 4.95,
+      "y": 1.74,
+      "z": -43.4,
       "how": "peak of the malleolar bulge \u2014 the clinical centring point, midway between the malleoli; tibia and talus are fused in the segmentation, so there is no joint-space dip to find",
       "confidence": "medium"
     },
     "hip": {
       "x": -1.1,
-      "y": 1.04,
-      "z": 35.0,
+      "y": 1.09,
+      "z": 34.9,
       "how": "peak of the proximal bulge: femoral head and trochanters",
       "confidence": "medium"
     },
     "femur": {
       "x": 0.3,
-      "y": 1.65,
-      "z": 14.9,
+      "y": 1.7,
+      "z": 14.8,
       "how": "midway between the knee and hip landmarks",
       "confidence": "medium"
     },
     "foot": {
-      "x": 1.3,
-      "y": -6.2,
-      "z": -46.9,
+      "x": 5.45,
+      "y": 6.84,
+      "z": -46.8,
       "how": "tarsals, 3 cm above the inferior end (the sole of the foot at 90 degrees)",
       "confidence": "low"
     }

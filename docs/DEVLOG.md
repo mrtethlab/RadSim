@@ -6,7 +6,205 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-25
+
+### Twenty refinements across the modes — [#84](https://github.com/mrtethlab/RadSim/pull/84)
+**X-ray, foot and ankle.**
+- *Anatomical ankle:* `bake_pose --trim` took out what the leg's bake left (the foot rested 11° turned out and 10° inverted): every ankle slider now opens within 2° of 0. The Foot is cut again from it, its cut end domed.
+- *Views:* the AP and oblique foot lay the sole flat with the leg raised as a flexed knee does (protocol poses take a tilt), no longer approximate; new AP and oblique toes (CR to the 3rd MTP joint, found as the gap along the 3rd ray) and axial and lateral calcaneus (CR to the calcaneal body, measured). The foot and ankle protocols load the Foot.
+- *AP ankle:* an `ankle` LUT with latitude (equalisation, `core/equalise.js`): the foot standing end-on over the talus left 35 % of the film in the top tone band; now none.
+- the collimator's screen shows its rotation; the protocols' 35×43 receptors read 43×43; the Trainer's tilt raises one end, to 75°.
+
+**CT.** Ankle and Foot protocols, zeroed at the medial malleolus, load the Foot.
+
+**Fluoroscopy.** An ankle ORIF case on the Foot: a Weber B distal fibula (traced from the voxels, cut by a 55° plane) reduced with forceps under AP, mortise and lateral screening, judged to 2 mm and 5° with the screening used. A 0.035″ guidewire steered through the contrast solver's vessel tree, imaged by the beam (its path length through steel at each spectrum bin); the roadmap is now subtracted, vessels white and the wire black.
+
+**DXA.** The forearm (33 % radius of the non-dominant arm, the ulna measured on the volume, the intake's indications), and a precision assessment (RMS-SD, LSC = 2.77 × precision against ISCD minimums, from the learner's own repositioning) whose LSC the reports then use. It found two hip bugs: landmarks that did not follow the patient, and a coarse femoral-head search (neutral leg now reads 3 % higher, not 8 %).
+
+**Mammography.** CC and MLO positioning (pull, fold lift, C-arm angle, rotation, nipple roll) on a patient of her own build, and the film graded P/G/M/I by measuring it: PNL, pectoral muscle to the PNL, its border and angle, IMF, nipple in profile, cut-off, CC vs MLO PNL within 1 cm. The MLO now projects superomedial to inferolateral (it was geometrically an LMO).
+
+**Ultrasound.** Colour Doppler rebuilt as signal processing (ensembles, Kasai, wall filter, aliasing that wraps) and spectral PW Doppler (gate, angle correction, PRF capped by depth), with flow by vascular bed; a seat on the aorta reads PSV 53 / EDV 12 cm/s, RI 0.78.
+
+**IV.** The back of the hand with its own technique: 22–24 G at 10–15°, a mobile vein, pain on probing, valves, joint and nerve sites, and contrast capped at 1.5 mL/s.
+
+**Around the app.** A model that fails to load is said over the room with a retry; the local backend check stops after three misses; three.js and each room build into chunks of their own (the app core 257 kB).
+
+**Found, not yet fixed.** Much of the leg's talus is materialised as cartilage, and the malleoli, the ankle landmark and the ankle's pivot hung from it sit 2–3 cm below the tibial plafond (the AP and lateral ankle centre low). To re-measure with the ankle's materials.
+
+**Checked:** each feature in the running app and on the production build (every room opens clean); `npm test`: 272 pass, with each new test proved by reintroducing its bug.
+
+### A Foot model, cut from the lower extremity — [#83](https://github.com/mrtethlab/RadSim/pull/83)
+A new **Foot** subject: the foot and the distal third of the tibia and fibula, cut from the lower
+extremity, so a foot or ankle film loads a 4.8 MB volume instead of 50 MB.
+- `build_crop.py` cuts the shipped leg a third of the way from the ankle joint to the knee and records the shift into the crop's frame (`data/crops.json`).
+- `core/crops.js` derives the foot's ankle joint, landmarks, palpation and centring points from the leg's at load, keeping only what the box holds. A re-measured leg carries the foot with it.
+
+**Checked:** the voxels around the malleoli, the 5th metatarsal base and the ankle landmark are identical in the foot and the leg after the shift; the ankle bends about the ankle; a Foot exposure images normally. The new `crops.test.js` fails if the landmark frame is swapped.
+
+### X-ray room: bucky follows the tube, floating tabletop, turning collimator — [#82](https://github.com/mrtethlab/RadSim/pull/82)
+**Room.**
+- *Bucky:* it runs along its rails (the table's long axis, the wall stand's column) at 30 cm/s to follow the tube. The physics frame is the receptor's, so the tube and patient are placed relative to the bucky and exposures stay centred on it.
+- *Tabletop:* at the table, moving the patient moves the top with them, under the tube and bucky.
+- *Light field:* every room part casts shadows, so the field stops on what it hits instead of showing through the tabletop onto the base.
+- *AEC:* the selected chambers appear on the patient's skin as light-blue boxes.
+
+**Controls.**
+- a collimator rotation slider, 90° either way with a 5° detent at square; the light field (which had turned the wrong way), the exposed field, the Trainer's field checks and the collimator box itself turn together, the tube above it still;
+- receptors are 25×30 and 43×43 only (protocols that asked for 35×43 take 43×43);
+- grids are 8:1 or 12:1, focused at 115 or 180 cm, with the nearer focus picked on a room or protocol change;
+- SID limits are 80–130 cm at the table and 80–210 cm at the wall stand or over a free plate;
+- the room selector is three small icons in a row at the bottom right.
+
+At the table the SID is 100 cm against a 115 cm grid focus, so large fields show slight cut-off at their edges, more at 12:1.
+
+**Checked:** in the app (bucky tracking at the table and wall, the panning top, shadows over the base, AEC on the skin, collimator rotation, SID limits, an exposure with the bucky moved); `npm test`: 194 pass.
+
+### DXA: patient intake, a guided spine and hip exam, the Lunar table — [#81](https://github.com/mrtethlab/RadSim/pull/81)
+Bone densitometry gains an exam to work through, beside free scanning, and moves ahead of Mammography on the home page.
+- **Intake** (`dxaIntake.js`): a generated patient's questionnaire, each answer hidden until it is asked. The student accepts or delays; the scan must wait for possible pregnancy, barium within 14 days, iodinated contrast or nuclear medicine within 7, calcium taken today, or weight over the 159 kg table limit. Risk factors are never a reason to delay.
+- **Exam** (`dxaExam.js`):
+  - *AP lumbar spine:* centre the patient on the pad (they start 5–9 cm and 4–7° off), place the knee block, drive the laser to 1 in above the ASIS, scan;
+  - *left hip:* swap to the foot holder (feet in 20°), drive the laser to 2 in below the greater trochanter, scan.
+
+  SCAN says what is still missing.
+- **Results:** the answers drive the bone (menopause age, steroids, aromatase inhibitor or ADT, fragility fracture, smoking, low BMI). The report carries the history and is read on the lowest T-score.
+- **Room** (`dxaRoom.js`): a modelled Lunar Prodigy-style table (263 cm) with its pad, travelling arm, knee block and foot holder. The two photogrammetry tables (7 MB) are gone.
+- **Scan:** timed to the Prodigy spec (4.5° fan, 30 s per region). The arm steps 2.4 cm between overlapping passes and the image builds pass by pass; ×5 fast-forward for practice.
+- **Fixes:** the landmarks follow the patient along the table, and the laser is read in the table's frame.
+
+**Checked:** the full exam in the app, every gate and the delay feedback; `npm test`: 194 pass, with new tests on the delay rules, the bone model and the scan plan.
+
+### Fluoroscopy: joints, a modelled C-arm, a monitor cart — [#80](https://github.com/mrtethlab/RadSim/pull/80)
+**Joints in fluoroscopy.** Every joint slider (knee, ankle, elbow, wrist, neck, jaw) now works in fluoroscopy. The pose is made in the posing workers and handed to the pulse workers before their next pulse (`fluoro.js` `syncPose`); until then the monitor keeps the last pose. Fluoroscopy never poses on the main thread.
+
+**The C-arm.** The dark photogrammetry scan, with its loose fragments, is replaced by a modelled machine after the GE OEC 9800 / Elite (`carm.js`). Each part is posed by the machine's own joint chain, so nothing separates through orbital, tilt, flip-flop, lift, extend or wig-wag.
+- tilt now sits outside orbital, as on the real machine (`core/carmPose.js`), with a test holding the beam formula to the chain;
+- orbital is ±95° (it was ±115°), so the C never leaves its holder;
+- the column stands 125 cm from the beam axis; in the scan it stood inside the C.
+
+**Also in the room:**
+- a monitor cart past the foot of the table, showing the live and reference images with a status bar;
+- the patella rides the knee, keeping the patellar tendon at its rest length (about 0.75 of the flexion early, 0.6 at 90°), with a test on the tendon;
+- the staff-dose point stands by default at the C-arm's control head, about 1.6 m from the beam;
+- a carbon-fibre table on a pedestal at the foot, so the C reaches under it.
+
+**Speed.** Slider to new image went from 1.45 s to 0.7–0.8 s, including the 250 ms wait for the slider to settle:
+- handoff to the pulse workers is 50–100 ms, from about 550: they take only the patient's box (a 60° knee: 91 of 181 MB), transferred rather than copied;
+- the crease is solved by the Illinois method; a one-thread knee pose went from 890 to 690 ms, voxel for voxel the same;
+- the pool shares the plan's pass and folds in slabs with a halo. A test poses a two-joint limb both ways and fails, 119 voxels off, without the halo.
+
+**Checked:** live, a knee at 60° and a lateral C-spine with the jaw opened then the neck flexed 40°; `npm test`: 189 pass.
+
+### Open joint spaces, a new leg, the jaw, knee positioning — [#79](https://github.com/mrtethlab/RadSim/pull/79)
+**Joint spaces.** `joint_space.py` finds the gap between two bones on the CT, from curvature sheets between dense plates and label sheets between named bones. The sheets ride through the bake and are cut to a cartilage width at the end; the hand's joints are cut from their own measures. The PA hand, ankle mortise and C-spine laterals and obliques now show open joints.
+
+**Leg, arm and foot.**
+- the leg is now z035 (30 F, healthy young bone) at 1 mm, with textbook ankle and foot rolls;
+- the arm is rebuilt at 1 mm with seeded bone labels, its rolls following the epicondyles; the lateral forearm is landscape with the elbow at 90°;
+- *the foot is carried whole through the bake.* The bake turned only what lay below the ankle's plane, and this pointed foot had its heel above it, so the foot broke at the midfoot. Now markers in the bone give the forefoot's rigid turn, the whole foot turns by it about the talar dome, and the sole is squared to the tibia (20° of eversion corrected);
+- the ankle and foot skin is relaid without fins or ledges, and the hand that lay on the hip is cut away.
+
+**Jaw.** A "Mandible" slider for the open-mouth odontoid: a field joint hinged at the condyles that glides forward as it opens (`core/jointPose.js`), so the chin drops instead of pressing into the throat. Everything below stays still, including the laryngeal air column.
+
+**Knee.** The AP is at −23° and the lateral at −117° of roll, both measured on this leg; the femur views use the same. The Trainer gains "Knee · 2 views".
+
+**Checked:** films for every view, traced and in the app; skin renders from all sides; knee and ankle landmarks re-pinned to the bone; `npm test`: 184 pass.
+
+---
+
+## 2026-10-24
+
+### Room set-ups, a new tube, realistic modes, phones throughout — [#78](https://github.com/mrtethlab/RadSim/pull/78)
+**X-ray room set-up.** A Room panel picks Wall stand, Table or Free detector (the original room).
+- *Wall stand:* the room's physics frame is stood upright by one rotation, so the physics is unchanged. The SID defaults to 180 and the barium study goes erect.
+- *Table:* a floating tabletop with rails, a bucky tray and a pedestal.
+- *Real OID:* the tabletop (5 cm) and the stand's cover (3 cm) go through `restHeight()`, so their magnification and air gap are in the image and the readout.
+- *New tube:* ceiling-suspended on a telescoping column, with a touchscreen collimator showing the live field, SID and filter. Camera orbit, Tube POV, marker drag and palpation all work through the room frame.
+
+**Realistic X-ray / Realistic CT.** Two experimental home cards force the Python GPU engine, the High DR matrix and the realistic CT detector with every feature on. Online they are greyed out ("Local only") and on phones desktop-only; the engine, resolution and detector controls now appear only in these modes.
+
+**Phones.**
+- `touch-action:none` on the 3D view fixes rotate against page scroll on iOS, with pinch zoom and two-finger pan;
+- IV has a phone layout with a touch pad for traction, rotate and advance;
+- the Trainer opens on its chooser, and the tab bar no longer shows over the home screen.
+
+**Checked:** `npm test`: 182 pass, build clean; in the browser on desktop and a 375×812 phone.
+
+---
+
+## 2026-10-23
+
+### IV: fishing for a vein, side-wall entry, kinder rules, a real flush — [#77](https://github.com/mrtethlab/RadSim/pull/77)
+Changes to the IV mode from its first review.
+
+**Technique.**
+- *Fishing:* with the needle in the skin but short of the vein, Q/E turns it about the entry point, and it can be pulled back and advanced again.
+- *Side-wall entry:* with traction held the vein stays put; without it the vein rolls off as fast as it is pushed.
+- *Across the vein* is judged where the vein is punctured, so fishing can correct a bad entry. Traction is needed only until then.
+- *Kinder rules:* out-of-order steps cost points only when critical; the port cap can come off any time before the syringe; the Tegaderm passes when it covers the site and the catheter's wings.
+- *Bug fix:* a catheter already in the vein before the flash showed left the Flashback step unfinished and threading refused. Lowering the angle now completes it.
+
+**Look and feel.** A PosiFlush-style syringe in a tear-open sleeve, flushing half as sensitive to the mouse, glove fingertips, the angle as a number in Assessment, and, on harder difficulties, veins that come and go along their length so the path has to be found by touch. The camera eases between views.
+
+**Checked:** `npm test`: 182 pass; the fishing and flashback tests fail with the old behaviour back. The procedure was run in the browser.
+
+### IV placement: a new mode for peripheral IV cannulation — [#76](https://github.com/mrtethlab/RadSim/pull/76)
+A new **IV Placement** mode, after CT on the home page, built from the IV Simulation Mode design doc.
+- **Procedure:** 21 steps at three sites on the existing arm and hand models: the antecubital fossa, the radial forearm and the dorsal hand.
+- **Modes:** Guided (a checklist, out-of-order steps blocked), Practice (flagged live, scored at the end) and Assessment (no hints, pass/fail). Difficulty sets how much of the veins shows, down to palpation only.
+- **Catheters:** 20G, 22G and 24G.
+- **Prep table:** every supply, each opened in ministeps: the swab torn and drawn out, the IV pack peeled and its seal broken, the flush pouch torn open and the syringe uncapped, the spent needle into the sharps container.
+- **Insertion:** the vein tents, flattens and rolls under the needle. The angle must be 15–30° to pierce, then lowered to ≤10° once the flash shows to thread. Going across the vein (45° or more) fails the attempt; a steep thread catches on the back wall.
+- **Blood and flush:** blood backs up the extension set slowly past the needle and fast once it is out. The flush needs a pull-back first and is judged against the gauge's rated flow (3, 6.5 or 10 mL/s).
+- **Scoring:** the design doc's error table, out of 100, with a debrief, a timeline, an insertion trace and a cross-section cut along the needle.
+
+**Checked:** `npm test`: 177 pass, 31 for the IV engine, each new test failing with its bug put back; the full procedure run in the browser at all three sites.
+
+### Hand: anatomical soft tissue, and films that show it — [#75](https://github.com/mrtethlab/RadSim/pull/75)
+**Why.** The hand's soft tissue was a uniform shell on the skeleton (5 mm round every phalanx, 9.5 mm round the palm), so the fingers were waisted at every shaft and the palm as thin in front as behind. The extremity LUT's detail processing mapped the tissue into the bone's range, so the fingers read as bare bone.
+
+**The model** (`build_hand.py`):
+- the rays are found on the bone and each knuckle is snapped to the narrowest section near its joint gap;
+- the palm's cover is 18 / 10 / 6 mm palmar / side / dorsal, with a 22 mm thenar and 20 mm hypothenar;
+- the fingers follow their bones at about twice their width, taken from the user's adult reference films, and only narrow from the web to a round tip;
+- the border knuckles, which stood 1.1 and 0.75 cm proud on the lateral, are held within 3 mm of rays 2 and 3;
+- the wrist and forearm are ellipses on each slice, morphing into the palm over 25 mm;
+- layers of skin, fat, muscle and tendon.
+
+Fingers three bone-widths wide, and straight tubes about each finger, were tried with the user and rejected.
+
+**The film.** A new `hand` LUT for all 8 hand-model protocols, without DR detail processing (it smeared the cortex) and windowed so the finger envelope shows grey.
+
+**Checked:** DI −0.38 to +0.37 on the 8 protocols; the hand series passes at its ideal setup and the wrist series on positioning; landmarks and centring re-measured (the bones moved 6.8 mm in the new crop); `npm test`: 157 pass.
+
+---
+
 ## 2026-10-22
+
+### Joint posing across a pool of workers — [#74](https://github.com/mrtethlab/RadSim/pull/74)
+Follow-up to #73: a joint pose is now made by several CPU cores at once.
+- **Split:** `poseVolume` (`core/jointPose.js`) became a plan pass, independent output slices and the crease fold, so any split gives the same volume.
+- **Pool** (`core/poseWorker.js`): up to 6 workers on desktop, 2 on phones and iOS, handed 16 chunks each as they come free (at 3 a worker, the chunk holding the knee's crease took 0.9 s while the rest idled). No SharedArrayBuffer, which GitHub Pages cannot enable; with no worker the pose is made on the page as before.
+- **Bug fixed:** each worker now remembers which model it holds. After switching subject and back, a worker held the other model and the pose silently fell back to the page, freezing it.
+
+**Measured** in the app, one worker → six: lateral knee 1302 → 671 ms, knee 90° 2441 → 797 ms, AP foot 833 → 318 ms, neck 2261 → 683 ms, knee 90° plus ankle 6480 → 2498 ms. The volume is byte-identical to a single pass.
+
+**Checked:** `npm test`: 156 pass; a new test poses in 2, 5 or 9 chunks in any order and fails if a chunk's slices are misplaced.
+
+### Joint posing: 2–11× faster, posed ahead of the exposure — [#73](https://github.com/mrtethlab/RadSim/pull/73)
+**Why.** The first film of a bent joint took 2–4 s (lateral knee 3714 ms, AP foot 2960 ms), nearly all of it resampling the volume into the pose; the ray-cast is about 300 ms either way.
+
+**Fixes** (`core/jointPose.js`):
+- *Round-off bug:* a point a joint does not move came back as (p − c) + c, off in the last bit, so the whole proximal limb counted as moved and took the slow path. It now returns p itself.
+- *Faster paths:* rows outside the moved region are copied with their vacated stretches zeroed; inside it, only coarse cells holding moved tissue are searched; chains skip the crease solve beyond its reach; crease smoothing uses running sums.
+
+**Latency.** A pose is cached by its angles as applied, so a protocol's and the Trainer's identical poses share an entry. Posing starts as soon as the joints are known (a protocol picked, a Trainer view opened). The cache is capped at 480 MB, 160 MB on phones. `radsimQC.timing()` reports an exposure by phase.
+
+**Results.** Voxel for voxel the same on 12 poses. In Node, knee 25° 2253 → 993 ms and knee 45° plus ankle roll 40841 → 3697 ms. In the app, posing takes 1302 ms (lateral knee), 833 ms (AP foot) and 433 ms (lateral elbow), and the Trainer's ideal films are ready before the exposure.
+
+**Browser compatibility**, audited statically (run in Chromium only): WebGL 2 makes Safari 15 the floor, with everything working from Chrome 105, Firefox 121 and Safari 15.4. `dvh` gets a `vh` fallback, `-webkit-backdrop-filter` and a `color-mix()` fallback are added, and the phone cache budget covers every iPhone and iPad.
+
+**Checked:** `npm test`: 155 pass; the two new tests (an unmoved point comes back bit for bit, a roll keeps the tissue at its crease) fail with their fix reverted.
 
 ### Limb models, three new series, joint rolls and a neck — [#71](https://github.com/mrtethlab/RadSim/pull/71)
 **One patient, one part.** The arm and leg models are rebuilt from one healthy patient (z053) by `build_limbs.py`:

@@ -34,3 +34,22 @@ test('a crop whose box holds none of a joint gets no joints', () => {
   assert.equal(d.joints.toe, undefined);
   assert.deepEqual(d.palpation.toe, {});
 });
+
+test('the AP and oblique foot and toes lay the sole flat: the leg raised as a flexed knee does, on the Foot', async () => {
+  const JP = await import('../src/core/jointPose.js'), { eulerMatrix } = await import('../src/core/voxelPhantom.js');
+  const d = fresh(); applyCrops(crops, d);
+  const protocols = read('protocols'), all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections));
+  const chain = Object.values(d.joints.foot).map((j) => ({ ...j, motions: j.motions.map((m) => ({ ...m, axis: JP.axisToward(m.from || j.distal, m.toward) })) }));
+  const c = d.centring.foot, P = (n) => [c[n].x, c[n].y, c[n].z];
+  for (const proj of ['AP foot', 'Oblique foot', 'AP toes', 'Oblique toes']) {
+    const p = all.find((x) => x.proj === proj), D = Math.PI / 180;
+    assert.equal(p.subject, 'foot', proj);
+    // the foot's long axis (midway between the malleoli to the base of the 3rd metatarsal: the
+    // Trainer's soleAngle) through the bent ankle and the tilt and roll, against the receptor
+    const a = JP.forwardChain(P('intermalleolar'), chain, p.pose.joints), b = JP.forwardChain(P('mt3Base'), chain, p.pose.joints);
+    const R = eulerMatrix((p.pose.tilt || 0) * D, 0, (p.pose.roll || 0) * D), v = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const up = R[3] * v[0] + R[4] * v[1] + R[5] * v[2];
+    const sole = Math.asin(up / Math.hypot(...v)) / D;
+    assert.ok(Math.abs(sole) < 2, `${proj}: the sole ${sole.toFixed(1)} degrees off the receptor`);
+  }
+});

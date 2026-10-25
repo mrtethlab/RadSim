@@ -161,6 +161,36 @@ def lower_extremity():
         c = np.array([x[sel].mean(), y[sel].mean(), z[sel].mean()]) - 2.0 * u
         out['medialCuneiform'] = pt(c, 'the base of the 3rd metatarsal less 2 cm along the foot (toward the heel): the cuneiforms',
             'Lateral (mediolateral) foot: CR perpendicular to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager)')
+        # the 3rd metatarsophalangeal joint: along the 3rd ray (the middle fifth of the foot's width
+        # at each step down its axis) the bone thins to a gap between the metatarsal head and the
+        # proximal phalanx, 65-85 % of the way to the tip of the toes (the phalanges beyond it are
+        # 3-4 cm, a 3rd toe's length)
+        step = 0.25
+        edges = np.arange(0.65 * L, 0.85 * L, step)
+        def ray(a):
+            band = (t >= a) & (t < a + step); xb = x[band]
+            if len(xb) < 5:
+                return None, 0
+            sel = band.copy(); sel[band] = (xb >= np.percentile(xb, 40)) & (xb <= np.percentile(xb, 60))
+            return sel, int(sel.sum())
+        counts = [ray(a)[1] for a in edges]
+        a = edges[int(np.argmin(ndi.uniform_filter1d(np.array(counts, float), 3)))]
+        sel = ray(a)[0]
+        if sel is not None:
+            out['mtp3Joint'] = pt([x[sel].mean(), y[sel].mean(), z[sel].mean()],
+                f'the gap along the 3rd ray between the metatarsal head and the proximal phalanx, {a / L * 100:.0f} % of the way to the tip of the toes',
+                'AP toes: CR 10-15 degrees toward the heel to the 3rd MTP joint (all toes); AP oblique toes: CR perpendicular to it (Bontrager; Radiopaedia)')
+    # the calcaneus: the textbook's point 2.5 cm below the medial malleolus is the surface rule for
+    # its body; measured, straight down from this malleolus is soft tissue (the heel lies behind).
+    # The body itself: the bone behind the ankle (posterior of the point midway between the
+    # malleoli) and below the medial malleolus, its centroid
+    k, j, i = np.nonzero(V.bone)
+    X, Y, Z = (i - (V.n[0] - 1) / 2) * V.sp[0], (j - (V.n[1] - 1) / 2) * V.sp[1], (k - (V.n[2] - 1) / 2) * V.sp[2]
+    heel = (Y < mid[1] - 0.5) & (Z < mm[2]) & (Z > mm[2] - 6)
+    if heel.any():
+        out['calcaneus'] = pt([X[heel].mean(), Y[heel].mean(), Z[heel].mean()],
+            'the bone behind the ankle and below the medial malleolus, its centroid: the body of the calcaneus',
+            'Lateral calcaneus: CR perpendicular to a point 2.5 cm inferior to the medial malleolus (the calcaneal body); axial (plantodorsal) calcaneus: CR 40 degrees cephalad to the long axis of the foot (Bontrager)')
     return out
 
 

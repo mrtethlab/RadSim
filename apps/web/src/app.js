@@ -31,6 +31,7 @@ import centringData from './data/centring.json';
 import palpationData from './data/palpation.json';
 import cropData from './data/crops.json';
 import { applyCrops } from './core/crops.js';
+import { boxBlurMasked, latitudeImage } from './core/equalise.js';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
@@ -42,7 +43,7 @@ import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './ma
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
 import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
 import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR } from './room.js';
-import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay } from './dxa.js';
+import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay, dxaMirror } from './dxa.js';
 import { initDxaExam, dxaExamMode } from './dxaExam.js';
 // models cut from another (the foot from the lower extremity) take its measured points
 applyCrops(cropData, { joints: jointData, landmarks: landmarkData, centring: centringData, palpation: palpationData });
@@ -379,8 +380,20 @@ function prepVoxelMesh(grp, translucent){
    different patients. Every call takes a ticket; a load that finishes behind a newer ticket
    is still cached, but it does not become the subject. */
 let subjectReq=0;
+/* Say a model did not load, over the room, with a retry: a fetch that fails outright is the server
+   or the connection (the dev server stopped, a dropped network), not the model. */
+function loadFailed(title, err, retry){
+  const box=$('loadErr'); if(!box) return;
+  const net=(err instanceof TypeError) || /failed to fetch|networkerror|load failed/i.test(err?.message||'');
+  $('loadErrMsg').textContent=`${title} did not load: `
+    +(net ? 'the server did not answer. Check the connection (or that the app is still running), then retry.' : (err?.message||'unknown error')+'.');
+  box.hidden=false;
+  $('loadErrRetry').onclick=()=>{ box.hidden=true; retry(); };
+  $('loadErrClose').onclick=()=>{ box.hidden=true; };
+}
 async function setSubject(sub){
   const req=++subjectReq;
+  const le=$('loadErr'); if(le) le.hidden=true;
   const sel=$('subjectSel'); const hint=$('subjectHint');
   S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
   const showActive=(id)=>{ for(const k in three.voxelMeshes) three.voxelMeshes[k].visible=(k===id);
@@ -393,7 +406,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:43};
+      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:43, upperextremity:38};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -426,7 +439,8 @@ async function setSubject(sub){
         applyPhotoSkin();
       }
     }catch(err){ console.error(sub+' load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
-      if(sel) sel.value=S.subject; return; }
+      if(sel) sel.value=S.subject; if(req===subjectReq) loadFailed(cfg.title, err, ()=>{ if(sel) sel.value=sub; setSubject(sub); });
+      return; }
     finally{ if(req===subjectReq) S.subjectLoading=false; }
   }
   if(req!==subjectReq) return;          // a newer request has been made: this one is only cached
@@ -1033,6 +1047,14 @@ const S = {
        // Colour Doppler: the box, and the PRF that sets how fast a flow can be before
        // the phase wraps and the jet comes back the wrong colour.
        dop:false, prf:3000, dopY:0.42, dopH:0.4, dopW:0.5,
+       // ...steered (linear only), placed across the fan, and processed: colour gain is a
+       // power threshold, the wall filter a high-pass in Hz, the baseline slides the window,
+       // and write priority (% grey) keeps colour off echogenic tissue
+       dopX:0.5, steer:0, cGain:0, cWall:100, cBase:0, cInv:false, cPri:60,
+       // Spectral (PW) Doppler — disp 'pw': the gate (line, depth cm, length mm), the
+       // angle-correction cursor (deg), and the trace's PRF, baseline, filter, gain, sweep (s)
+       pwLine:0.5, pwDepth:8, pwGate:3, pwAngle:60, pwPrf:4000, pwBase:0, pwWall:100, pwGain:0,
+       pwSweep:4, pwInv:false,
        live:true },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
@@ -1270,6 +1292,7 @@ const ROLLED_180 = new Set(['chestabdopelvis','headneck']);
 function voxelFlips(){
   const f = S.mode==='ct' ? [false,true,true] : [true,true,false];
   if(ROLLED_180.has(S.subject)){ f[0]=!f[0]; f[1]=!f[1]; }
+  if(S.mode==='dxa' && dxaMirror()) f[0]=!f[0];   // DXA's left forearm: the right arm, mirrored (dxa.js)
   return f;
 }
 /* LEG ROTATION. Turning the legs is not a roll of the patient: the pelvis stays where it is and
@@ -1865,7 +1888,7 @@ function syncScene(){
   three.key.intensity = on ? 0.5 : 0.9;
   three.cr.visible = !on;                       // crosshair now comes from the lamp
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
-  updateDetector();                             // receptor size (25x30 / 35x43)
+  updateDetector();                             // receptor size (25x30 / 43x43)
   // AEC chamber overlay: x-ray mode + AEC on; selected cells fill, others outline only
   if(three.aecGroup){
     three.aecGroup.visible = S.mode!=='ct' && S.aecOn;
@@ -1961,7 +1984,8 @@ function updateCookie(){
 function updateCollimatorLCD(){
   const L=three.collLCD; if(!L) return;
   const fx=(S.collX||0).toFixed(1), fz=(S.collZ||0).toFixed(1), sid=Math.round(S.sid||100);
-  const k=fx+'x'+fz+'@'+sid; if(k===L.last) return; L.last=k;
+  const r=S.collRot||0, rot=r===0 ? '0°' : Math.abs(r)+'° '+(r>0?'CW':'CCW');   // as the panel's readout
+  const k=fx+'x'+fz+'@'+sid+'/'+r; if(k===L.last) return; L.last=k;
   const g=L.cv.getContext('2d'), W=L.cv.width, H=L.cv.height;
   const grad=g.createLinearGradient(0,0,0,H); grad.addColorStop(0,'#0e2236'); grad.addColorStop(1,'#08131f');
   g.fillStyle=grad; g.fillRect(0,0,W,H);
@@ -1970,7 +1994,7 @@ function updateCollimatorLCD(){
   g.textAlign='right'; g.fillStyle='#5fe08a'; g.fillText('Ready',W-20,35);
   g.textAlign='center'; g.fillStyle='#ffffff'; g.font='bold 58px Arial';
   g.fillText(fx+' × '+fz,W/2,138);
-  g.fillStyle='#8fb3cc'; g.font='24px Arial'; g.fillText('cm field',W/2,172);
+  g.fillStyle='#8fb3cc'; g.font='24px Arial'; g.fillText('cm field  ·  rotation '+rot,W/2,172);
   g.fillStyle='#1d3b57'; g.fillRect(16,200,W/2-24,84); g.fillRect(W/2+8,200,W/2-24,84);
   g.fillStyle='#8fb3cc'; g.font='22px Arial'; g.fillText('SID',W/4+4,232); g.fillText('Filter',W*3/4-4,232);
   g.fillStyle='#ffffff'; g.font='bold 32px Arial'; g.fillText(sid+' cm',W/4+4,270); g.fillText('0 mm Cu',W*3/4-4,270);
@@ -1993,9 +2017,9 @@ const WALL_Q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().se
    them. A free plate, and every other mode, has no bucky: BK is zero. */
 const B0={x:0,z:0};
 function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }
-const BUCKY_SPEED=30;
-const COLL_ROT_DETENT=5;
-const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider                    // deg: the collimator clicks into square within this of 0                       // cm/s, the motor's
+const BUCKY_SPEED=30;                       // cm/s, the motor's
+const COLL_ROT_DETENT=5;                    // deg: the collimator clicks into square within this of 0
+const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider
 let buckyRaf=0, buckyLast=0;
 function buckyTarget(){ return { x:0, z:S.tubeZ }; }  // the rails run one way: along z (up the column at the wall)
 function buckyFollow(){
@@ -2890,7 +2914,8 @@ function renderRadiograph(target,entry){
   // skin as a bright rim and laid a sheen over the bone) shows its plain tones
   const plain = entry? entry.plain : S.imgPlain;
   const enhOn=(_t.eOn!==undefined)?_t.eOn:(S.detailEnh && !plain);
-  const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : null;
+  const lat=!entry && S.lut?.latitude;
+  const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : lat ? activeLatitude(sig,nx,ny,mask,mx,lat) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -2981,21 +3006,6 @@ function computeRescale(sig,mask,nx){
    masked box blurs, then recombine with per-band gains (mid boosted, fine gentle).
    Radii scale with the matrix so the effect is resolution-independent. Runs once
    per acquired image (cached on the signal ref), never per window/level change. */
-function boxBlurMasked(src,mask,nx,ny,r){
-  if(r<1) return src.slice();
-  const tmp=new Float32Array(nx*ny), out=new Float32Array(nx*ny);
-  for(let y=0;y<ny;y++){ const row=y*nx; let sum=0,cnt=0;
-    for(let x=0;x<r&&x<nx;x++){ if(mask[row+x]){sum+=src[row+x];cnt++;} }
-    for(let x=0;x<nx;x++){ const add=x+r; if(add<nx&&mask[row+add]){sum+=src[row+add];cnt++;}
-      const rem=x-r-1; if(rem>=0&&mask[row+rem]){sum-=src[row+rem];cnt--;}
-      tmp[row+x]= cnt? sum/cnt : src[row+x]; } }
-  for(let x=0;x<nx;x++){ let sum=0,cnt=0;
-    for(let y=0;y<r&&y<ny;y++){ const k=y*nx+x; if(mask[k]){sum+=tmp[k];cnt++;} }
-    for(let y=0;y<ny;y++){ const add=y+r; if(add<ny&&mask[add*nx+x]){sum+=tmp[add*nx+x];cnt++;}
-      const rem=y-r-1; if(rem>=0&&mask[rem*nx+x]){sum-=tmp[rem*nx+x];cnt--;}
-      out[y*nx+x]= cnt? sum/cnt : tmp[y*nx+x]; } }
-  return out;
-}
 function processImage(sig,nx,ny,mask,mx){
   const _t=(typeof window!=='undefined'&&window.__tune)||{};
   const a=40, denom=Math.log(1+a);
@@ -3018,6 +3028,10 @@ function processImage(sig,nx,ny,mask,mx){
 function activeProcessed(sig,nx,ny,mask,mx){
   if(!S._proc || S._proc.sig!==sig) S._proc={sig, data:processImage(sig,nx,ny,mask,mx)};
   return S._proc.data;
+}
+function activeLatitude(sig,nx,ny,mask,mx,lat){
+  if(!S._lat || S._lat.sig!==sig || S._lat.lat!==lat) S._lat={sig, lat, data:latitudeImage(sig,nx,ny,mask,mx,lat)};
+  return S._lat.data;
 }
 /* Apply auto-rescale (VOI stretch) to a base tone, using the given window. */
 function rescaleTone(x,rs){
@@ -3274,14 +3288,21 @@ function landmarkLocal(subject, name){
   const f = voxelFlips();                                          // the same flips the phantom uses
   return [f[0] ? -lm.x : lm.x, f[1] ? -(lm.y || 0) : (lm.y || 0), f[2] ? -lm.z : lm.z];
 }
-const OFF_LIMIT = 55;
-const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
+const OFF_LIMIT = 55;                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
+const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm
 // dev server only: try a protocol pose from the console (roll, joints, centring), as applyProtocol would
 if (import.meta.env?.DEV) window.__applyPose = (pose) => { applyPose(pose); syncScene(); };
+// (and a whole protocol by its projection's name, as the picker applies it)
+if (import.meta.env?.DEV) window.__protocol = (proj) => new Promise((done) => {
+  const g = protocolData.groups.find((g) => g.regions.some((r) => r.projections.some((p) => p.proj === proj)));
+  applyProtocol(findProtocol(g.part, proj), g.part, done);
+});
 function applyPose(pose){
   const note = $('protocolPose');
   if (!pose) { if (note) note.textContent = ''; return; }
-  S.objRot = { x: 0, y: 0, z: pose.roll || 0 };
+  // (tilt: the limb raised off the table about the cross axis, + knee down; a foot taken sole-flat
+  // raises the leg as a flexed knee does: -57 with the ankle plantarflexed 30 lays this one flat)
+  S.objRot = { x: pose.tilt || 0, y: 0, z: pose.roll || 0 };
   S.legRot = pose.legs || 0; syncLegRotUI();
   S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg
   prepareJointVolume();                                     // its pose, made while the room is set
@@ -3302,7 +3323,7 @@ function applyPose(pose){
   }
   // the controls show what the protocol did, so the operator can see and change it
   const setSl = (id, v, label) => { const el = $(id); if (el) el.value = v; const t = $(id + 'v'); if (t) t.textContent = label; };
-  setSl('objRotX', 0, '0°'); setSl('objRotY', 0, '0°'); setSl('objRotZ', S.objRot.z, S.objRot.z + '°');
+  setSl('objRotX', S.objRot.x, S.objRot.x + '°'); setSl('objRotY', 0, '0°'); setSl('objRotZ', S.objRot.z, S.objRot.z + '°');
   setSl('objOffX', S.objOff.x.toFixed(1), S.objOff.x.toFixed(1) + ' cm');
   setSl('objOffZ', S.objOff.z.toFixed(1), S.objOff.z.toFixed(1) + ' cm');
   for (const id of ['tubeX', 'tubeZ', 'angLM']) { const el = $(id); if (el) el.value = 0; }
@@ -3663,6 +3684,7 @@ function wireBackendToggles(){
           if(h) h.textContent='Python backend not found at '+compute.base+' — run start-radsim.bat, then click again.';
           return;
         }
+        if(!computePolling) startComputePoll();      // found after the poll gave up: watch it again
       }
       setBackend(mode,b.dataset.be);
     });
@@ -4296,15 +4318,21 @@ function greyRealisticCards(){
     }
   });
 }
+// (each miss is a failed request the browser logs, a line a minute for as long as the page was
+// open: three misses in a row and the backend is taken as not running; the Python button's click
+// still probes for one started later, and a found backend is watched again)
+const COMPUTE_GIVE_UP=3;
 function startComputePoll(){
   if(!COMPUTE_LOCAL) return;
   let fails=0;
   const tick=async()=>{
     if(!document.hidden){ const ok=await refreshComputeStatus(); fails=ok?0:fails+1; }
-    setTimeout(tick, fails ? Math.min(60000, 5000*2**Math.min(fails,4)) : 5000);
+    if(fails>=COMPUTE_GIVE_UP){ computePolling=false; return; }
+    setTimeout(tick, fails ? 5000*2**fails : 5000);
   };
-  tick();
+  computePolling=true; tick();
 }
+let computePolling=false;
 
 /* ---- boot ---- */
 window.addEventListener('load',()=>{
@@ -4312,6 +4340,7 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); }, setRealistic,
+           setSubject: (s) => setSubject(s),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram, contrastLatch: ctrstLatch,

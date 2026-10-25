@@ -50,7 +50,33 @@ export const REGIONS = {
      trochanter, then the trochanter, neck, head and a little acetabulum above it. */
   hipL:  { label: 'Left hip',        wx: 12, wz: 12 },
   hipR:  { label: 'Right hip',       wx: 12, wz: 12 },
+  /* THE FOREARM runs the same way, from its mark up the limb: the cross an inch distal of the
+     ulnar styloid, the sweep toward the elbow. The styloid has to be IN the picture — it is what
+     the region is measured from — and with the mark a centimetre out a laser 1.4 cm proximal
+     cut it off, well inside the 2 cm the console calls on the mark. An inch keeps it in. Above it
+     the one-third site sits a third of the forearm up (8-9 cm on an adult) under a 2 cm region,
+     so 16 cm holds it with the laser 2 cm distal. 10 cm across takes both bones and the soft
+     tissue either side of them. */
+  forearmL: { label: 'Left forearm',  wx: 10, wz: 16 },
+  forearmR: { label: 'Right forearm', wx: 10, wz: 16 },
 };
+export const isForearm = (region) => region === 'forearmL' || region === 'forearmR';
+/* Which subject a site is scanned on. The spine and both hips are the chest-abdomen-pelvis volume;
+   the forearm is the upper extremity, which carries the radius and ulna whole — the torso volume
+   stops at the forearms' middle, with no wrist and no elbow to measure between. */
+export const subjectFor = (region) => (isForearm(region) ? 'upperextremity' : 'chestabdopelvis');
+/* The reference curve a study is drawn against: the spine's, the total hip's, or the radius's. */
+export const chartSite = (region) => (isForearm(region) ? 'radius33' : region === 'spine' ? 'spine' : 'hip');
+/* THE LEFT FOREARM IS THE RIGHT ONE MIRRORED. The shipped upper extremity is a RIGHT arm — with
+   its shoulder superior (+z) and its olecranon posterior (+y), the bone away from the torso lies
+   at -x, which is superior x posterior: a right arm, whatever the build called it. ISCD scans the
+   NON-dominant forearm, which for most patients is the left, so the left is made the only way one
+   arm can become the other: a mirror across the sagittal plane. To a projection through a forearm
+   that is exact — a left forearm IS a right one reflected, to within the patient's own asymmetry.
+   app.js's voxelFlips() asks this, so the traced volume and the mesh on the table agree. */
+export function dxaMirror() {
+  return !!D && D.region === 'forearmL' && ctx?.S.subject === 'upperextremity';
+}
 
 /* WHERE THE LUMBAR SPINE IS, FOUND RATHER THAN ASSUMED.
    Phase A parked the window a fixed offset from the volume's centre and landed on the
@@ -63,14 +89,18 @@ export const REGIONS = {
    midline: two humps with a trough, and the trough IS the lumbar level. The same profile
    gives the iliac crest — the top of the pelvic hump — which is the landmark a
    technologist actually uses, since the L4-L5 disc sits at the crest. */
-let landmarks = null, landmarksFor = null;
+let landmarks = null, landmarksFor = null, landmarksData = null;
 /* Cached per subject and leg rotation (turning the leg moves the greater trochanter), measured
    on the volume and carried to wherever the patient now lies on the table: the long-axis
    landmarks move with the patient's offset (the operator slides the patient between the
    lines), the lateral ones are from the patient's own midline. */
 export function findLandmarks(ph) {
-  const key = `${ctx.S.subject}|${D?.legRot || 0}`;
-  if (!(landmarks && landmarksFor === key)) { landmarks = measureLandmarks(ph); landmarksFor = key; }
+  // (the volume itself is part of the key: a posed volume is a new array, and the tests pose
+  // the legs with no console to say which angle they are at)
+  const key = `${ctx?.S.subject}|${D?.legRot || 0}`;
+  if (!(landmarks && landmarksFor === key && landmarksData === ph.data)) {
+    landmarks = measureLandmarks(ph); landmarksFor = key; landmarksData = ph.data;
+  }
   const dz = ph.min[2] - landmarks.min2;
   if (!dz) return landmarks;
   const sh = (t) => (t ? { ...t, zCm: t.zCm + dz } : t);
@@ -182,6 +212,31 @@ function findTrochanters(ph, aOf, crestZ, dirSup) {
       }
     }
     if (!best.r) continue;
+    /* THEN AT FULL RESOLUTION. The coarse search steps two voxels, so the head's centre could
+       only land on every other voxel — and keeping the first sphere of the largest radius it met
+       made it jump between neighbours as the leg turned a degree. The neck region is anchored on
+       that centre: a 4 mm jump moved femoral-neck BMD 10 % between 19 and 21 degrees of turn-in,
+       which the precision assessment read as a 4.6 % neck precision no technologist could fix.
+       A ball is not a point anyway: every centre that fits the largest sphere is equally the head's
+       centre, so search the neighbourhood voxel by voxel and take the middle of all of them. */
+    const ballR = (x, y, z) => {
+      if (!isBone(x, y, z)) return 0;
+      let r = 1;
+      for (; r < 16; r++) {
+        if (!isBone(x + r, y, z) || !isBone(x - r, y, z) || !isBone(x, y + r, z)
+          || !isBone(x, y - r, z) || !isBone(x, y, z + r) || !isBone(x, y, z - r)) break;
+      }
+      return r;
+    };
+    let top = 0, cx = 0, cy = 0, cz = 0, cn = 0;
+    for (let z = best.z - 3; z <= best.z + 3; z++) for (let y = best.y - 3; y <= best.y + 3; y++) {
+      for (let x = best.x - 3; x <= best.x + 3; x++) {
+        const r = ballR(x, y, z);
+        if (r > top) { top = r; cx = cy = cz = cn = 0; }
+        if (r === top) { cx += x; cy += y; cz += z; cn++; }
+      }
+    }
+    if (cn) best = { r: top, x: cx / cn, y: cy / cn, z: cz / cn };
     const headZ = (best.z + 0.5) * vs[2] + ph.min[2];
     // the shaft, six centimetres below the head, is what the laser lines up with
     const zs = Math.round(best.z - dirSup * 6 / vs[2]);
@@ -242,6 +297,15 @@ const HA_FRACTION = 0.65;
    patient's would. The raw number is printed alongside on the report so nothing is
    hidden by it. */
 export const CAL = 0.40;
+/* THE FOREARM'S OWN. The constant above corrects the torso volume's segmentation, not the
+   machine, so it cannot carry over to a different volume, and applied to the arm it read the
+   one-third radius at 0.37 g/cm2 — T -5.4 on a skeleton with nothing wrong with it. The arm is
+   1 mm CT over a cortex about 2.5 mm thick, and the blur thickens it: the raw one-third radius
+   is 0.92 g/cm2 against a population that peaks at 0.694. The cross-calibration is done the
+   same way as the spine's — set so the full-mineral forearm reads like the healthy young adult
+   it is (T +0.4, beside the spine's +0.54) — and the raw value rides on the report as well. */
+export const CAL_FOREARM = 0.79;
+export const calFor = (region) => (isForearm(region) ? CAL_FOREARM : CAL);
 
 /* Mass attenuation of the two BASIS materials, cm2/g. The solve is stated in areal
    density (g/cm2), so these must be mass coefficients, not linear ones. */
@@ -278,7 +342,7 @@ export function boneEquivById() {
    the detector in the head moving together. The femur's field is half the spine's length and
    is run in the same 30 s: half as many passes, each swept at half the speed.
    The picture builds the same way: one band of rows per pass, filled across as the fan sweeps. */
-export const SCAN = { STEP_CM: 2.4, SITE_S: { spine: 30, hipL: 30, hipR: 30 }, MOVE_S: 0.78 };   // (the step sound's length)
+export const SCAN = { STEP_CM: 2.4, SITE_S: { spine: 30, hipL: 30, hipR: 30, forearmL: 30, forearmR: 30 }, MOVE_S: 0.78 };   // (the step sound's length)
 export function scanPlan(region) {
   const reg = REGIONS[region] || REGIONS.spine;
   const passes = Math.max(1, Math.round(reg.wz / SCAN.STEP_CM));
@@ -286,10 +350,12 @@ export function scanPlan(region) {
 }
 let scanClock = null;            // the running scan's timing (null when idle)
 
-export function acquire(onRow, onDone, onPass) {
-  const ph = ctx.buildPhantom?.();
-  if (!ph || ph.geometryOnly) { setStatus('This subject has no browser volume to scan.'); return; }
-  const reg = REGIONS[D.region] || REGIONS.spine;
+/* THE FIELD AND ITS RAYS, set up once and then traced a row at a time. acquire() spreads the rows
+   over animation frames behind the moving arm; scanNow() traces them all at once, for the
+   precision exercise's repeat scans. One tracer for both, so the repeats measure exactly what a
+   scan the operator watches would have measured. */
+function setupScan(ph, st) {
+  const reg = REGIONS[st.region] || REGIONS.spine;
   const nx = Math.max(8, Math.round(reg.wx / PX_CM));
   const nz = Math.max(8, Math.round(reg.wz / PX_CM));
   const lo = new Float32Array(nx * nz), hi = new Float32Array(nx * nz);
@@ -301,7 +367,8 @@ export function acquire(onRow, onDone, onPass) {
   const MIN_A = 0.35;              // g/cm3 of bone-equivalent below which it is not bone
   // BONE LOSS lives here: it scales the MINERAL, so both the attenuation and the truth
   // move together. Scaling only the image would be a lie the report could not detect.
-  const keep = 1 - (D.loss || 0);
+  // (a forearm can have lost more than the rest: hyperparathyroidism takes cortex first)
+  const keep = 1 - Math.min(0.6, (st.loss || 0) + (isForearm(st.region) ? st.faLoss || 0 : 0));
 
   /* THE WINDOW IS WHERE THE OPERATOR PUT THE LASER. It used to be placed on the anatomy
      automatically, which meant the study could not be mispositioned and the pad would have
@@ -310,22 +377,98 @@ export function acquire(onRow, onDone, onPass) {
      from the ASIS to T11, the femur from two inches below the trochanter to the acetabulum.
      Drive the arm to the wrong place and the wrong bones land in the window — which is the
      lesson. positionError() tells the console how far off it is. */
-  const lm = findLandmarks(ph);
-  const cxW = D.crossX;                            // the laser, across the table (room cm)
-  const czW = D.headZ + lm.dirSup * reg.wz / 2;   // the cross is the INFERIOR edge, both sites
+  const fa = isForearm(st.region) ? forearmWorld(ph) : null;
+  const lm = fa ? null : findLandmarks(ph);
+  /* The forearm's field runs from its mark toward the ELBOW, whichever way along the table that
+     is: the limb's own long axis says which, as the crest and the spine's taper say it for the
+     torso. */
+  const dirSup = fa ? fa.up : lm.dirSup;
+  const cxW = st.crossX;                            // the laser, across the table (room cm)
+  const czW = st.headZ + dirSup * reg.wz / 2;      // the cross is the INFERIOR edge, every site
   const x0 = cxW - reg.wx / 2, z0 = czW - reg.wz / 2;
-  const yBelow = ph.min[1] - 5, yLen = (ph.max[1] - ph.min[1]) + 10;
+  // (generous above and below: a rotated limb's far end rises past the volume's unrotated box,
+  // and a ray outside the volume adds nothing, so the margin costs nothing either)
+  const yBelow = ph.min[1] - 20, yLen = (ph.max[1] - ph.min[1]) + 40;
 
   // Carry the crest with the scan: it is the only thing in the image that says WHICH
   // vertebra is which, and the analysis needs it after the raster is long finished.
-  const tro = lm.troch?.[D.region === 'hipR' ? 'R' : 'L'];
-  scan = { nx, nz, lo, hi, truth, x0, z0, px: PX_CM, region: D.region, loss: D.loss || 0,
-    crestCm: lm.crestCm, dirSup: lm.dirSup,
-    trochZ: tro ? tro.zCm : null, trochX: tro ? (D.region === 'hipL' ? -tro.x : tro.x) : null,
-    headX: tro && tro.headX != null ? (D.region === 'hipL' ? -tro.headX : tro.headX) : null,
-    headR: tro && tro.headR != null ? tro.headR : null };
+  const tro = lm?.troch?.[st.region === 'hipR' ? 'R' : 'L'];
+  /* THE HIP'S LANDMARKS GO WHERE THE PATIENT LIES. They are measured once on the volume as it lies
+     unturned, the lateral ones as distances from the patient's own midline — and they used to be
+     handed to the analysis as if they were room x. On a patient centred to the millimetre that is
+     the same thing; on one lying a centimetre off the line, inside what the console calls centred,
+     every femoral region was built a centimetre off the femur, and the neck read 9-19 % different.
+     The precision assessment found it: the same hip, repositioned, swung 0.61 to 1.03 g/cm2 at the
+     neck. So add the midline, and turn the points with the patient (about the volume's centre, as
+     the tracer turns the volume). */
+  const ctr = [0, 1, 2].map((k) => (ph.min[k] + ph.max[k]) / 2);
+  const placed = (lat, zCm) => {
+    const g = [lat, 0, zCm - ctr[2]], R = ph.rotated ? ph.rot : null;
+    return R ? [ctr[0] + R[0] * g[0] + R[2] * g[2], ctr[2] + R[6] * g[0] + R[8] * g[2]] : [ctr[0] + g[0], zCm];
+  };
+  const sgn = st.region === 'hipL' ? -1 : 1;           // world -x is the patient's left
+  const trP = tro ? placed(sgn * tro.x, tro.zCm) : null;
+  const hdP = tro && tro.headX != null ? placed(sgn * tro.headX, tro.zCm) : null;
+  const sc = { nx, nz, lo, hi, truth, x0, z0, px: PX_CM, region: st.region, loss: st.loss || 0,
+    crestCm: lm?.crestCm ?? null, dirSup,
+    trochZ: trP ? trP[1] : null, trochX: trP ? trP[0] : null,
+    headX: hdP ? hdP[0] : null,
+    headR: tro && tro.headR != null ? tro.headR : null,
+    /* The forearm carries what its analysis needs and cannot see: which side of the picture is
+       medial (the console knows which arm is on the table), and the forearm's length, which the
+       technologist measured with a tape and keyed in. The length is the operator's, not the
+       anatomy's — key in the wrong one and the region lands in the wrong place, as it does on
+       the machine. Free scanning with nothing keyed in uses the measured length. */
+    forearm: fa ? { up: fa.up, med: fa.med, len: st.forearmLen || fa.len, trueLen: fa.len } : null };
   const pb = basis(), pdet = pb.bLo * pb.sHi - pb.bHi * pb.sLo;
-  const prev = scan.preview = new Float32Array(nx * nz);
+  const prev = sc.preview = new Float32Array(nx * nz);
+  const traceRow = (row) => {
+    const z = z0 + (row + 0.5) * PX_CM;
+    for (let i = 0; i < nx; i++) {
+      const x = x0 + (i + 0.5) * PX_CM;
+      const L = ph.trace([x, yBelow, z], [0, 1, 0], yLen);
+      let aLo = 0, aHi = 0, mineral = 0;
+      for (let m = 0; m < L.length; m++) {
+        const l = L[m];
+        if (!l) continue;
+        const isBone = m < aOf.length && aOf[m] >= MIN_A;
+        const f = isBone ? keep : 1;
+        aLo += l * mLo[m] * f;
+        aHi += l * mHi[m] * f;
+        if (isBone) mineral += l * aOf[m] * keep;
+      }
+      const k = row * nx + i;
+      lo[k] = aLo; hi[k] = aHi; truth[k] = mineral;
+      // the preview is the bone map the study will show, solved as each ray comes in (the low
+      // energy alone is mostly soft tissue, and drew the building image washed out white)
+      prev[k] = Math.max(0, (aLo * pb.sHi - aHi * pb.sLo) / pdet) * HA_FRACTION;
+    }
+  };
+  return { sc, traceRow };
+}
+
+/* A whole scan, traced at once and returned without touching the study on the film. The state
+   is explicit — region, loss, the arm (headZ) and laser (crossX), the keyed-in forearm length —
+   so the tests can run the real tracer on a real volume. */
+export function scanPhantom(ph, st) {
+  const job = setupScan(ph, st);
+  for (let r = 0; r < job.sc.nz; r++) job.traceRow(r);
+  return job.sc;
+}
+export function scanNow() {
+  const ph = ctx.buildPhantom?.();
+  if (!ph || ph.geometryOnly || !ph.data) return null;
+  if (isForearm(D.region) && !forearmWorld(ph)) return null;
+  return scanPhantom(ph, D);
+}
+
+export function acquire(onRow, onDone, onPass) {
+  const ph = ctx.buildPhantom?.();
+  if (!ph || ph.geometryOnly) { setStatus('This subject has no browser volume to scan.'); return; }
+  if (isForearm(D.region) && !forearmWorld(ph)) { setStatus('The forearm is not on the table yet.'); return; }
+  const job = setupScan(ph, D);
+  scan = job.sc;
+  const { nx, nz, x0, z0 } = scan;
   rasterRow = 0; scanning = true;
   const plan = scanPlan(D.region);
   const rowsPer = nz / plan.passes;
@@ -340,29 +483,7 @@ export function acquire(onRow, onDone, onPass) {
     // stall the scan's clock)
     const need = scanClock ? Math.min(nz, Math.ceil((Math.floor(scanClock.t / scanClock.plan.passS) + 2) * scanClock.rowsPer)) : nz;
     const budget = rasterRow < need ? 40 : 10;
-    while (rasterRow < nz && performance.now() - t0 < budget) {
-      const z = z0 + (rasterRow + 0.5) * PX_CM;
-      for (let i = 0; i < nx; i++) {
-        const x = x0 + (i + 0.5) * PX_CM;
-        const L = ph.trace([x, yBelow, z], [0, 1, 0], yLen);
-        let aLo = 0, aHi = 0, mineral = 0;
-        for (let m = 0; m < L.length; m++) {
-          const l = L[m];
-          if (!l) continue;
-          const isBone = m < aOf.length && aOf[m] >= MIN_A;
-          const f = isBone ? keep : 1;
-          aLo += l * mLo[m] * f;
-          aHi += l * mHi[m] * f;
-          if (isBone) mineral += l * aOf[m] * keep;
-        }
-        const k = rasterRow * nx + i;
-        lo[k] = aLo; hi[k] = aHi; truth[k] = mineral;
-        // the preview is the bone map the study will show, solved as each ray comes in (the low
-        // energy alone is mostly soft tissue, and drew the building image washed out white)
-        prev[k] = Math.max(0, (aLo * pb.sHi - aHi * pb.sLo) / pdet) * HA_FRACTION;
-      }
-      rasterRow++;
-    }
+    while (rasterRow < nz && performance.now() - t0 < budget) job.traceRow(rasterRow++);
     // the scan's clock: it runs at the operator's chosen speed, and waits for the traced rows
     // if the fan would reach rows not traced yet
     const C = scanClock, now = performance.now();
@@ -551,6 +672,10 @@ export function analyse(sc, bmd) {
   if (sc.region === 'spine') {
     const lv = findLevels(sc, bmd);
     return { rois: lv.rois, col: lv.col, axes: null };
+  }
+  if (isForearm(sc.region)) {
+    const f = findForearm(sc, bmd);
+    return { rois: f ? f.rois : [], col: null, axes: f ? f.axes : null };
   }
   const f = findFemur(sc, bmd);
   return { rois: f ? f.rois : [], col: null, axes: f ? f.axes : null };
@@ -802,6 +927,250 @@ export function findFemur(sc, bmd) {
   return { rois, axes: { p, u, H, nAx, headC, headR, nStart, nEnd, aMax, halfW: halfWpx, sNeck } };
 }
 
+/* ---- the forearm ---------------------------------------------------------------
+   ISCD's forearm site is the 33 % (one-third) radius of the NON-dominant forearm: a region of the
+   radius centred a third of the forearm's length above the ulnar styloid. Nearly all cortical
+   bone, which is why it is the site hyperparathyroidism shows first and why it is what is left
+   when the spine and hips cannot be measured or the patient is over the table's limit — they sit
+   beside the table and lay the forearm on it.
+
+   Two measurements place the region and neither is the machine's alone. The LENGTH is the
+   technologist's: ulnar styloid to olecranon with a tape, keyed in. The STYLOID is found in the
+   scan, as the console finds it — the tip of the ulna, the reference the region is measured up
+   from. This module measures the true versions of both on the volume as well, because the room
+   needs them to say where the laser belongs and the tape needs them to have something to read. */
+export const FA_SITE = 1 / 3;        // the one-third site, as a fraction of the forearm's length
+export const FA_ROI_CM = 2.0;        // the region's height along the shaft
+
+/* THE ULNA, MEASURED ON THE VOLUME (data-index frame, before flips: the anatomy is the same
+   whichever way the room lays it). Found by the shapes the forearm makes, not by numbers carried
+   from somewhere else:
+     - the SHAFT is the longest run of slices cut through exactly two bones: the radius and the
+       ulna. The hand has five, the humerus one;
+     - the forearm bones are then one 3-D island, flood-filled from the shaft. The elbow joint is
+       open in this segmentation, so the island stops at the humerus — while the wrist joint is
+       not, so it takes in the carpus and hand too, which costs nothing here;
+     - its most proximal point is the OLECRANON, which stands above the radial head;
+     - which of the two is the ulna: three centimetres below the olecranon the ulna is the big
+       trochlear notch and the radius only its neck. The ulna is the medial bone, which names
+       medial without trusting a convention;
+     - the STYLOID is the end of the medial border. Walk distally down the ulna's medial edge:
+       through the head it moves smoothly, and past the tip of the styloid the most medial bone
+       is suddenly something else — the radius or a carpal, centimetres away. */
+const faMeasured = new WeakMap();
+export function measureForearm(ph) {
+  if (!ph?.data) return null;
+  if (!faMeasured.has(ph.data)) faMeasured.set(ph.data, measureForearmRaw(ph));
+  return faMeasured.get(ph.data);
+}
+function measureForearmRaw(ph) {
+  const aOf = boneEquivById();
+  const { nx, ny, nz, data, vs } = ph;
+  const sl = nx * ny;
+  const isB = (k) => { const id = data[k]; return id < aOf.length && aOf[id] >= 0.35; };
+  const lab = new Int32Array(sl), stack = new Int32Array(sl);
+  // 2-D islands of bone in slice z (4-connected), optionally only where `keep` says
+  const blobs = (z, keep) => {
+    lab.fill(0);
+    const out = [];
+    for (let i = 0; i < sl; i++) {
+      const k = z * sl + i;
+      if (lab[i] || !(keep ? keep(z, i) : isB(k))) continue;
+      const b = { n: 0, sx: 0, sy: 0, xa: nx, xb: -1, i };
+      let sp = 0; stack[sp++] = i; lab[i] = out.length + 1;
+      while (sp) {
+        const j = stack[--sp], x = j % nx, y = (j / nx) | 0;
+        b.n++; b.sx += x; b.sy += y; if (x < b.xa) b.xa = x; if (x > b.xb) b.xb = x;
+        for (const q of [x > 0 ? j - 1 : -1, x < nx - 1 ? j + 1 : -1, y > 0 ? j - nx : -1, y < ny - 1 ? j + nx : -1]) {
+          if (q < 0 || lab[q] || !(keep ? keep(z, q) : isB(z * sl + q))) continue;
+          lab[q] = out.length + 1; stack[sp++] = q;
+        }
+      }
+      b.cx = b.sx / b.n; b.cy = b.sy / b.n;
+      out.push(b);
+    }
+    return out;
+  };
+  const cm2 = vs[0] * vs[1];
+  // 1. the shaft: the longest run of slices through exactly two bones of real size
+  let run = null, cur = null;
+  for (let z = 0; z < nz; z += 2) {
+    const two = blobs(z).filter((b) => b.n * cm2 > 0.4).length === 2;
+    if (two) { if (!cur) cur = { a: z, b: z }; else cur.b = z; }
+    else if (cur) { if (!run || cur.b - cur.a > run.b - run.a) run = cur; cur = null; }
+  }
+  if (cur && (!run || cur.b - cur.a > run.b - run.a)) run = cur;
+  if (!run || (run.b - run.a) * vs[2] < 8) return null;          // no forearm in this volume
+  const zm = Math.round((run.a + run.b) / 2);
+  // 2. the forearm bones as one island, in a box from below the wrist to above the elbow
+  const zA = Math.max(0, run.a - Math.round(14 / vs[2])), zB = Math.min(nz - 1, run.b + Math.round(8 / vs[2]));
+  const mask = new Uint8Array(sl * (zB - zA + 1));
+  const inM = (z, i) => z >= zA && z <= zB && mask[(z - zA) * sl + i] === 1;
+  const fill = new Int32Array(Math.min(mask.length, 4e6));
+  let fp = 0;
+  for (const b of blobs(zm).filter((q) => q.n * cm2 > 0.4)) {
+    const k = (zm - zA) * sl + b.i;
+    if (!mask[k]) { mask[k] = 1; fill[fp++] = k; }
+  }
+  while (fp) {
+    const k = fill[--fp], i = k % sl, z = (k / sl | 0) + zA, x = i % nx, y = (i / nx) | 0;
+    const nb = [x > 0 ? k - 1 : -1, x < nx - 1 ? k + 1 : -1, y > 0 ? k - nx : -1, y < ny - 1 ? k + nx : -1,
+      z > zA ? k - sl : -1, z < zB ? k + sl : -1];
+    for (const q of nb) {
+      if (q < 0 || mask[q] || !isB(q + zA * sl)) continue;
+      if (fp >= fill.length) continue;                            // (a runaway island: stop growing)
+      mask[q] = 1; fill[fp++] = q;
+    }
+  }
+  // 3. the olecranon: the island's most proximal 2 mm. +z is superior in the house frame.
+  let zTop = -1;
+  for (let z = zB; z >= zA && zTop < 0; z--) for (let i = 0; i < sl; i++) if (mask[(z - zA) * sl + i]) { zTop = z; break; }
+  const centroid = (za, zb, pick) => {
+    let sx = 0, sy = 0, sz = 0, n = 0;
+    for (let z = za; z <= zb; z++) for (let i = 0; i < sl; i++) {
+      if (!inM(z, i) || (pick && !pick(z, i))) continue;
+      sx += i % nx; sy += (i / nx) | 0; sz += z; n++;
+    }
+    return n ? [sx / n, sy / n, sz / n] : null;
+  };
+  const olec = centroid(zTop - Math.max(1, Math.round(0.2 / vs[2])), zTop);
+  // 4. which bone is the ulna, and so which way is medial
+  const zu = Math.min(run.b, zTop - Math.round(3 / vs[2]));
+  const pair = blobs(zu, inM).filter((b) => b.n * cm2 > 0.1).sort((p, q) => q.n - p.n);
+  const medX = pair.length >= 2 ? Math.sign(pair[0].cx - pair[1].cx) || 1 : 1;
+  // 5. the styloid: down the ulna's medial border until it breaks
+  const edgeAt = (z) => {
+    let e = -Infinity;
+    for (let i = 0; i < sl; i++) if (inM(z, i)) { const v = medX * (i % nx); if (v > e) e = v; }
+    return e;
+  };
+  const JUMP = 0.4 / vs[0];
+  let prev = edgeAt(zm), tip = zm;
+  for (let z = zm - 1; z >= zA; z--) {
+    const e = edgeAt(z);
+    if (!Number.isFinite(e) || Math.abs(e - prev) > JUMP) break;
+    prev = e; tip = z;
+  }
+  // the tip itself: the island the medial-most bone belongs to, in the last slice of the ulna
+  const tb = blobs(tip, inM).sort((p, q) => medX * (q.xa + q.xb) - medX * (p.xa + p.xb))[0];
+  const styl = tb ? [tb.cx, tb.cy, tip] : [0, 0, tip];
+  // 6. the length, and the one-third site: the bones' centroid in a 2 cm slab there
+  const d = [0, 1, 2].map((k) => (olec[k] - styl[k]) * vs[k]);
+  const len = Math.hypot(d[0], d[1], d[2]);
+  const u = d.map((v) => v / len);
+  const tOf = (z, i) => ((i % nx) - styl[0]) * vs[0] * u[0] + (((i / nx) | 0) - styl[1]) * vs[1] * u[1] + (z - styl[2]) * vs[2] * u[2];
+  const c33 = centroid(zA, zB, (z, i) => Math.abs(tOf(z, i) - len * FA_SITE) <= FA_ROI_CM / 2);
+  return { styl, olec, c33, len, medX };
+}
+
+/* A data-index point into the room, through the phantom's own flips, rotation and placement —
+   the inverse of the map trace() applies to its rays. `rotate: false` gives the rest frame, before
+   the operator has turned anything. */
+function volToWorld(ph, p, rotate = true) {
+  const n = [ph.nx, ph.ny, ph.nz];
+  const g = [0, 1, 2].map((k) => ((ph.flip[k] ? n[k] - 1 - p[k] : p[k]) + 0.5) * ph.vs[k] - ph.extent[k] / 2);
+  const c = [0, 1, 2].map((k) => (ph.min[k] + ph.max[k]) / 2);
+  const R = rotate && ph.rotated ? ph.rot : null;
+  if (!R) return [c[0] + g[0], c[1] + g[1], c[2] + g[2]];
+  return [c[0] + R[0] * g[0] + R[1] * g[1] + R[2] * g[2], c[1] + R[3] * g[0] + R[4] * g[1] + R[5] * g[2],
+    c[2] + R[6] * g[0] + R[7] * g[1] + R[8] * g[2]];
+}
+/* The forearm as it lies on the table now: styloid, olecranon and the one-third site in room
+   cm; which way along the table the elbow is (up) and which way across it is medial (med, in
+   room x — columns of the scan rise with it); and how far the forearm is from lying straight
+   along the table (yaw) and flat on it (pitch), in degrees. */
+export function forearmWorld(ph, rotate = true) {
+  if (ctx && ctx.S.subject !== 'upperextremity') return null;
+  const m = measureForearm(ph);
+  if (!m) return null;
+  const W = (p) => volToWorld(ph, p, rotate);
+  const styl = W(m.styl), olec = W(m.olec), site = W(m.c33);
+  const ulnaSite = W(m.styl.map((v, k) => v + (m.olec[k] - v) * FA_SITE));
+  const up = Math.sign(olec[2] - styl[2]) || 1;
+  const a = [0, 1, 2].map((k) => (olec[k] - styl[k]) * up);
+  const deg = 180 / Math.PI;
+  return { styl, olec, site, len: m.len, up, med: Math.sign(ulnaSite[0] - site[0]) || 1,
+    axis: a, yaw: Math.atan2(a[0], a[2]) * deg, pitch: Math.atan2(a[1], Math.hypot(a[0], a[2])) * deg };
+}
+/* The rotate and tilt that lay this forearm straight along the table and flat on it — what the
+   free-scanning preset does for the operator, as it parks the arm at the spine's mark. The
+   object turns as Rz·Ry·Rx: tilt about x first brings the forearm's rise to zero, then the turn
+   about the vertical swings it parallel to the table. */
+export function forearmAlignment(ph) {
+  const fa = forearmWorld(ph, false);
+  if (!fa) return null;
+  const [ax, ay, az] = fa.axis;
+  const rx = Math.atan(ay / az);
+  const z1 = Math.sin(rx) * ay + Math.cos(rx) * az;
+  const ry = Math.atan(-ax / z1);
+  return { x: Math.round(rx * 180 / Math.PI), y: Math.round(ry * 180 / Math.PI) };
+}
+
+/* ---- the one-third region, found in the scan ----------------------------------------
+   Rows are along the forearm (+row toward the elbow when sc.forearm.up is +1) and columns across
+   it, medial toward higher columns when sc.forearm.med is +1. The analysis:
+     1. starts on the shaft, at the proximal end of the field, where every row crosses two bones;
+     2. walks DISTALLY down the medial border — the ulna's — until it breaks: the styloid's tip;
+     3. goes back up the forearm by a third of the keyed-in length, and there
+     4. takes the RADIUS — the lateral of the two bones — over a 2 cm band. Its edges follow the
+        bone, as the femoral regions do, so what is averaged is mineral and not the gap between
+        the bones.
+   If the two bones overlap in the band — the forearm rolled toward pronation, the radius crossed
+   over the ulna — there is one run where there should be two, and the region says so rather than
+   averaging both bones as one. */
+export function findForearm(sc, bmd) {
+  const { nx, nz, px } = sc, fa = sc.forearm;
+  if (!fa) return null;
+  const BONE = 0.12;                                 // g/cm2 of HA: bone, not the soft tissue's floor
+  const up = fa.up >= 0 ? 1 : -1, med = fa.med >= 0 ? 1 : -1;
+  const runsAt = (r) => {
+    const out = [];
+    let a = -1;
+    for (let i = 0; i <= nx; i++) {
+      const on = i < nx && bmd[r * nx + i] > BONE;
+      if (on && a < 0) a = i;
+      else if (!on && a >= 0) { if ((i - a) * px >= 0.25) out.push({ a, b: i - 1 }); a = -1; }
+    }
+    return out;
+  };
+  const edge = (runs) => (med > 0 ? Math.max(...runs.map((q) => q.b)) : -Math.min(...runs.map((q) => q.a)));
+  // 1. the most proximal row that crosses both bones
+  let r0 = -1;
+  for (let k = 0; k < nz && r0 < 0; k++) { const r = up > 0 ? nz - 1 - k : k; if (runsAt(r).length >= 2) r0 = r; }
+  if (r0 < 0) return { rois: [], axes: { why: 'no forearm in the field' } };
+  // 2. down the medial border to the styloid's tip
+  const JUMP = 0.4 / px;
+  let prev = edge(runsAt(r0)), sR = r0, broke = false;
+  for (let r = r0 - up; r >= 0 && r < nz; r -= up) {
+    const runs = runsAt(r);
+    if (!runs.length) { broke = true; break; }
+    const e = edge(runs);
+    if (Math.abs(e - prev) > JUMP) { broke = true; break; }
+    prev = e; sR = r;
+  }
+  // 3. a third of the forearm up from the tip
+  const siteRow = sR + up * (fa.len * FA_SITE) / px;
+  const h = FA_ROI_CM / 2 / px;
+  const ra = Math.round(siteRow - h), rb = Math.round(siteRow + h);
+  const axes = { styloidRow: sR, siteRow, ra, rb, len: fa.len };
+  // a border that runs off the distal edge of the field never found its tip: the laser is too
+  // far up the forearm, and a region measured from the edge of the picture is measured from nothing
+  if (!broke || sR === r0) return { rois: [], axes: { ...axes, why: 'the ulnar styloid is not in the field' } };
+  if (ra < 0 || rb > nz) return { rois: [], axes: { ...axes, why: 'the one-third site is outside the field' } };
+  // 4. the radius over the band
+  const mask = new Uint8Array(nx * nz);
+  let overlap = 0;
+  for (let r = ra; r < rb; r++) {
+    const runs = runsAt(r);
+    if (!runs.length) continue;
+    if (runs.length < 2) overlap++;
+    const q = runs.reduce((p, s) => (med * (p.a + p.b) <= med * (s.a + s.b) ? p : s));   // the lateral run
+    for (let c = q.a; c <= q.b; c++) mask[r * nx + c] = 1;
+  }
+  axes.overlap = overlap > (rb - ra) / 4;
+  return { rois: [{ label: 'Radius 33%', mask, site: 'radius33' }], axes };
+}
+
 /* ---- the numbers on the report ---------------------------------------------
    BMC is the mineral actually in the box (g); AREA is the box's projected area (cm2);
    BMD is one divided by the other. That order matters — BMD is a RATIO, which is why a
@@ -809,6 +1178,7 @@ export function findFemur(sc, bmd) {
    changes the answer in a way the operator has to own. */
 export function measure(sc, bmd, rois) {
   const a = sc.px * sc.px;                       // cm2 per pixel
+  const CAL = calFor(sc.region);
   return rois.map((r) => {
     let bmc = 0, n = 0;
     if (r.mask) {
@@ -849,6 +1219,17 @@ export const REF = {
   total: { f: { yMean: 0.942, ySD: 0.122 }, m: { yMean: 1.031, ySD: 0.134 } },
   wards: { f: { yMean: 0.727, ySD: 0.128 }, m: { yMean: 0.766, ySD: 0.140 } },
   hip:   { f: { yMean: 0.942, ySD: 0.122 }, m: { yMean: 1.031, ySD: 0.134 } },
+  /* THE ONE-THIRD RADIUS, on the same scale as the rows above (these are Hologic/NHANES III
+     numbers: the spine's 1.047 +- 0.110 and the total hip's 0.942 +- 0.122 are exactly theirs).
+     Peak BMD 0.694 g/cm2, population SD 0.060 — the ISCD DXA Atlas case "Improper Forearm
+     Acquisition", which quotes the one-third radius against the ultradistal (0.694 vs 0.443,
+     SDs 0.060 vs 0.058) to show what a region placed too far distally does to a T-score. The
+     SD is a twelfth of the mean where the spine's is a tenth: the site is nearly all cortex,
+     which varies less between people than trabecular bone does.
+     No male table comes with it, so men are scored against the same one. That is also what
+     ISCD (2019) recommends for men at every site — a uniform white female reference — so it is
+     the defensible choice, not only the available one; the report says so. */
+  radius33: { f: { yMean: 0.694, ySD: 0.060 }, m: { yMean: 0.694, ySD: 0.060 } },
 };
 export function ageMean(site, sex, age) {
   const r = REF[site][sex];
@@ -963,7 +1344,23 @@ function roiRect(sc, r, s, ox, oy) {
    regions hug the cortex in exactly this way. */
 let maskCanvas = null;
 const MASK_RGB = { Neck: [64, 220, 120], Troch: [96, 190, 255], Inter: [255, 190, 90],
-  Wards: [255, 120, 160], Total: null };
+  Wards: [255, 120, 160], Total: null, 'Radius 33%': [64, 220, 120] };
+/* The forearm's two reference lines, which are what the region hangs from: the styloid's tip,
+   found in the image, and the one-third level a keyed-in length above it. */
+function drawForearmLines(g, sc, s, ox, oy) {
+  const a = sc.axes;
+  if (!a || a.styloidRow == null) return;
+  const yOf = (row) => (sc.nz - 1 - row + 0.5) * s + oy;
+  g.save();
+  g.setLineDash([5, 4]); g.lineWidth = 1; g.font = '10px ui-monospace, monospace';
+  for (const [row, txt, col] of [[a.styloidRow, 'ulnar styloid', '#ffcf3a'], [a.siteRow, '1/3', '#8dffc0']]) {
+    if (row < 0 || row > sc.nz) continue;
+    g.strokeStyle = col; g.fillStyle = col;
+    g.beginPath(); g.moveTo(ox, yOf(row)); g.lineTo(ox + sc.nx * s, yOf(row)); g.stroke();
+    g.fillText(txt, ox + 4, yOf(row) - 3);
+  }
+  g.restore();
+}
 function drawMasks(g, sc, s, ox, oy) {
   const { nx, nz } = sc;
   if (!maskCanvas) maskCanvas = document.createElement('canvas');
@@ -1001,7 +1398,9 @@ function drawMasks(g, sc, s, ox, oy) {
 
 function drawRois(g, sc, s, ox, oy) {
   roiView = null;
-  if (!sc.rois || !sc.rois.length || !D.showRois) return;
+  if (!D.showRois) return;
+  if (isForearm(sc.region)) drawForearmLines(g, sc, s, ox, oy);
+  if (!sc.rois || !sc.rois.length) return;
   roiView = { s, ox, oy, nx: sc.nx, nz: sc.nz };
   if (sc.rois.some((r) => r.mask)) { drawMasks(g, sc, s, ox, oy); return; }
   g.save();
@@ -1126,6 +1525,7 @@ export function hipDiagnosis(rois, sex, age) {
 const FEMUR_ORDER = ['Neck', 'Wards', 'Troch', 'Inter', 'Total'];
 export function report(sc) {
   const tb = $('dxTable'); if (!tb || !sc.rois) return;
+  if (isForearm(sc.region)) { reportForearm(sc, tb); return; }
   const spine = sc.region === 'spine';
   const sex = D.sex || 'f', age = D.age || 60;
   // rois are stored inferior-first, because the cut editor needs them contiguous in row
@@ -1182,6 +1582,40 @@ export function report(sc) {
   sc.mean = mean; sc.T = s.T; sc.Z = s.Z; sc.dx = dx;
   renderSerial();
 }
+/* THE FOREARM'S PAGE is one region and one row: ISCD diagnoses on the 33 % radius and recommends
+   no other forearm region, so the ultradistal and the ulna, which a console would also print,
+   are not offered as things to read. The note says where the region came from — a third of the
+   keyed-in length above the styloid — because that length is the operator's and is the first
+   thing to check when a forearm result surprises. */
+function reportForearm(sc, tb) {
+  const sex = D.sex || 'f', age = D.age || 60;
+  const r = sc.rois[0];
+  const why = sc.axes?.why;
+  if (!r) {
+    tb.innerHTML = `<div class="dxdx dx-below">No region &middot; ${why || 'the radius was not found'}`
+      + '<small>Re-centre the laser an inch distal of the ulnar styloid and scan again.</small></div>';
+    sc.mean = 0; sc.T = sc.Z = 0; sc.dx = 'No region'; sc.areaT = sc.bmcT = 0;
+    return;
+  }
+  const s = scores(r.bmd, 'radius33', sex, age), cl = classify(s.T, s.Z, age);
+  sc.areaT = r.area; sc.bmcT = r.bmc; sc.dxSite = '33% radius';
+  tb.innerHTML = '<table class="dxtab"><tr><th>Region</th><th>Area<br><small>cm²</small></th>'
+    + '<th>BMC<br><small>g</small></th><th>BMD<br><small>g/cm²</small></th><th>T</th><th>Z</th>'
+    + '<th class="dxraw">raw</th></tr>'
+    + `<tr class="dxsum"><td>${r.label}</td><td>${r.area.toFixed(1)}</td><td>${r.bmc.toFixed(2)}</td>`
+    + `<td><b>${r.bmd.toFixed(3)}</b></td><td><b>${s.T.toFixed(1)}</b></td><td>${s.Z.toFixed(1)}</td>`
+    + `<td class="dxraw">${r.bmdRaw.toFixed(2)}</td></tr></table>`
+    + `<div class="dxnote">Centred ${(sc.forearm.len * FA_SITE).toFixed(1)} cm above the ulnar styloid: a third of the `
+    + `${sc.forearm.len.toFixed(1)} cm forearm length keyed in (styloid to olecranon).`
+    + (sc.axes?.overlap ? ' <b>The radius and ulna overlap in the region</b> &mdash; the forearm is rolled; lay it flat and rescan.' : '')
+    + '</div>'
+    + `<div class="dxdx dx-${cl.cls}">${cl.label} &middot; T ${s.T.toFixed(1)} &middot; Z ${s.Z.toFixed(1)} <span class="dxsite">(33% radius)</span>`
+    + (cl.by === 'Z'
+      ? `<small>Under ${ISCD_Z_AGE} (ISCD): classified by Z &middot; below the expected range for age at Z &le; &minus;2.0</small></div>`
+      : '<small>WHO: normal &ge; &minus;1.0 &middot; osteopenia &minus;1.0 to &minus;2.5 &middot; osteoporosis &le; &minus;2.5</small></div>');
+  sc.mean = r.bmd; sc.T = s.T; sc.Z = s.Z; sc.dx = cl.label;
+  renderSerial();
+}
 
 /* ---- the archive ------------------------------------------------------------
    Every completed scan is filed with its picture, its numbers and the patient it
@@ -1211,7 +1645,7 @@ function fileStudy(sc) {
   D.history.unshift({
     region: sc.region, regionLabel: REGIONS[sc.region]?.label || sc.region,
     rois: sc.rois.map((r) => ({ label: r.label, area: r.area, bmc: r.bmc, bmd: r.bmd, site: r.site })),
-    mean: sc.mean, T: sc.T, Z: sc.Z, dx: sc.dx, dxSite: sc.dxSite, totT: sc.totT, totZ: sc.totZ, loss: sc.loss || 0,
+    mean: sc.mean, T: sc.T, Z: sc.Z, dx: sc.dx, dxSite: sc.dxSite, totT: sc.totT, totZ: sc.totZ, loss: sc.loss || 0, faLen: sc.forearm?.len ?? null,
     area: areaT, bmc: bmcT,
     age: D.age, weight: D.weight, sex: D.sex,
     when: new Date(), patient: patientOf(),
@@ -1227,7 +1661,7 @@ function fileStudy(sc) {
    covers, which is how the printout draws it — a follow-up six months later gets
    a decimal-year axis, not twenty years of empty chart. */
 function trendChart(cv, entry, hist) {
-  const site = entry.region === 'spine' ? 'spine' : 'hip';
+  const site = chartSite(entry.region);
   const ages = hist.map((h) => h.age);
   const lo = Math.min(...ages), hi = Math.max(...ages);
   const pad = Math.max(0.6, (hi - lo) * 0.15);
@@ -1268,11 +1702,11 @@ export function dxaReportToBay() {
   // the two charts are rendered offscreen and baked into the page as images, so the
   // report is one self-contained block that can be scrolled, printed or saved
   const c1 = document.createElement('canvas'); c1.width = 560; c1.height = 300;
-  drawAgeChart(c1, { site: e.region === 'spine' ? 'spine' : 'hip', sex: e.sex,
+  drawAgeChart(c1, { site: chartSite(e.region), sex: e.sex,
     points: [{ age: e.age, bmd: e.mean }] });
   const c2 = document.createElement('canvas'); c2.width = 700; c2.height = 260;
   if (hist.length > 1) trendChart(c2, e, hist);
-  host.innerHTML = reportHTML(e, hist, { age: c1.toDataURL(), trend: c2.toDataURL() });
+  host.innerHTML = reportHTML(e, hist, { age: c1.toDataURL(), trend: c2.toDataURL() }, D.precision);
   renderArchive();
   return true;
 }
@@ -1293,6 +1727,71 @@ function renderArchive() {
    than that is the machine, not the patient. So the table prints the % change AND says
    whether it clears that bar. */
 export const LSC_PCT = 1.5;             // least significant change, % — the bar to clear
+
+/* ---- precision, and the LSC it earns ----------------------------------------------------
+   The 1.5 % above is a placeholder, and ISCD says what replaces it: every technologist does a
+   PRECISION ASSESSMENT — the same patients scanned repeatedly, getting off the table and back on
+   between scans (15 patients x 3, or 30 x 2: 30 degrees of freedom either way) — and the scatter
+   of those repeats is what a follow-up change has to clear.
+     precision = the root-mean-square SD of the repeats: pool the per-patient variances weighted
+       by their degrees of freedom and take the root. Not the mean SD — SDs do not average, the
+       variances do (Gluer et al., Osteoporos Int 1995) — and with every patient scanned the same
+       number of times it is exactly sqrt(mean of SD^2).
+     %CV   = the same pooling over each patient's SD / mean, which is what the ISCD minimums are
+       stated in, since it compares a dense skeleton with a thin one.
+     LSC   = 2.77 x precision, at 95 % confidence: a change is the difference of TWO measurements,
+       each with that error, so its SD is precision x sqrt(2), and 1.96 x sqrt(2) = 2.77.
+   ISCD prefers the LSC in g/cm2 (it does not drift with the patient's own BMD), so a follow-up is
+   judged on that, with the % alongside. */
+export const LSC_Z = 2.77;
+/* The poorest precision ISCD accepts from one technologist, %CV, and the LSC that follows (2019
+   official positions). Worse than this, retrain and repeat the assessment. */
+export const ISCD_MIN_PRECISION = {
+  spine: { cv: 1.9, lsc: 5.3, label: 'Lumbar spine' },
+  total: { cv: 1.8, lsc: 5.0, label: 'Total hip' },
+  neck:  { cv: 2.5, lsc: 6.9, label: 'Femoral neck' },
+};
+export const ISCD_MIN_DF = 30;
+/* groups: one array of BMD values per patient (g/cm2). A patient scanned once tells nothing about
+   precision and contributes no degrees of freedom, so is left out rather than counted as zero. */
+export function precisionStats(groups) {
+  let df = 0, ss = 0, cc = 0, sum = 0, n = 0;
+  const per = [];
+  for (const g of groups) {
+    const k = g.length;
+    if (k < 2) continue;
+    const m = g.reduce((s, v) => s + v, 0) / k;
+    const v = g.reduce((s, x) => s + (x - m) ** 2, 0) / (k - 1);      // the patient's own variance
+    per.push({ n: k, mean: m, sd: Math.sqrt(v), cv: 100 * Math.sqrt(v) / m });
+    df += k - 1; ss += (k - 1) * v; cc += (k - 1) * (v / (m * m));
+    sum += m * k; n += k;
+  }
+  if (!df) return { df: 0, m: 0, per, rmsSd: 0, cvPct: 0, lscAbs: 0, lscPct: 0, mean: 0 };
+  const rmsSd = Math.sqrt(ss / df), cvPct = 100 * Math.sqrt(cc / df);
+  return { df, m: per.length, per, mean: sum / n, rmsSd, cvPct, lscAbs: LSC_Z * rmsSd, lscPct: LSC_Z * cvPct };
+}
+/* Whether an assessment meets ISCD: enough degrees of freedom to be one at all, and a %CV no worse
+   than the minimum for the site. */
+export function precisionVerdict(site, st) {
+  const min = ISCD_MIN_PRECISION[site];
+  return { enough: st.df >= ISCD_MIN_DF, ok: !!min && st.df > 0 && st.cvPct <= min.cv, min };
+}
+/* The LSC a follow-up of this region is judged on: the technologist's own, when an assessment of
+   that site is on file, else the placeholder — and it says which, because a significance bar
+   nobody measured should never be read as one somebody did. The hip's trend is the total hip. */
+export const precisionSite = (region) => (region === 'spine' ? 'spine' : region === 'hipL' || region === 'hipR' ? 'total' : null);
+export function lscFor(region, prec) {
+  const p = prec?.[precisionSite(region)];
+  return p ? { abs: p.lscAbs, pct: p.lscPct, measured: true, when: p.when, df: p.df }
+    : { abs: null, pct: LSC_PCT, measured: false };
+}
+/* Change from the prior study, and whether it clears the LSC: in g/cm2 when the LSC was measured,
+   in % against the placeholder otherwise. */
+export function changeVs(prev, cur, lsc) {
+  const d = cur - prev, pc = 100 * (cur / prev - 1);
+  const sig = lsc.abs != null ? Math.abs(d) >= lsc.abs : Math.abs(pc) >= lsc.pct;
+  return { d, pc, sig };
+}
 export function keepScan(sc) {
   if (!sc || !sc.rois) return;
   D.scans.unshift({ region: sc.region, mean: sc.mean, T: sc.T, Z: sc.Z, dx: sc.dx,
@@ -1316,20 +1815,25 @@ export function renderSerial() {
     const prev = priorScan(list, i);
     let chg = '—', cls = '';
     if (prev) {
-      const pc = 100 * (s.mean / prev.mean - 1);
-      const sig = Math.abs(pc) >= LSC_PCT;
-      chg = `${pc > 0 ? '+' : ''}${pc.toFixed(1)} %`;
-      cls = sig ? (pc < 0 ? 'dxdown' : 'dxup') : 'dxflat';
-      if (!sig) chg += ' *';
+      const c = changeVs(prev.mean, s.mean, lscFor(s.region, D.precision));
+      chg = `${c.pc > 0 ? '+' : ''}${c.pc.toFixed(1)} %`;
+      cls = c.sig ? (c.pc < 0 ? 'dxdown' : 'dxup') : 'dxflat';
+      if (!c.sig) chg += ' *';
     }
     return `<tr><td>${REGIONS[s.region]?.label.split(' ').pop() || s.region}</td>`
       + `<td>${(100 * s.loss).toFixed(0)} %</td><td><b>${s.mean.toFixed(3)}</b></td>`
       + `<td>${s.T.toFixed(1)}</td><td class="${cls}">${chg}</td></tr>`;
   }).join('');
+  // the bar each site is judged against, and where it came from
+  const bars = [...new Set(list.map((s) => s.region))].map((r) => {
+    const l = lscFor(r, D.precision), name = REGIONS[r]?.label.split(' ').pop() || r;
+    return l.measured ? `${name} ${l.abs.toFixed(3)} g/cm² (${l.pct.toFixed(1)} %, your precision assessment)`
+      : `${name} ${l.pct} % (placeholder: no precision assessment on file)`;
+  });
   el.innerHTML = '<table class="dxtab"><tr><th>Site</th><th>Loss</th><th>BMD</th><th>T</th>'
     + '<th>Change</th></tr>' + rows + '</table>'
-    + `<div class="note" style="margin-top:6px">* below the ${LSC_PCT} % least significant `
-    + 'change &mdash; that is the machine, not the patient.</div>';
+    + `<div class="note" style="margin-top:6px">* below the least significant change &mdash; that is `
+    + `the machine and the operator, not the patient. LSC: ${bars.join('; ')}.</div>`;
 }
 
 /* ---- mode + wiring --------------------------------------------------------- */
@@ -1337,7 +1841,7 @@ export function dxaApplyMode(on) {
   if (!ctx) return;
   dockConsole(on, $('dxScanRow'));
   if (on) {
-    if (ctx.S.subject !== 'chestabdopelvis') ctx.setSubject?.('chestabdopelvis');
+    if (ctx.S.subject !== subjectFor(D.region)) ctx.setSubject?.(subjectFor(D.region));
     Sound.need('dxa');
     setStatus('Ready — pick a region and scan.');
     D.region = D.region || 'spine';
@@ -1430,11 +1934,17 @@ function thighStumps(vm) {
 function syncProps() {
   if (!R3) return;
   const { buildBlock, buildHolder, buildLegs, BLOCK } = R3;
+  if (!block) { block = buildBlock(); ctx.three.handGroup.parent.add(block); }
+  if (!holder) { holder = buildHolder(); ctx.three.handGroup.parent.add(holder); }
+  // The forearm patient sits beside the table with only the arm on it: no block, no holder, and
+  // no legs to draw — the arm volume's lower end is a hand, not a pair of thighs.
+  if (ctx.S.subject !== 'chestabdopelvis') {
+    block.visible = holder.visible = false; if (legs) legs.visible = false;
+    return;
+  }
   const pose = ctx.phantomPose?.();
   const st = thighStumps(ctx.S.voxelModel);
   const prop = D.props || null;
-  if (!block) { block = buildBlock(); ctx.three.handGroup.parent.add(block); }
-  if (!holder) { holder = buildHolder(); ctx.three.handGroup.parent.add(holder); }
   block.visible = prop === 'block'; holder.visible = prop === 'holder';
   if (!pose || !st) { if (legs) legs.visible = false; return; }
   const R = pose.rot, c = pose.center;
@@ -1476,6 +1986,14 @@ function landmarkTargets() {
   // initDXA down with it. Check for real data, not just for an object.
   const ph = ctx.buildPhantom?.();
   if (!ph || !ph.data || !ph.nz) return null;
+  /* The forearm: the cross an inch distal of the ulnar styloid, across the table on the
+     forearm's middle at the one-third site, so the field holds both bones where it matters. */
+  if (isForearm(D.region)) {
+    const fa = forearmWorld(ph);
+    if (!fa) return null;
+    return { z: fa.styl[2] - fa.up * INCH, x: fa.site[0], label: '1 in distal of the ulnar styloid, on the forearm' };
+  }
+  if (ctx.S.subject !== 'chestabdopelvis') return null;      // (the arm, before the torso is back)
   let lm = null;
   try { lm = findLandmarks(ph); } catch { return null; }
   if (!lm) return null;
@@ -1518,6 +2036,40 @@ function parkAtLandmark() {
   D.headZ = t.z; D.crossX = t.x;
   syncHead(); syncPad();
   return true;
+}
+/* The patient controls are the room's sliders; moving them as the operator would keeps the
+   sliders, the scene and the traced phantom in step. */
+function setSlider(id, v) {
+  const el = $(id); if (!el) return;
+  el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
+}
+/* CHANGING SITE CAN CHANGE PATIENT. The spine and hips are scanned on the torso volume and the
+   forearm on the arm, so selecting a region loads its subject, and the pose carried over from the
+   last one is cleared: a torso squared on the table has no business keeping the rotation that
+   laid an arm straight. Left and right forearm are the same volume, the left mirrored, so
+   swapping between them re-syncs the scene without a load. With `park` (free scanning) the
+   preset lays the forearm straight and flat and drives the arm to the mark, as it parks at the
+   spine's; in an exam that is the operator's job. */
+export async function useRegion(region, { park = true } = {}) {
+  D.region = region;
+  document.querySelectorAll('#dxRegionSeg button').forEach((x) => x.classList.toggle('on', x.dataset.region === region));
+  const want = subjectFor(region);
+  if (ctx.S.subject !== want) {
+    setStatus(`Bringing in the ${want === 'upperextremity' ? 'arm' : 'patient'}…`);
+    await ctx.setSubject?.(want);
+    if (D.region !== region) return;               // (another region was picked while it loaded)
+    for (const id of ['objRotX', 'objRotY', 'objRotZ', 'objOffX', 'objOffZ']) setSlider(id, 0);
+    if (want !== 'chestabdopelvis') D.props = null;
+  }
+  ctx.syncScene?.();                               // the left forearm is the right one mirrored
+  if (park && isForearm(region)) {
+    const al = forearmAlignment(ctx.buildPhantom?.());
+    if (al) { setSlider('objRotX', al.x); setSlider('objRotY', al.y); }
+  }
+  syncProps();
+  if (park) parkWhenReady();
+  else syncPad();
+  setStatus(`${REGIONS[region].label} selected — press SCAN.`);
 }
 /* Parking has to wait for the volume. setSubject is async, so a fixed 60 ms delay was a bet
    on the load finishing in time; when it did not, landmarkTargets() had no phantom to read
@@ -1566,7 +2118,7 @@ function syncPad() {
   const zs = Math.abs(e.dz) <= 2 ? '' :
     `${Math.abs(e.dz).toFixed(0)} cm ${e.dz > 0 ? 'superior' : 'inferior'} of the mark`;
   const xs = Math.abs(e.dx) <= 2 ? '' :
-    `${Math.abs(e.dx).toFixed(0)} cm ${e.dx > 0 ? 'left' : 'right'} of the midline`;
+    `${Math.abs(e.dx).toFixed(0)} cm ${e.dx > 0 ? 'left' : 'right'} of ${isForearm(D.region) ? "the forearm's middle" : 'the midline'}`;
   note.innerHTML = `<b style="color:#e8b552">Off the mark</b> &mdash; `
     + [zs, xs].filter(Boolean).join(', ') + `. Correct is the ${e.target.label}.`;
 }
@@ -1608,7 +2160,10 @@ export function registerExam(hooks) { exam = hooks; }
 export const dxa = {
   get D() { return D; }, get ctx() { return ctx; }, REGIONS, scanPlan, positionError, landmarkTargets,
   parkAtLandmark, syncHead: () => { syncHead(); syncPad(); }, syncProps: () => syncProps(), setStatus,
-  isScanning: () => scanning, abortScan, findLandmarks, lastScan: () => scan,
+  isScanning: () => scanning, abortScan, findLandmarks, lastScan: () => scan, useRegion, setSlider,
+  forearm: () => { const ph = ctx.buildPhantom?.(); return ph?.data ? forearmWorld(ph) : null; },
+  forearmAlignment: () => forearmAlignment(ctx.buildPhantom?.()),
+  scanNow, decompose, analyse, measure, renderSerial,
 };
 
 export function initDXA(context) {
@@ -1649,7 +2204,9 @@ export function initDXA(context) {
         sc.col = an.col; sc.axes = an.axes;
         render(sc, bmd);
         report(sc);
-        fileStudy(sc);
+        // (a precision repeat is not a patient's study: filed, it turned up in the next patient's
+        // trend as a follow-up)
+        if (!exam?.noFile?.()) fileStudy(sc);
         setStatus(`Done — ${REGIONS[sc.region].label}.`);
         exam?.onScanDone?.(sc);
       },
@@ -1688,13 +2245,8 @@ export function initDXA(context) {
     const el = $('dxWtV'); if (el) el.textContent = `${D.weight} kg`;
   });
   document.querySelectorAll('#dxRegionSeg button').forEach((b) => {
-    b.addEventListener('click', () => {
-      D.region = b.dataset.region;
-      document.querySelectorAll('#dxRegionSeg button').forEach((x) => x.classList.toggle('on', x === b));
-      setStatus(`${REGIONS[D.region].label} selected — press SCAN.`);
-      // (in an exam the operator drives the arm to the mark: the preset does not do it for them)
-      if (!exam?.active?.()) parkAtLandmark();
-    });
+    // (in an exam the operator positions and drives the arm to the mark: the preset does not)
+    b.addEventListener('click', () => { if (!scanning) useRegion(b.dataset.region, { park: !exam?.active?.() }); });
   });
   // ---- the arm pad. Held keys repeat, because nudging 20 cm one press at a time is not
   // how anyone drives a real console.
@@ -1755,5 +2307,6 @@ export function initDXA(context) {
     E_LO, E_HI, REGIONS, findLevels, findFemur, analyse, measure, scores, diagnosis, ageMean, REF, CAL,
     THREE: ctx.THREE,
     room, laser, scanPlan, thighStumps: () => thighStumps(ctx.S.voxelModel),
-    landmarkTargets, positionError, parkAtLandmark, nudge });
+    landmarkTargets, positionError, parkAtLandmark, nudge,
+    scanNow, findForearm, forearm: dxa.forearm, precisionStats, lscFor, useRegion });
 }

@@ -18,7 +18,7 @@ const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'headneck', 'chestabdopelvis'
   'totalhipreplacement', 'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
-  assert.equal(all.length, 43);
+  assert.equal(all.length, 47);
   for (const p of all) assert.ok(BROWSER_SUBJECTS.has(p.subject), `${p.proj}: subject ${p.subject}`);
 });
 
@@ -87,9 +87,14 @@ test('landmarks sit where the traced phantom confirmed them (cm from the volume 
   // were baked to 90 degrees), checked on a bone projection: knee and ankle on their joint lines;
   // the bake left its hindfoot pointed until the foot was carried whole, bone and tissue, and the
   // volume came out 3.5 cm shorter: the knee kept its place from the hip, the ankle came up onto
-  // the talus from under the smeared hindfoot)
+  // the talus from under the smeared hindfoot; then the foot was trimmed 11 degrees out of external
+  // turn and 8 of inversion (bake_pose --trim): only the foot turned, the leg's bones and the
+  // joint sheets did not move, and the bulge, which takes in the talus turning with the foot, came
+  // down 0.9 cm to -43.4. NB 2026-10-25: much of this talus is materialised as cartilage, and the
+  // bulge, the malleoli hung from it and the ankle's pivot sit some 2-3 cm below the tibial
+  // plafond; to be re-measured with the ankle's materials)
   const pinned = {
-    'lowerextremity.knee': -5.4, 'lowerextremity.ankle': -42.5, 'upperextremity.elbow': 1.88,
+    'lowerextremity.knee': -5.4, 'lowerextremity.ankle': -43.4, 'upperextremity.elbow': 1.88,
     'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
     'chestabdopelvis.kub': -12.7,
   };

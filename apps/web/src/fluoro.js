@@ -12,10 +12,14 @@ import { buildCarm, buildTower, CARM } from './carm.js';
 import { carmBeam } from './core/carmPose.js';
 import { ownsSpace } from './core/keys.js';
 import { irisShutterArea } from './core/fieldArea.js';
-import { NR_K, recursiveStep, displayMap, edgeEnhance } from './core/fluoroDisplay.js';
+import { NR_K, recursiveStep, displayMap, edgeEnhance, roadmapSubtract } from './core/fluoroDisplay.js';
 import { rightOnScreen } from './core/orientation.js';
 import { staffPulse, staffEffective, skinEntranceMGy } from './core/staffDose.js';
 import { akPerPulse, maCeiling } from './core/fluoroRate.js';
+import { findFibula, fractureFragment, fragmentMove, judgeReduction, mortiseAngle, WEBER_B, LIMITS } from './core/fracture.js';
+import { vesselCentrelines, vesselJunctions, wireStart, wireMove, wirePolyline, wireTip, WIRE_R_CM } from './core/guidewire.js';
+import { buildSVolume } from './core/contrast.js';
+import { BodyMaterials } from './core/materials.js';
 
 let ctx = null;          // { THREE, S, $, three, phantomPose, syncScene }
 let F = null;            // ctx.S.fluoro
@@ -29,6 +33,7 @@ let workerPose = '';     // the patient's pose the pool holds ('' = as scanned):
 let workerOff = null;    // where the pool's (cropped) volume's centre lies from the full grid's, cm, volume frame
 let giVolSent = false;   // whether this pool has the barium arclength map
 let sVolSent = false;    // whether this pool has the vessel arclength map
+let fragSent = false;    // whether this pool has the ankle case's fracture fragment
 /* ---- DSA state (docs/fluoroscopy.md Phase E) ------------------------------
    The mask lives at the native pulse resolution, in log-transmission. While DSA is on the
    sampling tier and the technique are FROZEN — subtraction only means anything against a
@@ -39,6 +44,7 @@ const MASK_FRAMES = 4;
 let dsaSX = 0, dsaSY = 0;              // pixel shift applied to the mask lookup
 let lastRaw = null, lastN = 0;         // last raw frame, for re-render on shift changes
 let roadAcc = null, roadmap = null, roadN = 0, roadOn = false;
+let roadBase = null;                   // the roadmap's own mask (log T before the iodine): the subtraction's zero
 /* ---- cine (Phase G): MediaRecorder on the monitor canvas -----------------
    Armed, every pedal run is captured; DSA runs record themselves, as the real suite
    does. Clips live as blob URLs, capped, oldest evicted. */
@@ -215,6 +221,7 @@ function ensureWorker() {
   workers.forEach((w) => w.terminate());
   workers = []; busy = []; readyCount = 0; workerSub = S.subject; lastDrawn = 0;
   giVolSent = false; sVolSent = false;       // the fresh pool has no arclength maps yet
+  fragSent = false;                          // nor a fracture
   workerPose = ''; workerOff = null;         // and holds the patient as scanned
   const pose = ctx.phantomPose();
   for (let i = 0; i < poolSize(); i++) {
@@ -275,6 +282,7 @@ function syncPose() {
       data: v.data, center: pose.center, flip: pose.flip, rot: pose.rot }, last ? [v.data.buffer] : []);
   });
   giVolSent = sVolSent = !!p.key;
+  fragSent = false;                          // a fracture is cut from the scanned grid: re-sent unbent
   workerPose = p.key;
   entryKey = '';                             // the skin the beam enters has moved too
 }
@@ -535,12 +543,22 @@ function firePulse(opts) {
     workers.forEach((w) => w.postMessage({ type: 'svol', sVol: cp.sVol, ns: cp.ns }));
     sVolSent = true;
   }
+  // the ankle case's fracture: the fragment once per pool, where the learner has it every pulse
+  // (on the scanned grid only: a bent ankle's volume is another grid)
+  const fx = !!ankle && !workerPose;
+  if (fx && !fragSent) {
+    const f = ankle.frag;
+    workers.forEach((w) => w.postMessage({ type: 'frag', frag: { idx: f.idx, mat: f.mat, box: f.box } }));
+    fragSent = true;
+  }
   workers[slot].postMessage({ type: 'pulse', id: ++pulseId, kv: F.kv,
     photons: photonsPerPulse(film) * (dsaOn ? DSA_BOOST : 1),
     src: g.src, detC: g.detC, detU: g.detU, detV: g.detV, half: fieldCm() / 2, iris: irisCm(), shut: shutCm(), shutRot: F.shutRot * Math.PI / 180,
     n: dsaOn ? dsaN : nPx(), rot: pose.rot, center: pose.center, anim: animTick(),
     ba: bp ? bp.ba : null, gas: bp ? bp.gas : null, giNS: bp ? bp.ns : 0,
     iod: cp ? cp.iod : null, svNS: cp ? cp.ns : 0,
+    fragMove: fx ? { ...fragmentMove(ankle.frag, ankle.pose), v: ankle.v } : null,
+    wire: wireMsg(), wireR: WIRE_R_CM,
     film,
     seed: F.fixedSeed || (Math.random() * 1e9) | 0 });
   return true;
@@ -590,6 +608,7 @@ function recursiveFilter(img, n, film) {
   return recAcc;
 }
 const EDGE_AMOUNT = 0.45;
+let roadScratch = null;
 function drawFrame(img, n, isFilm = false) {
   const film = $('film'); if (!film) return;
   lastRaw = img; lastN = n;
@@ -639,22 +658,12 @@ function drawFrame(img, n, isFilm = false) {
   } else {
     img = recursiveFilter(img, n, isFilm);
     displayMap(img, n, lum, { scratch: dispScratch });
-    const road = roadOn && roadmap ? roadmap : null;
-    const rs = road ? roadN / n : 0;
-    for (let k = 0; k < n * n; k++) {
-      const t = img[k];
-      let g = -1;
-      if (t >= 0) {
-        g = lum[k];
-        if (road) {
-          // the stored peak-opacification map rides under live fluoro — the navigation mode.
-          // Only strong columns draw; the slope saturates a well-opacified vessel to black.
-          const i = k % n, j = (k / n) | 0;
-          const rd = road[((j * rs) | 0) * roadN + ((i * rs) | 0)];
-          if (rd > 0.35) g *= Math.max(0, 1 - (rd - 0.35) * 2.2);
-        }
-      }
-      lum[k] = g;
+    // the roadmap: live fluoro subtracted against the DSA run's map (core/fluoroDisplay.js) —
+    // the vessels white, the wire black. The first version laid the map over the live image as
+    // a darkening, which drew the vessels black: exactly the colour of the wire inside them.
+    if (roadOn && roadmap && roadBase) {
+      if (!roadScratch || roadScratch.length !== n * n) roadScratch = new Float32Array(n * n);
+      roadmapSubtract(img, n, lum, roadmap, roadBase, roadN, { scratch: roadScratch });
     }
     if (!edgeTmp || edgeTmp.length !== n * n) edgeTmp = new Float32Array(n * n);
     edgeEnhance(lum, n, F.edge === false ? 0 : EDGE_AMOUNT, edgeTmp);
@@ -1102,6 +1111,7 @@ function pedalUp(force) {
       // column was strong, so organ blush and mild motion stay off the map
       roadmap = roadAcc.slice();
       roadN = dsaN;
+      roadBase = dsaMask ? dsaMask.slice() : null;
       const rb = $('flRoad'); if (rb) rb.disabled = false;
     }
   }
@@ -1268,6 +1278,224 @@ export function fluoroSyncScene() {
     carm.base.position.set(colX, FLOOR_Y, colZ);
   }
 }
+
+/* A point in cm on the scanned volume's own axes (index x spacing, core/fracture.js and
+   core/guidewire.js work there) -> the room, placed as the pool's phantom is: flips, centre, turn. */
+function volToWorld(p) {
+  const vm = ctx.S.voxelModel, pose = ctx.phantomPose(), f = pose.flip, R = pose.rot, c = pose.center;
+  const l = [0, 1, 2].map((a) => { const d = p[a] / vm.vs[a] - (vm.dims[a] - 1) / 2; return (f[a] ? -d : d) * vm.vs[a]; });
+  const r = R ? [R[0] * l[0] + R[1] * l[1] + R[2] * l[2], R[3] * l[0] + R[4] * l[1] + R[5] * l[2], R[6] * l[0] + R[7] * l[1] + R[8] * l[2]] : l;
+  return [c[0] + r[0], c[1] + r[1], c[2] + r[2]];
+}
+const beamNow = () => F.beamS + (F.pedal ? (performance.now() - pedalDownAt) / 1000 : 0);
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
+// tap for one step, hold to run: the feel of every positioning control on this console
+function holdRepeat(btn, fn, every = 90) {
+  if (!btn) return;
+  btn.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    fn();
+    try { btn.setPointerCapture(e.pointerId); } catch (_) { /* a nicety, not the control */ }
+    let iv = null;
+    const to = setTimeout(() => { iv = setInterval(fn, every); }, 340);
+    const stop = () => { clearTimeout(to); if (iv) clearInterval(iv); };
+    btn.addEventListener('pointerup', stop, { once: true });
+    btn.addEventListener('pointercancel', stop, { once: true });
+  });
+}
+
+/* ---- ANKLE ORIF (core/fracture.js) --------------------------------------------------------
+   The ortho C-arm's commonest job: a displaced Weber B fibula on the Foot, reduced under the
+   beam. The fracture is cut from the volume itself and the distal fragment moved in the workers'
+   own copies, so what the learner reduces is the IMAGE — the residual is never shown until they
+   ask for the check, which is the point: the mortise and the lateral are how a surgeon knows.
+   The check is scored the way a list would be: residual within 2 mm and 5 degrees, length
+   first, and the screening it took — time, air kerma, DAP — since the case began. */
+let ankle = null, ankleWant = false;
+const FRAG_STEP = { lat: 0.05, ant: 0.05, prox: 0.05, rot: 1 };     // cm or degrees a tap: 0.5 mm, 1 degree
+const FRAG_MAX = { lat: 1.2, ant: 1.2, prox: 1.2, rot: 25 };        // the forceps' reach from anatomic
+function ankleStart() {
+  const S = ctx.S, vm = S.voxelModel;
+  if (S.subject !== 'foot' || !vm?.data) {
+    ankleWant = true;                                  // started on arrival (radsim:subject)
+    setStatus('Loading the Foot…');
+    if (S.subject !== 'foot') ctx.setSubject?.('foot');
+    return;
+  }
+  ankleWant = false;
+  if (ctx.posedVolume?.().key) { setStatus('Straighten the ankle first (POSITION · joints): the fracture is cut from the leg as it was scanned.'); return; }
+  // the leg says which side is lateral: the fibula is the slender bone (fracture.js findFibula)
+  const fib = findFibula(vm.data, vm.dims, vm.vs, 0);
+  const frag = fib && fractureFragment(vm.data, vm.dims, vm.vs, fib, fib.latSign);
+  if (!frag) { setStatus('No fibula found in this volume.'); return; }
+  const m = mortiseAngle(vm.data, vm.dims, vm.vs, fib, fib.latSign);
+  const a = volToWorld(frag.pivot), b = volToWorld(frag.pivot.map((v, i) => v + frag.lat[i]));
+  ankle = { frag, pose: { ...WEBER_B }, v: 1, latX: Math.sign(b[0] - a[0]) || 1,
+    // the textbook 15-20 degrees, as this ankle's own malleoli measure it
+    mortise: Math.round(Math.max(10, Math.min(25, m ?? 15))),
+    t0: { beam: beamNow(), ak: F.akMGy, dap: F.dapUGym2, pulses: F.pulses }, checks: 0 };
+  fragSent = false;
+  ankleCentre();
+  ankleView('ap');
+  $('flAnkleCheck')?.removeAttribute('disabled');
+  const r = $('flAnkleResult');
+  if (r) r.innerHTML = 'Case on. The distal fibula is broken at the syndesmosis &mdash; short, shifted out and '
+    + `turned out. Screen the AP, the MORTISE (${ankle.mortise}&deg; toward lateral here) and the LATERAL, `
+    + 'reduce with the forceps, and CHECK. The leg is on a bump so the lateral meets it at the isocentre.';
+  setStatus('Ankle ORIF — screen to see the fracture.');
+}
+/* The ankle at the isocentre: the table floated under it, and the leg raised on a radiolucent
+   bump (the height offset) so a horizontal beam meets it — the C cannot drop its isocentre below
+   its own column, which is why every ankle list keeps a bump on the trolley. */
+function ankleCentre() {
+  const S = ctx.S;
+  F.ext = 0; F.wig = 0;
+  let w = volToWorld(ankle.frag.p0);
+  const iso = isoPoint();
+  ctx.movePatient?.(iso[0] - w[0], iso[2] - w[2]);
+  const y0 = S.objOff.y || 0, want = y0 + (isoBase()[1] - w[1]), y = Math.max(0, Math.min(20, Math.round(want * 2) / 2));
+  const el = $('objOffY');
+  if (el) { el.value = y; el.dispatchEvent(new Event('input')); } else S.objOff.y = y;
+  w = volToWorld(ankle.frag.p0);
+  F.lift = Math.max(0, Math.min(30, Math.round(w[1] - isoBase()[1])));
+  for (const [id, k] of [['flLift', 'lift'], ['flExt', 'ext'], ['flWig', 'wig']]) { const e = $(id); if (e) e.value = F[k]; }
+  entryKey = '';
+}
+/* The three views, by the C alone (the leg stays on its bump, as it does under the drapes):
+   AP square to the table; MORTISE turned toward the lateral side until the beam is square to the
+   line through both malleoli; LATERAL horizontal, medial to lateral. */
+function ankleView(kind) {
+  if (!ankle) return;
+  F.orbital = kind === 'mortise' ? ankle.latX * ankle.mortise : kind === 'lat' ? ankle.latX * 90 : 0;
+  F.tilt = 0;
+  for (const [id, k] of [['flOrb', 'orbital'], ['flTilt', 'tilt']]) { const e = $(id); if (e) e.value = F[k]; }
+  document.querySelectorAll('#flAnkleViewSeg button').forEach((x) => x.classList.toggle('on', x.dataset.view === kind));
+  entryKey = '';
+  fluoroSyncScene(); renderReadouts();
+}
+function fragNudge(key, sg) {
+  if (!ankle) { setStatus('Start the ankle case first.'); return; }
+  const v = ankle.pose[key] + sg * FRAG_STEP[key];
+  ankle.pose[key] = Math.max(-FRAG_MAX[key], Math.min(FRAG_MAX[key], Math.round(v * 1000) / 1000));
+  ankle.v++;                         // the next pulse carries the new position (nothing until then)
+}
+function ankleCheck() {
+  if (!ankle) return;
+  const r = judgeReduction(ankle.pose), el = $('flAnkleResult');
+  ankle.checks++;
+  const t = beamNow() - ankle.t0.beam, ak = F.akMGy - ankle.t0.ak, dap = F.dapUGym2 - ankle.t0.dap;
+  const pulses = F.pulses - ankle.t0.pulses;
+  const ok = (b) => (b ? '<span style="color:var(--green)">&#10003;</span>' : '<span style="color:var(--amber)">&#10007;</span>');
+  const len = r.lengthMM > 0 ? `${r.lengthMM} mm short` : r.lengthMM < 0 ? `${-r.lengthMM} mm long` : 'restored';
+  const tr = [r.latMM ? `${Math.abs(r.latMM)} mm ${r.latMM > 0 ? 'lateral' : 'medial'}` : '',
+    r.antMM ? `${Math.abs(r.antMM)} mm ${r.antMM > 0 ? 'anterior' : 'posterior'}` : ''].filter(Boolean).join(', ') || 'none';
+  const rot = r.rotDeg ? `${Math.abs(r.rotDeg)}&deg; ${r.rotDeg > 0 ? 'external' : 'internal'}` : 'none';
+  const tips = [];
+  if (!r.lengthOK) tips.push('length: on the mortise the fibula\'s tip and the talus\'s lateral process make an unbroken curve (the "dime" sign) only when it is out to length');
+  if (!r.rotOK) tips.push('rotation: a turned fibula changes its own profile and the lateral clear space on the mortise');
+  if (!r.transOK) tips.push(Math.abs(r.antMM) > Math.abs(r.latMM) ? 'front-to-back shows only on the LATERAL' : 'side-to-side shows on the AP and mortise');
+  if (el) el.innerHTML = `<b style="color:${r.ok ? 'var(--green)' : 'var(--amber)'}">${r.ok ? 'REDUCED' : 'NOT YET REDUCED'}</b>`
+    + ` (check ${ankle.checks}; limits ${LIMITS.mm} mm, ${LIMITS.deg}&deg;)<br>`
+    + `${ok(r.lengthOK)} Length: ${len}<br>${ok(r.transOK)} Translation: ${tr}<br>${ok(r.rotOK)} Rotation: ${rot}<br>`
+    + `Screening for this case: ${t < 60 ? t.toFixed(1) + " s" : mmss(t)} &middot; ${pulses} pulses &middot; ${ak.toFixed(2)} mGy &middot; ${dap.toFixed(1)} uGy&middot;m&sup2;`
+    + (tips.length ? '<br>' + tips.join('; ') + '.' : '')
+    + '<br>The beam time is the patient\'s: check on LAST IMAGE HOLD and a low pulse rate, screen only to see a change.';
+  setStatus(r.ok ? 'Reduction accepted.' : 'Not yet — see the check.');
+}
+function ankleEnd() {
+  if (!ankle) return;
+  ankle = null;
+  // off the bump: the next patient lies on the table
+  const el = $('objOffY');
+  if (el && +el.value) { el.value = 0; el.dispatchEvent(new Event('input')); }
+  $('flAnkleCheck')?.setAttribute('disabled', '');
+  document.querySelectorAll('#flAnkleViewSeg button').forEach((x) => x.classList.remove('on'));
+}
+// dev server only: the case's true fragment pose and its judgement (the in-app checks)
+if (import.meta.env?.DEV) window.__flAnkle = () => ankle && { pose: { ...ankle.pose }, v: ankle.v, mortise: ankle.mortise, latX: ankle.latX,
+  judge: judgeReduction(ankle.pose), n: ankle.frag.idx.length, set: (p) => { Object.assign(ankle.pose, p); ankle.v++; } };
+
+/* ---- GUIDEWIRE (core/guidewire.js) -------------------------------------------------------
+   A 0.035" wire through a femoral sheath, on the vessel tree the contrast solver runs on. The
+   tree (centrelines and junctions) is read once per subject from the arclength map, which the
+   CONTRAST panel shares (the ultrasound colour box does the same). The wire goes to the workers
+   as a polyline each pulse and is imaged there as steel — so it shows on plain fluoro over the
+   spine, cancels in a DSA mask it was already in, and reads black on a subtracted roadmap. */
+let gw = null, gwGeom = null, gwAcc = 43, gwPts = null, gwBusy = false;
+async function wireGeometry() {
+  const S = ctx.S, vm = S.voxelModel;
+  if (gwGeom && gwGeom.for === S.subject) return gwGeom;
+  if (!vm?.data || !vm.loadArclen || !vm.hasVessels) return null;
+  const C = S.contrast;
+  let sVol = C && C.sVol && C.sVolFor === S.subject ? C.sVol : null;
+  if (!sVol) {
+    const arclen = await vm.loadArclen();
+    if (!arclen) return null;
+    sVol = buildSVolume(vm.data, arclen);
+    if (C) { C.sVol = sVol; C.sVolFor = S.subject; }   // share it back
+  }
+  const lines = vesselCentrelines(vm.data, sVol, vm.dims, vm.vs);
+  return (gwGeom = { for: S.subject, lines, juncs: vesselJunctions(vm.data, vm.dims, vm.vs, lines) });
+}
+// the patient's anterior (the ceiling, supine) on the volume's own axes: where torque 0 points the tip
+function upOnVolume() {
+  const pose = ctx.phantomPose(), R = pose.rot, f = pose.flip;
+  const l = R ? [R[3], R[4], R[5]] : [0, 1, 0];
+  return l.map((v, a) => (f[a] ? -v : v));
+}
+async function wireInsert() {
+  if (gwBusy) return;
+  if (gw) { gw = null; gwPts = null; syncWireUI(); setStatus('Wire out.'); return; }
+  gwBusy = true;
+  setStatus('Reading the vessel tree…');
+  try {
+    const g = await wireGeometry();
+    if (!g || !Object.keys(g.lines).length) { setStatus('This subject has no vessel tree — the wire needs the chest or the chest/abdo/pelvis.'); return; }
+    // a femoral puncture where the subject has the iliacs; the chest alone has only the descending aorta's cut end
+    const acc = g.lines[gwAcc] ? gwAcc : g.lines[43] ? 43 : 29;
+    gw = wireStart(g.lines, g.juncs, acc, upOnVolume());
+    // the tip starts pointing at the table: no branch leaves the aorta that way on the climb
+    // to the arch (none is modelled behind it), so a wire simply pushed goes to the aortic root,
+    // as a J-wire does — every side branch is a choice the learner makes with the torque
+    gw.torque = 180;
+    wireMove(gw, 3);
+    gwPts = null;
+    setStatus('Wire in the sheath — advance it under screening.');
+  } finally { gwBusy = false; syncWireUI(); }
+}
+function wireNudge(dl, dTorque) {
+  if (!gw) { setStatus('Insert the wire first.'); return; }
+  const was = gw.blocked;
+  if (dl) wireMove(gw, dl);
+  if (dTorque) { gw.torque = (gw.torque + dTorque + 360) % 360; wireMove(gw, 0); }
+  if (gw.blocked && !was) setStatus('The wire goes no further — the end of the vessel, or a turn its tip is not facing. Withdraw a little, torque, advance.');
+  gwPts = null;
+  syncWireUI();
+}
+function syncWireUI() {
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  $('flWireIn')?.classList.toggle('on', !!gw);
+  if ($('flWireIn')) $('flWireIn').textContent = gw ? 'Remove' : 'Insert';
+  if (!gw) { set('flWireLenV', '—'); set('flWireTipV', '—'); return; }
+  const t = wireTip(gw);
+  set('flWireLenV', Math.round(t.len) + ' cm');
+  set('flWireTipV', (BodyMaterials.LIST[t.v]?.name || '—') + (gw.blocked ? ' · goes no further' : ''));
+}
+// the wire for this pulse, as voxel indices of the scanned grid (none on a bent patient's grid)
+function wireMsg() {
+  if (!gw || workerPose) return null;
+  if (!gwPts) {
+    const vs = ctx.S.voxelModel.vs, P = wirePolyline(gw);
+    gwPts = new Float32Array(P.length * 3);
+    P.forEach((p, i) => { gwPts[3 * i] = p[0] / vs[0]; gwPts[3 * i + 1] = p[1] / vs[1]; gwPts[3 * i + 2] = p[2] / vs[2]; });
+  }
+  return gwPts;
+}
+// dev server only: the wire's state (the in-app checks)
+if (import.meta.env?.DEV) window.__flWire = () => gw && { len: gw.len, torque: gw.torque, blocked: gw.blocked,
+  path: gw.route.reduce((a, r) => (a[a.length - 1] === r.v ? a : [...a, r.v]), []), pts: wireMsg()?.length / 3,
+  tip: volToWorld(gw.lines[gw.route[gw.route.length - 1].v].pts[gw.route[gw.route.length - 1].i]), iso: isoPoint(),
+  move: (dl, dt) => wireNudge(dl, dt) };
 
 /* ---- mode + wiring ------------------------------------------------------- */
 export function fluoroApplyMode(on) {
@@ -1607,6 +1835,33 @@ export function initFluoro(context) {
   window.addEventListener('radsim:subject', () => {
     workerSub = null; F.motions = [];
     if (ctx.S.mode === 'fluoro') ensureWorker();
+    // the wire and the fracture belong to the patient they were made on
+    gw = null; gwGeom = null; gwPts = null; syncWireUI();
+    if (ctx.S.subject !== 'foot') ankleEnd();
+    else if (ankleWant && ctx.S.mode === 'fluoro') ankleStart();
+  });
+  // ---- guidewire ----
+  document.querySelectorAll('#flWireSeg button[data-acc]').forEach((b) => b.addEventListener('click', () => {
+    gwAcc = +b.dataset.acc;
+    document.querySelectorAll('#flWireSeg button[data-acc]').forEach((x) => x.classList.toggle('on', x === b));
+    if (gw) setStatus('The access changes with the next insertion — remove the wire first.');
+  }));
+  $('flWireIn')?.addEventListener('click', () => wireInsert());
+  // advance and withdraw: half a centimetre a tap, ~4 cm/s held; torque 15 degrees a tap
+  holdRepeat($('flWireFwd'), () => wireNudge(0.5, 0));
+  holdRepeat($('flWireBack'), () => wireNudge(-0.5, 0));
+  holdRepeat($('flWireCW'), () => wireNudge(0, 15), 120);
+  holdRepeat($('flWireCCW'), () => wireNudge(0, -15), 120);
+  // ---- ankle ORIF ----
+  $('flAnkleStart')?.addEventListener('click', () => ankleStart());
+  $('flAnkleCheck')?.addEventListener('click', () => ankleCheck());
+  document.querySelectorAll('#flAnkleViewSeg button').forEach((b) => b.addEventListener('click', () => {
+    if (!ankle) { setStatus('Start the ankle case first.'); return; }
+    ankleView(b.dataset.view);
+  }));
+  document.querySelectorAll('#flFragPad button[data-frag]').forEach((b) => {
+    const [key, sg] = b.dataset.frag.split(',');
+    holdRepeat(b, () => fragNudge(key, +sg), 110);
   });
   renderReadouts();
 }
