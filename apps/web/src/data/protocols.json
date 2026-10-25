@@ -451,7 +451,7 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "lowerextremity",
+              "subject": "foot",
               "pose": {
                 "roll": 0,
                 "cc": 10,
@@ -479,7 +479,7 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "lowerextremity",
+              "subject": "foot",
               "pose": {
                 "roll": 30,
                 "cc": 0,
@@ -507,7 +507,7 @@
                 30
               ],
               "orient": "landscape",
-              "subject": "lowerextremity",
+              "subject": "foot",
               "pose": {
                 "roll": -90,
                 "cc": 0,
@@ -538,7 +538,7 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "lowerextremity",
+              "subject": "foot",
               "pose": {
                 "roll": 0,
                 "cc": 0,
@@ -564,7 +564,7 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "lowerextremity",
+              "subject": "foot",
               "pose": {
                 "roll": 18,
                 "cc": 0,
@@ -590,7 +590,7 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "lowerextremity",
+              "subject": "foot",
               "pose": {
                 "roll": -90,
                 "cc": 0,
