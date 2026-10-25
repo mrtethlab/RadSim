@@ -123,6 +123,8 @@ export async function openAnimation(mode) {
   wire(P);
   resize();
   addEventListener('resize', resize);
+  // and whenever the stage itself changes size (its first layout can land after this measure)
+  if (window.ResizeObserver) { const ro = new ResizeObserver(() => resize()); ro.observe(dom.stage); P.disposers.push(() => ro.disconnect()); }
   document.addEventListener('keydown', onKey);
   document.addEventListener('visibilitychange', onVis);
   P.last = performance.now();
