@@ -330,6 +330,7 @@ function loopFrame() {
     if (!st.keepSound) sfx.stopAll();
     p.mosaic = 0;
     p.markCache.clear();
+    p.cam.up.set(0, 1, 0);                                  // (a step may tilt it for a straight-down shot)
     p.scene.background = new THREE.Color(st.bg ?? 0x0a0c0f);
     st.enter?.();
     paintProgress();
