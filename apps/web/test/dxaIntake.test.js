@@ -89,11 +89,19 @@ test('hyperparathyroidism costs the one-third radius more than the rest of the s
 });
 
 test('the forearm questions do not change who a seed is', () => {
-  // they are drawn after everything else, so the existing answers stay the patient they were
-  for (let seed = 1; seed <= 50; seed++) {
-    const a = makeIntake(seed, { forearm: null, hand: 'R' }), b = makeIntake(seed, { forearm: 'hpt', hand: 'L' });
-    for (const k of ['age', 'height', 'previous', 'imaging', 'meds', 'smoking', 'calcium', 'menses'])
-      assert.equal(a.fields.find((f) => f.key === k).a, b.fields.find((f) => f.key === k).a, `seed ${seed} ${k}`);
-    assert.equal(a.name, b.name);
+  // they are drawn after everything else, so a seed is the patient it was before they existed —
+  // these are the answers the generator gave for these seeds before the forearm was added
+  const before = {
+    7: ['Bergeron, Aiko', '983586', 0.318, '82', '165 kg (364 lb)', 'Ultrasound of the thyroid 3 weeks ago', 'Former, quit 11 years ago', 'Menopause at 47'],
+    1234: ['Kowalski, Carmen', '264705', 0.216, '53', '65 kg (143 lb)', 'CT chest with contrast about 3 months ago', 'Never', 'Menopause at 42'],
+    99: ['Marchetti, Miriam', '385239', 0.042, '55', '63 kg (139 lb)', 'None', 'Former, quit 20 years ago', 'Menopause at 49'],
+  };
+  for (const [seed, [name, id, loss, ...ans]] of Object.entries(before)) {
+    const P = makeIntake(+seed), a = (k) => P.fields.find((f) => f.key === k).a;
+    assert.deepEqual([P.name, P.id, P.loss], [name, id, loss], `seed ${seed}`);
+    assert.deepEqual(['age', 'weight', 'imaging', 'smoking', 'menses'].map(a), ans, `seed ${seed}`);
   }
+  // seed 7 was sent away for her weight; she is now the forearm-only study
+  assert.deepEqual(makeIntake(7).verdict.plan, ['forearm']);
+  assert.equal(makeIntake(7).verdict.delay, false);
 });

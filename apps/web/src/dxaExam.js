@@ -495,7 +495,7 @@ export function dxaExamMode(on) {
 }
 
 export function initDxaExam() {
-  registerExam({ canScan, onScanDone, active: () => scanning() || X?.phase === 'auto' });
+  registerExam({ canScan, onScanDone, active: () => scanning() || X?.phase === 'auto', noFile: () => X?.kind === 'prec' });
   for (const id of ['dxExam', 'dxModal']) {
     $(id)?.addEventListener('click', (e) => {
       const b = e.target.closest('[data-act]');

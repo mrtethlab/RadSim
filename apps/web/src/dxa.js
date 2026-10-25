@@ -2204,7 +2204,9 @@ export function initDXA(context) {
         sc.col = an.col; sc.axes = an.axes;
         render(sc, bmd);
         report(sc);
-        fileStudy(sc);
+        // (a precision repeat is not a patient's study: filed, it turned up in the next patient's
+        // trend as a follow-up)
+        if (!exam?.noFile?.()) fileStudy(sc);
         setStatus(`Done — ${REGIONS[sc.region].label}.`);
         exam?.onScanDone?.(sc);
       },
