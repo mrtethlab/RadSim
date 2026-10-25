@@ -200,12 +200,14 @@ export function buildTubeHead(tube) {
   // the yoke the column holds
   shell.add(mesh(rbox(13, 5, 11, 1.2), M.grey, 0, 15.2, 0));
   const mount = new THREE.Object3D(); mount.position.set(0, 17.7, 0); shell.add(mount);
-  // port neck and the collimator box
+  // port neck and the collimator box: the box (with its screen, handle and knobs) turns on the
+  // neck about the central ray (the shell's y axis); the drum and the yoke above it stay put
   shell.add(mesh(new THREE.CylinderGeometry(4.6, 5.2, 2.6, 40), M.dark, 0, -4.4, 0));
-  shell.add(mesh(rbox(22, 12, 20, 2.2), M.shell, 0, -11.6, 0));
-  shell.add(mesh(new THREE.BoxGeometry(22.2, 0.5, 20.2), M.grey, 0, -6.2, 0));
+  const coll = new THREE.Group(); shell.add(coll);
+  coll.add(mesh(rbox(22, 12, 20, 2.2), M.shell, 0, -11.6, 0));
+  coll.add(mesh(new THREE.BoxGeometry(22.2, 0.5, 20.2), M.grey, 0, -6.2, 0));
   // touchscreen, tilted up a little toward the operator
-  const scr = new THREE.Group(); scr.position.set(0, -11.2, 10.2); scr.rotation.x = -0.18; shell.add(scr);
+  const scr = new THREE.Group(); scr.position.set(0, -11.2, 10.2); scr.rotation.x = -0.18; coll.add(scr);
   scr.add(mesh(rbox(15, 9, 1, 0.6), M.black, 0, 0, 0.3));
   const cv = document.createElement('canvas'); cv.width = 512; cv.height = 300;
   const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 8; tex.colorSpace = THREE.SRGBColorSpace;
@@ -216,14 +218,14 @@ export function buildTubeHead(tube) {
     new THREE.Vector3(-11.6, -15.6, 4), new THREE.Vector3(-12.6, -16.4, 11.5), new THREE.Vector3(-8, -16.8, 15.2),
     new THREE.Vector3(0, -17, 15.8), new THREE.Vector3(8, -16.8, 15.2), new THREE.Vector3(12.6, -16.4, 11.5),
     new THREE.Vector3(11.6, -15.6, 4)]);
-  shell.add(mesh(new THREE.TubeGeometry(loop, 80, 0.95, 14), M.grey));
+  coll.add(mesh(new THREE.TubeGeometry(loop, 80, 0.95, 14), M.grey));
   // control knobs and the beam exit underneath
   for (const x of [-6, 6]) {
-    shell.add(mesh(new THREE.CylinderGeometry(1.5, 1.6, 1.8, 28), M.grey, x, -18.3, 5.5));
-    shell.add(mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.4, 20), M.dark, x, -19.3, 5.5));
+    coll.add(mesh(new THREE.CylinderGeometry(1.5, 1.6, 1.8, 28), M.grey, x, -18.3, 5.5));
+    coll.add(mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.4, 20), M.dark, x, -19.3, 5.5));
   }
-  shell.add(mesh(new THREE.BoxGeometry(7, 0.3, 7), M.black, 0, -17.7, -1));
-  return { cv, tex, last: '', mount };
+  coll.add(mesh(new THREE.BoxGeometry(7, 0.3, 7), M.black, 0, -17.7, -1));
+  return { cv, tex, last: '', mount, coll };
 }
 
 /* ---------------------------------------------------------------- the room */

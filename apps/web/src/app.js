@@ -1842,6 +1842,7 @@ function syncScene(){
   three.tube.position.set(src[0],src[1],src[2]);
   three.tube.lookAt(three.rig.localToWorld(new THREE.Vector3(...aim))); three.tube.rotateX(Math.PI/2);
   three.tube.rotateY(-Math.PI/2);  // square the housing with the light field it projects (field W along x, L along z)
+  three.collLCD.coll.rotation.y=COLL_BOX_SIGN*(S.collRot||0)*Math.PI/180;   // the box turns with its field
   updateCollimatorLCD();           // live LCD strip: filter / field size / status / SID
   three.cr.geometry.setFromPoints([new THREE.Vector3(...src), new THREE.Vector3(...aim)]);
   three.cr.geometry.attributes.position.needsUpdate=true;
@@ -1931,8 +1932,9 @@ function updateCookie(){
   const hu=Math.min(0.47, 0.5*((S.collX/2)/S.sid)/coneT);   // half width (u) in uv
   const hv=Math.min(0.47, 0.5*((S.collZ/2)/S.sid)/coneT);   // half length (v) in uv
   const cx=SZ/2, cy=SZ/2, w=hu*SZ, h=hv*SZ;
-  // turned with the collimator (the cookie is laid out with the long axis up, looking down the beam)
-  g.save(); g.translate(cx, cy); g.rotate(-(S.collRot||0)*Math.PI/180); g.translate(-cx, -cy);
+  // turned with the collimator (the cookie is laid out with the long axis up, looking down the beam;
+  // the spotlight projects it mirrored, so it turns the canvas the way the field turns)
+  g.save(); g.translate(cx, cy); g.rotate((S.collRot||0)*Math.PI/180); g.translate(-cx, -cy);
   // aperture (lit)
   g.fillStyle='#fff'; g.fillRect(cx-w, cy-h, 2*w, 2*h);
   // Crosshair wires, spanning the aperture with a small central gap. Grey, not black: a real
@@ -1985,7 +1987,9 @@ const WALL_Q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().se
    them. A free plate, and every other mode, has no bucky: BK is zero. */
 const B0={x:0,z:0};
 function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }
-const BUCKY_SPEED=30;                       // cm/s, the motor's
+const BUCKY_SPEED=30;
+const COLL_ROT_DETENT=3;
+const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider                    // deg: the collimator clicks into square within this of 0                       // cm/s, the motor's
 let buckyRaf=0, buckyLast=0;
 function buckyTarget(){ return { x:0, z:S.tubeZ }; }  // the rails run one way: along z (up the column at the wall)
 function buckyFollow(){
@@ -2093,7 +2097,8 @@ function tubeFrame(){
   const d=[-ux,-uy,-uz];                       // central-ray direction (toward detector)
   let wAxis=[clm, slm, 0];                      // collimator width axis
   let lAxis=[scc*slm, -scc*clm, ccc];           // collimator length axis
-  // the collimator turned about the central ray (clockwise as the tube sees it, looking down it):
+  // the collimator turned about the central ray (+ clockwise looking down the beam, the hang arrow
+  // at 12 o'clock):
   // the field's two axes turn together, so the light field, the exposed field and every check
   // made on them turn as one
   if(S.collRot){
@@ -2263,6 +2268,7 @@ function bind(){
   const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ','collRot'];
   for(const id of geoSliders){
     $(id).addEventListener('input',e=>{ S[id]=parseFloat(e.target.value);
+      if(id==='collRot' && Math.abs(S.collRot)<=COLL_ROT_DETENT) S.collRot=0;   // the detent at 0
       updateGeomReadouts(); syncScene(); buckyFollow();});
   }
   $('recenter').addEventListener('click',()=>{
