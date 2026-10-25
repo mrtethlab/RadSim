@@ -172,6 +172,24 @@ export function buildUnit(api) {
     breast, parts, skinMat, glandMat, muscleMat, showMuscle, setCompression, setPaddle, paddleAt, breastPose, loads, beam, setBeam, M };
 }
 
+/* The electrons across the tube's gap, filament to focal spot, accelerating, squeezed by the cup
+   to the focal line (the X-ray film's stream, in this tube's frame and so its tilt): endless. */
+const STREAM = (() => { let s = 7; const r = () => { s = (s * 16807) % 2147483647; return s / 2147483647; };
+  return Array.from({ length: 160 }, (_, i) => ({ i, t0: i * 0.023 + r() * 0.02, y0: (r() - 0.5) * 0.5, z0: (r() - 0.5) * 0.9, z1: (r() - 0.5) * 0.25, y1: (r() - 0.5) * 0.7 })); })();
+export function electronStream(api, R, t, density = 1) {
+  const T = R.tube, gap = T.at.filament[0], v = new THREE.Vector3(), TR = 0.55;
+  R.unit.updateMatrixWorld(true);
+  for (const e of STREAM) {
+    if ((e.i % 10) / 10 >= density) continue;
+    const age = t - e.t0;
+    if (age < 0) continue;
+    const k = (age % TR) / TR, f = k * k;
+    const p = T.g.localToWorld(v.set(gap * (1 - f), e.y0 + (e.y1 - e.y0) * f, e.z0 + (e.z1 - e.z0) * f));
+    const [x, y, front] = api.toPx(p);
+    if (front) api.px.px(x, y, 'cyan', 0.9);
+  }
+}
+
 /* A world point of the gantry's frame (cm) -> the world, through the gantry's current turn. */
 export function gantryToWorld(R, p) {
   R.gantry.updateMatrixWorld(true);

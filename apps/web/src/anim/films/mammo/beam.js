@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import { setOpacity } from '../../kit/stage.js';
 import { makeParticles, coneDir } from '../../kit/flux.js';
-import { FOCAL, TUBE_TILT } from './rig.js';
+import { FOCAL, TUBE_TILT, electronStream } from './rig.js';
 import { spectrum, foilT, mkeV, mSpectrumPlot, METAL, TFS } from './phys.js';
 import { moTarget, foilScene } from './fields.js';
 import { loopParticles, hud } from './common.js';
@@ -61,7 +61,7 @@ export async function beamChapter(api, S) {
       cam: [[0, sideCam(30), FOCAL, 36], [5, sideCam(0.35), FOCAL, 30]],
       cues: [[0.3, () => sfx.whoosh()]],
       frame(t) {
-        T.spin.rotation.x = spinAt(t);
+        T.spin.rotation.x = spinAt(t); electronStream(api, R, t, 0.5);
         api.mosaic(span(t, 2, 4.6));
         if (t > 3.9) { px.alpha = span(t, 3.9, 5); moTarget(api, t, { rate: 5 }); px.alpha = 1; }
       },
@@ -96,25 +96,28 @@ export async function beamChapter(api, S) {
       ],
     },
     {
-      title: 'The filter slide', dur: 12, scale: '1 cm',
+      title: 'The filter slide', dur: 15, scale: (t) => (t < 11.5 ? '1 cm' : t < 13.5 ? '100 µm' : '10 µm'),
       enter() { insideHead(); R.filterSlide.position.x = 0; },
-      cam: [[0, sideCam(0.35), FOCAL, 30], [3, [FOCAL[0] + 22, FOCAL[1] - 3, FOCAL[2] - 6], [fP[0], fP[1] + 1, fP[2]], 36], [12, [FOCAL[0] + 18, FOCAL[1] - 5, FOCAL[2] - 9], [fP[0], fP[1], fP[2]], 36]],
-      cues: [[0.1, () => sfx.whoosh()], [7.5, () => sfx.click()]],
+      cam: [[0, sideCam(0.35), FOCAL, 30], [3, [FOCAL[0] + 22, FOCAL[1] - 3, FOCAL[2] - 6], [fP[0], fP[1] + 1, fP[2]], 36],
+        [11, [FOCAL[0] + 18, FOCAL[1] - 5, FOCAL[2] - 9], [fP[0], fP[1], fP[2]], 36], [14.6, [fP[0] + 0.6, fP[1] + 0.05, fP[2] + 0.1], [fP[0], fP[1], fP[2]], 36]],
+      cues: [[0.1, () => sfx.whoosh()], [6.5, () => sfx.click()], [9, () => sfx.click()], [11.5, () => sfx.whoosh()]],
       frame(t) {
-        api.mosaic(1 - span(t, 0, 2));
-        T.spin.rotation.x = spinAt(t);
+        // out of the target; at the end, down into the molybdenum foil
+        api.mosaic(Math.max(1 - span(t, 0, 2), span(t, 11.8, 14.4)));
+        T.spin.rotation.x = spinAt(t); electronStream(api, R, t, 0.5);
         sfx.hold('rotor', 800, 0.035, 'square');
-        // at 7.5 s the slide moves its rhodium foil under the port
-        const sl = span(t, 7.5, 9);
+        // the slide brings its rhodium foil under the port, then back
+        const sl = span(t, 6.5, 7.5) - span(t, 9, 10);
         R.filterSlide.position.x = -7 * sl;
         const metal = sl < 0.5 ? 'Mo' : 'Rh', um = metal === 'Mo' ? 30 : 25;
         loopParticles(api, out.map((p) => fateOut(p, metal, um)), t, PER, (p, s) => ({ kind: 'photon', color: mkeV(p.E), flashColor: 'grey' }), { tail: 4 });
-        if (t > 2.5 && t < 7.5) api.mark(R.foilMo, 'yellow', t);
-        if (t > 9) api.mark(R.foilRh, 'yellow', t);
+        if (t > 2.5 && t < 6.5) api.mark(R.foilMo, 'yellow', t);
+        if (t > 7.5 && t < 9) api.mark(R.foilRh, 'yellow', t, { live: true });
+        if (t > 13.8) { px.alpha = span(t, 13.8, 15); foilScene(api, t, { metal: 'Mo', um: 30, sample: sampleRaw }); px.alpha = 1; }
       },
       caption: [
-        { from: 2.5, to: 7.5, text: 'Under the window, a <b>filter</b>: a foil of metal only 30 µm thick, molybdenum here, that the beam must cross.' },
-        { from: 9, to: 12, text: 'The slide can swap in a <b>rhodium</b> foil (25 µm) for a thicker breast. The AEC chooses which.' },
+        { from: 2.5, to: 6.5, text: 'Under the window, a <b>filter</b>: a foil of metal only 30 µm thick, molybdenum here, that the whole beam must cross.' },
+        { from: 6.5, to: 10.5, text: 'The slide can swap in a <b>rhodium</b> foil (25 µm) for a thicker breast. The AEC chooses which.' },
       ],
     },
     {
@@ -122,7 +125,7 @@ export async function beamChapter(api, S) {
       enter() { R.filterSlide.position.x = 0; },
       cues: [[0.2, () => sfx.whoosh()], [3.2, () => sfx.zap()], [10.2, () => sfx.zap()]],
       frame(t) {
-        const r = foilScene(api, t, { metal: 'Mo', um: 30, sample: sampleRaw, hiE: 21.5, hiAt: 1.2, every: 7 });
+        const r = foilScene(api, t + 3, { metal: 'Mo', um: 30, sample: sampleRaw, hiE: 21.5, hiAt: 4.2, every: 7 });
         const panel = [px.W - 104, px.H - 64, 100, 60];
         const k = span(t, 7, 10);
         mSpectrumPlot(px, ...panel, 28, n((E) => moRaw(E) * lerp(1, foilT('Mo', E, 30), k)), { before: n(moRaw), axisMax: 35, edges: [20], lines: [17.5, 19.6], curve: k > 0 ? (E) => foilT('Mo', E, 30) * k : null });
@@ -139,7 +142,7 @@ export async function beamChapter(api, S) {
       title: 'The rhodium filter', dur: 13, view: 'pixel', scale: '10 µm',
       cues: [[3.2, () => sfx.zap()]],
       frame(t) {
-        foilScene(api, t, { metal: 'Rh', um: 25, sample: sampleRaw, hiE: 21.5, hiAt: 1.2, every: 7 });
+        foilScene(api, t + 3, { metal: 'Rh', um: 25, sample: sampleRaw, hiE: 21.5, hiAt: 4.2, every: 7 });
         const panel = [px.W - 104, px.H - 64, 100, 60];
         mSpectrumPlot(px, ...panel, 28, n(moRh), { before: n(moMo), axisMax: 35, edges: [20, 23.2], lines: [17.5, 19.6], curve: (E) => foilT('Rh', E, 25) });
         api.keepOut(panel);
@@ -176,7 +179,7 @@ export async function beamChapter(api, S) {
         }
       },
       caption: [
-        { from: 2.5, to: 6, text: 'Each target is paired with a filter whose K-edge sits just above its lines. Molybdenum targets: <b>Mo/Mo</b> for thin breasts, <b>Mo/Rh</b> for thicker.' },
+        { from: 2.5, to: 6, text: 'Each target is paired with a filter whose K-edge sits just above the energies wanted. Molybdenum targets: <b>Mo/Mo</b> for thin breasts, <b>Mo/Rh</b> for thicker.' },
         { from: 6, to: 9.5, text: '<b>Rh/Rh</b>: rhodium’s own lines, 20.2 and 22.7 keV, under its own edge: harder again.' },
         { from: 9.5, to: 14, text: 'A <b>tungsten</b> target has no K lines at these kV but makes more bremsstrahlung; rhodium or silver (edge 25.5 keV) shape it into a band. The yellow number is each beam’s mean energy, keV.' },
       ],

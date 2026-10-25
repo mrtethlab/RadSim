@@ -6,7 +6,7 @@
 import * as THREE from 'three';
 import { setOpacity } from '../../kit/stage.js';
 import { makeParticles, coneDir } from '../../kit/flux.js';
-import { FOCAL, RECEPTOR_Y, FRONT, SID, TUBE_TILT, FIELD } from './rig.js';
+import { FOCAL, RECEPTOR_Y, FRONT, SID, TUBE_TILT, FIELD, electronStream } from './rig.js';
 import { spectrum, foilT, muRho, mkeV } from './phys.js';
 import { loopParticles } from './common.js';
 
@@ -31,7 +31,7 @@ export function unitChapter(api, S) {
     rest();
     for (const o of [R.tubeHead, R.nose, R.snout, R.trim]) setOpacity(o, 0.12);
     T.g.visible = true; setOpacity(T.housing, 0.15); T.collBox.visible = true;
-    T.filMat.emissiveIntensity = 1.4; T.filMat.emissive.setRGB(1, 0.62, 0.15);
+    T.filMat.emissiveIntensity = 1.4; T.filMat.emissive.setRGB(1, 0.62, 0.15); T.spotMat.opacity = 0.85;
     R.fil2Mat.emissiveIntensity = 0.2; R.fil2Mat.emissive.setRGB(1, 0.62, 0.15);
   };
   // the world places of the tube's parts, with the unit at rest
@@ -75,7 +75,7 @@ export function unitChapter(api, S) {
     {
       title: 'Support, paddle and face shield', dur: 13, scale: '10 cm',
       enter() { rest(); },
-      cam: [[0, [70, 40, 95], [0, 12, 0], 40], [13, [48, 22, 70], [0, 8, 4], 40]],
+      cam: [[0, [70, 40, 95], [0, 12, 0], 40], [8, [52, 24, 74], [0, 6, 4], 40], [13, [66, 40, 104], [0, 20, 4], 40]],
       cues: [[4.5, () => sfx.click()]],
       frame(t) {
         R.setPaddle(lerp(22, 12, span(t, 4.6, 7.5)));
@@ -120,7 +120,9 @@ export function unitChapter(api, S) {
       cam: [[0, [60, 70, 40], [0, 58, 10], 38], [12, [32, 64, 22], [0, 61, 14], 36]],
       cues: [[0.5, () => sfx.power()]],
       frame(t) {
-        T.spin.rotation.x = spinAt(t);
+        // the rotor up to speed first, then the exposure: electrons across the gap
+        T.spin.rotation.x = spinAt(t); if (t > 4) electronStream(api, R, t, 0.5);
+        T.spotMat.opacity = t > 4 ? 0.85 : 0;
         sfx.hold('rotor', 300 + 500 * span(t, 0.5, 4), 0.04, 'square');
         if (t > 0.8 && t < 6.5) api.mark(T.anode, 'yellow', t);
         if (t > 6.5) api.mark(T.cup, 'cyan', t);
@@ -136,7 +138,7 @@ export function unitChapter(api, S) {
       // in at the cup from below and to the side, the anode beyond
       cam: [[0, tw([-2, 4, 14]), tw([3.8, 0.2, 0]), 34], [12, tw([1.9, 0.5, 2.4]), tw([4.6, 0.05, 0]), 32]],
       frame(t) {
-        T.spin.rotation.x = spinAt(t);
+        T.spin.rotation.x = spinAt(t); electronStream(api, R, t, 0.5);
         const small = t > 5.5;
         T.filMat.emissiveIntensity = small ? 0.3 : 1.5;
         R.fil2Mat.emissiveIntensity = small ? 1.6 : 0.2;
@@ -162,7 +164,7 @@ export function unitChapter(api, S) {
       enter() { insideHead(); R.setPaddle(12); R.beam.visible = true; R.beam.material.opacity = 0.08; },
       cam: [[0, [124, 28, 6], [0, 26, 6], 40], [14, [116, 26, 4], [0, 24, 4], 40]],
       frame(t) {
-        T.spin.rotation.x = spinAt(t);
+        T.spin.rotation.x = spinAt(t); electronStream(api, R, t, 0.5);
         T.spotMat.opacity = 0.9;
         // rays down to the receptor across the field (chest wall to nipple), their brightness the
         // beam's intensity there: the heel effect thins those toward the anode
@@ -205,11 +207,11 @@ export function unitChapter(api, S) {
       enter() { insideHead(); setOpacity(T.housing, 0.08); },
       cam: [[0, [P.port[0] + 17, P.port[1] - 4, P.port[2] + 12], [P.port[0], P.port[1] - 0.6, P.port[2]], 36], [12, [P.port[0] + 10, P.port[1] - 2.5, P.port[2] + 7], [P.port[0], P.port[1] - 0.6, P.port[2]], 34]],
       frame(t) {
-        T.spin.rotation.x = spinAt(t);
+        T.spin.rotation.x = spinAt(t); electronStream(api, R, t, 0.5);
         T.spotMat.opacity = 0.9;
         loopParticles(api, out, t, PER, (p) => ({ kind: 'photon', color: mkeV(p.E), flashColor: 'grey' }), { tail: 4 });
         // transmission through 1 mm of beryllium (cyan) and of glass (orange), 5-35 keV
-        const x = 6, y = 8, w = 96, h = 56;
+        const w = 96, h = 56, x = px.W - w - 6, y = px.H - h - 14;
         px.rect(x, y, w, h, 'ink', 0.88); px.frame(x, y, w, h, 'dkgrey');
         api.keepOut([x, y, w, h + 8]);
         const x0 = x + 3, y0 = y + h - 8, pw = w - 6, ph = h - 13;
@@ -229,7 +231,7 @@ export function unitChapter(api, S) {
         api.mark(T.port, 'yellow', t);
       },
       caption: [
-        { from: 0.8, to: 12, text: 'The beam leaves through a <b>beryllium window</b> (Z = 4). A millimetre of it lets out nearly every photon above 10 keV (cyan); glass (orange) would stop most of the soft ones mammography depends on.' },
+        { from: 0.8, to: 12, text: 'The beam leaves through a <b>beryllium window</b> (Z = 4). A millimetre of it lets out over 85% of the photons even at 10 keV (cyan); glass (orange) would stop most of the soft ones mammography depends on.' },
       ],
     },
   ];

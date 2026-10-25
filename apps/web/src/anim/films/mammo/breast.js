@@ -179,9 +179,9 @@ export async function breastChapter(api, S) {
       ],
     },
     {
-      title: 'Into the breast', dur: 5, scale: (t) => (t < 2 ? '1 cm' : '1 mm'),
-      enter() { base({ comp: C, paddle: R.paddleAt(C), skin: 0.4 }); R.beam.visible = true; R.beam.material.opacity = 0.12; },
-      cam: [[0, sideCam(70, 4), [0, 0, 6], 36], [5, sideCam(2.4, 0), [0, 0, 6], 36]],
+      title: 'Into the breast', dur: 5, scale: (t) => (t < 2 ? '10 cm' : '1 cm'),
+      enter() { base({ comp: C, paddle: R.paddleAt(C), skin: 0.4 }); },
+      cam: [[0, [70, 9, 10], [0, 0, 10], 36], [5, [2.4, 0.3, 10], [0, 0, 10], 36]],
       cues: [[0.3, () => sfx.whoosh()]],
       frame(t) {
         api.mosaic(span(t, 2, 4.6));
@@ -249,7 +249,7 @@ export async function breastChapter(api, S) {
       },
       caption: [
         { from: 0.6, to: 6, text: 'Even at these energies some photons are scattered. A <b>grid</b> under the support stops most of those arriving at an angle.' },
-        { from: 6, to: 11, text: 'Mammography’s is <b>cellular</b>: thin copper walls in a square lattice with air in the cells, low (about 4–5:1), so it stops scatter coming from either direction and passes nearly all the primary beam.' },
+        { from: 6, to: 11, text: 'Mammography’s is <b>cellular</b>: thin copper walls in a square lattice with air in the cells, low (about 4:1), so it stops scatter coming from either direction and passes most of the primary beam.' },
         { from: 11, to: 16, text: 'It <b>moves</b> during the exposure so its walls blur away and never show on the image. Magnification views leave it out: the air gap does the job.' },
       ],
     },

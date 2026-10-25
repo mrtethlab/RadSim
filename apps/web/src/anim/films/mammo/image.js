@@ -240,7 +240,7 @@ export async function imageChapter(api, S) {
       },
       caption: [
         { from: 0.5, to: 4, text: 'Somewhere in this CC is a cluster of calcifications, invisible at this size.' },
-        { from: 7.5, to: 15, text: 'At the detector’s full resolution: a <b>cluster</b> of tiny bright specks, each a few pixels. Their number, shape and spread are what the radiologist judges; a group like this would be recalled for magnification views.' },
+        { from: 7.5, to: 15, text: 'At the detector’s full resolution: a <b>cluster</b> of tiny bright specks, each a few pixels. Their number, shape and spread are what the radiologist judges; a group like this would typically be called back for magnification views.' },
       ],
     },
     {
@@ -312,7 +312,7 @@ export async function imageChapter(api, S) {
       },
       caption: [
         { from: 0.6, to: 7, text: '<b>Digital breast tomosynthesis</b> (DBT): the breast stays compressed and the detector still, while the tube sweeps an arc, 15° to 50° by maker.' },
-        { from: 7, to: 14, text: 'Along the way it fires a series of <b>low-dose</b> exposures, 9 to 25 of them: projections from slightly different angles, for about the dose of one ordinary view.' },
+        { from: 7, to: 14, text: 'Along the way it fires a series of <b>low-dose</b> exposures, 9 to 25 of them: projections from slightly different angles, for about the dose of one ordinary view, or a little more.' },
       ],
     },
     {
@@ -351,7 +351,7 @@ export async function imageChapter(api, S) {
         }
       },
       caption: [
-        { from: 0.6, to: 8, text: 'The result is a <b>stack of slices</b>, about 1 mm apart, scrolled through like the pages of a book. Tissue that overlapped on the 2D image is pulled apart.' },
+        { from: 0.6, to: 8, text: 'The result is a <b>stack of slices</b>, about 1 mm apart (a few are shown here), scrolled through like the pages of a book. Tissue that overlapped on the 2D image is pulled apart.' },
         { from: 8, to: 16, text: 'Each finding is sharp only in its own slice: the calcification cluster comes into focus at its depth. Fewer false alarms, more cancers found in dense breasts.' },
       ],
     },

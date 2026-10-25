@@ -156,14 +156,18 @@ export async function detectorChapter(api, S) {
       ],
     },
     {
-      title: 'The selenium detector', dur: 16, scale: '10 cm',
+      title: 'The selenium detector', dur: 19.5, scale: (t) => (t < 16.5 ? '10 cm' : t < 18 ? '1 mm' : '100 µm'),
       enter() { base({ inside: true, plate: 0.15, breast: false }); },
-      cam: [[0, [46, 22, 66], [0, -2, 4], 38], [16, [44, 30, 62], [0, 6, 4], 38]],
+      // at the end, in at the selenium layer's front edge (the chest-wall side), seen in section
+      cam: [[0, [46, 22, 66], [0, -2, 4], 38], [16, [44, 30, 62], [0, 6, 4], 38], [17, [0, 17, 34], [0, 13.7, 15.6], 38], [19.5, [0, 13.72, 15.75], [0, 13.7, 15.6], 38]],
+      cues: [[16.5, () => sfx.whoosh()]],
       frame(t) {
         R.explode(span(t, 0.8, 4));
         const order = [R.grid, R.electrode, R.selenium, R.tftFace];
         const i = t < 4.2 ? -1 : Math.min(3, Math.floor((t - 4.2) / 3));
-        if (i >= 0) api.mark(order[i], 'yellow', t);
+        if (i >= 0 && t < 16) api.mark(order[i], 'yellow', t);
+        api.mosaic(span(t, 17.2, 19.2));
+        if (t > 18.6) { px.alpha = span(t, 18.6, 19.5); px.fillAll('ink'); seleniumScene(t - 18.6); px.alpha = 1; }
       },
       caption: [
         { from: 0.8, to: 4.2, text: 'Under the support’s cover, the grid, then a <b>direct-conversion</b> flat panel, layer on layer.' },
