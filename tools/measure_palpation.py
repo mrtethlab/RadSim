@@ -27,6 +27,18 @@ LANDMARKS = json.loads((ROOT / 'apps' / 'web' / 'src' / 'data' / 'landmarks.json
 ROLLED_180 = {'chestabdopelvis', 'headneck'}
 
 
+# The models whose joint spaces are cut (services/compute/app/joint_space.py, build_hand.py): their
+# landmarks are measured on the skeleton with its joint cartilage, as before the cut (the gaps put dips
+# in every bone profile; a hand's wrist landmark moved 4 cm). Not the chest's: its costal cartilage is
+# no landmark's bone.
+JOINTED = {'hand', 'upperextremity', 'lowerextremity', 'headneck'}
+
+
+def skeleton_ids(name, h):
+    return [m['id'] for m in h['materials']
+            if 'bone' in m['name'].lower() or (name in JOINTED and m['name'].lower() == 'cartilage')]
+
+
 class Vol:
     """A model in the rest frame: bone mask, tissue mask, and index <-> cm (voxel centres at
     (i - (n-1)/2) * spacing, as the app places them)."""
@@ -38,17 +50,20 @@ class Vol:
         if name not in ROLLED_180:                    # x-ray voxelFlips: mirror x and y
             v = v[:, ::-1, ::-1]
         self.v = v
-        self.bone = np.isin(v, [m['id'] for m in h['materials'] if 'bone' in m['name'].lower()])
+        self.bone = np.isin(v, skeleton_ids(name, h))
         self.n = np.array([nx, ny, nz])
 
     def main_bone(self):
         """only the largest connected bone: a limb CT can carry a sliver of the other limb at the
         edge of the crop, and an 'extreme' point would land on it (the malleoli first came out at
         exactly the volume's edge)"""
-        lab, n = ndi.label(self.bone)
+        # (the skeleton, not one bone: with its joint spaces open (services/compute/app/joint_space.py)
+        # a limb is many separate bones, so pieces are joined across a joint's width before choosing)
+        r = max(2, int(np.ceil(0.5 / float(self.sp.min()))))          # 5 mm, in voxels: over any joint gap
+        lab, n = ndi.label(ndi.binary_dilation(self.bone, iterations=r))
         if n > 1:
             sizes = ndi.sum(self.bone, lab, range(1, n + 1))
-            self.bone = lab == (int(np.argmax(sizes)) + 1)
+            self.bone &= lab == (int(np.argmax(sizes)) + 1)
         return self
 
     def cm(self, i, j, k):

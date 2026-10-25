@@ -11,8 +11,8 @@
   },
   "mcp2Joint": {
    "x": 1.62,
-   "y": -0.45,
-   "z": 3.5,
+   "y": -0.08,
+   "z": 3.0,
    "how": "the joint space along the 2nd ray: the deepest dip in bone between the metacarpal head and the proximal phalanx",
    "guide": "Lateral hand: CR perpendicular to the 2nd MCP joint (Bontrager; Radiopaedia)",
    "confidence": "medium"
@@ -50,8 +50,8 @@
    "confidence": "medium"
   },
   "scaphoid": {
-   "x": 0.54,
-   "y": 0.14,
+   "x": 0.39,
+   "y": 0.24,
    "z": -4.28,
    "how": "the radial-most 1.5 cm of carpal bone 1 cm distal to the radiocarpal joint: the scaphoid",
    "guide": "PA axial scaphoid: CR 10-15 degrees proximally, toward the elbow, to the scaphoid, hand in ulnar deviation (Bontrager; Radiopaedia)",
@@ -60,33 +60,33 @@
  },
  "lowerextremity": {
   "intermalleolar": {
-   "x": 1.45,
-   "y": -5.65,
-   "z": -46.05,
+   "x": -5.1,
+   "y": -5.7,
+   "z": -44.3,
    "how": "midway between the measured medial and lateral malleoli",
    "guide": "AP, AP mortise and AP oblique ankle: CR perpendicular to a point midway between the malleoli (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "medialMalleolus": {
-   "x": -1.5,
-   "y": -4.15,
-   "z": -44.35,
+   "x": -7.55,
+   "y": -6.7,
+   "z": -44.45,
    "how": "the medial malleolus (palpation landmark)",
    "guide": "Lateral (mediolateral) ankle: CR perpendicular to the medial malleolus (Bontrager)",
    "confidence": "medium"
   },
   "mt3Base": {
-   "x": 2.82,
-   "y": 3.15,
-   "z": -47.78,
+   "x": -2.03,
+   "y": 4.97,
+   "z": -45.49,
    "how": "the middle third of the foot bone 43-51 % of the way from the ankle to the tip of the toes (14.6 cm): the base of the 3rd metatarsal",
    "guide": "AP foot: CR 10 degrees toward the heel to the base of the 3rd metatarsal; AP medial oblique foot: CR perpendicular to the base of the 3rd metatarsal (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "medialCuneiform": {
-   "x": 3.17,
-   "y": 1.23,
-   "z": -47.33,
+   "x": -1.97,
+   "y": 3.11,
+   "z": -44.77,
    "how": "the base of the 3rd metatarsal less 2 cm along the foot (toward the heel): the cuneiforms",
    "guide": "Lateral (mediolateral) foot: CR perpendicular to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager)",
    "confidence": "medium"
@@ -94,9 +94,9 @@
  },
  "upperextremity": {
   "elbowJoint": {
-   "x": 0.6,
-   "y": -3.97,
-   "z": 0.38,
+   "x": 0.65,
+   "y": -4.05,
+   "z": 0.45,
    "how": "the elbow joint: 1.5 cm distal of the midpoint of the measured epicondyles",
    "guide": "AP, AP obliques and lateral elbow: CR perpendicular to the mid elbow joint (Bontrager; Radiopaedia)",
    "confidence": "medium"

@@ -3109,6 +3109,8 @@ function landmarkLocal(subject, name){
   return [f[0] ? -lm.x : lm.x, f[1] ? -(lm.y || 0) : (lm.y || 0), f[2] ? -lm.z : lm.z];
 }
 const OFF_LIMIT = 55;                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
+// dev server only: try a protocol pose from the console (roll, joints, centring), as applyProtocol would
+if (import.meta.env?.DEV) window.__applyPose = (pose) => { applyPose(pose); syncScene(); };
 function applyPose(pose){
   const note = $('protocolPose');
   if (!pose) { if (note) note.textContent = ''; return; }

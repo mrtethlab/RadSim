@@ -2,14 +2,14 @@
   "name": "Upper extremity",
   "source": "VSD Full Body postmortem CT (z053, 57F) \u00b7 HU materials \u00b7 CC BY-NC 3.0",
   "dims": [
-    172,
-    148,
-    461
+    254,
+    214,
+    689
   ],
   "spacing": [
-    1.5,
-    1.5,
-    1.5
+    1.0,
+    1.0,
+    1.0
   ],
   "order": "x-fastest: i = x + nx*(y + ny*z)",
   "volume": "upperextremity.mat.bin",
@@ -394,6 +394,7 @@
     0,
     2,
     7,
+    16,
     17,
     18,
     23

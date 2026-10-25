@@ -434,7 +434,7 @@ def add_hip_prosthesis(mat, lab, cmap, spacing):
     return mat
 
 
-def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None, flip=(0, 0, 0), hip_titanium=False, lung_vessels=None):
+def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source, box=None, body_path=None, flip=(0, 0, 0), hip_titanium=False, lung_vessels=None, joints=False):
     print(f"[1/4] loading + resampling to {spacing} mm iso …")
     ct = resample_iso(sitk.ReadImage(ct_path), spacing, is_label=False)
     seg = sitk.ReadImage(seg_path)
@@ -517,6 +517,14 @@ def build(ct_path, seg_path, out_dir, name, title, region, spacing, mesh, source
         mat = add_hip_prosthesis(mat, lab_c, ts_class_map(), spacing)
 
     print("[4/4] writing volume …")
+    if joints:                     # keep the joint sheets on this grid (app.joint_space), to cut last
+        from app.joint_space import save_sheet, label_sheets
+        # the labelled column, skull to the thoracic spine: each bone against the next
+        cmap = ts_class_map()
+        order = ['skull'] + [f'vertebrae_C{i}' for i in range(1, 8)] + [f'vertebrae_T{i}' for i in range(1, 13)]             + [f'vertebrae_L{i}' for i in range(1, 6)] + ['sacrum']
+        ids = {v: k for k, v in cmap.items()}
+        chain = [ids[n_] for n_ in order if n_ in ids and (lab_c == ids[n_]).any()]
+        save_sheet(name, hu_c, mat, spacing, extra=label_sheets(lab_c, spacing, list(zip(chain, chain[1:]))))
     write_model(out_dir, name, title, mat, hu_c, spacing, mesh, source)
     print("done ->", out_dir)
 

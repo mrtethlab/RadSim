@@ -64,6 +64,9 @@ const FOOT_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [null, { lm: 'i
   text: 'the toes, metatarsals and tarsals, to the talus' };
 const FOOT_LAT_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [null, { lm: 'intermalleolar', add: 2.5 }] }],
   text: 'the whole foot, heel to toes, with about 2.5 cm of the distal tibia and fibula' };
+// the knee: the distal femur and the proximal tibia and fibula, 7 cm either side of the joint
+const KNEE_REQ = { parts: [{ mat: 'tissue', connect: 'knee', z: [{ lm: 'knee', add: -7 }, { lm: 'knee', add: 7 }] }],
+  text: 'the distal femur, the patella, the knee joint and the proximal tibia and fibula, with their soft tissue' };
 // the elbow: the distal humerus and the proximal forearm, 7 cm either side of the joint
 const ELBOW_REQ = { parts: [{ mat: 'tissue', connect: 'elbow', z: [{ lm: 'elbowJoint', add: -7 }, { lm: 'elbowJoint', add: 7 }] }],
   text: 'the distal humerus, the elbow joint and the proximal radius and ulna, with their soft tissue' };
@@ -126,7 +129,7 @@ export const SERIES = [
     { label: 'AP', proto: ['Lower extremity', 'AP ankle'], pose: { roll: 0, tol: 2 },
       centre: { lm: 'intermalleolar', name: 'point midway between the malleoli', tol: 1.0 }, require: ANKLE_REQ,
       how: 'Leg extended, foot dorsiflexed, no rotation. Central ray perpendicular, midway between the malleoli.' },
-    { label: 'AP mortise', proto: ['Lower extremity', 'Mortise ankle'], pose: { roll: 15, range: [15, 20], tol: 2 },
+    { label: 'AP mortise', proto: ['Lower extremity', 'Mortise ankle'], pose: { roll: 18, range: [15, 20], tol: 2 },
       centre: { lm: 'intermalleolar', name: 'point midway between the malleoli', tol: 1.0 }, require: ANKLE_REQ,
       how: 'Rotate the leg and foot 15-20° medially, so the intermalleolar line is parallel to the receptor and the mortise opens.' },
     { label: 'AP oblique', proto: ['Lower extremity', 'Mortise ankle'], pose: { roll: 45, tol: 2 },
@@ -152,20 +155,30 @@ export const SERIES = [
       how: 'Lateral side down, foot dorsiflexed to 90 degrees to the leg, plantar surface perpendicular to the receptor. Central ray to the medial cuneiform, at the level of the base of the 3rd metatarsal.' },
   ] },
   { id: 'elbow4', name: 'Elbow · 4 views', views: [
-    { label: 'AP', proto: ['Upper extremity', 'AP elbow'], pose: { roll: -9, tol: 2 },
+    { label: 'AP', proto: ['Upper extremity', 'AP elbow'], pose: { roll: -4, tol: 2 },
       centre: { lm: 'elbowJoint', name: 'mid elbow joint', tol: 1.0 }, require: ELBOW_REQ,
       how: 'Elbow fully extended, hand supinated, epicondyles parallel to the receptor. Central ray perpendicular to the mid elbow joint.' },
-    { label: 'AP oblique (medial)', proto: ['Upper extremity', 'AP elbow'], pose: { roll: 36, tol: 2 },
+    { label: 'AP oblique (medial)', proto: ['Upper extremity', 'AP elbow'], pose: { roll: 41, tol: 2 },
       joints: { 'elbow.roll': [-180, -140] },
       centre: { lm: 'elbowJoint', name: 'mid elbow joint', tol: 1.0 }, require: ELBOW_REQ,
       how: 'From the AP, rotate the arm 45 degrees medially (pronate the hand): the coronoid process in profile. Central ray to the mid elbow joint.' },
-    { label: 'AP oblique (lateral)', proto: ['Upper extremity', 'AP elbow'], pose: { roll: -54, tol: 2 },
+    { label: 'AP oblique (lateral)', proto: ['Upper extremity', 'AP elbow'], pose: { roll: -49, tol: 2 },
       centre: { lm: 'elbowJoint', name: 'mid elbow joint', tol: 1.0 }, require: ELBOW_REQ,
       how: 'From the AP, rotate the arm 45 degrees laterally: the radial head and neck free of the ulna. Central ray to the mid elbow joint.' },
-    { label: 'Lateral', proto: ['Upper extremity', 'Lateral elbow'], pose: { roll: 81, tol: 2 },
+    { label: 'Lateral', proto: ['Upper extremity', 'Lateral elbow'], pose: { roll: 86, tol: 2 },
       joints: { 'elbow.flex': [85, 95], 'elbow.roll': [-110, -70] },
       centre: { lm: 'elbowJoint', name: 'mid elbow joint', tol: 1.0 }, require: ELBOW_REQ,
       how: 'Elbow flexed 90 degrees, humerus and forearm on the receptor, epicondyles perpendicular to it (lateral epicondyle up), hand lateral (the forearm turned thumb up). Central ray to the mid elbow joint.' },
+  ] },
+  // (this leg rests turned in: its rolls are measured on the bone, protocols.json)
+  { id: 'knee2', name: 'Knee · 2 views', views: [
+    { label: 'AP', proto: ['Lower extremity', 'AP knee'], pose: { roll: -23, tol: 2 },
+      centre: { lm: 'knee', name: 'the knee joint, 1.25 cm below the apex of the patella', tol: 1.0 }, require: KNEE_REQ,
+      how: 'Leg extended, rotated until the patella lies midline over the femoral notch and the tibial eminence (this leg rests turned in: about 23 degrees out), the epicondyles parallel to the receptor. Central ray perpendicular to the knee joint.' },
+    { label: 'Lateral', proto: ['Lower extremity', 'Lateral knee'], pose: { roll: -117, tol: 2 },
+      joints: { 'knee.flex': [20, 30] },
+      centre: { lm: 'knee', name: 'the knee joint, 2.5 cm distal to the medial epicondyle', tol: 1.0 }, require: KNEE_REQ,
+      how: 'Lateral side down, knee flexed 20-30 degrees, turned until the femoral condyles superimpose (the epicondyles perpendicular to the receptor): the patellofemoral joint space opens. Central ray to the knee joint.' },
   ] },
   { id: 'chest2', name: 'Chest · 2 views', views: [
     { label: 'PA', proto: ['Chest', 'PA chest'], pose: { roll: 180, tol: 2 },
@@ -180,10 +193,10 @@ export const SERIES = [
       cr: { cc: -15, tol: 3, words: ['cephalad', 'caudad'] },
       centre: { lm: 'C4', name: 'C4 (the lower margin of the thyroid cartilage)', tol: 1.5 }, require: CS_AP_REQ,
       how: 'Supine, no rotation, chin raised so the line from the upper incisors to the mastoid tips is perpendicular to the receptor (about 10 degrees of extension on this patient). Central ray 15-20 degrees cephalad, to C4.' },
-    { label: 'AP open mouth (C1-C2)', proto: ['Spine', 'AP open mouth'], pose: { roll: 0, tol: 2 }, joints: CS_CHIN_AP,
+    { label: 'AP open mouth (C1-C2)', proto: ['Spine', 'AP open mouth'], pose: { roll: 0, tol: 2 },
+      joints: { ...CS_CHIN_AP, 'jaw.open': [25, 35] },
       centre: { lm: 'C1C2', name: 'C1-C2, through the open mouth', tol: 1.5 }, require: CS_OM_REQ,
-      approx: 'This model cannot open its mouth: the lower teeth and the mandible lie over the dens.',
-      how: 'Supine, mouth open as wide as possible, the line from the upper incisors to the mastoid tips perpendicular to the receptor. Central ray perpendicular through the centre of the open mouth, to C1-C2.' },
+      how: 'Supine, mouth open as wide as possible (depress the mandible), the line from the upper incisors to the mastoid tips perpendicular to the receptor. Central ray perpendicular through the centre of the open mouth, to C1-C2: the dens and both lateral atlantoaxial joints between the teeth.' },
     { label: 'Lateral', proto: ['Spine', 'Lateral cervical'], pose: { roll: 90, tol: 2 }, joints: CS_CHIN_LAT,
       centre: { lm: 'C4', name: 'C4', tol: 1.5 }, require: CS_LAT_REQ,
       how: 'True lateral at 150-180 cm, shoulders depressed, chin slightly raised (the mandible off C1-C2). Central ray horizontal to C4.' },

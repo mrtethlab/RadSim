@@ -53,6 +53,8 @@ SUBJECTS = {
                  source='VSD Full Body postmortem CT (z033, 87M) · HU materials · CC BY-NC 3.0'),
     'z053': dict(ct=next((VSD / 'z053' / 'z053').glob('*/*.nii'), None),
                  source='VSD Full Body postmortem CT (z053, 57F) · HU materials · CC BY-NC 3.0'),
+    'z035': dict(ct=next((VSD / 'z035' / 'z035').glob('*/*.nii'), None),
+                 source='VSD Full Body postmortem CT (z035, 30F) · HU materials · CC BY-NC 3.0'),
 }
 
 
@@ -217,8 +219,16 @@ LEGS = {
     # 57 F (the arm's patient): the right foot rests near 90 degrees, as a foot film wants it; the
     # left leg is crossed over, its knee lying on the right knee, so the right leg is followed
     'z053': dict(top=280, x1=333, midline=168, crotch=410, knee=655, ankle=925, arm=(50, 480), seed=905),
+    # 30 F: healthy young bone, the legs apart from the hip down, the arms folded over the trunk (the
+    # right hand on the belly over the hip); both feet lie pointed some 75 degrees, toes in.
+    #   hand: (z, y) the hand's bones lie wholly above z and in front of y. Its wrist and fingers
+    #   are one piece of bone of 24 000 voxels, a 'big' one, and the leg kept the hand
+    'z035': dict(top=315, x1=300, midline=190, crotch=445, knee=668, ankle=915, arm=(0, 0), hand=(410, 195), feet3d=True),
 }
-LEG = 'z053'
+# z035's leg: a young adult's bone, and the malleoli and foot in their usual relation, so the ankle
+# and foot films take the textbook rolls. (z053's tibia carries its malleoli some 45 degrees round
+# from its forward-pointing foot: no single roll made both its mortise and its foot films.)
+LEG = 'z035'
 
 
 def track_leg(bone, z, xmax=140, z_top=0):
@@ -257,6 +267,12 @@ def lower_extremity(hu, mat, body, subj=LEG):
     # the right hand and forearm lie beside the hip: the arm's, not the leg's (all their bone: a
     # hand's small bones are not 'big', and unmarked, z053's hand went to the hip)
     arm = np.isin(mat[z0:, :, :x1], [TRABECULAR, CORTICAL]) & (xs < L['arm'][0]) & (zs < L['arm'][1])
+    if 'hand' in L:                                      # every piece of bone wholly in the hand's box
+        lab, n = ndi.label(np.isin(mat[z0:CROTCH_Z, :, :x1], [TRABECULAR, CORTICAL]))
+        box = [i + 1 for i, s in enumerate(ndi.find_objects(lab))
+               if s[0].stop + z0 <= L['hand'][0] and s[1].stop <= L['hand'][1]]
+        arm[:CROTCH_Z - z0] |= np.isin(lab, box)
+        bone &= ~arm
     right = bone & (xs < mid) & ~arm
     keep = np.zeros(body.shape, bool)
     c, k = CROTCH_Z - z0, KNEE_Z - z0
@@ -269,6 +285,16 @@ def lower_extremity(hu, mat, body, subj=LEG):
     hands = arm[:c] | (np.isin(mat[z0:CROTCH_Z, :, :x1], [TRABECULAR, CORTICAL]) & ~bone[:c])
     mk = np.where(hands, 2, np.where(bone[:c], 1, 0)).astype(np.int32)
     keep[z0:CROTCH_Z, :, :x1] = (split_3d(b[:c], mk) == 1) & b[:c] & (xs[0, 0] < mid)
+    if 'hand' in L:              # the palm's own tissue, which the cut left on the belly as a knob
+        dh = ndi.distance_transform_edt(~arm[:c]) * SP
+        part = keep[z0:CROTCH_Z, :, :x1]
+        part &= dh >= 15
+        # and the hollow that leaves in the belly, closed over (a 12 mm ball) where the hand lay
+        near = dh < 45
+        box = tuple(slice(max(0, s.start - 10), s.stop + 10) for s in ndi.find_objects(near.astype(np.uint8))[0])
+        g = np.arange(-8, 9)
+        ball = (g[:, None, None] ** 2 + g[None, :, None] ** 2 + g[None, None, :] ** 2) <= 64
+        part[box] |= ndi.binary_closing(part[box], structure=ball) & near[box] & b[:c][box] & (dh[box] >= 3)
     # The thighs press together over a broad flat face: halfway between the femurs is the contact.
     # (A distance-map watershed failed here: the femur lies lateral of the obese thigh's deepest
     # line, and in 3D the other leg's flood ran down that line ahead of it.)
@@ -277,15 +303,28 @@ def lower_extremity(hu, mat, body, subj=LEG):
     # gave this leg a fin of the other calf's muscle. Slice by slice, a watershed finds the narrow
     # contact, and each calf's own core lies behind its own tibia.
     keep[KNEE_Z:, :, :x1] = split_slices(b[k:], right[k:], (bone & ~right)[k:], 0, b.shape[0] - k)
+    if L.get('feet3d'):
+        # Feet that lie pointed with their toes crossed (z035's): a slice cuts the interleaved toes
+        # by whichever foot's bone is nearest in that slice and gives some of each forefoot to the
+        # other. Each foot's skeleton is one piece of bone in 3D, though, so below the ankle the
+        # body is parted in 3D, from the right foot's piece (the one the right leg's ankle joins)
+        # against the left's.
+        a = ANKLE_Z - z0
+        lab3, n3 = ndi.label(bone[a:])
+        mine = np.unique(lab3[0][right[a] & (lab3[0] > 0)])
+        mk = np.where(np.isin(lab3, mine) & (lab3 > 0), 1, np.where(lab3 > 0, 2, 0)).astype(np.int32)
+        keep[ANKLE_Z:, :, :x1] = (split_3d(b[a:], mk, f=1) == 1) & b[a:]
     # slice-by-slice cuts wander a voxel or two: a five-slice majority along the leg, down to the
     # ankle (below it the foot runs along z, and a majority would nibble the toes)
     a = ANKLE_Z
     keep[KNEE_Z:a] = ndi.median_filter(keep[KNEE_Z:a].astype(np.uint8), size=(5, 1, 1)).astype(bool) & body[KNEE_Z:a]
     keep[z0:] = pare(keep[z0:], r=2)
     foot = np.zeros(keep.shape[0], bool); foot[ANKLE_Z:] = True
-    keep = smooth(keep, foot, big_bone(mat))
+    skel = big_bone(mat)
+    skel[z0:, :, :x1] &= ~arm                            # (the smoothing keeps bone: not the hand's)
+    keep = smooth(keep, foot, skel)
     # the thigh, knee and calf (not the hemipelvis above, nor the foot below the ankle)
-    return convex_limb(keep, CROTCH_Z, ANKLE_Z, mat, big_bone(mat) & keep, joints=(KNEE_Z,))
+    return convex_limb(keep, CROTCH_Z, ANKLE_Z, mat, skel & keep, joints=(KNEE_Z,))
 
 
 # The arm's frame, per source CT at 1.5 mm (z = 0 at the shoulders, x low = the patient's RIGHT,
@@ -301,7 +340,11 @@ ARMS = {
     # healthy (cortex ~1200 HU, spongy bone well above muscle). Its fingers reach the scan's edge
     # at x = 2 and lose a few millimetres of the hand's radial side; the hand and wrist films use
     # the hand CT, so here the hand only ends a forearm film.
-    'z053': dict(axilla=75, x1=140, edge=100, wrist=372, end=475, clear=118, free=140, elbow=215),
+    'z053': dict(axilla=75, x1=140, edge=100, wrist=372, end=475, clear=118, free=140, elbow=215,
+                 # the elbow's bones, for its joint spaces (joint_space.long_bone_labels), mm up the
+                 # written part from the fingertips: the humerus shaft above the joint, the radius and
+                 # ulna in mid forearm, where they stand apart
+                 bones=dict(seeds=[((435, 466), 'largest', (1,)), ((225, 334), 'pair', (2, 3))], region=(210, 480))),
 }
 ARM = 'z053'
 
@@ -528,7 +571,7 @@ def head_neck():
     build(str(case / 'ct.nii.gz'), str(case / 'seg_ml.nii.gz'), str(MODELS / 'headneck'), 'headneck',
           'Head & neck', 'wholebody', SP, mesh=False,
           source='TotalSegmentator dataset (s1082, 69M, arms down) · ground-truth segmentation · CC BY 4.0',
-          box=(0.55, 1.0, 0, 1, 0, 1))
+          box=(0.55, 1.0, 0, 1, 0, 1), joints=True)
     hdr = MODELS / 'headneck' / 'headneck.model.json'
     import json
     h = json.loads(hdr.read_text(encoding='utf-8'))
@@ -549,7 +592,7 @@ def head_neck():
 # the cutting and smoothing above was tuned; its materials then come from the CT itself, resampled
 # at this spacing over the part's box (refine). A foot at 1.5 mm printed its bones as speckle: a
 # tarsal's 1 mm cortex was averaged into the marrow beside it.
-OUT_SP = {'lowerextremity': 1.0}
+OUT_SP = {'lowerextremity': 1.0, 'upperextremity': 1.0}   # (the elbow at 1.5 mm printed as a blur on a lateral)
 
 
 def refine(subj, mat, keep, sp, pad=6):
@@ -595,6 +638,16 @@ def write(name, title, subj, mat, hu, keep):
     part, sl = finish(mat, keep, limb=True)
     # house convention, as build_model --flip 1 0 0 gave the earlier z045 crops: index 0 inferior
     part, h = np.ascontiguousarray(part[::-1]), np.ascontiguousarray(hu[sl][::-1])
+    # the joints, found on this grid's own HU, kept to be cut after any bake (app.joint_space)
+    from app.joint_space import save_sheet, long_bone_labels, label_sheets
+    extra = None
+    cfg = (ARMS.get(subj) if name == 'upperextremity' else None) or {}
+    if 'bones' in cfg:                     # the elbow: its joints by its bones (too tight for the HU alone)
+        mm = lambda r: (int(round(r[0] / sp)), int(round(r[1] / sp)))         # mm -> slices on this grid
+        seeds = [(mm(r), kind, ids) for r, kind, ids in cfg['bones']['seeds']]
+        lab = long_bone_labels(h, part, seeds, mm(cfg['bones']['region']), sp=sp)
+        extra = label_sheets(lab, sp, [(1, 2), (1, 3), (2, 3)])
+    save_sheet(name, h, part, sp, extra=extra)
     write_model(str(MODELS / name), name, title, part, h, sp, mesh=True, source=SUBJECTS[subj]['source'])
     skin(name)
 
@@ -615,9 +668,13 @@ PARTS = {
 def write_headneck():
     mat, keep, h = head_neck()
     part, sl = finish(mat, keep)
+    from app.joint_space import sheet_path, open_model
+    sheet = np.fromfile(sheet_path('headneck'), np.uint8).reshape(mat.shape)
+    np.ascontiguousarray(sheet[sl]).tofile(sheet_path('headneck'))     # the same crop as the part
     hu = np.zeros(part.shape, np.int16) + np.int16(h['huReference'][0])
     hu.flat[0] = h['huReference'][1]                      # keeps the header's HU range
     write_model(str(MODELS / 'headneck'), 'headneck', 'Head & neck', part, hu, SP, mesh=True, source=h['source'])
+    open_model('headneck')                                # the joint spaces (app.joint_space)
     skin('headneck')
 
 

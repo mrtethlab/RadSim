@@ -1,10 +1,10 @@
 {
   "name": "Lower extremity",
-  "source": "VSD Full Body postmortem CT (z053, 57F) \u00b7 HU materials \u00b7 CC BY-NC 3.0",
+  "source": "VSD Full Body postmortem CT (z035, 30F) \u00b7 HU materials \u00b7 CC BY-NC 3.0",
   "dims": [
-    179,
-    224,
-    1062
+    206,
+    247,
+    998
   ],
   "spacing": [
     1.0,
@@ -394,13 +394,15 @@
     0,
     2,
     7,
+    10,
+    16,
     17,
     18,
     23
   ],
   "huReference": [
     -1024,
-    3071
+    1840
   ],
   "backendOnly": false
 }

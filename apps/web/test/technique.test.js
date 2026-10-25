@@ -95,10 +95,11 @@ test('the chart: stations only, thicknesses where the console measures, and the 
     assert.ok(p.cm >= 12 && p.cm <= 35, `${p.proj}: ${p.cm} cm`);
   }
   // the head and neck (s1082) has its arms down and the arm (z053) lies clear of the trunk, so these
-  // are true views now; the open mouth (the model's mouth is closed) and the swimmer's lateral (its
-  // arms cannot be raised) are not
-  for (const n of ['Lateral cervical', 'Lateral forearm']) assert.notEqual(all.find((x) => x.proj === n).pose.fidelity, 'approx', n);
-  for (const n of ['AP open mouth', 'Swimmers lateral']) assert.equal(all.find((x) => x.proj === n).pose.fidelity, 'approx', n);
+  // are true views now, and the open mouth too (its mandible depresses: the jaw joint, joints.json);
+  // the swimmer's lateral (its arms cannot be raised) is not
+  for (const n of ['Lateral cervical', 'Lateral forearm', 'AP open mouth']) assert.notEqual(all.find((x) => x.proj === n).pose.fidelity, 'approx', n);
+  assert.equal(all.find((x) => x.proj === 'AP open mouth').pose.joints['jaw.open'], 30, 'the open mouth opens it');
+  for (const n of ['Swimmers lateral']) assert.equal(all.find((x) => x.proj === n).pose.fidelity, 'approx', n);
 });
 
 test('the AEC is calibrated the way a real one is: on a uniform phantom', () => {

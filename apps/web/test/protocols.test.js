@@ -28,7 +28,7 @@ test('every projection carries a pose, and every centring landmark exists for it
 });
 
 test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
-  // the arm (z053) rests 9 degrees off the anatomical position: its views are rolled by what the epicondyles
+  // the arm (z053) rests 4 degrees off the anatomical position: its views are rolled by what the epicondyles
   // measure (data/palpation.json), AP laying them parallel to the receptor and the lateral standing
   // them up, lateral epicondyle on top (+ roll turns +x toward +y, the tube)
   const pa = palpation.upperextremity;
@@ -43,10 +43,23 @@ test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
       if (/^Lateral/.test(p.proj)) assert.ok(Math.abs(deg(turned(p.pose.roll)) - 90) < 3, `${p.proj}: lateral epicondyle not on top`);
       continue;
     }
+    // (the leg rests turned in: its knee and femur views are rolled by the bone, checked below)
+    if (p.subject === 'lowerextremity' && /knee|femur/.test(p.proj)) continue;
     if (/^Lateral/.test(p.proj) || /^Swimmers/.test(p.proj)) assert.equal(r, 90, p.proj);
     if (/^AP /.test(p.proj)) assert.equal(r, 0, p.proj);
     if (/^PA /.test(p.proj) && p.subject !== 'hand') assert.equal(r, 180, `${p.proj}: body subjects rest AP, so PA is a half turn`);
   }
+});
+
+test('the knee: the AP turns the patella midline, the lateral a quarter turn from it', () => {
+  // the leg (z035) rests turned in; the AP knee's roll lays the patella over the femoral notch, and the
+  // lateral's superimposes the condyles: about a quarter turn on (measured on the bone, protocols.json)
+  const roll = (proj) => all.find((p) => p.proj === proj).pose.roll;
+  assert.ok(roll('AP knee') < -15 && roll('AP knee') > -30, `AP knee ${roll('AP knee')}`);
+  assert.equal(roll('AP femur'), roll('AP knee'));
+  const q = roll('Lateral knee') - roll('AP knee');
+  assert.ok(q <= -85 && q >= -100, `lateral knee ${q} deg from the AP`);
+  assert.equal(roll('Lateral femur'), roll('Lateral knee'));
 });
 
 test('an approximate view always says why', () => {
@@ -67,9 +80,13 @@ test('landmarks sit where the traced phantom confirmed them (cm from the volume 
   // (the leg and arm were rebuilt by services/compute/app/build_limbs.py: the leg re-cut from the
   // same CT, the arm from another (z033, then z053 for its healthy bone), so their numbers moved
   // and were checked on bone projections; then both were baked to the anatomical position,
-  // app/bake_pose.py, and checked again; the leg is z053's now, its foot near 90 degrees as scanned)
+  // app/bake_pose.py, and checked again; the leg is z035's now (a young adult's healthy bone; its feet lay pointed and
+  // were baked to 90 degrees), checked on a bone projection: knee and ankle on their joint lines;
+  // the bake left its hindfoot pointed until the foot was carried whole, bone and tissue, and the
+  // volume came out 3.5 cm shorter: the knee kept its place from the hip, the ankle came up onto
+  // the talus from under the smeared hindfoot)
   const pinned = {
-    'lowerextremity.knee': -2.3, 'lowerextremity.ankle': -44.9, 'upperextremity.elbow': 1.88,
+    'lowerextremity.knee': -5.4, 'lowerextremity.ankle': -42.5, 'upperextremity.elbow': 1.88,
     'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
     'chestabdopelvis.kub': -12.7,
   };
