@@ -4,7 +4,8 @@
    projection; the sinogram filling as the frame turns (a point's sine traced through it); the
    rays regrouped into parallel sets and back-projected; the star and the blur of the plain sum;
    the ramp kernel and the filtered profile; filtered back-projection building the slice; soft and
-   sharp kernels on a noisy acquisition; iterative reconstruction of a low-dose one. */
+   sharp kernels on a noisy acquisition; iterative reconstruction of a low-dose one; then along z
+   (zrecon.js): slices interpolated from the helix, and slice thickness against interval. */
 import { atom, electron, keVColor } from '../../kit/micro.js';
 import {
   muGrid, fanSinogram, parallelSinogram, noisySino, makeKernel, filterSino, filterRow, backproject, viewOrder, iterate,
@@ -12,6 +13,7 @@ import {
 } from './slice.js';
 import { F, HALF, ZP } from './rig.js';
 import { hud, box } from './kit.js';
+import { zReconSteps } from './zrecon.js';
 
 /* Everything computed once from the abdomen slice: its attenuation on a 128 grid, the fan
    sinogram (240 views over the turn, 128 channels), the parallel one (180 angles), its filtered
@@ -622,7 +624,7 @@ export function reconstruction(api, S) {
   });
   // ---- iterative
   steps.push({
-    title: 'Iterative reconstruction', dur: 14, view: 'pixel', fadeOut: 0.5, scale: '10 cm',
+    title: 'Iterative reconstruction', dur: 14, view: 'pixel', scale: '10 cm',
     cues: Array.from({ length: 8 }, (_, k) => [2 + k * 1.1, () => sfx.blip(600 + k * 60)]),
     frame(t) {
       px.fillAll('ink');
@@ -651,5 +653,7 @@ export function reconstruction(api, S) {
       { from: 7, to: 14, text: 'Modelling the photon noise and the scanner itself, it gets a cleaner image (right) from the same low-dose data than filtered back-projection (left): the same quality for <b>less dose</b>.' },
     ],
   });
+  // along z: slices from the helix; thickness and interval
+  steps.push(...zReconSteps(api, S));
   return { title: 'Reconstruction', steps };
 }

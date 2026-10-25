@@ -24,7 +24,7 @@ function loadPng(url) {
 }
 export async function loadImages() {
   const base = import.meta.env.BASE_URL + 'anim/';
-  const names = ['ax_abd', 'ax_chest', 'ax_head', 'cor', 'sag', 'stack', 'scout'];
+  const names = ['ax_abd', 'ax_chest', 'ax_head', 'cor', 'sag', 'stack', 'scout', 'ax_pelvis', 'ax_shoulder', 'ax_metal', 'slab'];
   const out = {};
   await Promise.all(names.map(async (n) => { out[n] = await loadPng(base + 'ct_' + n + '.png'); }));
   out.scout.v = Float32Array.from(out.scout.ids, (q) => q / 255);

@@ -2,12 +2,15 @@
    the rotating frame and what it carries: the tube (the X-ray film's insert, turned to lie along
    the patient), the generator, the cooling, the slip ring and brushes with the data link; the
    bowtie filter and the collimator jaws; the detector arc, one element in section (septa,
-   scintillator, photodiode), and the data acquisition system reading it view by view. */
+   scintillator, photodiode); the detector's rows along the patient, the collimation choosing
+   them and rows added into slices (rows.js); and the data acquisition system reading it view by
+   view. */
 import * as THREE from 'three';
 import { electron } from '../../kit/micro.js';
 import { setOpacity } from '../../kit/stage.js';
 import { HALF, ZP } from './rig.js';
 import { hud, box, spinAngle, fanStream } from './kit.js';
+import { rowSteps } from './rows.js';
 
 export function scanner(api, S) {
   const { px, sfx, span, lerp, rng } = api;
@@ -385,5 +388,7 @@ export function scanner(api, S) {
       ],
     },
   ];
+  // the detector along the patient: its rows, the collimation, slices made of rows
+  steps.splice(steps.findIndex((s) => s.title === 'One detector element') + 1, 0, ...rowSteps(api, S));
   return { title: 'The scanner', steps };
 }

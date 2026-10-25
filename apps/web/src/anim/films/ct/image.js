@@ -1,12 +1,14 @@
 /* CT FILM, chapter 4: the image. The slice as a slab of voxels in the patient; the matrix of CT
    numbers; Hounsfield units read off a chest slice against their scale; the windows (soft tissue,
    lung, bone, brain) on the model's own slices; and the volume: the axial slices stacked in the
-   patient and cut again as coronal and sagittal reformats. */
+   patient and cut again as coronal and sagittal reformats; then (zimage.js) thin against thick
+   slices, and reformats from thick, thin, overlapping and gapped ones. */
 import * as THREE from 'three';
 import { setOpacity } from '../../kit/stage.js';
 import { HU0, huMap, noiseField, drawSlice, win } from './slice.js';
 import { PZ } from './rig.js';
 import { hud } from './kit.js';
+import { zImageSteps } from './zimage.js';
 
 export function picture(api, S) {
   const { px, sfx, span, lerp, clamp01 } = api;
@@ -255,7 +257,7 @@ export function picture(api, S) {
       ],
     },
     {
-      title: 'Coronal and sagittal', dur: 10, view: 'pixel', fadeOut: 0.5, scale: '10 cm',
+      title: 'Coronal and sagittal', dur: 10, view: 'pixel', scale: '10 cm',
       frame(t) {
         px.fillAll('ink');
         const h = px.H - 16, s = h / I.cor.h, wc = I.cor.w * s, ws = I.sag.w * s, gap = 10;
@@ -273,5 +275,7 @@ export function picture(api, S) {
       ],
     },
   ];
+  // along z: thin and thick slices, and what thickness and interval do to the reformats
+  steps.push(...zImageSteps(api, S));
   return { title: 'The image', steps };
 }

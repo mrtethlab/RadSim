@@ -2703,11 +2703,11 @@ export function ctApplyAcqMode() {
 
 const isGE = () => (ctx && ctx.S.ct.vendor) === 'ge';
 // Apply the colour scheme to the whole app. In CT mode with the vendor scheme, the interface adopts
-// the selected vendor's console palette (GE light-blue / Canon dark-grey); otherwise (generic scheme
-// OR x-ray mode) the default palette is used — x-ray is never re-themed.
+// the selected vendor's console palette (GE light-blue / Canon dark-grey); otherwise (the generic
+// scheme, the default, OR x-ray mode) the default palette is used — x-ray is never re-themed.
 export function ctApplyColorTheme() {
   if (!ctx) return;
-  const c = ctx.S.ct, ct = ctx.S.mode === 'ct', vendorScheme = (c.colorSchema || 'vendor') !== 'generic';
+  const c = ctx.S.ct, ct = ctx.S.mode === 'ct', vendorScheme = (c.colorSchema || 'generic') === 'vendor';
   const theme = (ct && vendorScheme) ? ('theme-' + (c.vendor === 'ge' ? 'ge' : 'canon')) : null;
   const b = document.body.classList;
   b.remove('theme-ge', 'theme-canon');

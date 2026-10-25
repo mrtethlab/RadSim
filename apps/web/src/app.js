@@ -1204,9 +1204,10 @@ const S = {
     // moves A/P–L/R after scout); 'canon' = box locked to isocentre + reposition chevrons that
     // physically move the table to place the SFOV. Set under Interface options.
     vendor:'ge',
-    // Colour scheme: 'vendor' = the CT interface adopts the selected vendor's console colours
-    // (GE light-blue / Canon dark-grey); 'generic' = the app's default scheme. X-ray is never themed.
-    colorSchema:'vendor',
+    // Colour scheme: 'generic' (the default) = the app's own vendor-neutral scheme; 'vendor' = the
+    // CT interface adopts the selected vendor's console colours (GE light-blue / Canon dark-grey).
+    // X-ray is never themed.
+    colorSchema:'generic',
     detMode:'quick',           // 'quick' (128-ch preview) | 'realistic' (fixed 0.625mm DEL, 512² recon)
     // Recon page: up to 4 independent windows, each bound to a pre-computed reconstruction from
     // the viewed scan's recon list. wins[i] = { reconId, pos } (pos = scroll position along the

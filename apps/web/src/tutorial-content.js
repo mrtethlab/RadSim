@@ -581,7 +581,8 @@ export const CT_STEPS = [
     title: 'Vendor interface',
     text: 'Cosmetic, but worth knowing about: CT consoles from different manufacturers look and '
       + 'read very differently, and part of being useful in a new department is not being thrown by '
-      + 'that. Switching this restyles the console. Nothing in the physics changes.',
+      + 'that. The system sets the console\'s workflow; the vendor colour scheme restyles it to match '
+      + '(the generic scheme is the default). Nothing in the physics changes.',
   },
 ];
 
