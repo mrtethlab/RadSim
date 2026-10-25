@@ -77,6 +77,40 @@ export function displayMap(img, n, out, { harmonise = 0.6, scratch = null } = {}
   return out;
 }
 
+/* SUBTRACTED ROADMAP, as the angio suite shows it. The map is the peak iodine of a DSA run (road,
+   positive optical depth, 0 where no vessel drew) over that run's own mask (base: mean log
+   transmission before the iodine), both at the map's resolution rn. Live fluoro is subtracted
+   against the mask WITH the iodine put back: the anatomy cancels to grey, the vessels — iodine in
+   the map and not in the patient now — stand WHITE, and anything that arrived since — a wire, a
+   catheter — draws BLACK inside them, which is the whole use of the mode. Its level is matched on
+   the vessel-free field (a beam a few kV off the mask's shifts every log a little), and a
+   fraction of the plain display (lum, 0..1) is mixed back for landmarks, as on the real console.
+   Moving the table or the C after the map breaks the registration; that is the real behaviour.
+   lum is overwritten: 0..1 in the field, -1 outside. */
+export const ROAD_GAIN = 1.2, ROAD_LANDMARK = 0.2;
+export function roadmapSubtract(img, n, lum, road, base, rn, { gain = ROAD_GAIN, landmark = ROAD_LANDMARK, scratch = null } = {}) {
+  const N = n * n, rs = rn / n;
+  const d = scratch && scratch.length === N ? scratch : new Float32Array(N);
+  let s = 0, c = 0;
+  for (let k = 0; k < N; k++) {
+    const t = img[k];
+    if (t < 0) { d[k] = NaN; continue; }
+    const q = (((k / n) | 0) * rs | 0) * rn + ((k % n) * rs | 0), b = base[q];
+    if (!(b < 1e8)) { d[k] = NaN; continue; }               // outside the map's own field
+    const v = Math.log(Math.max(t, 1e-6)) - b + road[q];
+    d[k] = v;
+    if (road[q] === 0) { s += v; c++; }
+  }
+  const off = c ? s / c : 0;
+  for (let k = 0; k < N; k++) {
+    if (img[k] < 0) { lum[k] = -1; continue; }
+    if (d[k] !== d[k]) continue;                              // no map here: the plain image stays
+    const g = (1 - landmark) * (0.5 + gain * (d[k] - off)) + landmark * lum[k];
+    lum[k] = g < 0 ? 0 : g > 1 ? 1 : g;
+  }
+  return lum;
+}
+
 /* Unsharp mask over the field only (3x3 neighbourhood mean), in place. */
 export function edgeEnhance(lum, n, amount, tmp = null) {
   if (!amount) return lum;

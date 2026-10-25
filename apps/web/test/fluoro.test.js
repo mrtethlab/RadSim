@@ -1,7 +1,7 @@
 // Fluoroscopy image processing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NR_K, recursiveStep, displayMap, edgeEnhance } from '../src/core/fluoroDisplay.js';
+import { NR_K, recursiveStep, displayMap, edgeEnhance, roadmapSubtract } from '../src/core/fluoroDisplay.js';
 
 let seed = 7;
 const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
@@ -47,4 +47,32 @@ test('edge enhancement leaves flat regions alone and steepens a step', () => {
   edgeEnhance(lum, n, 0.45);
   assert.ok(Math.abs(lum[5 * n + 3] - before[5 * n + 3]) < 1e-6, 'flat stays flat');
   assert.ok(lum[5 * n + 7] < before[5 * n + 7] && lum[5 * n + 8] > before[5 * n + 8], 'the step overshoots both ways');
+});
+
+test('the subtracted roadmap draws the vessel white and a wire inside it black, at any beam level', (t) => {
+  // anatomy: a log-transmission gradient with a "spine"; a vessel column the DSA run filled
+  // (peak opacity 0.9 at the map's own resolution, half the live frame's); a wire down its middle
+  const n = 64, rn = 32, base = new Float32Array(rn * rn), road = new Float32Array(rn * rn);
+  for (let j = 0; j < rn; j++) for (let i = 0; i < rn; i++) {
+    base[j * rn + i] = -2 - 0.05 * i - (i > 4 && i < 9 ? 1 : 0);
+    if (i >= 14 && i <= 18) road[j * rn + i] = 0.9;
+  }
+  const mid = (i) => i >= 30 && i <= 33;                                    // the vessel at 2x
+  for (const shift of [0, 0.3]) {                                           // live a few kV off the mask
+    const img = new Float32Array(n * n), lum = new Float32Array(n * n).fill(0.5);
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+      const b = base[((j / 2) | 0) * rn + ((i / 2) | 0)];
+      img[j * n + i] = Math.exp(b + shift - (i === 32 ? 1.2 : 0));          // the wire: optical depth 1.2
+    }
+    roadmapSubtract(img, n, lum, road, base, rn);
+    const at = (i) => lum[20 * n + i];
+    t.diagnostic(`shift ${shift}: background ${at(4).toFixed(2)}, spine ${at(14).toFixed(2)}, vessel ${at(30).toFixed(2)}, wire ${at(32).toFixed(2)}`);
+    assert.ok(Math.abs(at(4) - 0.5) < 0.12 && Math.abs(at(14) - 0.5) < 0.12, 'the anatomy cancels to grey, spine and all');
+    assert.ok(at(30) > 0.9 && mid(30), 'the vessel stands white');
+    assert.ok(at(32) < at(30) - 0.6 && at(32) < 0.35, 'the wire draws dark inside it');
+  }
+  // outside the field stays outside
+  const img = new Float32Array(n * n).fill(-1), lum = new Float32Array(n * n);
+  roadmapSubtract(img, n, lum, road, base, rn);
+  assert.ok(lum.every((v) => v === -1));
 });
