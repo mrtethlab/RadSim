@@ -45,7 +45,12 @@ export const XRAY_STEPS = [
       + 'upright bucky, at the 180 cm a PA chest is taken from. <b>Free detector</b>: lying '
       + 'directly on the plate. The tabletop and the cover of the stand keep the patient a few '
       + 'centimetres off the receptor, and that gap is real object-to-image distance: the image is '
-      + 'a little magnified and blurred by it.',
+      + 'a little magnified and blurred by it. At the table and the stand the receptor rides in a '
+      + '<b>bucky</b> that follows the tube: centre the tube along the table (or up the stand) and '
+      + 'the motor drives the bucky after it, so the patient stays still while the tube and receptor '
+      + 'move. At the table the top <b>floats</b>: offsetting the patient moves the tabletop with '
+      + 'them, up to 21 cm across. The room also sets the SID you can reach: 80–130 cm under a '
+      + 'table, up to 210 at the stand or over a free plate.',
     goal: {
       label: 'Try another room set-up',
       arm: () => S().room,
@@ -60,7 +65,9 @@ export const XRAY_STEPS = [
       + 'volume with its own materials — bone, soft tissue, lung, fat, marrow — so a hand '
       + 'attenuates like a hand and a chest like a chest. The subject you choose drives '
       + 'everything downstream: how much beam gets through, what technique you need, whether a '
-      + 'grid is worth using. Models that ship a photographic skin (the hand, today) simply '
+      + 'grid is worth using. The <b>Foot</b> is the leg model cut to the foot and the distal third '
+      + 'of the leg: the same patient, a tenth of the download, and what the foot and ankle '
+      + 'protocols load. Models that ship a photographic skin (the hand, today) simply '
       + 'wear it — the image is always computed from the voxel volume underneath.',
     goal: {
       label: 'Load a different subject — try the chest',
@@ -72,13 +79,33 @@ export const XRAY_STEPS = [
     sel: '.grp:has(#objRotY)',
     title: 'Positioning the part',
     text: 'Rotate, tilt and roll the subject, and slide it across the receptor. This is your '
-      + 'positioning: an oblique hand, a rotated chest, a lateral. Rotation here is the patient '
+      + 'positioning: an oblique hand, a rotated chest, a lateral; tilt raises one end, as a flexed '
+      + 'knee raises the leg for an AP foot. Rotation here is the patient '
       + 'moving, not the tube — get the part where you want it first, then angle the beam only if '
       + 'the projection genuinely calls for it.',
     goal: {
       label: 'Rotate the subject away from 0°',
       arm: () => JSON.stringify(S().objRot),
       done: (a) => JSON.stringify(S().objRot) !== a,
+    },
+  },
+  {
+    sel: '#jointRows',
+    title: 'Bend the joints',
+    needs: 'Load a limb (the hand, an arm, the leg or the Foot) to bend its joints.',
+    text: 'A limb bends at its joints: the wrist and elbow, the knee and ankle, the neck and the '
+      + 'jaw on the head. Every slider is anatomical — 0 is the anatomical position — and the whole '
+      + 'part distal to the joint turns about the joint itself, bone, soft tissue and the image '
+      + 'together. This is how a lateral elbow is flexed to 90°, a mortise ankle dorsiflexed, a '
+      + 'foot plantarflexed so its sole lies flat. The joint spaces are open in the volume, so a '
+      + 'joint seen along its space shows it, and one seen obliquely closes it, as on a patient.',
+    before: async () => {
+      if (!$('jointRows')?.children.length) { const sel = $('subjectSel'); if (sel) { sel.value = 'hand'; sel.dispatchEvent(new Event('change')); } }
+    },
+    goal: {
+      label: 'Bend a joint',
+      arm: () => JSON.stringify(S().joints || {}),
+      done: (a) => JSON.stringify(S().joints || {}) !== a,
     },
   },
   {
@@ -103,8 +130,10 @@ export const XRAY_STEPS = [
     title: 'Protocol (APR)',
     text: 'Anatomically Programmed Radiography. Choosing a protocol loads the department\'s '
       + 'starting technique for that projection — kV, mAs, grid, receptor, AEC configuration — '
-      + 'the same way pressing a body-part button on a real console does. It is a starting point, '
-      + 'not an answer: you still adjust for the patient in front of you.',
+      + 'the same way pressing a body-part button on a real console does, and here it also lays '
+      + 'the patient out for it: the roll, the joints, and the textbook centring point under the '
+      + 'central ray. It is a starting point, not an answer: you still adjust for the patient in '
+      + 'front of you.',
     goal: {
       label: 'Open the protocol list and select one',
       done: () => !!S().protocol,
@@ -157,7 +186,9 @@ export const XRAY_STEPS = [
     text: 'Three chambers: left, centre, right. Select the ones that sit under the tissue you want '
       + 'correctly exposed — the lung fields for a PA chest, the centre alone for a spine. Choose a '
       + 'chamber that is not covered by the part and the exposure terminates almost immediately, '
-      + 'leaving the anatomy badly underexposed. This is the single most common AEC error.',
+      + 'leaving the anatomy badly underexposed. This is the single most common AEC error. At the '
+      + 'table the selected chambers are drawn on the patient’s skin, so you can see what each one '
+      + 'will read.',
     before: async () => { if (!S().aecOn) $('aecBtn').click(); },
     goal: {
       label: 'Change which chambers are selected',
@@ -174,7 +205,9 @@ export const XRAY_STEPS = [
       + 'a control: it reports the air gap you made with the Height slider in the Object group, '
       + 'because the only way to move the part away from the receptor is to move the part. The '
       + 'angle sliders tilt the central ray for projections that need it, and the readout tells '
-      + 'you when the beam is no longer perpendicular.',
+      + 'you when the beam is no longer perpendicular; the centring sliders slide the tube along '
+      + 'and across, and the bucky follows it. The SID stops where the room does: 130 cm under '
+      + 'a table, 210 at the wall stand.',
     goal: {
       label: 'Change the SID',
       arm: () => S().sid,
@@ -188,7 +221,9 @@ export const XRAY_STEPS = [
       + 'centimetre of tissue outside your field is producing scattered photons that land on the '
       + 'receptor and fog the image, and it is irradiating the patient for nothing. Tight '
       + 'collimation improves contrast and lowers dose at the same time. The light field shows you '
-      + 'the borders on the subject.',
+      + 'the borders on the subject. The collimator also <b>turns</b> about the central ray, up to '
+      + '90° either way, with a click into square near 0: an oblique field for a part that lies '
+      + 'diagonally, with the box on the tube turning with it.',
     goal: {
       label: 'Close the collimators in',
       arm: () => S().collX + S().collZ,
@@ -228,7 +263,9 @@ export const XRAY_STEPS = [
       + 'passes the primary beam. It restores contrast on thick parts — abdomen, chest, spine — at '
       + 'the cost of needing several times the mAs, because it absorbs some primary too. Grid ratio '
       + 'is strip height to gap: higher cleans up more scatter and is less forgiving of alignment. '
-      + 'Use the focal distance the grid was built for, or you get grid cut-off across the image.',
+      + 'Use the focal distance the grid was built for, or you get grid cut-off across the image: '
+      + 'here 8:1 or 12:1, focused at 115 or 180 cm, and the nearer focus is picked for the SID '
+      + 'when the room or the protocol changes.',
     goal: {
       label: 'Put the grid in',
       done: () => S().gridOn === true,
@@ -338,7 +375,8 @@ export const CT_STEPS = [
     text: 'The protocol sets the scan range and, importantly, the <b>isocentre landmark</b> — the '
       + 'anatomical point you are told to line up with the laser before you zero the table. Choose '
       + 'the protocol for the examination first; everything after this is measured relative to the '
-      + 'zero you are about to set.',
+      + 'zero you are about to set. A protocol written for one model loads it: the ankle and foot '
+      + 'scan the Foot, zeroed at the medial malleolus.',
     goal: {
       label: 'Select a CT protocol',
       arm: () => S().ct.protocol,
@@ -750,7 +788,7 @@ export const EDITOR_STEPS = [
     title: 'Loading a preset',
     text: 'Rather than starting from nothing, load an existing phantom and modify it. This is the '
       + 'quickest way to build a teaching case: take the chest, paint in a lesion or a piece of '
-      + 'metal, and scan it.',
+      + 'metal, and scan it. The Foot is the smallest anatomical preset, and the quickest to edit.',
   },
   {
     sel: '#edSlice',
@@ -924,9 +962,10 @@ export const FLUORO_STEPS = [
     sel: '.bay',
     title: 'The screening room',
     text: 'A GE OEC C-arm stands over the stretcher: tube under the patient, image '
-      + 'intensifier above, and the machine is a real photogrammetry scan articulated at its '
-      + 'true joints. Fluoroscopy is not a photograph — it is a chain of tiny exposures on a '
-      + 'clock, and everything in this mode follows from that. Drag to orbit, scroll to zoom.',
+      + 'intensifier above, the C posed by the machine&rsquo;s own joint chain, its monitor cart '
+      + 'beside it and a colleague at the controls. Fluoroscopy is not a photograph — it is a '
+      + 'chain of tiny exposures on a clock, and everything in this mode follows from that. Drag '
+      + 'to orbit, scroll to zoom.',
   },
   {
     sel: '#subjectGrp',
@@ -935,7 +974,8 @@ export const FLUORO_STEPS = [
       + 'Chest / abdo / pelvis carries the full set: breathing, a beating heart, an '
       + 'oesophagus that can swallow, a stomach with peristalsis — plus the gut for barium '
       + 'and the vessels for angiography. All of it is derived from this subject&rsquo;s own '
-      + 'segmentation.',
+      + 'segmentation. The limbs bend here as in the x-ray room — every joint slider works '
+      + 'under the C-arm, and the next pulse images the new pose.',
     goal: {
       label: 'Load Chest / abdo / pelvis',
       done: () => S().subject === 'chestabdopelvis',
@@ -1041,11 +1081,25 @@ export const FLUORO_STEPS = [
       + 'shows only what CHANGED — which should be nothing but iodine. Open the CONTRAST '
       + 'panel on the left edge, start an injection, and the vessels draw themselves. '
       + 'Breathing wrecks the subtraction (that is the lesson); breath-hold rescues it; '
-      + 'pixel-shift nudges the mask; the run&rsquo;s peak opacification becomes a ROADMAP '
-      + 'held under live fluoro.',
+      + 'pixel-shift nudges the mask; the run&rsquo;s peak opacification becomes a ROADMAP: '
+      + 'live fluoro subtracted against it, so the vessels show WHITE and anything new — a wire '
+      + '— black. Move the table or the C and it no longer fits.',
     goal: {
       label: 'Arm DSA',
       done: () => $('flDsa')?.classList.contains('on'),
+    },
+  },
+  {
+    sel: '.grp:has(#flWireIn)',
+    title: 'A guidewire, steered on the roadmap',
+    text: 'Pass a 0.035&Prime; wire from the femoral sheath and push it up the vessel tree the '
+      + 'contrast solver runs on. It is imaged as what it is, steel in the beam, not a drawing. '
+      + 'At a branch it goes where its angled tip points: <b>torque</b> the tip toward the branch, '
+      + 'then <b>advance</b>; withdraw past it and the choice is undone. The readout says where '
+      + 'the tip is. Steer on the roadmap, not on live contrast — that is what a roadmap is for.',
+    goal: {
+      label: 'Insert the wire and advance it',
+      done: () => !!$('flWireIn')?.classList.contains('on') && !/^\s*(—|&mdash;)?\s*$/.test($('flWireLenV')?.textContent || ''),
     },
   },
   {
@@ -1094,6 +1148,21 @@ export const FLUORO_STEPS = [
       + 'this mode it finally has the pulsed image it always described. There is a '
       + 'dedicated barium tutorial on the X-ray card that walks the whole study; '
       + 'everything it teaches works here, on a clock.',
+  },
+  {
+    sel: '.grp:has(#flAnkleStart)',
+    title: 'Theatre: an ankle reduction',
+    text: 'The other half of a C-arm&rsquo;s life is the operating theatre. <b>Start case</b> '
+      + 'loads the Foot with a displaced Weber B fracture of the distal fibula — broken obliquely '
+      + 'at the syndesmosis, short, shifted out and turned out — the leg on a bump so the C can '
+      + 'reach it. Screen the AP, the MORTISE and the LATERAL (the view buttons swing the C), '
+      + 'reduce the fragment with the forceps, and <b>Check</b>: out to length and in line within '
+      + '2 mm and 5°, with the screening it took counted against you. The fragment&rsquo;s '
+      + 'position is never printed: you read it off the image, as the surgeon does.',
+    goal: {
+      label: 'Start the case, screen, and check the reduction',
+      done: () => /\(check \d+/.test($('flAnkleResult')?.textContent || ''),
+    },
   },
 ];
 
@@ -1369,6 +1438,20 @@ export const US_STEPS = [
 // ---------------------------------------------------------------- DENSITOMETRY
 export const DXA_STEPS = [
   {
+    sel: '.bay',                     // (the intro over it is lit as a modal while it is open)
+    title: 'Three ways in',
+    text: 'A densitometry session starts with a PATIENT, not a scan: <b>Generate a patient</b> runs '
+      + 'the exam — the intake interview, the decision whether and what to scan today, then '
+      + 'positioning and the scans themselves. <b>Precision assessment</b> is the exercise ISCD '
+      + 'asks of every technologist. <b>Free scanning</b> leaves you alone with the machine. Take '
+      + 'free scanning first: the next steps are the physics, and the exam comes at the end.',
+    before: async () => { if (!$('dxModal')?.classList.contains('show')) window.__dxaExam?.().act('intro'); },
+    goal: {
+      label: 'Choose Free scanning',
+      done: () => !$('dxModal')?.classList.contains('show') && !window.__dxaExam?.().X,
+    },
+  },
+  {
     sel: '.bay',
     title: 'Two energies, and why one will not do',
     text: 'A single projection gives one equation and two unknowns: how much bone mineral is '
@@ -1382,8 +1465,8 @@ export const DXA_STEPS = [
     sel: '.grp:has(#dxRegionSeg)',
     title: 'The arm sweeps a window',
     text: 'A densitometer scans a REGION, not a patient: the AP lumbar field over L1–L4, '
-      + 'or the proximal femur. Pick the region and the arm parks at its landmark; watch the '
-      + 'image build line by line — that slow raster is what the exam actually looks like.',
+      + 'the proximal femur, or the forearm. Pick the region and the arm parks at its landmark; '
+      + 'watch the image build line by line — that slow raster is what the exam actually looks like.',
     goal: {
       label: 'Run a scan',
       done: () => !!(window.__dxa && window.__dxa().scan && window.__dxa().scan.rois),
@@ -1453,13 +1536,43 @@ export const DXA_STEPS = [
     },
   },
   {
+    sel: '.grp:has(#dxRegionSeg)',
+    title: 'The forearm: a third of the way up the radius',
+    text: 'When the hip and spine cannot be used — both hips replaced, a fused spine — or the '
+      + 'question is the cortex (hyperparathyroidism), or the patient is over the table&rsquo;s '
+      + 'weight limit, the site is the <b>33 % radius</b> of the NON-dominant forearm: a band of '
+      + 'the radius a third of the forearm&rsquo;s length above the ulnar styloid. The length is '
+      + 'measured, olecranon to styloid, and keyed in; the laser goes an inch distal of the '
+      + 'styloid. Key in the wrong length and the band lands on the wrong bone.',
+    goal: {
+      label: 'Scan a forearm',
+      done: () => !!(window.__dxa && window.__dxa().scan && /forearm/i.test(window.__dxa().scan.region || '')),
+    },
+  },
+  {
+    sel: '#dxExam',
+    title: 'The exam: the interview decides the scan',
+    text: 'Start a patient and the intake form comes up, each answer hidden until you ask for it. '
+      + 'Some answers mean the scan must wait — possible pregnancy, barium in the last fortnight, '
+      + 'iodinated contrast, a recent nuclear medicine study — and some change which sites are '
+      + 'scanned, the forearm among them. Accept or delay, choose the sites, and the checklist here '
+      + 'walks the positioning: centred on the pad, the knee block under the spine, the foot holder '
+      + 'for the hip, the laser on its landmark. Each study is reported against what the form said.',
+    goal: {
+      label: 'Start a patient and work the intake form',
+      done: () => window.__dxaExam?.().X?.kind === 'exam',
+    },
+  },
+  {
     sel: '#dxSerial',
     title: 'Has it actually changed?',
-    text: 'The follow-up question is never what the density is, but whether it has moved '
-      + 'more than the machine’s own noise. A service quotes a least significant change '
-      + 'of about 1.5 % at the spine; anything smaller is the machine, not the patient, and '
-      + 'the table marks it. <b>Be warned that this simulator flatters itself here</b>: its '
-      + 'acquisition carries no photon noise and the patient is never repositioned, so a '
-      + 'repeat scan reproduces to 0.003 %. The concept is honest; the number is free.',
+    text: 'The follow-up question is never what the density is, but whether it has moved more '
+      + 'than the measurement&rsquo;s own scatter. That scatter is YOURS: the <b>precision '
+      + 'assessment</b> (from Start a patient) scans the same patients again and again with '
+      + 'repositioning, pools the spread as an RMS standard deviation, and gives the <b>least '
+      + 'significant change</b>, 2.77 × precision. Save it and this table judges every follow-up '
+      + 'against it, in g/cm²; until then it falls back on a 1.5 % placeholder and says so. '
+      + 'This simulator has no photon noise, so its precision is the positioning share alone — '
+      + 'which is the share the technologist owns.',
   },
 ];

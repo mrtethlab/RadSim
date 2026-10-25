@@ -8,6 +8,16 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### The tutorials, audited — [#86](https://github.com/mrtethlab/RadSim/pull/86)
+Every tutorial was run end to end in the app, each goal performed through the controls, and each step's control checked on screen.
+- **Function:** all nine run; every goal can be met. The checks that first failed were the harness's own (a typed CT value, a couch still moving); none was the tutorial's.
+- **X-ray:** a new step for the joints; the room step adds the bucky that follows the tube, the floating tabletop and each room's SID; protocols now say they lay the patient out; the AEC chambers on the skin; the collimator's rotation; the grid's ratios and foci; the Foot.
+- **Fluoroscopy:** the modelled C-arm in place of the photogrammetry scan; joints under the C-arm; the subtracted roadmap; new steps for the guidewire and the ankle reduction.
+- **DXA:** restructured around the exam: three ways in (the intro is lit as a modal, not dimmed under the mask), the forearm, the exam's intake, and the follow-up judged on the learner's own LSC (it said the patient was never repositioned).
+- **CT:** the ankle and foot protocols load the Foot. **Editor:** the Foot preset.
+- Mammography, ultrasound and the IV's guided mode were already up to date (their features' authors wrote their steps).
+- `tutorials.test.js`: every id a step names must be in the page, and each new feature must have its step (proved on a renamed id).
+
 ### The ankle measured where it is — [#85](https://github.com/mrtethlab/RadSim/pull/85)
 **The fault.** The leg's ankle landmark was the peak of the bone's cross-section profile; with the foot at 90° the hindfoot's bones fill that profile, and it sat 4 cm below the joint, on the calcaneus. The malleoli were searched for below it, so they landed on the calcaneus too; the AP ankle centred 3.5 cm low, the lateral ankle likewise, and the ankle bent about a point in the calcaneus.
 - *The joint:* the ankle is now the tibiotalar joint, the first joint sheet met going down the tibia's own axis (`measure_landmarks.tibiotalar`; the subtalar is the next, 2.6 cm on). The sheets and the joint spaces are only read: no voxel of the leg changed.
