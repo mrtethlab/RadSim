@@ -33,6 +33,8 @@ handoff document and is not committed.)
 - *Layout:* one set of monitors (the docked viewer stands down while they are up); the C-arm window under the console; the grey notes gone.
 - *Motion* is off by default; its window sits under Object · rotate / tilt.
 
+**The Total Hip Replacement model is retired:** its files, the selector and editor entries, and its places in the build lists.
+
 **Checked:**
 - In the app: the bones-only view against the film with the wrist bent, the knee with its patella, and a fist; every mode's 3D and image views (each with an image) for overlaps; each tab's chevron state; the flat-panel monitors.
 - `npm test`: 285 pass. The bone-mesh tests fail when a digit's share is read at the moved point or when the phalanges share a side.

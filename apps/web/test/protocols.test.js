@@ -15,7 +15,7 @@ const palpation = load('../src/data/palpation.json');
 applyCrops(load('../src/data/crops.json'), { joints: load('../src/data/joints.json'), landmarks, centring, palpation });
 const all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections.map((p) => ({ ...p, part: g.part }))));
 const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity', 'foot',
-  'totalhipreplacement', 'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
+  'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
   assert.equal(all.length, 47);
