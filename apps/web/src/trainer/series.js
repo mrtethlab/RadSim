@@ -224,7 +224,7 @@ export const SERIES = [
   { id: 'lspine2', name: 'Lumbar spine · 2 views', views: [
     { label: 'AP', proto: ['Spine', 'AP lumbar'], pose: { roll: 0, tol: 2 },
       centre: { lm: 'crest', name: 'level of the iliac crest (L4-L5)', tol: 2.0 }, require: LSPINE_REQ,
-      how: 'Supine, knees flexed to flatten the lumbar curve, no rotation. On a 35 x 43 cm receptor, central ray to the level of the iliac crest (L4-L5), to include the sacrum.' },
+      how: 'Supine, knees flexed to flatten the lumbar curve, no rotation. On a 43 x 43 cm receptor, central ray to the level of the iliac crest (L4-L5), to include the sacrum.' },
     { label: 'Lateral', proto: ['Spine', 'Lateral lumbar'], pose: { roll: 90, tol: 2 },
       centre: { lm: 'crestCol', name: 'iliac crest (L4-L5), on the vertebral column', tol: 2.0 }, require: LSPINE_LAT_REQ,
       field: { w: 20 },

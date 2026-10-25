@@ -14,7 +14,7 @@ const FILES = {
 // (breath-hold, the contrast acquisition clock) reads the breath sounds' DURATIONS — so
 // they are requested on entry to the room, long before the first scan can start.
 const MODE_SOUNDS = {
-  xray: ['press', 'start', 'buzz', 'end', 'cooldown'],
+  xray: ['press', 'start', 'buzz', 'end', 'cooldown', 'tableMove'],   // (the bucky's motor: the table motor, quiet)
   ct: ['breathIn', 'breathNormal', 'tableMove', 'ctExposureS1', 'buzz'],
   dxa: ['dxaStep'],
 };
@@ -55,13 +55,13 @@ export const Sound=(()=>{
   // short fades so start/stop never clicks. rate pitch-shifts it (a clean resample)
   // so the two axes sound like two different motors. loopStart/End trim the file's
   // head/tail transients so the loop point stays clean.
-  function startTableSound(rate){
+  function startTableSound(rate, gain=0.85){
     if(!ctx||!buf.tableMove) return; stopTableSound(true);
     const b=buf.tableMove, s=ctx.createBufferSource(); s.buffer=b; s.loop=true;
     const trim=Math.min(0.06, b.duration*0.1); s.loopStart=trim; s.loopEnd=Math.max(trim+0.05, b.duration-trim);
     s.playbackRate.value=rate||1;
     const g=ctx.createGain(); g.gain.value=0; s.connect(g); g.connect(ctx.destination);
-    const t=ctx.currentTime; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.85, t+0.07);   // fade in
+    const t=ctx.currentTime; g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(gain, t+0.07);   // fade in
     try{s.start(0, trim);}catch(e){}
     tableSrc=s; tableGain=g;
   }

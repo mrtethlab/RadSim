@@ -53,22 +53,24 @@ function canvasTex(w, h, draw) {
 function buildTable(M) {
   const g = new THREE.Group();
   const top = ROOM_GAP.table;
-  // floating tabletop: white, a grey edge band under its lip
+  // the floating tabletop (it pans with the patient: app.js roomSync): white, a grey edge band
+  // under its lip, accessory rails along both long edges on short standoffs
+  const deck = new THREE.Group(); g.add(deck);
   const slab = mesh(rbox(70, 4, 220, 1.6), M.white, 0, top - 2, 0);
-  slab.receiveShadow = true; g.add(slab);
-  g.add(mesh(rbox(70.8, 1.4, 220.8, 0.6), M.grey, 0, top - 3.6, 0));
-  // accessory rails along both long edges, on short standoffs
+  slab.receiveShadow = true; deck.add(slab);
+  deck.add(mesh(rbox(70.8, 1.4, 220.8, 0.6), M.grey, 0, top - 3.6, 0));
   for (const sx of [-1, 1]) {
-    g.add(mesh(new THREE.BoxGeometry(0.9, 1.8, 150), M.silver, sx * 36.4, top - 2.2, 0));
-    for (const z of [-60, 0, 60]) g.add(mesh(new THREE.BoxGeometry(1.4, 1.2, 2), M.grey, sx * 35.6, top - 2.2, z));
+    deck.add(mesh(new THREE.BoxGeometry(0.9, 1.8, 150), M.silver, sx * 36.4, top - 2.2, 0));
+    for (const z of [-60, 0, 60]) deck.add(mesh(new THREE.BoxGeometry(1.4, 1.2, 2), M.grey, sx * 35.6, top - 2.2, z));
   }
-  // the bucky: a long rail housing under the top, the tray (the receptor rides in it) with
-  // its handle out of the front (+x, the operator's side)
+  // the bucky: a long rail housing under the top, and the tray the receptor rides in (it runs
+  // along the rails to follow the tube: app.js roomSync), its handle out of the front (+x)
   g.add(mesh(rbox(40, 2.6, 180, 0.8), M.grey, 0, -0.9, 0));
-  g.add(mesh(rbox(50, 4.2, 52, 1.0), M.dark, 0, -1.2, 0));
-  g.add(mesh(new THREE.BoxGeometry(1.2, 2.6, 46), M.grey, 25.4, -1.2, 0));       // tray front plate
-  for (const z of [-9, 9]) g.add(mesh(new THREE.BoxGeometry(3.2, 1.1, 1.3), M.grey, 27.4, -1.2, z));
-  g.add(mesh(new THREE.CylinderGeometry(0.65, 0.65, 19.3, 16).rotateX(Math.PI / 2), M.grey, 29.0, -1.2, 0));
+  const tray = new THREE.Group(); g.add(tray);
+  tray.add(mesh(rbox(50, 4.2, 52, 1.0), M.dark, 0, -1.2, 0));
+  tray.add(mesh(new THREE.BoxGeometry(1.2, 2.6, 46), M.grey, 25.4, -1.2, 0));       // tray front plate
+  for (const z of [-9, 9]) tray.add(mesh(new THREE.BoxGeometry(3.2, 1.1, 1.3), M.grey, 27.4, -1.2, z));
+  tray.add(mesh(new THREE.CylinderGeometry(0.65, 0.65, 19.3, 16).rotateX(Math.PI / 2), M.grey, 29.0, -1.2, 0));
   // the two-block pedestal and its logo badge
   g.add(mesh(rbox(40, 34, 56, 3), M.white, 0, -19.5, 0));
   g.add(mesh(rbox(52, 40, 70, 3.5), M.shell, 0, -56.5, 0));
@@ -84,15 +86,21 @@ function buildTable(M) {
   g.add(mesh(rbox(64, 4, 86, 1.5), M.grey, 0, TABLE_FLOOR + 2, 0));
   g.add(mesh(rbox(7, 1.6, 40, 0.6), M.dark, 36, TABLE_FLOOR + 0.8, 0));
   for (const z of [-11, 0, 11]) g.add(mesh(rbox(6, 1.4, 8, 0.5), M.black, 36.4, TABLE_FLOOR + 2.1, z));
-  return g;
+  shade(g);
+  return { g, deck, tray };
 }
+// every part of the room casts and takes shadows: the collimator's light stops on the patient and
+// the tabletop (or the stand's cover), as light does, and never shows through on the base or floor
+function shade(g) { g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); }
 
 /* ---------------------------------------------------------------- the wall stand */
 function buildWall(M, aecCells) {
   const g = new THREE.Group();
   const front = ROOM_GAP.wall;
-  // the bucky housing: white, rounded, the receptor inside it behind the cover
-  g.add(mesh(rbox(62, 66, 12, 2.6), M.white, 0, 0, front - 6));
+  // the bucky (housing, cover, grips and carriage) rides up and down the column to follow the
+  // tube (app.js roomSync); the receptor is inside it behind the cover
+  const bucky = new THREE.Group(); g.add(bucky);
+  bucky.add(mesh(rbox(62, 66, 12, 2.6), M.white, 0, 0, front - 6));
   // the printed cover: border, centring cross and the AEC chambers where the bucky has them
   // (physics x, z -> world -x, y on this face)
   const W = 58, H = 62;
@@ -108,11 +116,11 @@ function buildWall(M, aecCells) {
         c.beginPath(); c.arc(cx - p.x * k, cy - p.z * k, 2.9 * k, 0, Math.PI * 2); c.stroke();
       }
     }) }), 0, 0, front + 0.02);
-  cover.receiveShadow = true; g.add(cover);
+  cover.receiveShadow = true; bucky.add(cover);
   // side grips
-  for (const sx of [-1, 1]) g.add(mesh(rbox(2.4, 30, 3.4, 1.1), M.grey, sx * 32.2, 0, front - 5));
+  for (const sx of [-1, 1]) bucky.add(mesh(rbox(2.4, 30, 3.4, 1.1), M.grey, sx * 32.2, 0, front - 5));
   // carriage, column, crown with its cyan light, the small display, the floor plate
-  g.add(mesh(rbox(26, 32, 8, 1.2), M.grey, 0, 0, front - 16));
+  bucky.add(mesh(rbox(26, 32, 8, 1.2), M.grey, 0, 0, front - 16));
   const colTop = 86, colH = colTop - WALL_FLOOR;
   g.add(mesh(rbox(16, colH, 12, 1.5), M.silver, 0, WALL_FLOOR + colH / 2, front - 26));
   g.add(mesh(new THREE.BoxGeometry(16.6, 1.6, 12.6),
@@ -135,7 +143,8 @@ function buildWall(M, aecCells) {
     dtex.needsUpdate = true;
   };
   setSid(180);
-  return { g, setSid };
+  shade(g);
+  return { g, setSid, bucky };
 }
 
 /* ---------------------------------------------------------------- the ceiling column */
@@ -220,11 +229,12 @@ export function buildTubeHead(tube) {
 /* ---------------------------------------------------------------- the room */
 export function buildRoom(scene, { aecCells }) {
   const M = mats();
-  const table = buildTable(M); table.visible = false; scene.add(table);
+  const tb = buildTable(M), table = tb.g; table.visible = false; scene.add(table);
   const wall = buildWall(M, aecCells); wall.g.visible = false; scene.add(wall.g);
   const column = buildColumn(M); column.g.visible = false; scene.add(column.g);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(420, 64).rotateX(-Math.PI / 2),
     new THREE.MeshStandardMaterial({ color: 0x1b2027, roughness: 0.95, metalness: 0 }));
   floor.receiveShadow = true; floor.visible = false; scene.add(floor);
-  return { table, wall: wall.g, setWallSid: wall.setSid, column: column.g, placeColumn: column.place, floor };
+  return { table, deck: tb.deck, tray: tb.tray, wall: wall.g, wallBucky: wall.bucky, setWallSid: wall.setSid,
+    column: column.g, placeColumn: column.place, floor };
 }

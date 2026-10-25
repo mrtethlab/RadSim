@@ -268,7 +268,6 @@
     <div class="dxexam" id="dxExam"></div>
     <div class="dxmodal" id="dxModal"></div>
     <div class="roomsel" id="roomSel" role="group" aria-label="Room set-up">
-      <div class="roomsel-t">ROOM</div>
       <div class="roomsel-g">
         <button type="button" data-room="wall" title="Wall stand: the patient standing" aria-label="Wall stand">
           <svg viewBox="0 0 48 48" aria-hidden="true"><circle cx="18" cy="10" r="4.6"/>
@@ -906,6 +905,10 @@
           <div class="row" style="margin-top:8px"><div class="rl">Field length</div>
             <div class="valchip" id="collZv">19 cm</div></div>
           <input type="range" id="collZ" min="4" max="30" value="19" step="0.5">
+          <div class="row" style="margin-top:8px"><div class="rl">Rotation <small>the collimator, about the CR</small></div>
+            <div class="valchip" id="collRotV">0°</div></div>
+          <input type="range" id="collRot" min="-45" max="45" value="0" step="1">
+          <div class="rotscale"><span>CCW</span><span>0</span><span>CW</span></div>
           <div class="row" style="margin-top:8px"><div class="rl">Collimator light</div>
             <button id="lfBtn" class="lfbtn on" title="Toggle collimator light" aria-pressed="true">
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -927,7 +930,7 @@
           </div>
           <div class="row" style="margin-top:8px"><div class="rl">Position <small>drag it in the room</small></div>
             <div class="valchip" id="mkPosV">none</div></div>
-          <label class="cttoggle" title="Lay the letter face down. A PA film of the trunk or head is hung as if facing the patient, so its marker must be pronated to read correctly; AP, lateral, hand and wrist films are not."><input type="checkbox" id="mkPron"><span>Pronated (face down) &mdash; for PA views</span></label>
+          <label class="cttoggle" title="Lay the letter face down. A PA film of the trunk or head is hung as if facing the patient, so its marker must be pronated to read correctly; AP, lateral, hand and wrist films are not."><input type="checkbox" id="mkPron"><span>Pronated</span></label>
           <div class="mini"><button id="mkPlace" disabled>⤓ place at the field edge</button></div>
         </div>
       </div>
@@ -936,11 +939,10 @@
         <div class="lab">Detector</div>
         <div class="bod">
           <div class="row"><div class="rl">Receptor size</div>
-            <div class="valchip" id="detSizeV">35×43 cm</div></div>
+            <div class="valchip" id="detSizeV">43×43 cm</div></div>
           <div class="seg" id="detSizeSeg">
             <button data-w="25" data-h="30">25×30</button>
-            <button data-w="35" data-h="43" class="on">35×43</button>
-            <button data-w="43" data-h="43">43×43</button>
+            <button data-w="43" data-h="43" class="on">43×43</button>
           </div>
           <div class="seg" id="detOrientSeg" style="margin-top:8px">
             <button data-orient="portrait" class="on">Portrait</button>
@@ -960,19 +962,16 @@
           </div>
 
           <div class="row" style="margin-top:12px"><div class="rl">Grid ratio</div>
-            <div class="valchip" id="gridRatioV">10:1</div></div>
+            <div class="valchip" id="gridRatioV">12:1</div></div>
           <div class="seg" id="gridRatioSeg">
-            <button data-ratio="6">6:1</button>
             <button data-ratio="8">8:1</button>
-            <button data-ratio="10" class="on">10:1</button>
-            <button data-ratio="12">12:1</button>
+            <button data-ratio="12" class="on">12:1</button>
           </div>
 
           <div class="row" style="margin-top:12px"><div class="rl">Grid focal length</div>
-            <div class="valchip" id="gridFocusV">100 cm</div></div>
+            <div class="valchip" id="gridFocusV">115 cm</div></div>
           <div class="seg" id="gridFocusSeg">
-            <button data-focus="100" class="on">100</button>
-            <button data-focus="150">150</button>
+            <button data-focus="115" class="on">115</button>
             <button data-focus="180">180</button>
           </div>
 

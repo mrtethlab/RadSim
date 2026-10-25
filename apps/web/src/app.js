@@ -886,6 +886,8 @@ function updateDetector(){
   if(three.detArrow) three.detArrow.position.set(-9*sx, 0, 12.6*sz);
 }
 function setDetSize(w,h){
+  // two receptors: 25x30 and 43x43 (a chart's 35x43 takes the large one)
+  if(Math.max(w,h)>30){ w=43; h=43; }
   S.detBaseW=Math.min(w,h); S.detBaseH=Math.max(w,h);
   const seg=$('detSizeSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on', +b.dataset.w===w));
   applyDet();
@@ -915,12 +917,14 @@ const S = {
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   curve:null, curveManual:false,                   // response-curve handles; null = follow the image
-  resolution:'quick', gridOn:false, gridRatio:10, gridFocus:100, handView:'soft',
+  resolution:'quick', gridOn:false, gridRatio:12, gridFocus:115, handView:'soft',   // grids: 8:1 or 12:1, focused at 115 or 180 cm
+  collRot:0,                   // the collimator turned about the central ray, deg (+ clockwise, seen from the tube)
+  bucky:{x:0,z:0},             // where the bucky (the receptor) is, in the table / wall set-ups: it follows the tube
   scatter:1,                   // scatter dial, 1 = the calibrated physical model
 
-  detBaseW:35, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 35x43 large
+  detBaseW:43, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 43x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
-  detW:35, detH:43,            // effective receptor W×H (derived from size + orientation)
+  detW:43, detH:43,            // effective receptor W×H (derived from size + orientation)
   detNx:320, detNy:400,        // detector native pixel matrix (true ray-cast resolution; quick default)
   // ---- subject / phantom: the analytic hand, or a voxel model (e.g. the chest) ----
   subject:'hand',              // 'hand' | 'chest'
@@ -1293,12 +1297,12 @@ function buildPhantom(){
   const R=objMat();
   const vm=S.voxelModel;
   if(!vm) return new Phantom();          // nothing loaded yet (first frames during boot)
-  const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x;
+  const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x-BK().x;
   // x-ray: the object rests on the receptor plus the height offset — which is where OID
   // comes from. Lifting it moves the anatomy toward the source: real magnification and
   // real geometric unsharpness, because the divergent rays do the rest.
   const cy = S.mode==='ct' ? S.ct.patientY : restHeight() + S.objOff.y;
-  const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z;
+  const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z-BK().z;
   const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R, jointPosedVolume(vm) || posedVolume(vm, legRotNow()));
   applyContrast(ph);
   applyBarium(ph);
@@ -1817,9 +1821,10 @@ window.radsimContrast={
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
+  if(!buckyRaf) buckyFollow();                  // (a protocol, a reset or a room change moved the tube)
   roomFrame();                                  // the physics frame into the room (upright at the wall)
   // The voxel model is placed by ctSyncScene in CT mode; in x-ray it rests on the receptor.
-  const ox=S.mode!=='ct'?S.objOff.x:0, oz=S.mode!=='ct'?S.objOff.z:0;   // x-ray object offset sliders
+  const ox=S.mode!=='ct'?S.objOff.x-BK().x:0, oz=S.mode!=='ct'?S.objOff.z-BK().z:0;   // x-ray object offset sliders (the bucky's frame)
   three.handGroup.rotation.z = 0;
   if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);       // flips are mode-dependent
   if(S.mode!=='ct' && S.voxelModel){                // x-ray: rest the model on the detector + lift
@@ -1852,13 +1857,15 @@ function syncScene(){
   // AEC chamber overlay: x-ray mode + AEC on; selected cells fill, others outline only
   if(three.aecGroup){
     three.aecGroup.visible = S.mode!=='ct' && S.aecOn;
+    const skin = S.mode==='xray' && S.room==='table';
     for(const k of ['l','c','r']){
       const m=three.aecCellMeshes[k]; if(!m) continue;
       const on=!!S.aecCells[k];
-      m.fill.material.opacity = on?0.20:0.03;
-      m.edge.material.opacity = on?0.95:0.35;
-      m.lbl.material.opacity  = on?0.95:0.4;
+      m.fill.material.opacity = skin ? (on?0.42:0) : on?0.20:0.03;
+      m.edge.material.opacity = skin ? (on?0.95:0) : on?0.95:0.35;
+      m.lbl.material.opacity  = skin ? (on?0.95:0) : on?0.95:0.4;
     }
+    aecOnSkin(skin && S.aecOn);
   }
   ctSyncScene();                                // CT mode overrides scene visibility (bed/laser vs detector/light)
   editorSyncScene();                            // editor mode hides both rigs and shows the voxel preview
@@ -1878,6 +1885,36 @@ function syncScene(){
   if(three.chestGroup) setGroupRot(three.chestGroup, R);
 }
 
+/* THE AEC CHAMBERS ON THE PATIENT. On the table the bucky is under the tabletop and the patient,
+   so its chamber markings would be hidden: the selected chambers are shown where they are, as
+   light-blue boxes laid on the patient's skin over them (found by casting down onto the patient's
+   mesh at each chamber's centre). Off the table they lie on the receptor as before. */
+let aecSkinKey='';
+const aecRay=new THREE.Raycaster();
+function aecOnSkin(on){
+  const cells=three.aecCellMeshes, g=three.aecGroup;
+  const key=on ? JSON.stringify([S.objOff, S.objRot, S.bucky, S.subject, S.aecCells, S.joints, S.legRot]) : '';
+  if(key===aecSkinKey) return;
+  aecSkinKey=key;
+  for(const [k,p] of Object.entries(AEC_CELLS)){
+    const m=cells[k]; if(!m) continue;
+    let y=0.09;
+    if(on && S.aecCells[k]){
+      g.updateMatrixWorld(true);
+      const w=g.localToWorld(new THREE.Vector3(p.x, 0, p.z));
+      aecRay.set(new THREE.Vector3(w.x, w.y+300, w.z), new THREE.Vector3(0,-1,0));
+      const hit=aecRay.intersectObject(three.handGroup, true).find(h=>h.object.visible && h.object.isMesh);
+      if(hit) y=g.worldToLocal(hit.point.clone()).y+0.4;
+    }
+    for(const [o,dy] of [[m.fill,0],[m.edge,0.01],[m.lbl,0.02]]){
+      o.position.y=y+dy;
+      o.material.depthTest=!on;                  // (on the skin: drawn over it, never half sunk in a curve)
+      o.renderOrder=on?5:0;
+      o.material.color?.setHex(on ? (o===m.lbl ? 0xffffff : 0x8fd3ff) : (o===m.lbl ? 0xffffff : 0x35c6d6));
+    }
+  }
+}
+
 /* Redraw the collimator cookie: bright rectangular aperture sized to the field
    half-angles (so it keystones under CR angulation via the light's perspective),
    with dark crosshair wires across it. */
@@ -1889,6 +1926,8 @@ function updateCookie(){
   const hu=Math.min(0.47, 0.5*((S.collX/2)/S.sid)/coneT);   // half width (u) in uv
   const hv=Math.min(0.47, 0.5*((S.collZ/2)/S.sid)/coneT);   // half length (v) in uv
   const cx=SZ/2, cy=SZ/2, w=hu*SZ, h=hv*SZ;
+  // turned with the collimator (the cookie is laid out with the long axis up, looking down the beam)
+  g.save(); g.translate(cx, cy); g.rotate(-(S.collRot||0)*Math.PI/180); g.translate(-cx, -cy);
   // aperture (lit)
   g.fillStyle='#fff'; g.fillRect(cx-w, cy-h, 2*w, 2*h);
   // Crosshair wires, spanning the aperture with a small central gap. Grey, not black: a real
@@ -1900,6 +1939,7 @@ function updateCookie(){
   g.moveTo(cx, cy-h); g.lineTo(cx, cy-gap); g.moveTo(cx, cy+gap); g.lineTo(cx, cy+h);
   g.moveTo(cx-w, cy); g.lineTo(cx-gap, cy); g.moveTo(cx+gap, cy); g.lineTo(cx+w, cy);
   g.stroke();
+  g.restore();
   t.cookieTex.needsUpdate=true;
 }
 
@@ -1931,9 +1971,42 @@ function updateCollimatorLCD(){
    needs the frame flat. */
 const WALL_Q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().set(
   -1,0,0,0,  0,0,1,0,  0,1,0,0,  0,0,0,1));
+/* THE BUCKY FOLLOWS THE TUBE. In the table and wall set-ups the receptor rides in a bucky that a
+   motor drives along its rails (the table's long axis; up and down the wall stand's column) to stay
+   under the central ray. The physics frame is the RECEPTOR's, with the receptor at its origin, so
+   in those set-ups the frame moves with the bucky: the rig (tube, receptor, AEC chambers, patient)
+   is carried to the bucky's place in the room, and the tube and the patient are placed in it less
+   the bucky's offset (BK). Their places in the room do not change; only the receptor moves under
+   them. A free plate, and every other mode, has no bucky: BK is zero. */
+const B0={x:0,z:0};
+function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }
+const BUCKY_SPEED=30;                       // cm/s, the motor's
+let buckyRaf=0, buckyLast=0;
+function buckyTarget(){ return { x:0, z:S.tubeZ }; }  // the rails run one way: along z (up the column at the wall)
+function buckyFollow(){
+  if(buckyRaf) return;
+  if(!(S.mode==='xray' && (S.room==='table'||S.room==='wall'))){ S.bucky.x=0; S.bucky.z=0; return; }
+  const t=buckyTarget();
+  if(Math.abs(t.z-S.bucky.z)<0.01 && Math.abs(t.x-S.bucky.x)<0.01) return;
+  Sound.need('xray').then(()=>{ if(buckyRaf) Sound.startTableSound(1.7, 0.22); });   // a quiet motor
+  buckyLast=performance.now();
+  const step=(now)=>{
+    const dt=Math.min(0.1,(now-buckyLast)/1000); buckyLast=now;
+    const t=buckyTarget(), b=S.bucky, dz=t.z-b.z, dx=t.x-b.x, d=Math.hypot(dx,dz), mv=BUCKY_SPEED*dt;
+    if(d<=mv || !(S.mode==='xray' && (S.room==='table'||S.room==='wall'))){
+      b.x=t.x; b.z=t.z; buckyRaf=0; Sound.stopTableSound(); syncScene(); return;
+    }
+    b.x+=dx/d*mv; b.z+=dz/d*mv;
+    syncScene();
+    buckyRaf=requestAnimationFrame(step);
+  };
+  buckyRaf=requestAnimationFrame(step);
+}
 function roomFrame(){
   const wall=S.mode==='xray' && S.room==='wall';
   three.rig.quaternion.copy(wall ? WALL_Q : new THREE.Quaternion());
+  const B=BK();
+  three.rig.position.set(B.x,0,B.z).applyQuaternion(three.rig.quaternion);
   three.rig.updateMatrixWorld(true);
   // the lamp's cookie is laid out by its shadow camera's up: the long axis, carried with the frame
   three.lamp.shadow.camera.up.set(0,0,-1).applyQuaternion(three.rig.quaternion);
@@ -1948,6 +2021,12 @@ function roomSync(){
   // the receptor sits inside the bucky (under the tabletop, behind the cover): its outline,
   // the AEC chambers and the hang arrow are shown on the surface the patient touches
   if(room==='table' || room==='wall') three.det.visible=false;
+  // the tray under the tabletop / the stand's bucky where the receptor is; the tabletop where the
+  // patient is (it floats: moving the patient moves the top over the tube and bucky)
+  const B=BK();
+  if(r.tray) r.tray.position.set(0,0,B.z);
+  if(r.wallBucky) r.wallBucky.position.set(0,B.z,0);
+  if(r.deck) r.deck.position.set(room==='table' ? S.objOff.x : 0, 0, room==='table' ? S.objOff.z : 0);
   const top=receptorGap();
   three.detMarks.position.y=top; three.aecGroup.position.y=top; three.detArrow.position.y=top;
   if(room==='wall') r.setWallSid(S.sid);
@@ -1959,13 +2038,19 @@ function roomSync(){
   }
 }
 const ROOM_SID={ table:100, wall:180, detector:100 };
+// how far the tube can be from the receptor in each set-up: the ceiling column over the table
+// stops at 130 cm; at the wall stand and over a free plate it reaches 210
+const SID_MIN=80, ROOM_SID_MAX={ table:130, wall:210, detector:210 };
+function clampSid(v){ return Math.max(SID_MIN, Math.min(ROOM_SID_MAX[S.room]||210, v)); }
+const GRID_FOCI=[115, 180];
+function gridFocusFor(sid){ return GRID_FOCI.reduce((a,b)=>Math.abs(b-sid)<Math.abs(a-sid)?b:a); }
 const ROOM_ORBIT={ table:190, wall:230, detector:115 };
 function setRoom(room){
   if(!ROOM_SID[room]) return;
   S.room=room;
   document.querySelectorAll('#roomSel button').forEach(b=>b.classList.toggle('on', b.dataset.room===room));
   // the set-up's usual distance (180 cm at the wall stand, the PA chest's), with the grid focused to it
-  S.sid=ROOM_SID[room]; S.gridFocus=S.sid; setGridFocusUI();
+  S.sid=clampSid(ROOM_SID[room]); S.gridFocus=gridFocusFor(S.sid); setGridFocusUI();
   const sv=$('sidV'); if(sv) sv.textContent=S.sid+' cm';
   const sr=$('sidRo'); if(sr) sr.innerHTML=S.sid+'<small>cm</small>';
   // standing at the wall is erect for the barium study's gravity; the table and detector recumbent
@@ -1991,11 +2076,20 @@ function tubeFrame(){
   const scc=Math.sin(cc), ccc=Math.cos(cc), slm=Math.sin(lm), clm=Math.cos(lm);
   // unit vector from isocentre up toward the source
   const ux=-ccc*slm, uy=ccc*clm, uz=scc;
-  const iso=[S.tubeX,0,S.tubeZ];
+  const B=BK(), iso=[S.tubeX-B.x,0,S.tubeZ-B.z];   // (in the bucky's frame: see BK)
   const source=[iso[0]+S.sid*ux, S.sid*uy, iso[2]+S.sid*uz];
   const d=[-ux,-uy,-uz];                       // central-ray direction (toward detector)
-  const wAxis=[clm, slm, 0];                    // collimator width axis
-  const lAxis=[scc*slm, -scc*clm, ccc];         // collimator length axis
+  let wAxis=[clm, slm, 0];                      // collimator width axis
+  let lAxis=[scc*slm, -scc*clm, ccc];           // collimator length axis
+  // the collimator turned about the central ray (clockwise as the tube sees it, looking down it):
+  // the field's two axes turn together, so the light field, the exposed field and every check
+  // made on them turn as one
+  if(S.collRot){
+    const a=S.collRot*Math.PI/180, c=Math.cos(a), sn=Math.sin(a);
+    const w0=wAxis, l0=lAxis;
+    wAxis=[c*w0[0]+sn*l0[0], c*w0[1]+sn*l0[1], c*w0[2]+sn*l0[2]];
+    lAxis=[-sn*w0[0]+c*l0[0], -sn*w0[1]+c*l0[1], -sn*w0[2]+c*l0[2]];
+  }
   return {source, iso, d, wAxis, lAxis};
 }
 function sourcePos(){ return tubeFrame().source; }
@@ -2031,6 +2125,7 @@ function angText(){
 function updateGeomReadouts(){
   $('collXv').textContent=S.collX+' cm';
   $('collZv').textContent=S.collZ+' cm';
+  const r=S.collRot||0, rv=$('collRotV'); if(rv) rv.textContent=r===0 ? '0°' : Math.abs(r)+'° '+(r>0?'CW':'CCW');
   $('angLMv').textContent=fmtAng(S.angLM,'LM');
   $('angCCv').textContent=fmtAng(S.angCC,'CC');
   $('angReadout').textContent=angText();
@@ -2153,21 +2248,21 @@ function bind(){
     syncOidUI();
     resetPrep(); syncScene(); });
   // sliders that only affect geometry (update chips + scene)
-  const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ'];
+  const geoSliders=['tubeZ','tubeX','angLM','angCC','collX','collZ','collRot'];
   for(const id of geoSliders){
     $(id).addEventListener('input',e=>{ S[id]=parseFloat(e.target.value);
-      updateGeomReadouts(); syncScene();});
+      updateGeomReadouts(); syncScene(); buckyFollow();});
   }
   $('recenter').addEventListener('click',()=>{
-    S.tubeX=0;S.tubeZ=0;S.angLM=0;S.angCC=0;
-    $('tubeX').value=0;$('tubeZ').value=0;$('angLM').value=0;$('angCC').value=0;
+    S.tubeX=0;S.tubeZ=0;S.angLM=0;S.angCC=0;S.collRot=0;
+    $('tubeX').value=0;$('tubeZ').value=0;$('angLM').value=0;$('angCC').value=0;$('collRot').value=0;
     updateGeomReadouts(); syncScene();
   });
   // steppers
   document.querySelectorAll('[data-step]').forEach(btn=>{
     btn.addEventListener('click',()=>{
       const kind=btn.dataset.step, d=parseFloat(btn.dataset.d);
-      if(kind==='sid'){ S.sid=Math.max(20,Math.min(180,S.sid+d)); $('sidV').textContent=S.sid+' cm';
+      if(kind==='sid'){ S.sid=clampSid(S.sid+d); $('sidV').textContent=S.sid+' cm';
         $('sidRo').innerHTML=S.sid+'<small>cm</small>'; syncScene(); }
       if(kind==='kv'){ S.kv=Math.max(40,Math.min(120,S.kv+d)); $('kv').value=S.kv; }
       if(kind==='mas'){ let i=nearestMasIdx(); i=Math.max(0,Math.min(masSteps.length-1,i+d)); S.mas=masSteps[i]; $('mas').value=i; }
@@ -3102,10 +3197,10 @@ function applyProtocol(p,part,after){
   const EI_REGION_TARGET={ 'Chest':300, 'Abdomen / Pelvis':350, 'Spine':350, 'Head':250 };
   S.eiTarget = p.targetEI ?? EI_REGION_TARGET[part] ?? 300;
   // SID + focused-grid focal length (a focused grid is used at its focal distance)
-  if(p.sid){ S.sid=Math.max(20,Math.min(200,p.sid));
+  if(p.sid){ S.sid=clampSid(p.sid);
     const sv=$('sidV'); if(sv) sv.textContent=S.sid+' cm';
     const sr=$('sidRo'); if(sr) sr.innerHTML=S.sid+'<small>cm</small>';
-    S.gridFocus=S.sid; setGridFocusUI(); }
+    S.gridFocus=gridFocusFor(S.sid); setGridFocusUI(); }
   // receptor size + orientation FIRST (this re-caps the collimation sliders) …
   if(p.det) setDetSize(p.det[0], p.det[1]);
   if(p.orient) setDetOrient(p.orient);
@@ -4278,10 +4373,10 @@ window.addEventListener('load',()=>{
   initSideMarker({ THREE, S, three, $, syncScene,
     rightVec: () => { const R=objMat(); return [R[0], R[3], R[6]]; },   // the patient's right, in the room
     bilateral: () => BILATERAL.has(S.subject),
-    midlineX: () => S.objOff.x, receptorGap });
+    midlineX: () => S.objOff.x-BK().x, receptorGap });
   initTutorial({ applyMode: ctApplyMode });
   initPalpation({ THREE, three, S, voxelFlips, objMat, poseLoc,
-    modelCentre: () => [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z] });
+    modelCentre: () => [S.objOff.x-BK().x, restHeight() + S.objOff.y, S.objOff.z-BK().z] });
   initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent,
     palpation: { list: palpationList, set: setPalpated, clear: clearPalpation, active: palpatedKeys },
     tubeFrame, objMat, voxelFlips,
@@ -4291,7 +4386,7 @@ window.addEventListener('load',()=>{
     preposeJoints: (angles) => { if(S.voxelModel) ensureJointVolume(S.voxelModel, angles); },
     matFor: (r) => { const d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); },
     modelCentreY: () => restHeight() + S.objOff.y,
-    modelCentre: () => [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
+    modelCentre: () => [S.objOff.x-BK().x, restHeight() + S.objOff.y, S.objOff.z-BK().z],
     setMarker: (side, place=true, pronated) => setSideMarker(side, place, pronated),
     syncSandbox: syncSandboxControls,
     lastDI: () => (S.lastDI ?? null),
