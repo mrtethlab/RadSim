@@ -657,6 +657,9 @@ def skin(name):
     # display mesh until the smooth skin was rebuilt by hand
     from app.build_skin import build
     build(name)
+    # and the bone-only mesh, which the fresh header has dropped too (it is cut from the new volume)
+    from app.build_bone_mesh import build as bone
+    bone(name)
 
 
 PARTS = {
