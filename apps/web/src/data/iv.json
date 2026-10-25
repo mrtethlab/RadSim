@@ -12,8 +12,9 @@
     "needle": { "bevelToCathMM": 1.5, "cathLenMM": 25, "needleLenMM": 32, "flashDelayS": 0.3, "flashDelayTqS": 0.15, "flashFillS": 1.0 },
     "vein": {
       "wallMM": 0.4, "punctureMM": 1.1, "pushPerMM": 0.45, "maxPushMM": 2.6, "rollPerMM": 0.6, "maxRollMM": 4,
-      "flatPerMM": 0.45, "doubleWallFlat": 0.65, "reboundS": 0.3, "tqSwell": 0.35, "backWallMM": 0.3, "rollOnReleaseMM": 1.2
+      "flatPerMM": 0.45, "doubleWallFlat": 0.65, "reboundS": 0.3, "tqSwell": 0.35, "backWallMM": 0.3, "rollOnReleaseMM": 1.2, "mobility": 1
     },
+    "pain": { "_about": "skin: felt once on entry (and again into wet alcohol); perMM: each mm drawn back or swept sideways in the tissue; at flinchAt the patient pulls the limb, taking a loose vein flinchMM with it", "skin": 0.15, "perMM": 0.04, "flinchAt": 1, "flinchMM": 2.5 },
     "thread": { "tickMM": 2.0, "resistTicks": 3 },
     "flush": { "volumeML": 10, "mlPerMM": 0.25, "minRateMLs": 1, "infiltrationML": 1.5, "aspirateMaxML": 1.5, "bloodCheckML": 0.2 },
     "dressing": { "tolMM": 9 },
@@ -35,8 +36,8 @@
     { "id": "seal", "title": "Break the seal", "do": "Open the IV. Slide the catheter 1 mm off the needle, then back.", "keys": [["Left-drag →", "break"], ["Left-drag ←", "reseat"]] },
     { "id": "align", "title": "Line up with the vein", "do": "Point the needle along the vein.", "keys": [["Q / E", "rotate"]] },
     { "id": "anchor", "title": "Anchor the skin", "do": "Hold traction until the needle is in the vein.", "keys": [["Hold Space", "traction"]] },
-    { "id": "insert", "title": "Insert", "do": "Pierce at 15-30°. Watch the flash chamber.", "keys": [["Hold Space", "traction"], ["Left-drag ↕", "advance"], ["Right-drag ↕", "angle"], ["Q / E", "turn"]] },
-    { "id": "flash", "title": "Flashback", "do": "Lower the angle, then advance 1-2 mm more.", "keys": [["Right-drag ↕", "angle"], ["Left-drag ↕", "advance"]] },
+    { "id": "insert", "title": "Insert", "do": "Pierce at {pierceMin}-{pierceMax}°. Watch the flash chamber.", "keys": [["Hold Space", "traction"], ["Left-drag ↕", "advance"], ["Right-drag ↕", "angle"], ["Q / E", "turn"]] },
+    { "id": "flash", "title": "Flashback", "do": "Lower the angle to {lowerMax}° or under, then advance 1-2 mm more.", "keys": [["Right-drag ↕", "angle"], ["Left-drag ↕", "advance"]] },
     { "id": "thread", "title": "Thread the catheter", "do": "Keep the needle still; push the catheter in.", "keys": [["Wheel ↑", "thread"]] },
     { "id": "withdraw", "title": "Withdraw the needle", "do": "Pull it back into its shield, then into the sharps container.", "keys": [["Left-drag ↓", "on the needle"]] },
     { "id": "clamp1", "title": "Close the clamp", "do": "Before opening the system.", "keys": [["Click", "clamp"]], "critical": true },
@@ -45,7 +46,7 @@
     { "id": "dressing", "title": "Apply Tegaderm", "do": "Window over the site, then press each edge.", "keys": [["Tool", "Tegaderm"], ["Click", "site, then edges"]] },
     { "id": "syringe", "title": "Attach the flush", "do": "", "keys": [["Tool", "syringe"], ["Click", "port"], ["Q / E", "twist"]] },
     { "id": "clamp2", "title": "Open the clamp", "do": "", "keys": [["Click", "clamp"]] },
-    { "id": "flush", "title": "Flush", "do": "Pull back for blood, then push 10 mL steadily. Stop if it swells.", "keys": [["Left-drag ↓", "pull back"], ["Left-drag ↑", "push"]] },
+    { "id": "flush", "title": "Flush", "do": "Pull back for blood, then push 10 mL steadily, {minRate}-{rate} mL/s. Stop if it swells.", "keys": [["Left-drag ↓", "pull back"], ["Left-drag ↑", "push"]] },
     { "id": "clamp3", "title": "Close the clamp", "do": "Before the syringe comes off.", "keys": [["Click", "clamp"]], "critical": true },
     { "id": "syringeOff", "title": "Remove the flush", "do": "", "keys": [["Q / E", "twist off"]] },
     { "id": "cap", "title": "Cap the port", "do": "", "keys": [["Tool", "cap"], ["Click", "port"], ["Q / E", "twist"]] }
@@ -54,10 +55,12 @@
   "sites": {
     "antecubital": {
       "label": "Antecubital",
+      "note": "Large, straight veins that take a 20 G: the site of choice for CT power injection, at 15-30°.",
       "subject": "upperextremity",
       "_frame": "Rest-frame points (cm, tools/measure_palpation.py and measure_centring.py): the origin at the elbow joint, along = toward the shoulder, lateral = toward the lateral epicondyle, outward = anterior. Veins and distractors are paths of [along_cm, lateral_cm] on the skin; depth and radius in mm.",
       "frame": { "origin": [0.6, -4.0, 0.4], "along": [-0.12, 0.05, 0.99], "lateral": [0.988, 0.152, 0.0], "outward": [0, 1, 0], "liftCm": 0 },
       "tourniquetAlongCm": 9,
+      "tourniquetAboveCm": 2,
       "patch": { "along": [-9, 10], "lateral": [-5.5, 5.5] },
       "veins": [
         { "id": "medianCubital", "label": "Median cubital", "path": [[-3.0, 2.8], [0, 0.2], [2.6, -2.7]], "radius": 3.0, "depth": 3.5, "visibility": 0.8, "fragility": 0.4, "roll": 0.6, "valves": [], "joins": [[-3.0, 2.8], [2.6, -2.7]] },
@@ -70,9 +73,11 @@
     },
     "forearm": {
       "label": "Forearm",
+      "note": "Straight veins splinted by the forearm's bones, clear of the elbow's bend: 20-22 G at 15-30°.",
       "subject": "upperextremity",
       "frame": { "origin": [4.4, -1.4, -14.0], "along": [-0.27, -0.16, 0.95], "lateral": [0.97, 0.0, 0.27], "outward": [0, 1, 0], "liftCm": 0 },
       "tourniquetAlongCm": 23,
+      "tourniquetAboveCm": 16,
       "patch": { "along": [-9, 10], "lateral": [-4.8, 4.8] },
       "veins": [
         { "id": "cephalic", "label": "Cephalic", "path": [[-9, 2.3], [0, 2.5], [10, 2.6]], "radius": 2.4, "depth": 3.5, "visibility": 0.7, "fragility": 0.5, "roll": 0.9, "valves": [[2.5, 2.5]], "joins": [] },
@@ -85,24 +90,52 @@
     },
     "hand": {
       "label": "Dorsal hand",
+      "note": "Small, shallow veins that roll: 22-24 G at 10-15°, the skin held taut over the knuckles. It hurts more, and contrast goes no faster than 1.5 mL/s.",
       "subject": "hand",
-      "_frame": "The hand lies palm down (PA): outward = dorsal (+y), lateral = radial (+x), along = toward the wrist.",
+      "_frame": "The hand lies palm down (PA): outward = dorsal (+y), lateral = radial (+x), along = toward the wrist. Measured on the hand model in this frame (data/palpation.json, centring.json): the 3rd MCP knuckle at along -2.1, the 3rd CMC at 2.2, the snuffbox at (4.4, 1.4), the radial styloid at (5.4, 1.7), the ulnar styloid at (6.6, -3.6); the skin runs out radially at lateral 3.8 (along 4), 2.5 (along 6).",
       "frame": { "origin": [-0.55, 0.45, 1.1], "along": [0.02, 0.28, -0.96], "lateral": [1, 0, 0], "outward": [0, 1, 0], "liftCm": 0 },
       "tourniquetAlongCm": 6.5,
+      "tourniquetAboveCm": 6,
       "patch": { "along": [-3.5, 6.5], "lateral": [-5.2, 4.0] },
+      "_veins": "The dorsal venous network: three dorsal metacarpal veins in the intermetacarpal spaces, from the web spaces at the knuckles up to an arch convex toward the fingers over the proximal metacarpals, which drains radially into the cephalic (over the anatomical snuffbox, then across the radial styloid) and ulnarly into the basilic. Hand veins are small (3-4 mm full), shallow (2 mm under thin skin) and loose on the tendons; valves sit near the confluences. Each path runs with the flow, toward the heart.",
       "veins": [
-        { "id": "dm23", "label": "Dorsal metacarpal (2-3)", "path": [[-2.6, 1.0], [0, 1.05], [1.8, 1.4]], "radius": 1.6, "depth": 2.5, "visibility": 0.8, "fragility": 0.7, "roll": 1.2, "valves": [], "joins": [[1.8, 1.4]] },
-        { "id": "dm34", "label": "Dorsal metacarpal (3-4)", "path": [[-2.6, -1.0], [0, -1.05], [2.2, -0.9]], "radius": 1.7, "depth": 2.5, "visibility": 0.8, "fragility": 0.7, "roll": 1.2, "valves": [[-0.8, -1.05]], "joins": [[2.2, -0.9]] },
-        { "id": "dm45", "label": "Dorsal metacarpal (4-5)", "path": [[-2.3, -2.95], [0, -3.0], [1.8, -3.3]], "radius": 1.5, "depth": 2.5, "visibility": 0.7, "fragility": 0.7, "roll": 1.2, "valves": [], "joins": [[1.8, -3.3]] },
-        { "id": "arch", "label": "Dorsal venous arch", "path": [[1.8, 2.3], [1.8, 1.4], [2.2, -0.9], [1.8, -3.3], [1.6, -4.1]], "radius": 2.0, "depth": 3.0, "visibility": 0.7, "fragility": 0.6, "roll": 1.0, "valves": [], "joins": [[1.8, 1.4], [2.2, -0.9], [1.8, -3.3]] },
-        { "id": "cephalicHand", "label": "Cephalic (hand)", "path": [[1.8, 2.3], [4.0, 2.7], [6.2, 2.9]], "radius": 2.1, "depth": 3.0, "visibility": 0.7, "fragility": 0.5, "roll": 1.0, "valves": [], "joins": [[1.8, 2.3]] }
+        { "id": "dm23", "label": "Dorsal metacarpal (2-3)", "path": [[-2.3, 1.2], [-1.2, 1.15], [0, 1.1], [1.0, 1.1], [1.9, 1.2]], "radius": 1.5, "depth": 2.0, "visibility": 0.85, "fragility": 0.7, "roll": 1.0, "valves": [], "joins": [[1.9, 1.2]] },
+        { "id": "dm34", "label": "Dorsal metacarpal (3-4)", "path": [[-2.3, -1.0], [-1.2, -1.0], [0, -0.95], [1.2, -0.9]], "radius": 1.6, "depth": 2.2, "visibility": 0.8, "fragility": 0.7, "roll": 1.0, "valves": [[-0.8, -1.0]], "joins": [[1.2, -0.9]] },
+        { "id": "dm45", "label": "Dorsal metacarpal (4-5)", "path": [[-2.0, -2.95], [-0.8, -2.95], [0.5, -2.95], [1.6, -2.95]], "radius": 1.3, "depth": 2.0, "visibility": 0.7, "fragility": 0.75, "roll": 1.1, "valves": [], "joins": [[1.6, -2.95]] },
+        { "id": "cephalicHand", "label": "Dorsal arch to the cephalic", "path": [[1.2, -0.9], [1.3, -0.3], [1.5, 0.4], [1.9, 1.2], [2.4, 1.75], [3.0, 2.0], [3.7, 1.95], [4.4, 1.7], [5.4, 1.8], [6.4, 1.95]], "radius": 1.9, "depth": 2.5, "visibility": 0.75, "fragility": 0.6, "roll": 1.0, "valves": [], "joins": [[1.2, -0.9], [1.9, 1.2]] },
+        { "id": "basilicHand", "label": "Dorsal arch to the basilic", "path": [[1.2, -0.9], [1.3, -1.9], [1.6, -2.95], [2.2, -3.3], [3.0, -3.15], [4.0, -3.2], [5.0, -3.3], [6.4, -3.35]], "radius": 1.8, "depth": 2.5, "visibility": 0.6, "fragility": 0.6, "roll": 1.1, "valves": [[2.9, -3.15]], "joins": [[1.2, -0.9], [1.6, -2.95]] }
       ],
       "distractors": [
-        { "id": "ext2", "kind": "tendon", "label": "Extensor tendon (index)", "path": [[-3.2, 2.15], [5, 2.2]], "radius": 1.5, "depth": 1.5 },
-        { "id": "ext3", "kind": "tendon", "label": "Extensor tendon (middle)", "path": [[-3.2, -0.05], [5, 0.0]], "radius": 1.5, "depth": 1.5 },
-        { "id": "ext4", "kind": "tendon", "label": "Extensor tendon (ring)", "path": [[-3.2, -2.05], [5, -2.0]], "radius": 1.5, "depth": 1.5 },
-        { "id": "ext5", "kind": "tendon", "label": "Extensor tendon (little)", "path": [[-3.0, -3.85], [5, -3.8]], "radius": 1.4, "depth": 1.5 }
-      ]
+        { "id": "ext2", "kind": "tendon", "label": "Extensor tendon (index)", "path": [[-3.2, 2.15], [1.0, 1.6], [4.6, 0.5]], "radius": 1.5, "depth": 1.5 },
+        { "id": "ext3", "kind": "tendon", "label": "Extensor tendon (middle)", "path": [[-3.2, -0.05], [1.0, -0.05], [4.6, 0.0]], "radius": 1.5, "depth": 1.5 },
+        { "id": "ext4", "kind": "tendon", "label": "Extensor tendon (ring)", "path": [[-3.2, -2.05], [1.0, -1.7], [4.6, -0.6]], "radius": 1.5, "depth": 1.5 },
+        { "id": "ext5", "kind": "tendon", "label": "Extensor tendon (little)", "path": [[-3.0, -3.85], [1.0, -3.2], [4.6, -1.6]], "radius": 1.4, "depth": 1.5 },
+        { "id": "epl", "kind": "tendon", "label": "Extensor pollicis longus (the snuffbox's ulnar edge)", "path": [[5.2, 0.5], [4.2, 1.1], [2.8, 2.3], [1.2, 3.4]], "radius": 1.3, "depth": 1.5 }
+      ],
+      "_avoid": "Where a catheter should not go (INS standards): over a joint, where every bend kinks it and works it out of the vein (the knuckles; the wrist from the carpus up), and the radial side of the wrist, the snuffbox included, where the superficial radial nerve runs with the cephalic vein. A zone is a box in [along, lateral] cm; a joint counts if the catheter's length up the vein reaches it, a nerve if the mark is on it.",
+      "avoid": [
+        { "kind": "joint", "label": "The knuckles (MCP joints)", "along": [-99, -1.5] },
+        { "kind": "joint", "label": "The wrist", "along": [4.8, 99] },
+        { "kind": "nerve", "label": "The radial wrist and snuffbox (superficial radial nerve)", "along": [3.6, 99], "lateral": [0.8, 99] }
+      ],
+      "gauges": ["22", "24"],
+      "_technique": "Laid over the procedure's numbers for this site (core/ivSim.js). The angle: 10-15° into a vein 2 mm under thin skin (15-30° is for the deeper arm veins), lowered almost flat on the flash. The vein: a thinner wall that punctures sooner, lying on tendon and bone that stop it being pushed down far (so a shallow needle pins it rather than flattening it away), looser on its bed (mobility: it rolls further when the skin is let go). The flush: a hand or wrist vein takes no more than 1.5 mL/s (ACR Manual on Contrast Media: the power-injection limit for such a site, whatever the gauge), and extravasation there is about twice as common as in the antecubital fossa (1.8% vs 0.8% for 20 G). Pain: about three times the arm's per millimetre of probing.",
+      "technique": {
+        "angles": { "pierceMin": 10, "pierceMax": 15, "steepOver": 20, "lowerMin": 2, "lowerMax": 8, "threadMax": 8 },
+        "vein": { "wallMM": 0.3, "punctureMM": 0.75, "maxPushMM": 1.0, "pushPerMM": 0.3, "flatPerMM": 0.3, "backWallMM": 0.25, "mobility": 1.6, "rollOnReleaseMM": 1.5, "maxRollMM": 5 },
+        "flush": { "veinMaxMLs": 1.5, "minRateMLs": 0.5 },
+        "pain": { "skin": 0.3, "perMM": 0.12 }
+      },
+      "steps": {
+        "tourniquet": { "do": "On the forearm, above the wrist." },
+        "palpate": { "do": "Feel for a straight, bouncy vein between the knuckles and the wrist, and for valves along it, then mark it." },
+        "anchor": { "do": "Hold the fingers flexed and pull the skin taut toward the knuckles: hand veins roll." },
+        "flash": { "do": "Lower almost flat to the skin, {lowerMax}° or under, then advance 1-2 mm more." }
+      },
+      "errors": {
+        "tqBelowElbow": { "msg": "Tourniquet not above the wrist", "tip": "For a hand vein the tourniquet goes on the forearm, above the wrist." },
+        "tractionEarly": { "tip": "Keep the skin taut over the knuckles until the needle is in: a hand vein rolls at a touch." }
+      }
     }
   },
 

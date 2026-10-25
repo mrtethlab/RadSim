@@ -2017,6 +2017,7 @@ body.mode-iv.iv-tool .bay canvas#view{cursor:crosshair}
 .ivico.fa::after{left:30px}
 .ivico.dh::before{left:8px; right:8px; top:4px; height:20px; border-radius:6px 6px 10px 10px}
 .ivico.dh::after{left:19px; top:10px}
+.ivsite-note{font-size:11px; line-height:1.4; color:var(--dmuted2); margin:7px 2px 0}
 .ivgauge button{border-left:4px solid var(--g)}
 .ivgauge button.on{border-color:var(--g); border-left-width:4px; background:#202a33}
 .ivstart{width:100%; margin-top:18px; padding:12px; border-radius:10px; border:0; background:var(--cyan); color:#05252a;

@@ -12,6 +12,13 @@
    The site's own coordinates, in which everything here is measured: `a` cm along the limb
    (toward the heart), `l` cm across it (lateral on the arm, radial on the hand), on the skin.
    On a limb `l` is arc length round it, so a vein on the side of the forearm sits on its side.
+
+   The site sets the technique as well as the anatomy: the engine lays the site's own numbers
+   over the procedure's (the hand: 10-15°, 22-24 G, 1.5 mL/s), and every step, readout and tip
+   here asks the attempt (A.P, IV.stepText, IV.errorText) rather than the shared numbers. On
+   marking, the room walks up the vein the way the catheter will run and tells the engine how far
+   it is to the next valve and to the first joint (the site's avoid zones), and whether the mark
+   is over a nerve.
    ============================================================================ */
 import cfg from './data/iv.json';
 import * as IV from './core/ivSim.js';
@@ -1373,8 +1380,17 @@ function placeSyringe() {
 function buildBand(aCm) {
   const { THREE } = ctx;
   const ring = [], N = 36, w = 1.25;
-  const c = v3.add(G.O, v3.mul(G.Ax, aCm));
-  const pose = ctx.phantomPose();
+  const pose = ctx.phantomPose(), vm = ctx.S.voxelModel;
+  let c = v3.add(G.O, v3.mul(G.Ax, aCm));
+  if (!G.wrap) {
+    // the hand's frame is flat, its axis on the back of the hand: on the forearm that runs above
+    // the skin, and a ring cast from it found nothing (the band showed in patches). The middle of
+    // the limb there instead: halfway from the back's skin to the front's, then side to side.
+    const d = G.restAt(aCm, 0), p = skinPoint(vm, pose.flip, v3.sub(d, v3.mul(G.N, 0.2)), v3.mul(G.N, -1));
+    c = v3.mul(v3.add(d, p), 0.5);
+    const e1 = skinPoint(vm, pose.flip, c, G.L), e2 = skinPoint(vm, pose.flip, c, v3.mul(G.L, -1));
+    c = v3.mul(v3.add(e1, e2), 0.5);
+  }
   for (let i = 0; i <= N; i++) {
     const phi = (i / N) * 2 * Math.PI;
     const dir = v3.add(v3.mul(G.N, Math.cos(phi)), v3.mul(G.L, Math.sin(phi)));
@@ -1550,9 +1566,8 @@ function onDown(e, canvas, cam) {
   if (tool === 'tourniquet') {
     const h = hitSkin(e, canvas, cam);
     if (!h) return;
-    const elbowA = G.siteKey === 'antecubital' ? 0 : G.siteKey === 'forearm' ? 14 : -99;
-    const above = G.siteKey === 'hand' ? h.a > 3.5 : h.a > elbowA + 2;
-    const r = IV.applyTourniquet(A, above);
+    // (proximal of the site's joint: 2 cm above the elbow for the arm, above the wrist for the hand)
+    const r = IV.applyTourniquet(A, h.a > G.site.tourniquetAboveCm);
     if (!r.ok) return toast(r.why);
     buildBand(h.a);
     R3.band.visible = true; sfx('snap'); setTool(null); refresh();
@@ -1650,9 +1665,24 @@ function markAt(a, l) {
     toast(r.why || 'No vein there.'); paint(); return;
   }
   const f = best.f, n = best.n;
+  // up the vein from the mark, the way the catheter will run: how far to the next valve, and to
+  // the first joint it would lie across (the site's avoid zones); a nerve counts under the mark only
+  const zones = G.site.avoid || [], inZone = (z, p) => p[0] >= z.along[0] && p[0] <= z.along[1] && (!z.lateral || (p[1] >= z.lateral[0] && p[1] <= z.lateral[1]));
+  const ahead = (hit) => {
+    let d = 0;
+    for (let k = n.i; k < f.pts.length; k++) {
+      if (hit(f.pts[k])) return d * 10;
+      if (k + 1 < f.pts.length) d += Math.hypot(f.pts[k + 1][0] - f.pts[k][0], f.pts[k + 1][1] - f.pts[k][1]);
+    }
+    return null;
+  };
+  const joint = zones.filter((z) => z.kind === 'joint');
   // (the engine's +Y is the vein frame's +across: the mark's offset from the vein's centre)
   const site = { veinId: f.id, lateral: n.across * 10, radius: f.radius, depth: veinDepthAt(f, n.i), roll: f.roll, fragility: f.fragility,
-    atValve: minDist(f.valves, a, l) < 0.5, atJoin: minDist(f.joins, a, l) < 0.6 };
+    atValve: minDist(f.valves, a, l) < 0.5, atJoin: minDist(f.joins, a, l) < 0.6,
+    valveAheadMM: f.valves?.length ? ahead((p) => minDist(f.valves, p[0], p[1]) < 0.15) : null,
+    jointMM: joint.some((z) => inZone(z, [a, l])) ? 0 : joint.length ? ahead((p) => joint.some((z) => inZone(z, p))) : null,
+    nerve: zones.some((z) => z.kind === 'nerve' && inZone(z, [a, l])) };
   for (const d of G.feats) {
     if (d.kind !== 'artery') continue;
     const dn = nearest(d, a, l);
@@ -1661,7 +1691,7 @@ function markAt(a, l) {
   const r = IV.markSite(A, site);
   if (!r.ok && r.why) toast(r.why);
   if (A.mark) Object.assign(A.mark, { a, l, tan: n.tan });
-  if (A.mode !== 'assessment' && r.reasons?.length) toast(r.reasons.map((c) => IV.ERRORS[c].msg).join(' · '));
+  if (A.mode !== 'assessment' && r.reasons?.length) toast(r.reasons.map((c) => IV.errorText(A, c).msg).join(' · '));
   paint(); refresh();
 }
 function palpateAt(e, canvas, cam) {
@@ -1804,7 +1834,7 @@ function drawSection() {
   const cv = $('ivXsCanvas'); if (!cv || !A?.mark) return;
   const g = cv.getContext('2d'), img = g.createImageData(XS.w, XS.h), d = img.data;
   const m = A.mark, n = A.needle, yaw = n.yaw * D, cy = Math.cos(yaw), sy = Math.sin(yaw);
-  const r = m.radius * (1 + P.vein.tqSwell * A.tq.fill), b = r * (1 - A.vein.flat), w = P.vein.wallMM;
+  const r = m.radius * (1 + A.P.vein.tqSwell * A.tq.fill), b = r * (1 - A.vein.flat), w = A.P.vein.wallMM, ang = A.P.angles;
   const cz = IV.veinCentreZ(A);
   const tip = IV.needleTip(A), contact = !A.pierce.front && A.needle.inSkin && tip[2] >= m.depth + A.vein.dz - 0.05;
   const tipU = (tip[0]) * cy + (tip[1] - m.lateral) * sy;
@@ -1850,7 +1880,8 @@ function drawSection() {
   // the ghost (Guided): the angle to come in at for this phase, drawn outside the skin only, back
   // from where the needle enters (or would, at that angle, to reach the tip where it is)
   if (A.mode === 'guided' && !n.shielded && !A.cath.hubbed) {
-    const ga = (A.pierce.flashAt == null ? 22 : A.done.has('flash') ? 8 : 12) * D;
+    // (the middle of the site's window for the phase: 22°, 10°, 8° on the arm; 12°, 5°, 6° on the hand)
+    const ga = Math.floor(A.pierce.flashAt == null ? (ang.pierceMin + ang.pierceMax) / 2 : A.done.has('flash') ? ang.threadMax - 2 : (ang.lowerMin + ang.lowerMax) / 2) * D;
     const ex = n.inSkin ? tipU - (tip[2] / Math.tan(ga)) : tipU;
     g.strokeStyle = 'rgba(255,255,255,0.45)'; g.lineWidth = 1; g.setLineDash([3, 3]);
     g.beginPath(); g.moveTo(U(ex), Z(0)); g.lineTo(U(ex - 16 * Math.cos(ga)), Z(-16 * Math.sin(ga))); g.stroke(); g.setLineDash([]);
@@ -1899,11 +1930,11 @@ function drawSection() {
   g.fillStyle = A.flash.artery ? `rgb(${200 + 55 * pulse},30,30)` : '#a01020';
   g.fillRect(XS.w - 21, 5, Math.round(16 * A.flash.level), 5);
   // the readout: the angle, in or out of this phase's window (a symbol too, not colour alone)
-  const ang = Math.round(n.pitch), win = A.pierce.flashAt == null ? [P.angles.pierceMin, P.angles.pierceMax]
-    : A.done.has('flash') ? [0, P.angles.threadMax] : [P.angles.lowerMin, P.angles.lowerMax];
-  const inWin = ang >= win[0] && ang <= win[1], close = !inWin && (ang >= win[0] - 4 && ang <= win[1] + 4);
+  const deg = Math.round(n.pitch), win = A.pierce.flashAt == null ? [ang.pierceMin, ang.pierceMax]
+    : A.done.has('flash') ? [0, ang.threadMax] : [ang.lowerMin, ang.lowerMax];
+  const inWin = deg >= win[0] && deg <= win[1], close = !inWin && (deg >= win[0] - 4 && deg <= win[1] + 4);
   const ro = $('ivXsAngle');
-  if (ro) { ro.textContent = `${ang}° ${inWin ? '✓' : close ? '~' : '✗'}`; ro.className = 'ivxs-angle ' + (inWin ? 'in' : close ? 'close' : 'out'); }
+  if (ro) { ro.textContent = `${deg}° ${inWin ? '✓' : close ? '~' : '✗'}`; ro.className = 'ivxs-angle ' + (inWin ? 'in' : close ? 'close' : 'out'); }
   drawStrip();
 }
 // the top-down strip: the vein's direction against the needle's
@@ -1954,13 +1985,14 @@ function setTool(id) {
 const STEP_TOOL = { tourniquet: 'tourniquet', clean: 'pad', seal: 'catheter', align: 'catheter', dressing: 'tegaderm', syringe: 'syringe', cap: 'cap' };
 function refresh() {
   if (!A) return;
-  const st = IV.currentStep(A), si = IV.stepIndex(st), step = cfg.steps[si] || { title: 'Done', do: '', keys: [] };
+  // (each step in this site's words: the hand's tourniquet goes above the wrist, its angle is shallower)
+  const st = IV.currentStep(A), si = IV.stepIndex(st), step = IV.stepText(A, si);
   const guided = A.mode === 'guided', assess = A.mode === 'assessment';
   // the step card: the step, one line, the controls (Practice: the controls; Assessment: nothing)
   const card = $('ivStep');
   if (card) {
     if (A.ended && !A.finished) {
-      card.innerHTML = `<div class="ivs-t ivs-bad">${IV.ERRORS[A.ended.code].msg}</div>`
+      card.innerHTML = `<div class="ivs-t ivs-bad">${IV.errorText(A, A.ended.code).msg}</div>`
         + `<div class="ivs-do">${!A.pressure.removed ? 'Remove the catheter.' : !A.pressure.gauze ? 'Gauze over the site.' : 'Hold pressure.'}</div>`
         + `<div class="ivs-keys">${!A.pressure.removed ? chip('Left-drag ↓', 'on the needle') : !A.pressure.gauze ? chip('Tool', 'gauze') + chip('Left-click', 'site') : chip('Hold left-click', 'on the gauze')}</div>`
         + (A.pressure.gauze ? '<div class="ivs-prog dry" id="ivProg"><i id="ivPressFill"></i><span id="ivPressLab"></span></div>' : '');
@@ -1990,7 +2022,7 @@ function refresh() {
   // the checklist (Guided)
   const cl = $('ivChecklist');
   if (cl) cl.start = 0;
-  if (cl) cl.innerHTML = guided ? cfg.steps.map((s, i) => `<li class="${A.done.has(IV.STEP_IDS[i]) ? 'done' : i === si ? 'cur' : ''}">${s.title}</li>`).join('') : '';
+  if (cl) cl.innerHTML = guided ? cfg.steps.map((s, i) => `<li class="${A.done.has(IV.STEP_IDS[i]) ? 'done' : i === si ? 'cur' : ''}">${IV.stepText(A, i).title}</li>`).join('') : '';
   $('ivChecklistWrap')?.classList.toggle('hide', !guided);
   // the cross-section shows from the seal to the withdrawal, Guided and Practice
   const xs = !assess && A.mark && (A.done.has('seal') || A.needle.inSkin || PREP.atSite) && (!A.needle.shielded || st === 'clamp1') && !A.finished;
@@ -2131,7 +2163,9 @@ function showDebrief() {
     + `<span>${st.title}</span><em>${st.t == null ? '—' : st.t.toFixed(0) + ' s'}</em>${st.errors.map((m) => `<b>${m}</b>`).join('')}</li>`).join('')}</ol>`;
   const tips = db.tips.length ? `<div class="ivd-tips">${db.tips.map((t) => `<p>${t}</p>`).join('')}</div>` : '';
   el.innerHTML = `<div class="ivd-card">${head}${cats}<div class="ivd-row"><div>${steps}</div><div><canvas id="ivTrace" width="300" height="140"></canvas>`
-    + `<div class="ivd-meta">Tourniquet ${s.tourniquetS.toFixed(0)} s · total ${s.timeS.toFixed(0)} s · veins ${Math.round(A.difficulty * 100)}% hidden</div>${tips}</div></div>`
+    + `<div class="ivd-meta">Tourniquet ${s.tourniquetS.toFixed(0)} s · total ${s.timeS.toFixed(0)} s · veins ${Math.round(A.difficulty * 100)}% hidden</div>`
+    // what the line will take on the CT injector: the gauge's rating, or the vein's where lower
+    + `<div class="ivd-meta">${A.gauge} G, ${(cfg.sites[A.site].label || A.site).toLowerCase()}: contrast at up to ${db.rateLimit} mL/s${db.rateLimit < P.gauges[A.gauge].rateMLs ? ' (the vein\'s limit, not the catheter\'s)' : ''}</div>${tips}</div></div>`
     + `<div class="ivd-btns"><button id="ivRetry">Retry</button><button id="ivSetupBtn">Change setup</button></div></div>`;
   el.classList.add('show');
   drawTrace(db);
@@ -2147,7 +2181,7 @@ function drawTrace(db) {
   const X = (t) => 8 + (t - t0) / (t1 - t0) * (cv.width - 16);
   // the pierce window, shaded
   const Ya = (a) => cv.height - 8 - a / 45 * (cv.height - 16);
-  g.fillStyle = 'rgba(80,180,120,0.15)'; g.fillRect(8, Ya(P.angles.pierceMax), cv.width - 16, Ya(P.angles.pierceMin) - Ya(P.angles.pierceMax));
+  g.fillStyle = 'rgba(80,180,120,0.15)'; g.fillRect(8, Ya(A.P.angles.pierceMax), cv.width - 16, Ya(A.P.angles.pierceMin) - Ya(A.P.angles.pierceMax));
   g.strokeStyle = '#e6edf5'; g.lineWidth = 1.5; g.beginPath();
   tr.forEach((p, i) => (i ? g.lineTo(X(p.t), Ya(p.pitch)) : g.moveTo(X(p.t), Ya(p.pitch)))); g.stroke();
   const maxS = Math.max(...tr.map((p) => p.s), 1), Ys = (s) => cv.height - 8 - s / maxS * (cv.height - 16);
@@ -2222,14 +2256,15 @@ function frame(now) {
     tq.textContent = A.tq.on || s > 0 ? `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}` : '–:––';
     tq.className = 'ivtq ' + (s > P.tourniquet.limitS ? 'over' : s > P.tourniquet.warnS ? 'warn' : A.tq.on ? 'on' : '');
   }
-  // the flush: drawn back for blood, then pushed; the speed against the catheter's rating
+  // the flush: drawn back for blood, then pushed; the speed against the line's limit (the
+  // catheter's rating, or a hand vein's own where that is lower)
   const ff = $('ivFlushFill');
   if (ff && A) {
-    const fs = A.syringe, max = P.gauges[A.gauge].rateMLs, rate = performance.now() - (ptr.lastPush || 0) < 300 ? fs.rate : 0;
+    const fs = A.syringe, max = IV.rateLimit(A), rate = performance.now() - (ptr.lastPush || 0) < 300 ? fs.rate : 0;
     ff.style.width = (Math.min(1, fs.vol / P.flush.volumeML) * 100).toFixed(1) + '%';
     $('ivFlushLab').textContent = !fs.checked ? 'Pull back first: blood?'
-      : `${fs.vol.toFixed(1)} / ${P.flush.volumeML} mL \u00b7 ${rate.toFixed(1)} mL/s (1\u2013${max})`;
-    ff.parentElement.classList.toggle('bad', rate > max || (rate > 0 && rate < P.flush.minRateMLs));
+      : `${fs.vol.toFixed(1)} / ${P.flush.volumeML} mL \u00b7 ${rate.toFixed(1)} mL/s (${A.P.flush.minRateMLs}\u2013${max})`;
+    ff.parentElement.classList.toggle('bad', rate > max || (rate > 0 && rate < A.P.flush.minRateMLs));
   }
   // pressure on the gauze: how long left to hold
   const pr = $('ivPressFill');
@@ -2353,6 +2388,13 @@ export function initIV(context) {
     if (key === 'site' && ctx.S.mode === 'iv') { await loadSite(); ctx.syncScene(); }
   }));
   seg('ivSiteSeg', 'site'); seg('ivModeSeg', 'mode'); seg('ivGaugeSeg', 'gauge');
+  // under the sites, what the chosen one asks of the technique (the hand: a smaller gauge, a
+  // shallower angle, a slower injection)
+  const segEl = $('ivSiteSeg');
+  if (segEl && !$('ivSiteNote')) segEl.insertAdjacentHTML('afterend', '<div class="ivsite-note" id="ivSiteNote"></div>');
+  const syncNote = () => { const n = $('ivSiteNote'); if (n) n.textContent = cfg.sites[setup.site]?.note || ''; };
+  document.querySelectorAll('#ivSiteSeg button').forEach((b) => b.addEventListener('click', syncNote));
+  syncNote();
   // difficulty: how much of the veins shows. Set in Guided and Practice; Assessment draws its own
   const diff = $('ivDiff');
   const syncDiff = () => {

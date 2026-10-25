@@ -376,6 +376,206 @@ test('the port cap may come off before or after the dressing; out of order costs
   assert.equal(IV.score(P).cat.sequence, cfg.score.weights.sequence);
 });
 
+/* ---- the back of the hand --------------------------------------------------------------- */
+// a dorsal metacarpal vein: 1.5 mm radius (3 mm across), its top 2 mm under the skin
+const HAND = { veinId: 'dm23', lateral: 0, radius: 1.5, depth: 2.0, atValve: false, atJoin: false, roll: 1.0, fragility: 0.7 };
+// up to the needle at the skin on a site (by its key in data/iv.json), with a mark of its own
+function siteToSkin(site, opts = {}) {
+  const A = IV.createAttempt(cfg, { mode: 'guided', gauge: site === 'hand' ? 22 : 20, ...opts, site });
+  for (const p of cfg.procedure.prep) IV.tickPrep(A, p);
+  IV.applyTourniquet(A, true);
+  run(A, 26);
+  IV.markSite(A, { ...(site === 'hand' ? HAND : SITE), ...(opts.mark || {}) });
+  IV.cleanStroke(A, 1, cfg.procedure.clean.scrubS);
+  run(A, cfg.procedure.clean.dryS + 0.2);
+  IV.sealSlide(A, 2.5); IV.sealRelease(A);
+  IV.setYaw(A, 0);
+  IV.setTraction(A, true);
+  return A;
+}
+// in at an angle, lowered on the flash, threaded to the hub
+function placed(A, enter, lower, thr) {
+  IV.setPitch(A, enter);
+  advanceUntil(A, 30, (a) => a.flash.level > 0);
+  IV.setPitch(A, lower); advanceUntil(A, 4, (a) => a.cathTip === 'lumen');
+  IV.setPitch(A, thr);
+  for (let i = 0; i < 20 && !A.cath.hubbed; i++) IV.thread(A, 1);
+  return A;
+}
+// on through the clamp, port, tourniquet, dressing and syringe to the pull-back
+function toFlush(A) {
+  IV.setTraction(A, false); IV.withdrawNeedle(A, 40); IV.disposeNeedle(A);
+  IV.toggleClamp(A); IV.removePortCap(A); IV.releaseTourniquet(A);
+  IV.placeDressing(A, 2); [0, 1, 2, 3].forEach((i) => IV.pressEdge(A, i));
+  IV.attachSyringe(A); IV.twistSyringe(A, 90); IV.toggleClamp(A);
+  IV.aspirate(A, 0.5);
+  return A;
+}
+const codes = (A) => A.errors.map((e) => e.code);
+
+test('the hand: a textbook attempt at 12°, flat on the flash, a slow flush, runs with nothing logged', () => {
+  const A = placed(siteToSkin('hand'), 12, 6, 6);
+  assert.ok(A.cath.hubbed, codes(A).join());
+  assert.equal(A.needle.pitchAtPuncture, 12);
+  toFlush(A);
+  for (let i = 0; i < 200 && !A.done.has('flush'); i++) { IV.flush(A, 0.12, 0.1); IV.update(A, 0.1); }   // 1.2 mL/s
+  IV.toggleClamp(A); IV.twistSyringe(A, -90); IV.attachCap(A); IV.twistCap(A, 90);
+  assert.ok(A.finished, `finished at ${IV.currentStep(A)}`);
+  assert.deepEqual(codes(A), []);
+  const s = IV.score(A);
+  assert.ok(s.pass && s.total >= 95, JSON.stringify(s));
+});
+
+test('the hand comes in at 10-15°: an arm\'s 25° is too steep there, and its 12° would flatten an arm vein', () => {
+  assert.deepEqual([IV.createAttempt(cfg, { site: 'hand' }).P.angles.pierceMin, IV.createAttempt(cfg, { site: 'hand' }).P.angles.pierceMax], [10, 15]);
+  assert.equal(IV.createAttempt(cfg, { site: 'forearm' }).P.angles.pierceMin, 15, 'the arm sites keep 15-30°');
+  const steep = siteToSkin('hand'); IV.setPitch(steep, 25);
+  advanceUntil(steep, 20, (a) => a.pierce.front);
+  assert.ok(codes(steep).includes('tooSteep'), codes(steep).join());
+  const arm = siteToSkin('antecubital'); IV.setPitch(arm, 25);
+  advanceUntil(arm, 20, (a) => a.pierce.front);
+  assert.ok(arm.pierce.front && !codes(arm).includes('tooSteep'), codes(arm).join());
+  // at 12° the hand vein, pinned on its bed, pierces clean; an arm vein is flattened through both walls
+  const hand12 = siteToSkin('hand'); IV.setPitch(hand12, 12);
+  advanceUntil(hand12, 30, (a) => a.pierce.front);
+  assert.ok(hand12.pierce.front && !hand12.ended && hand12.vein.flat < 0.4, `${codes(hand12)} flat ${hand12.vein.flat.toFixed(2)}`);
+  const arm12 = siteToSkin('antecubital'); IV.setPitch(arm12, 12);
+  advanceUntil(arm12, 40, (a) => a.pierce.front);
+  assert.ok(codes(arm12).includes('doubleWall'));
+  // and flatter still, the hand vein goes the same way
+  const flat = siteToSkin('hand'); IV.setPitch(flat, 6);
+  advanceUntil(flat, 40, (a) => a.pierce.front);
+  assert.ok(codes(flat).includes('doubleWall'), codes(flat).join());
+});
+
+test('a hand vein leaves half the room an arm vein does between the flash and the back wall', () => {
+  const room = (site) => {
+    const A = siteToSkin(site); IV.setPitch(A, 25);
+    advanceUntil(A, 30, (a) => a.flash.level > 0);
+    const s0 = A.needle.s;
+    for (let i = 0; i < 400 && !A.pierce.back; i++) IV.advance(A, 0.1);
+    assert.ok(A.pierce.back, site);
+    return A.needle.s - s0;
+  };
+  const hand = room('hand'), arm = room('antecubital');
+  assert.ok(hand < 0.6 * arm, `hand ${hand.toFixed(1)} mm, arm ${arm.toFixed(1)} mm`);
+});
+
+test('the hand: lowered on the flash means almost flat, 8° or under', () => {
+  const A = siteToSkin('hand'); IV.setPitch(A, 12);
+  advanceUntil(A, 30, (a) => a.flash.level > 0);
+  advanceUntil(A, 2, () => false);                         // on at 12°: fine on the arm, not here
+  assert.ok(codes(A).includes('notLowered'), codes(A).join());
+});
+
+test('a hand vein rolls further than an arm vein off the same mark when the skin is let go', () => {
+  // the same vein and mark on both: only the site's looseness differs. The needle just in the
+  // skin, the traction let go, two seconds
+  const roll = (site) => {
+    const A = siteToSkin(site, { mode: 'practice', mark: { ...SITE, lateral: 1.5, roll: 1 } });
+    IV.setPitch(A, 20); IV.advance(A, 1);
+    IV.setTraction(A, false); run(A, 2);
+    return Math.abs(A.vein.dy);
+  };
+  const hand = roll('hand'), arm = roll('antecubital');
+  assert.ok(hand > 1.4 * arm, `hand ${hand.toFixed(2)} mm, arm ${arm.toFixed(2)} mm`);
+});
+
+test('the line\'s limit: a hand vein takes 1.5 mL/s whatever the gauge; the arm the gauge\'s rating', () => {
+  const lim = (site, gauge) => IV.rateLimit(IV.createAttempt(cfg, { site, gauge }));
+  assert.equal(lim('hand', 22), 1.5); assert.equal(lim('hand', 24), 1.5); assert.equal(lim('hand', 20), 1.5);
+  assert.equal(lim('antecubital', 22), 6.5); assert.equal(lim('forearm', 20), 10); assert.equal(lim('antecubital', 24), 3);
+  // pushed at 3 mL/s: logged, and the fragile vein leaks round the catheter until it shows
+  const fast = toFlush(placed(siteToSkin('hand', { mode: 'practice' }), 12, 6, 6));
+  for (let i = 0; i < 200 && !fast.done.has('flush') && !fast.ended; i++) IV.flush(fast, 0.3, 0.1);
+  assert.ok(codes(fast).includes('flushFast') && codes(fast).includes('infiltration'), codes(fast).join());
+  assert.ok(fast.ended, 'infiltration ends the attempt');
+  // the same push into a 22 G in the arm is within its rating
+  const arm = toFlush(placed(siteToSkin('antecubital', { mode: 'practice', gauge: 22 }), 25, 12, 8));
+  for (let i = 0; i < 200 && !arm.done.has('flush'); i++) IV.flush(arm, 0.3, 0.1);
+  assert.ok(arm.done.has('flush') && !codes(arm).includes('flushFast') && arm.infiltration === 0, codes(arm).join());
+  // and the hand under its limit is clean (0.5 mL/s is slow enough for it)
+  const slow = toFlush(placed(siteToSkin('hand', { mode: 'practice' }), 12, 6, 6));
+  for (let i = 0; i < 400 && !slow.done.has('flush'); i++) IV.flush(slow, 0.06, 0.1);
+  assert.ok(slow.done.has('flush') && !codes(slow).includes('flushSlow') && slow.infiltration === 0, codes(slow).join());
+});
+
+test('choosing the site on the hand: a 20 G, a joint under the catheter, the radial nerve, a valve ahead', () => {
+  const mark = (site, gauge, extra) => {
+    const A = IV.createAttempt(cfg, { mode: 'practice', site, gauge });
+    return IV.markSite(A, { ...HAND, ...extra }).reasons;
+  };
+  assert.deepEqual(mark('hand', 22, {}), []);
+  assert.deepEqual(mark('hand', 24, {}), []);
+  assert.deepEqual(mark('hand', 20, {}), ['gaugeLarge']);
+  assert.deepEqual(mark('antecubital', 20, {}), [], 'a 20 G is the arm\'s own');
+  // the catheter (25 mm) laid up the vein reaches the wrist 10 mm on; on the knuckle itself; clear
+  assert.deepEqual(mark('hand', 22, { jointMM: 10 }), ['siteJoint']);
+  assert.deepEqual(mark('hand', 22, { jointMM: 0 }), ['siteJoint']);
+  assert.deepEqual(mark('hand', 22, { jointMM: 30 }), []);
+  assert.deepEqual(mark('hand', 22, { nerve: true }), ['siteNerve']);
+  assert.deepEqual(mark('hand', 22, { valveAheadMM: 15 }), ['valveAhead']);
+  assert.deepEqual(mark('hand', 22, { valveAheadMM: 30 }), []);
+  // (on the valve itself it is the valve that is named)
+  assert.deepEqual(mark('hand', 22, { valveAheadMM: 2, atValve: true }), ['siteValve']);
+  // the site's avoid zones are where the hand model's own landmarks put them
+  const zones = cfg.sites.hand.avoid;
+  const knuckle = zones.find((z) => /knuckle/i.test(z.label)), wrist = zones.find((z) => /^the wrist/i.test(z.label));
+  assert.ok(knuckle.along[1] > -2.12 && knuckle.along[1] < -1, 'the 3rd MCP knuckle (along -2.1) is in the knuckle zone');
+  assert.ok(wrist.along[0] > 4.1 && wrist.along[0] < 5.37, 'the wrist zone starts past the midcarpal (4.1), before the radial styloid (5.4)');
+});
+
+test('a valve ahead stops the threading catheter; forced on, it is logged', () => {
+  const A = placed(siteToSkin('hand', { mode: 'practice', mark: { valveAheadMM: 14 } }), 12, 6, 6);
+  assert.ok(codes(A).includes('valveAhead'), 'marked short of a valve');
+  assert.ok(codes(A).includes('valveHit') && A.cath.hubbed, codes(A).join());
+  assert.ok(A.log.some((e) => e.type === 'valveForced'));
+  const B = placed(siteToSkin('hand', { mode: 'practice', mark: { valveAheadMM: 40 } }), 12, 6, 6);
+  assert.ok(B.cath.hubbed && !codes(B).includes('valveHit'), codes(B).join());
+});
+
+test('probing hurts, the hand three times the arm: the patient flinches, and a loose hand takes the vein', () => {
+  const probe = (site, traction, mm) => {
+    const A = siteToSkin(site, { mode: 'practice', mark: { lateral: 0.5 } });
+    IV.setTraction(A, traction);
+    IV.setPitch(A, site === 'hand' ? 12 : 22);
+    IV.advance(A, 8);
+    const dy = A.vein.dy;
+    for (let i = 0; i < mm; i++) { IV.advance(A, -1); IV.advance(A, 1); }   // back and on, 1 mm at a time
+    return { A, shift: Math.abs(A.vein.dy - dy) };
+  };
+  const hand = probe('hand', true, 6), arm = probe('antecubital', true, 6);
+  assert.ok(codes(hand.A).includes('flinch'), `hand: pain ${hand.A.pain.toFixed(2)}`);
+  assert.ok(!codes(arm.A).includes('flinch'), `arm: pain ${arm.A.pain.toFixed(2)}`);
+  assert.ok(hand.shift < 0.01, 'held firm, the hand stays put');
+  const loose = probe('hand', false, 6);
+  assert.ok(codes(loose.A).includes('flinch') && loose.shift > 2, `loose: ${loose.shift.toFixed(2)} mm`);
+  // the arm too, probed long enough
+  assert.ok(codes(probe('antecubital', true, 25).A).includes('flinch'));
+});
+
+test('the site\'s words: the hand\'s tourniquet above the wrist, its angles in the steps and the tips', () => {
+  const hand = IV.createAttempt(cfg, { site: 'hand' }), arm = IV.createAttempt(cfg, { site: 'antecubital' });
+  const step = (A, id) => IV.stepText(A, IV.stepIndex(id)).do;
+  assert.match(step(hand, 'tourniquet'), /wrist/); assert.match(step(arm, 'tourniquet'), /elbow/);
+  assert.match(step(hand, 'insert'), /10-15°/); assert.match(step(arm, 'insert'), /15-30°/);
+  assert.match(step(hand, 'flush'), /0\.5-1\.5 mL\/s/); assert.match(step(arm, 'flush'), /1-10 mL\/s/);
+  assert.match(IV.errorText(hand, 'tooShallow').tip, /10-15°/);
+  assert.match(IV.errorText(hand, 'tqBelowElbow').msg, /wrist/);
+  assert.match(IV.errorText(arm, 'tqBelowElbow').msg, /elbow/);
+  // every {name} in the data and the errors is filled, for every site
+  for (const site of Object.keys(cfg.sites)) {
+    const A = IV.createAttempt(cfg, { site });
+    for (let i = 0; i < IV.STEP_IDS.length; i++) assert.ok(!/\{\w+\}/.test(IV.stepText(A, i).do), `${site} ${IV.STEP_IDS[i]}`);
+    for (const c of Object.keys(IV.ERRORS)) assert.ok(!/\{\w+\}/.test(IV.errorText(A, c).tip + IV.errorText(A, c).msg), `${site} ${c}`);
+  }
+  // and the error as logged is in the site's words
+  const B = IV.createAttempt(cfg, { site: 'hand', mode: 'practice' });
+  for (const p of cfg.procedure.prep) IV.tickPrep(B, p);
+  IV.applyTourniquet(B, false);
+  assert.match(B.errors.find((e) => e.code === 'tqBelowElbow').msg, /wrist/);
+});
+
 test('gone in far before the flash shows, lowering the angle completes the flashback step', () => {
   const A = toSkin(); IV.setPitch(A, 25);
   // advance with no time passing: the catheter is in before the flash has had time to show
