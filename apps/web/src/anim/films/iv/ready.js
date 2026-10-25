@@ -158,7 +158,13 @@ export async function getReady(api, S) {
           const at = v3.add(C.at(-10 + sd * 7, -6), v3.mul(F.n, 16 + rub));
           H.place(1, at, v3.norm(v3.add(v3.mul(F.n, 0.85), v3.mul(At, 0.3 * sd))), v3.norm(v3.mul(C.Sd, -1)));
         }
-        if (t > 1 && t < 6.5) api.mark(S.hands.right.group, 'cyan', t);
+        if (t > 1 && t < 6.5) {
+          // (the gloved hands, not the sleeves: round their fingertips and wrists)
+          const pts = [];
+          for (const H of [S.hands.left, S.hands.right]) for (const i of [0, 3, 4]) { const p = H.tip(i).getWorldPosition(new THREE.Vector3()); pts.push([p.x, p.y, p.z]); }
+          for (const H of [S.hands.left, S.hands.right]) { const p = H.group.position; pts.push([p.x, p.y, p.z]); }
+          C.markPts(pts, 'cyan', t, 4);
+        }
         if (t > 6.5) C.markRegion(G, [[-6, 4], [6, 4], [-6, -4], [6, -4]], 'yellow', t);
       },
       caption: [
@@ -234,7 +240,7 @@ export async function getReady(api, S) {
         ring.position.set(...p); ring.lookAt(...v3.add(p, n));
         ring.material.opacity = Math.sin(Math.PI * u) * 0.5;
         ring.scale.setScalar((0.6 + 0.9 * u - 0.25 * Math.sin(u * Math.PI * 2)) * 1.6);
-        if (t > 1 && t < 7) api.mark(S.hands.right.group, 'cyan', t);
+        if (t > 1 && t < 7) { const q = [0, 1].map((i) => S.hands.right.tip(i).getWorldPosition(new THREE.Vector3())); C.markPts(q.map((p) => [p.x, p.y, p.z]), 'cyan', t, 12); }
         api.mosaic(span(t, 6.8, 7.8));
         if (t > 7.6) {
           px.alpha = span(t, 7.6, 8.3);
@@ -288,7 +294,8 @@ export async function getReady(api, S) {
         const H = S.hands.right; H.group.visible = on;
         if (on) {
           H.pose({ f: [[10, 10, 5], [12, 12, 6], [45, 60, 40], [50, 65, 40]], thumb: [30, 30, 20], spread: 2 });
-          H.place(0, v3.add(p, v3.mul(n, 0.15)), v3.norm(v3.sub(v3.mul(At, 0.85), v3.mul(n, 0.5))), v3.norm(v3.add(v3.mul(n, 0.85), v3.mul(At, 0.5))));
+          // (from the far side of the arm, the fingers toward the camera: the swab stays in sight)
+          H.place(0, v3.add(p, v3.mul(n, 0.15)), v3.norm(v3.sub(v3.mul(C.Sd, 0.75), v3.mul(n, 0.55))), v3.norm(v3.add(v3.mul(n, 0.75), v3.mul(C.Sd, 0.55))));
         }
         const wet = t < 10.3 ? s : 1 - 0.75 * span(t, 10.3, 14);
         S.painter.paint({ ...markOn(1), wet, wetR: 2.5 });

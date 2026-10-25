@@ -203,7 +203,7 @@ export async function whyWhere(api, S) {
         S.tubes.brachialArtery.visible = S.tubes.medianNerve.visible = hiArt;
         if (t > 1.2 && t < 5.4) { api.mark(S.tubes.cephalic, 'cyan', t); api.mark(S.tubes.basilic, 'cyan', t); }
         if (t > 5.4 && t < 10.5) api.mark(S.tubes.medianCubital, 'yellow', t);
-        if (hiArt) { api.mark(S.tubes.medianNerve, 'yellow', t); api.mark(S.tubes.brachialArtery, 'red', t); }
+        if (hiArt) C.markRegion(S.G, [[-3, -0.4], [3, -0.4], [-3, -2.1], [3, -2.1]], 'red', t);      // (the stretch of artery and nerve under the fossa)
       },
       caption: [
         { from: 1.2, to: 5.4, text: 'On the thumb’s side runs the <b>cephalic</b> vein; on the little finger’s side, the <b>basilic</b>.' },

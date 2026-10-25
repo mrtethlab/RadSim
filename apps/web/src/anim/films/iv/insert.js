@@ -106,7 +106,7 @@ export async function insertion(api, S) {
         R3.kit.updateMatrixWorld(true);
         const c = new THREE.Vector3(-2.6, 0, -0.6).applyMatrix4(R3.kit.matrixWorld);
         const e = R3.kit.matrixWorld.elements, kz = [e[8], e[9], e[10]];
-        const dist = lerp(15, 9, span(t, 0, 4));
+        const dist = lerp(15, 9, span(t, 0, 4)) + 5 * span(t, 12.5, 13.6);
         return { pos: v3.add([c.x, c.y, c.z], v3.add(v3.mul(kz, dist), [0, dist * 0.55, 0])), look: [c.x, c.y, c.z], fov: 34 };
       },
       frame(t) {
@@ -117,7 +117,9 @@ export async function insertion(api, S) {
         if (t > 1 && t < 4.5) C.markPts([kitPt(0.05), kitPt(-0.5, 0.12), kitPt(-0.5, -0.12)], 'yellow', t, 3);
         if (t > 4.5 && t < 8.5) { api.mark(R3.hub, 'yellow', t); api.mark(R3.housing.children[0], 'red', t); }
         if (t > 8.5 && t < 13) { api.mark(R3.clampM, 'cyan', t); api.mark(R3.port, 'cyan', t); }
-        if (t > 13) api.mark(R3.housing, 'yellow', t);
+        // beside it, a spent one: the needle out of its grip, the white shield closed over the point
+        const sp = R3.prep.spent; sp.visible = t > 13;
+        if (sp.visible) { sp.matrix.makeTranslation(8.2, 5.7 + 0.5 * (1 - span(t, 13, 14)), -3.0); sp.matrixAutoUpdate = false; sp.matrixWorldNeedsUpdate = true; api.mark(sp, 'yellow', t); }
       },
       caption: [
         { from: 1, to: 4.5, text: '<b>Catheter over needle</b>: a steel needle, its tip cut to a bevel, inside a soft plastic catheter that ends 1.5 mm behind the point.' },
@@ -128,7 +130,7 @@ export async function insertion(api, S) {
     },
     {
       title: 'Seal, anchor, line up', dur: 16, scale: '1 cm',
-      enter() { S.reset(); S.supplies(1); bandOn(true); S.painter.paint(atSite()); R3.setLid(1); },
+      enter() { S.reset(); S.supplies(1); bandOn(true); S.painter.paint(atSite()); R3.setLid(1); S.placeKitInPack(7, 0, { sheath: false, hands: true }); },
       cam(t) {
         if (t < 5.5) {
           R3.kit.updateMatrixWorld(true);
@@ -197,7 +199,7 @@ export async function insertion(api, S) {
     },
     {
       title: 'Flashback', dur: 15, scale: (t) => (t < 6.5 ? '1 cm' : '1 mm'),
-      enter() { S.reset(); S.supplies(1); bandOn(true); S.painter.paint(atSite()); for (const [id, m] of Object.entries(S.tubes)) m.visible = id === 'medianCubital'; },
+      enter() { S.reset(); S.supplies(1); bandOn(true); S.painter.paint(atSite()); for (const [id, m] of Object.entries(S.tubes)) m.visible = id === 'medianCubital'; S.placeKit(recAt(R, ev.lumen)); },
       cam(t) {
         R3.kit.updateMatrixWorld(true);
         const c = new THREE.Vector3(-3.2, 0.1, 0).applyMatrix4(R3.kit.matrixWorld), cc = [c.x, c.y, c.z];
@@ -343,8 +345,8 @@ export async function insertion(api, S) {
         if (t > 10) C.markRegion(G, [[-4, 3], [3, 3], [-4, -3], [3, -3]], 'cyan', t);
       },
       caption: [
-        { from: 1, to: 4.8, text: 'The <b>clamp</b> on the extension set closed first, before the system is opened.' },
-        { from: 4.8, to: 8.2, text: 'The cap off the port, where the flush goes on: with the clamp shut, no blood comes out.' },
+        { from: 1, to: 4.8, place: 'above', text: 'The <b>clamp</b> on the extension set closed first, before the system is opened.' },
+        { from: 4.8, to: 8.2, place: 'above', text: 'The cap off the port, where the flush goes on: with the clamp shut, no blood comes out.' },
         { from: 8.2, to: 15, text: 'The <b>tourniquet released</b>: the veins drain and soften, the pressure in them falls back.' },
       ],
     },
