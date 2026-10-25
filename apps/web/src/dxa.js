@@ -20,7 +20,6 @@ import { BodyMaterials } from './core/materials.js';
 import { muAtEnergy } from './core/voxelPhantom.js';
 import { dockConsole } from './core/paneDock.js';
 import { makePatient, drawAgeChart, reportHTML } from './dxaReport.js';
-import { buildLunar, buildBlock, buildHolder, buildLegs, LUNAR, BLOCK, HOLDER } from './dxaRoom.js';
 import { Sound } from './audio/sound.js';
 
 let ctx = null, D = null;
@@ -1349,7 +1348,10 @@ export function dxaApplyMode(on) {
 
 /* THE ROOM'S MACHINE (dxaRoom.js): the table stands still; the arm (pillar, head, and the source
    carriage under the table) travels along it. */
-let room = null, laser = null, block = null, holder = null, legs = null, legsKey = '';
+// (the room's model is loaded when the room is built: it needs three.js, and the analysis in this
+// module is tested in node without it)
+let R3 = null, room = null, laser = null, block = null, holder = null, legs = null, legsKey = '';
+const TABLE_LEN_CM = 263;            // the table's length (dxaRoom.js LUNAR.LEN)
 const HOLDER_AT = 82;                 // cm from the thighs' stumps to the foot holder: the heels
 export function dxaSyncScene() {
   if (!ctx || !room) return;
@@ -1426,7 +1428,8 @@ function thighStumps(vm) {
   return stumpsRest;
 }
 function syncProps() {
-  const { THREE } = ctx;
+  if (!R3) return;
+  const { buildBlock, buildHolder, buildLegs, BLOCK } = R3;
   const pose = ctx.phantomPose?.();
   const st = thighStumps(ctx.S.voxelModel);
   const prop = D.props || null;
@@ -1542,7 +1545,7 @@ function nudge(dir) {
   else if (dir === 'inf') D.headZ -= STEP;
   else if (dir === 'left') D.crossX -= STEP;       // toward the patient's right
   else if (dir === 'right') D.crossX += STEP;
-  D.headZ = Math.max(-LUNAR.LEN / 2 + 40, Math.min(LUNAR.LEN / 2 - 40, D.headZ));
+  D.headZ = Math.max(-TABLE_LEN_CM / 2 + 40, Math.min(TABLE_LEN_CM / 2 - 40, D.headZ));
   D.crossX = Math.max(-25, Math.min(25, D.crossX));
   syncHead(); syncPad();
 }
@@ -1570,10 +1573,14 @@ function syncPad() {
 
 function buildRig() {
   const { three } = ctx;
-  room = buildLunar();
-  room.table.visible = room.arm.visible = false;
-  three.handGroup.parent.add(room.table, room.arm);
   buildLaser();
+  import('./dxaRoom.js').then((m) => {
+    R3 = m;
+    room = m.buildLunar();
+    room.table.visible = room.arm.visible = false;
+    three.handGroup.parent.add(room.table, room.arm);
+    dxaSyncScene();
+  });
 }
 
 /* The centring laser: a thin cross projected on the patient, which is the only thing the
