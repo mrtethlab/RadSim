@@ -330,6 +330,7 @@ export function forwardChain(p, chain, angles) {
    resampler takes the first that lands on tissue. */
 // reach2: how far from the joint (squared) its crease reaches, when known (poseVolume): a point
 // farther than that has no pre-image in the crease, and is spared the solve
+const CREASE_TOL = 1e-6;                             // rad: 0.02 voxels at 20 cm on a 1 mm volume
 function preimagesOne(q, J, reach2 = Infinity) {
   if (J.wf) return fieldInverse(q, J);
   const dq = [q[0] - J.c[0], q[1] - J.c[1], q[2] - J.c[2]];
@@ -343,11 +344,20 @@ function preimagesOne(q, J, reach2 = Infinity) {
   const back = (phi) => { const r = rotate(dq, J.n, -phi); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
   const limb = (p) => { const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]]; return inLimb(d, J, dot(d, J.d)); };
   if (s(J.T) >= J.b && inCrook(J, dq, J.T)) { const p = back(J.T); if (limb(p)) out.push(p); }
-  // the crease: phi = T w(s(phi)), by bisection on g(phi) = T w(s(phi)) - phi
+  // the crease: phi = T w(s(phi)), the root of g(phi) = T w(s(phi)) - phi, bracketed by g(0) > 0 >
+  // g(T). (Bisection took 24 halvings to 1e-7 rad; the Illinois method, a secant kept inside the
+  // bracket, reaches CREASE_TOL in a few steps: it was a third of a knee's pose.)
   const g = (phi) => J.T * blendWeight(s(phi), J.b) - phi;
-  if (dot(dq, dq) < reach2 && g(0) > 0 && g(J.T) < 0) {
-    let a = 0, b = J.T;
-    for (let i = 0; i < 24; i++) { const m = (a + b) / 2; if (g(m) > 0) a = m; else b = m; }
+  let ga, gb;
+  if (dot(dq, dq) < reach2 && (ga = g(0)) > 0 && (gb = g(J.T)) < 0) {
+    let a = 0, b = J.T, side = 0, m = 0;
+    for (let i = 0; i < 40 && b - a > CREASE_TOL; i++) {
+      m = (a * gb - b * ga) / (gb - ga);
+      const gm = g(m);
+      if (gm > 0) { a = m; ga = gm; if (side === 1) gb /= 2; side = 1; }
+      else if (gm < 0) { b = m; gb = gm; if (side === -1) ga /= 2; side = -1; }
+      else { a = b = m; break; }
+    }
     const phi = (a + b) / 2, w = blendWeight(s(phi), J.b);
     if (w > 0 && w < 1) { const p = back(phi); if (limb(p)) out.push(p); }
   }
@@ -488,7 +498,7 @@ export function poseVolume(vm, flips, chain, angles) {
   const out = new Uint8Array(N0 * N1 * N2);
   plan.rows(0, N2, out);
   plan.fold(out);
-  return { data: out, dims: plan.dims, pad: plan.pad };
+  return { data: out, dims: plan.dims, pad: plan.pad, box: plan.box };
 }
 // the output slices of chunk c of m: [k0, k1)
 // what moves rigidly with its side of a joint (posePlan): the bone materials (trabecular, cortical, the
@@ -569,6 +579,16 @@ export function posePlan(vm, flips, chain, angles) {
     return Math.max(0, Math.ceil((need - half) / sp[a]));
   });
   const N = [nx + 2 * pad[0], ny + 2 * pad[1], nz + 2 * pad[2]];
+  /* THE PATIENT'S BOX in the padded grid ([lo, hi] voxel indices a side): the grid is padded
+     symmetrically to keep its centre, so most of a bent limb's grid is air, and a room that copies
+     the volume (fluoroscopy's pulse workers, one copy each) takes only this box. From the sampled
+     extent (every 2nd voxel, stretched up to 4 times on the outside of a bend: BOX_MARGIN voxels
+     over it); the padded grid stays the volume of record. */
+  const BOX_MARGIN = 10;
+  const box = [0, 1, 2].map((a) => {
+    const C = (N[a] - 1) / 2, i0 = C + sg[a] * lo[a] / sp[a], i1 = C + sg[a] * hi[a] / sp[a];
+    return [Math.max(0, Math.floor(Math.min(i0, i1)) - BOX_MARGIN), Math.min(N[a] - 1, Math.ceil(Math.max(i0, i1)) + BOX_MARGIN)];
+  });
   const at = (i, j, k) => (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz ? 0 : data[(k * ny + j) * nx + i]);
   const sampleRest = (x, y, z) => at(Math.round(sg[0] * x / sp[0] + cx), Math.round(sg[1] * y / sp[1] + cy), Math.round(sg[2] * z / sp[2] + cz));
   const one = cc.length === 1 && !cc[0].wf ? cc[0] : null;
@@ -655,7 +675,9 @@ export function posePlan(vm, flips, chain, angles) {
           // the box's columns
           const i0 = (blo[0] - bx) / ax, i1 = (bhi[0] - bx) / ax;
           const ia = Math.max(0, Math.ceil(Math.min(i0, i1))), ib = Math.min(N0 - 1, Math.floor(Math.max(i0, i1)));
-          for (let i = ia; i <= ib; i++) { const x = bx + ax * i; if (occAt(x, y, z)) out[row + i] = posedAt(x, y, z, out[row + i]); }
+          // (the occupancy cell's y and z are the row's: only x is looked up per voxel)
+          const oRow = (cell(z, 2) * on[1] + cell(y, 1)) * on[0];
+          for (let i = ia; i <= ib; i++) { const x = bx + ax * i; if (occ[oRow + cell(x, 0)]) out[row + i] = posedAt(x, y, z, out[row + i]); }
           continue;
         }
         for (let i = 0; i < N0; i++) {
@@ -666,5 +688,5 @@ export function posePlan(vm, flips, chain, angles) {
       }
     }
   };
-  return { dims: N, pad, rows, fold: (out) => { smoothFold(out, N, sg, sp, cc); rideAlong(out, N, sg, sp, cc, sampleRest); } };
+  return { dims: N, pad, box, rows, fold: (out) => { smoothFold(out, N, sg, sp, cc); rideAlong(out, N, sg, sp, cc, sampleRest); } };
 }

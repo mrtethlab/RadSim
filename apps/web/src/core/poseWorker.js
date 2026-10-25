@@ -11,7 +11,7 @@
         { type: 'pose', id, key, flips, chain, angles }
         { type: 'chunk', id, key, flips, chain, angles, c, m }    chunk c of m of the output slices
         { type: 'fold', id, key, flips, chain, angles, data }     (data transferred both ways)
-   out: { id, data, dims, pad } | { id, c, k0, k1, data, dims, pad } | { id, data } | { id, error } */
+   out: { id, data, dims, pad, box } | { id, c, k0, k1, data, dims, pad, box } | { id, data } | { id, error } */
 import { poseVolume, posePlan, poseChunk } from './jointPose.js';
 
 let model = null;
@@ -41,7 +41,7 @@ self.onmessage = (e) => {
       const P = poseVolume(model, m.flips, m.chain, m.angles);
       // straight: poseVolume hands back the model's own array, which must stay here
       const data = P.data === model.data ? P.data.slice() : P.data;
-      self.postMessage({ id: m.id, data, dims: P.dims, pad: P.pad }, [data.buffer]);
+      self.postMessage({ id: m.id, data, dims: P.dims, pad: P.pad, box: P.box }, [data.buffer]);
       return;
     }
     if (m.type === 'chunk') {
@@ -50,7 +50,7 @@ self.onmessage = (e) => {
       const [N0, N1, N2] = P.dims, [k0, k1] = poseChunk(N2, m.c, m.m);
       const data = new Uint8Array(N0 * N1 * (k1 - k0));
       P.rows(k0, k1, data);
-      self.postMessage({ id: m.id, c: m.c, k0, k1, data, dims: P.dims, pad: P.pad }, [data.buffer]);
+      self.postMessage({ id: m.id, c: m.c, k0, k1, data, dims: P.dims, pad: P.pad, box: P.box }, [data.buffer]);
     }
   } catch (err) {
     self.postMessage({ id: m.id, error: String(err) });

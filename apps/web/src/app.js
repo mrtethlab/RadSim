@@ -638,7 +638,7 @@ function askPoser(w, msg, transfer=[]){
 async function posePooled(pool, base){
   if(pool.length===1) return askPoser(pool[0], { ...base, type:'pose' });
   const m=pool.length*POSE_CHUNKS;
-  let next=0, out=null, dims=null, pad=null, failed=null;
+  let next=0, out=null, dims=null, pad=null, box=null, failed=null;
   await Promise.all(pool.map(async (w)=>{
     let first=true;
     while(next<m && !failed){
@@ -647,13 +647,13 @@ async function posePooled(pool, base){
       const r=await askPoser(w, { ...rest, ...(first ? { chain } : {}), type:'chunk', c, m });
       first=false;
       if(r.error){ failed=r; return; }
-      if(!out){ dims=r.dims; pad=r.pad; out=new Uint8Array(dims[0]*dims[1]*dims[2]); }
+      if(!out){ dims=r.dims; pad=r.pad; box=r.box; out=new Uint8Array(dims[0]*dims[1]*dims[2]); }
       out.set(r.data, r.k0*dims[0]*dims[1]);
     }
   }));
   if(failed) return failed;
   const f=await askPoser(pool[0], { ...base, type:'fold', data:out }, [out.buffer]);
-  return f.error ? f : { data:f.data, dims, pad };
+  return f.error ? f : { data:f.data, dims, pad, box };
 }
 function poseCache(vm){ return vm._jcache || (vm._jcache=new Map()); }
 /* A pose's key: every motion's angle as it is applied (unset = the model's own). It was the
@@ -687,7 +687,7 @@ async function ensureJointVolume(vm, angles=S.joints){
     // each worker holds one model: send this one where another (or none) is held
     for(const w of pool) if(w._modelKey!==mk){ w.postMessage({ type:'model', key:mk, dims:vm.dims, spacingMM:vm.spacingMM, data:vm.data }); w._modelKey=mk; }
     vm._jpending.set(key, posePooled(pool, { key:mk, flips:voxelFlips(), chain:ch, angles:{ ...angles } })
-      .then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad }); }));
+      .then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad, box:r.box }); }));
   }
   await vm._jpending.get(key);
 }
@@ -920,7 +920,7 @@ const S = {
            abc:true, q:0.35, iris:1.0, mag:0, akMGy:0, dapUGym2:0,
            // staff and skin (core/staffDose.js): tube over the table, where the operator
            // stands, what lead they wear, and the doses those choices buy
-           over:false, opSide:1, opDist:60,
+           over:false, opSide:0, opDist:60,      // opSide 0: at the C-arm's controls (fluoro.js operatorAt)
            prot:{ apron:true, collar:true, glasses:false, ceiling:false, skirt:false },
            staff:{ eyes:0, thyroid:0, trunk:0, gonads:0, legs:0, neckBare:0 }, skinMGy:0,
            // Phase C: motion clocks (phases accumulated here; the worker is stateless)

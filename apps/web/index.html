@@ -1328,12 +1328,13 @@
             <button data-over="0" class="on">Under the table</button>
             <button data-over="1">Over the table</button>
           </div>
-          <div class="row" style="margin-top:8px"><div class="rl">You stand <small>side of the table</small></div></div>
+          <div class="row" style="margin-top:8px"><div class="rl">You stand <small>where the dose is measured</small></div></div>
           <div class="seg" id="flOpSideSeg">
-            <button data-side="1" class="on">Patient's right</button>
+            <button data-side="0" class="on">At the C-arm controls</button>
+            <button data-side="1">Patient's right</button>
             <button data-side="-1">Patient's left</button>
           </div>
-          <div class="row" style="margin-top:8px"><div class="rl">Distance <small>from the beam</small></div>
+          <div class="row" style="margin-top:8px"><div class="rl">Distance <small>from the beam (beside the table)</small></div>
             <div class="valchip" id="flOpDistV">60 cm</div></div>
           <input type="range" id="flOpDist" min="40" max="200" value="60" step="5">
           <div class="flprot">

@@ -294,3 +294,21 @@ test('a rider turns as far as keeps its tendon at length, and not at all when st
     assert.ok(cc[0].ra > 0 && cc[0].ra < cc[0].T, `the patella turns less than the knee at ${a}: ${cc[0].ra} of ${cc[0].T}`);
   }
 });
+
+test("a pose's box holds all of the posed patient (the rooms that copy it take only the box)", () => {
+  const nx = 9, ny = 9, nz = 41, data = new Uint8Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 2; j <= 6; j++) for (let i = 2; i <= 6; i++) data[(k * ny + j) * nx + i] = k % 7 ? 7 : 18;
+  const knee = { c: [0, 0, 0], distal: [0, 0, -1], blend: 1,
+    motions: [{ key: 'flex', axis: axisToward([0, 0, -1], [0, -1, 0]), range: [0, 120] }] };
+  for (const a of [30, 90]) {
+    const r = poseVolume({ dims: [nx, ny, nz], spacingMM: [10, 10, 10], data }, [true, true, false], [knee], { flex: a });
+    const [N0, N1, N2] = r.dims, [[i0, i1], [j0, j1], [k0, k1]] = r.box;
+    let outside = 0, inside = 0;
+    for (let k = 0; k < N2; k++) for (let j = 0; j < N1; j++) for (let i = 0; i < N0; i++) {
+      if (!r.data[(k * N1 + j) * N0 + i]) continue;
+      if (i < i0 || i > i1 || j < j0 || j > j1 || k < k0 || k > k1) outside++; else inside++;
+    }
+    assert.equal(outside, 0, `flexed ${a}: ${outside} voxels outside the box`);
+    assert.ok(inside > 0 && (i1 - i0 + 1) * (j1 - j0 + 1) * (k1 - k0 + 1) <= N0 * N1 * N2);
+  }
+});

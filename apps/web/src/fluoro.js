@@ -26,6 +26,7 @@ let F = null;            // ctx.S.fluoro
 // volume copy costs more memory than 7.5 pps is worth.
 let workers = [], busy = [], readyCount = 0, workerSub = null;
 let workerPose = '';     // the patient's pose the pool holds ('' = as scanned): syncPose
+let workerOff = null;    // where the pool's (cropped) volume's centre lies from the full grid's, cm, volume frame
 let giVolSent = false;   // whether this pool has the barium arclength map
 let sVolSent = false;    // whether this pool has the vessel arclength map
 /* ---- DSA state (docs/fluoroscopy.md Phase E) ------------------------------
@@ -214,7 +215,7 @@ function ensureWorker() {
   workers.forEach((w) => w.terminate());
   workers = []; busy = []; readyCount = 0; workerSub = S.subject; lastDrawn = 0;
   giVolSent = false; sVolSent = false;       // the fresh pool has no arclength maps yet
-  workerPose = '';                           // and holds the patient as scanned
+  workerPose = ''; workerOff = null;         // and holds the patient as scanned
   const pose = ctx.phantomPose();
   for (let i = 0; i < poolSize(); i++) {
     const w = new Worker(new URL('./fluoro-worker.js', import.meta.url), { type: 'module' });
@@ -262,15 +263,53 @@ function ensureWorker() {
 function syncPose() {
   const p = ctx.posedVolume?.() || { key: '' };
   if (p.key === workerPose || (p.key && !p.vol) || !workers.length) return;
-  const vm = ctx.S.voxelModel, pose = ctx.phantomPose();
-  const v = p.vol || { data: vm.data, dims: vm.dims };
+  const vm = ctx.S.voxelModel;
+  const v = p.vol ? cropPose(p.vol, vm) : { data: vm.data, dims: vm.dims, off: null };
+  workerOff = v.off;
+  const pose = poolPose();
   readyCount = 0;
-  workers.forEach((w) => w.postMessage({ type: 'init', dims: v.dims, vs: vm.vs, vsMM: vm.spacingMM,
-    data: v.data, center: pose.center, flip: pose.flip, rot: pose.rot }));
+  // one copy per worker (no shared memory on GitHub Pages); the last is handed over, not copied
+  workers.forEach((w, i) => {
+    const last = i === workers.length - 1 && v.data !== vm.data;
+    w.postMessage({ type: 'init', dims: v.dims, vs: vm.vs, vsMM: vm.spacingMM,
+      data: v.data, center: pose.center, flip: pose.flip, rot: pose.rot }, last ? [v.data.buffer] : []);
+  });
   giVolSent = sVolSent = !!p.key;
   workerPose = p.key;
   entryKey = '';                             // the skin the beam enters has moved too
 }
+/* A pose's volume cut to the patient's box (jointPose posePlan box): its grid is padded
+   symmetrically about the centre, and most of a bent leg's grid is air (a knee at 60 degrees, 181 MB
+   of grid round 91 MB of box); the workers take a third of the copying. The box's centre lies off
+   the grid's by `off` (cm, the volume's own frame, flips applied: the phantom's local frame). */
+function cropPose(P, vm) {
+  if (!P.box) return { data: P.data, dims: P.dims, off: null };
+  const [N0, N1] = P.dims, [[i0, i1], [j0, j1], [k0, k1]] = P.box;
+  const n0 = i1 - i0 + 1, n1 = j1 - j0 + 1, n2 = k1 - k0 + 1;
+  const out = new Uint8Array(n0 * n1 * n2);
+  for (let k = 0; k < n2; k++) for (let j = 0; j < n1; j++) {
+    const s = ((k + k0) * N1 + j + j0) * N0 + i0;
+    out.set(P.data.subarray(s, s + n0), (k * n1 + j) * n0);
+  }
+  const f = ctx.phantomPose().flip, sp = vm.vs;
+  const off = [0, 1, 2].map((a) => {
+    const d = ([i0, j0, k0][a] + [i1, j1, k1][a]) / 2 - (P.dims[a] - 1) / 2;
+    return (f[a] ? -d : d) * sp[a];
+  });
+  return { data: out, dims: [n0, n1, n2], off };
+}
+/* The pool's phantom pose: the patient's, its centre moved by the crop's offset, turned with the
+   patient (the phantom's local frame maps to the room as p = centre + rot local). */
+function poolPose() {
+  const pose = ctx.phantomPose();
+  if (!workerOff) return pose;
+  const R = pose.rot, o = workerOff, c = pose.center;
+  const r = R ? [R[0] * o[0] + R[1] * o[1] + R[2] * o[2], R[3] * o[0] + R[4] * o[1] + R[5] * o[2], R[6] * o[0] + R[7] * o[1] + R[8] * o[2]] : o;
+  return { ...pose, center: [c[0] + r[0], c[1] + r[1], c[2] + r[2]] };
+}
+
+// dev server only: which pose the pulse workers hold, and whether they are ready (timing checks)
+if (import.meta.env?.DEV) window.__flWorkers = () => ({ pose: workerPose, ready: !!workers.length && readyCount === workers.length });
 
 /* Per-pulse photon budget: fluoro runs ~5-10 ms pulses at a few mA — three orders of
    magnitude under a radiograph, which is where the mottle comes from. Reference: 400
@@ -391,10 +430,28 @@ function entranceNow() {
 }
 /* Where the operator stands: beside the beam, on the side of the table chosen, at the chosen
    distance from the beam's axis. "Patient's right" follows the patient's actual right. */
+/* At the C-ARM'S CONTROLS (opSide 0, the default): the technologist driving the C stands beside the
+   cart at its control head (on the column, carm.js), on the side toward the patient's feet and the
+   monitor cart: OP_AT_CONTROLS = [behind the column's axis, out from it across the cart], cm. The
+   column stays where the cart was parked (lift raises it; extend and wig-wag move only the cross-arm
+   above it), so this is about 1.6 m from the beam. Or beside the table (+-1: the patient's right
+   or left) at the chosen distance from the beam: where a second person, or the one injecting,
+   stands. */
+const OP_AT_CONTROLS = [20, 54];
 function operatorAt() {
-  const iso = isoPoint(), R = ctx.phantomPose().rot;
+  const iso = isoPoint();
+  if (!F.opSide) {
+    const b = isoBase();
+    return { x: b[0] - CARM.LARM - OP_AT_CONTROLS[0], z: b[2] - OP_AT_CONTROLS[1] };
+  }
+  const R = ctx.phantomPose().rot;
   const rightSign = Math.sign(R[0]) || 1;
   return { x: iso[0] + F.opSide * rightSign * F.opDist, z: iso[2] };
+}
+// the operator's distance from the beam's axis at the table, cm (the readout)
+function operatorDist() {
+  const p = operatorAt(), iso = isoPoint();
+  return Math.round(Math.hypot(p.x - iso[0], p.z - iso[2]));
 }
 
 /* The 5-minute alarm every real machine mandates: three beeps and a flashing timer at
@@ -465,7 +522,7 @@ function firePulse(opts) {
     if (ma !== F.ma) { F.ma = ma; const el = $('flMa'); if (el) el.value = ma; }
   }
   dosePulse(film);
-  const g = beamFrame(), pose = ctx.phantomPose();
+  const g = beamFrame(), pose = poolPose();
   // A LIVE barium study rides along: the LUT snapshot travels with every pulse (tens of
   // kB), the per-voxel arclength map once per pool (it is per-subject and megabytes).
   const bp = ctx.bariumPulse?.();
@@ -1074,7 +1131,8 @@ function renderReadouts() {
   set('flStLegsV', uSv(F.staff.legs));
   set('flStEV', uSv(staffEffective(F.staff, F.prot.apron)));
   set('flSkinV', (F.skinMGy < 10 ? F.skinMGy.toFixed(2) : F.skinMGy.toFixed(1)) + ' mGy');
-  set('flOpDistV', F.opDist + ' cm');
+  set('flOpDistV', operatorDist() + ' cm');
+  const od = $('flOpDist'); if (od) od.disabled = !F.opSide;     // (at the controls: where the column is)
   // source-to-skin: below 30 cm a mobile C-arm's spacer cone would be against the patient
   if (ctx.S.mode === 'fluoro') {
     const e = entranceNow(), ssd = $('flSsdV');
@@ -1526,7 +1584,7 @@ export function initFluoro(context) {
   document.querySelectorAll('#flOpSideSeg button').forEach((b) => b.addEventListener('click', () => {
     F.opSide = +b.dataset.side;
     document.querySelectorAll('#flOpSideSeg button').forEach((x) => x.classList.toggle('on', x === b));
-    fluoroSyncScene();
+    fluoroSyncScene(); renderReadouts();
   }));
   $('flOpDist')?.addEventListener('input', (e) => { F.opDist = +e.target.value; fluoroSyncScene(); renderReadouts(); });
   for (const [id, k] of [['flPApron', 'apron'], ['flPCollar', 'collar'], ['flPGlasses', 'glasses'],
