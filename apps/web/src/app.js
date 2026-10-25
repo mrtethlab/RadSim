@@ -3301,7 +3301,7 @@ function applyPose(pose){
   const note = $('protocolPose');
   if (!pose) { if (note) note.textContent = ''; return; }
   // (tilt: the limb raised off the table about the cross axis, + knee down; a foot taken sole-flat
-  // raises the leg as a flexed knee does: -57 with the ankle plantarflexed 30 lays this one flat)
+  // raises the leg as a flexed knee does: -59 with the ankle plantarflexed 30 lays this one flat)
   S.objRot = { x: pose.tilt || 0, y: 0, z: pose.roll || 0 };
   S.legRot = pose.legs || 0; syncLegRotUI();
   S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg

@@ -8,6 +8,16 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### The ankle measured where it is — [#85](https://github.com/mrtethlab/RadSim/pull/85)
+**The fault.** The leg's ankle landmark was the peak of the bone's cross-section profile; with the foot at 90° the hindfoot's bones fill that profile, and it sat 4 cm below the joint, on the calcaneus. The malleoli were searched for below it, so they landed on the calcaneus too; the AP ankle centred 3.5 cm low, the lateral ankle likewise, and the ankle bent about a point in the calcaneus.
+- *The joint:* the ankle is now the tibiotalar joint, the first joint sheet met going down the tibia's own axis (`measure_landmarks.tibiotalar`; the subtalar is the next, 2.6 cm on). The sheets and the joint spaces are only read: no voxel of the leg changed.
+- *What follows from it:* the malleoli (0.9 and 2.3 cm below the joint), the point midway between them (the ankle's pivot and the AP ankle's centre), the base of the 3rd metatarsal (now at the tarsometatarsal joint, not mid-shaft), the medial cuneiform, the base of the 5th, and the calcaneus (its body, under the subtalar joint).
+- *Measured on the shafts:* the foot's inversion is read across the metatarsal shafts (it reached back into the tarsals' arch): it rests 8° inverted, 5° plantarflexed, as cross-sections of the shafts show.
+- *The sole:* the Trainer and the tests judge "flat" on the foot's long axis (the one its flexion is measured from), not the line from the ankle to the 3rd metatarsal, which dips 13° more; the AP and oblique foot and toes take a tilt of −59° with 30° of plantarflexion.
+- *The Foot* is cut again, now a true third of the leg above the real ankle; below its dome it is the leg voxel for voxel, joint spaces and all.
+
+**Checked:** points marked on bone projections and material slices; the AP, mortise and lateral ankle, AP foot and lateral calcaneus films in the app; the ankle bending about the joint; `npm test`: 272 pass (the sole test fails at the old tilt).
+
 ### Twenty refinements across the modes — [#84](https://github.com/mrtethlab/RadSim/pull/84)
 **X-ray, foot and ankle.**
 - *Anatomical ankle:* `bake_pose --trim` took out what the leg's bake left (the foot rested 11° turned out and 10° inverted): every ankle slider now opens within 2° of 0. The Foot is cut again from it, its cut end domed.
@@ -29,7 +39,7 @@ handoff document and is not committed.)
 
 **Around the app.** A model that fails to load is said over the room with a retry; the local backend check stops after three misses; three.js and each room build into chunks of their own (the app core 257 kB).
 
-**Found, not yet fixed.** Much of the leg's talus is materialised as cartilage, and the malleoli, the ankle landmark and the ankle's pivot hung from it sit 2–3 cm below the tibial plafond (the AP and lateral ankle centre low). To re-measure with the ankle's materials.
+**Found, not yet fixed.** The malleoli, the ankle landmark and the ankle's pivot sit 2–3 cm below the tibial plafond, on the calcaneus (the AP and lateral ankle centre low). (First put down to cartilage in the talus: that was a misreading of a summed projection; fixed in #85.)
 
 **Checked:** each feature in the running app and on the production build (every room opens clean); `npm test`: 272 pass, with each new test proved by reintroducing its bug.
 

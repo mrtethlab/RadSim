@@ -252,15 +252,19 @@ function limbTurn(rot = H.S.objRot) {
   return t;
 }
 
-/* THE SOLE ON THE RECEPTOR: the angle between the foot's long axis (the point midway between the
-   malleoli to the base of the 3rd metatarsal, centring.json, through the pose) and the receptor,
-   signed (+ toes up). An AP or oblique foot is taken with the sole flat; the foot rests at 90
-   degrees to the leg, toes up, so the student lowers them: by raising the leg (tilt, as flexing
-   the knee does) and plantarflexing (the protocol's pose: tilt -57 with 30 of plantarflexion). */
+/* THE SOLE ON THE RECEPTOR: the angle between the foot's long axis and the receptor, signed (+ toes
+   up). The axis is the one the ankle's flexion is measured from (joints.json, measure_joints: the
+   principal axis of the foot's bone, parallel to the sole), carried through the bent ankle. (The
+   line from between the malleoli to the base of the 3rd metatarsal stood in for it, and with the
+   malleoli measured where they are, at the ankle, it dips 13 degrees more than the sole: a foot
+   "flat" by it stood toes up.) An AP or oblique foot is taken with the sole flat; the foot rests at
+   90 degrees to the leg, toes up, so the student lowers them: by raising the leg (tilt, as flexing
+   the knee does) and plantarflexing (the protocol's pose: tilt -59 with 30 of plantarflexion). */
 function soleAngle(rot = H.S.objRot) {
-  const P = (n) => { const p = H.landmarkLocal(n); return p ? H.poseLoc(p) : null; };
-  const a = P('intermalleolar'), b = P('mt3Base');
-  if (!a || !b) return null;
+  const ank = (H.jointChain() || []).find((j) => j.motions.some((m) => m.key === 'ankle.flex'));
+  const toes = ank?.motions.find((m) => m.key === 'ankle.flex').from;
+  if (!ank || !toes) return null;
+  const a = H.poseLoc(ank.c), b = H.poseLoc(ank.c.map((v, i) => v + 5 * toes[i]));
   const R = H.matFor(rot), d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
   const v = [R[0] * d[0] + R[1] * d[1] + R[2] * d[2], R[3] * d[0] + R[4] * d[1] + R[5] * d[2], R[6] * d[0] + R[7] * d[1] + R[8] * d[2]];
   return Math.asin(v[1] / Math.hypot(...v)) * 180 / Math.PI;

@@ -9,11 +9,11 @@
       "confidence": "high"
     },
     "ankle": {
-      "x": 4.95,
-      "y": 1.74,
-      "z": -43.4,
-      "how": "peak of the malleolar bulge \u2014 the clinical centring point, midway between the malleoli; tibia and talus are fused in the segmentation, so there is no joint-space dip to find",
-      "confidence": "medium"
+      "x": 5.38,
+      "y": 4.71,
+      "z": -39.15,
+      "how": "the tibiotalar joint: the first joint sheet down the tibia's axis (the subtalar is the next)",
+      "confidence": "high"
     },
     "hip": {
       "x": -1.1,

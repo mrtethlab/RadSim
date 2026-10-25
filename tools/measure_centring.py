@@ -183,10 +183,12 @@ def lower_extremity():
     # the calcaneus: the textbook's point 2.5 cm below the medial malleolus is the surface rule for
     # its body; measured, straight down from this malleolus is soft tissue (the heel lies behind).
     # The body itself: the bone behind the ankle (posterior of the point midway between the
-    # malleoli) and below the medial malleolus, its centroid
+    # malleoli) and 2-8 cm below the medial malleolus, its centroid
     k, j, i = np.nonzero(V.bone)
     X, Y, Z = (i - (V.n[0] - 1) / 2) * V.sp[0], (j - (V.n[1] - 1) / 2) * V.sp[1], (k - (V.n[2] - 1) / 2) * V.sp[2]
-    heel = (Y < mid[1] - 0.5) & (Z < mm[2]) & (Z > mm[2] - 6)
+    # (from 2 cm under the malleolus, below the subtalar joint: just under it, the talus's posterior
+    # process lies behind the ankle too and lifted the centroid to the calcaneus's top)
+    heel = (Y < mid[1] - 0.5) & (Z < mm[2] - 2.0) & (Z > mm[2] - 8)
     if heel.any():
         out['calcaneus'] = pt([X[heel].mean(), Y[heel].mean(), Z[heel].mean()],
             'the bone behind the ankle and below the medial malleolus, its centroid: the body of the calcaneus',

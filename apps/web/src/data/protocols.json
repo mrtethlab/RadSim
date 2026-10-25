@@ -454,7 +454,7 @@
               "subject": "foot",
               "pose": {
                 "roll": 0,
-                "tilt": -57,
+                "tilt": -59,
                 "cc": 15,
                 "centre": "mtp3Joint",
                 "joints": {
@@ -481,7 +481,7 @@
               "subject": "foot",
               "pose": {
                 "roll": 30,
-                "tilt": -60,
+                "tilt": -59,
                 "cc": 0,
                 "centre": "mtp3Joint",
                 "joints": {
@@ -508,7 +508,7 @@
               "subject": "foot",
               "pose": {
                 "roll": 0,
-                "tilt": -57,
+                "tilt": -59,
                 "cc": 10,
                 "centre": "mt3Base",
                 "joints": {
@@ -535,7 +535,7 @@
               "subject": "foot",
               "pose": {
                 "roll": 30,
-                "tilt": -60,
+                "tilt": -59,
                 "cc": 0,
                 "centre": "mt3Base",
                 "joints": {
