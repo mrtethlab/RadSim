@@ -436,6 +436,60 @@
           "region": "Toes / Foot",
           "projections": [
             {
+              "proj": "AP toes",
+              "kv": 55,
+              "mas": 1.6,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                10,
+                11
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "foot",
+              "pose": {
+                "roll": 0,
+                "tilt": -57,
+                "cc": 15,
+                "centre": "mtp3Joint",
+                "joints": {
+                  "ankle.flex": -30
+                }
+              }
+            },
+            {
+              "proj": "Oblique toes",
+              "kv": 55,
+              "mas": 1.6,
+              "grid": false,
+              "lut": "extremity",
+              "sid": 100,
+              "coll": [
+                10,
+                11
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "foot",
+              "pose": {
+                "roll": 30,
+                "tilt": -60,
+                "cc": 0,
+                "centre": "mtp3Joint",
+                "joints": {
+                  "ankle.flex": -30
+                }
+              }
+            },
+            {
               "proj": "AP foot",
               "kv": 60,
               "mas": 2.0,
@@ -454,12 +508,11 @@
               "subject": "foot",
               "pose": {
                 "roll": 0,
+                "tilt": -57,
                 "cc": 10,
                 "centre": "mt3Base",
-                "fidelity": "approx",
-                "note": "The foot rests at 90 degrees to the leg (the anatomical position); with the leg straight it is plantarflexed 80 degrees, the most the ankle allows, so the sole lies nearly flat, as a raised knee would put it. The Trainer asks for it flat.",
                 "joints": {
-                  "ankle.flex": -80
+                  "ankle.flex": -30
                 }
               }
             },
@@ -482,12 +535,11 @@
               "subject": "foot",
               "pose": {
                 "roll": 30,
+                "tilt": -60,
                 "cc": 0,
                 "centre": "mt3Base",
-                "fidelity": "approx",
-                "note": "The foot rests at 90 degrees to the leg (the anatomical position); with the leg straight it is plantarflexed 80 degrees, the most the ankle allows, so the sole lies nearly flat, as a raised knee would put it. The Trainer asks for it flat.",
                 "joints": {
-                  "ankle.flex": -80
+                  "ankle.flex": -30
                 }
               }
             },
@@ -520,6 +572,63 @@
           ]
         },
         {
+          "region": "Calcaneus",
+          "projections": [
+            {
+              "proj": "Axial calcaneus",
+              "kv": 70,
+              "mas": 4.0,
+              "grid": false,
+              "lut": "ankle",
+              "sid": 100,
+              "coll": [
+                10,
+                13
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "foot",
+              "pose": {
+                "roll": 0,
+                "cc": 40,
+                "centre": "calcaneus",
+                "joints": {
+                  "ankle.flex": 0
+                }
+              }
+            },
+            {
+              "proj": "Lateral calcaneus",
+              "kv": 60,
+              "mas": 2.5,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                11,
+                11
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "landscape",
+              "subject": "foot",
+              "pose": {
+                "roll": -90,
+                "cc": 0,
+                "centre": "calcaneus",
+                "joints": {
+                  "ankle.flex": 0
+                }
+              }
+            }
+          ]
+        },
+        {
           "region": "Ankle",
           "projections": [
             {
@@ -527,7 +636,7 @@
               "kv": 63,
               "mas": 4.0,
               "grid": false,
-              "lut": "limb",
+              "lut": "ankle",
               "sid": 100,
               "coll": [
                 13,
@@ -553,7 +662,7 @@
               "kv": 64,
               "mas": 4.0,
               "grid": false,
-              "lut": "limb",
+              "lut": "ankle",
               "sid": 100,
               "coll": [
                 13,

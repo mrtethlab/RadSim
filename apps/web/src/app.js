@@ -31,6 +31,7 @@ import centringData from './data/centring.json';
 import palpationData from './data/palpation.json';
 import cropData from './data/crops.json';
 import { applyCrops } from './core/crops.js';
+import { boxBlurMasked, latitudeImage } from './core/equalise.js';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
@@ -2904,7 +2905,8 @@ function renderRadiograph(target,entry){
   // skin as a bright rim and laid a sheen over the bone) shows its plain tones
   const plain = entry? entry.plain : S.imgPlain;
   const enhOn=(_t.eOn!==undefined)?_t.eOn:(S.detailEnh && !plain);
-  const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : null;
+  const lat=!entry && S.lut?.latitude;
+  const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : lat ? activeLatitude(sig,nx,ny,mask,mx,lat) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -2995,21 +2997,6 @@ function computeRescale(sig,mask,nx){
    masked box blurs, then recombine with per-band gains (mid boosted, fine gentle).
    Radii scale with the matrix so the effect is resolution-independent. Runs once
    per acquired image (cached on the signal ref), never per window/level change. */
-function boxBlurMasked(src,mask,nx,ny,r){
-  if(r<1) return src.slice();
-  const tmp=new Float32Array(nx*ny), out=new Float32Array(nx*ny);
-  for(let y=0;y<ny;y++){ const row=y*nx; let sum=0,cnt=0;
-    for(let x=0;x<r&&x<nx;x++){ if(mask[row+x]){sum+=src[row+x];cnt++;} }
-    for(let x=0;x<nx;x++){ const add=x+r; if(add<nx&&mask[row+add]){sum+=src[row+add];cnt++;}
-      const rem=x-r-1; if(rem>=0&&mask[row+rem]){sum-=src[row+rem];cnt--;}
-      tmp[row+x]= cnt? sum/cnt : src[row+x]; } }
-  for(let x=0;x<nx;x++){ let sum=0,cnt=0;
-    for(let y=0;y<r&&y<ny;y++){ const k=y*nx+x; if(mask[k]){sum+=tmp[k];cnt++;} }
-    for(let y=0;y<ny;y++){ const add=y+r; if(add<ny&&mask[add*nx+x]){sum+=tmp[add*nx+x];cnt++;}
-      const rem=y-r-1; if(rem>=0&&mask[rem*nx+x]){sum-=tmp[rem*nx+x];cnt--;}
-      out[y*nx+x]= cnt? sum/cnt : tmp[y*nx+x]; } }
-  return out;
-}
 function processImage(sig,nx,ny,mask,mx){
   const _t=(typeof window!=='undefined'&&window.__tune)||{};
   const a=40, denom=Math.log(1+a);
@@ -3032,6 +3019,10 @@ function processImage(sig,nx,ny,mask,mx){
 function activeProcessed(sig,nx,ny,mask,mx){
   if(!S._proc || S._proc.sig!==sig) S._proc={sig, data:processImage(sig,nx,ny,mask,mx)};
   return S._proc.data;
+}
+function activeLatitude(sig,nx,ny,mask,mx,lat){
+  if(!S._lat || S._lat.sig!==sig || S._lat.lat!==lat) S._lat={sig, lat, data:latitudeImage(sig,nx,ny,mask,mx,lat)};
+  return S._lat.data;
 }
 /* Apply auto-rescale (VOI stretch) to a base tone, using the given window. */
 function rescaleTone(x,rs){
@@ -3292,10 +3283,17 @@ const OFF_LIMIT = 55;                                              // the patien
 const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm
 // dev server only: try a protocol pose from the console (roll, joints, centring), as applyProtocol would
 if (import.meta.env?.DEV) window.__applyPose = (pose) => { applyPose(pose); syncScene(); };
+// (and a whole protocol by its projection's name, as the picker applies it)
+if (import.meta.env?.DEV) window.__protocol = (proj) => new Promise((done) => {
+  const g = protocolData.groups.find((g) => g.regions.some((r) => r.projections.some((p) => p.proj === proj)));
+  applyProtocol(findProtocol(g.part, proj), g.part, done);
+});
 function applyPose(pose){
   const note = $('protocolPose');
   if (!pose) { if (note) note.textContent = ''; return; }
-  S.objRot = { x: 0, y: 0, z: pose.roll || 0 };
+  // (tilt: the limb raised off the table about the cross axis, + knee down; a foot taken sole-flat
+  // raises the leg as a flexed knee does: -57 with the ankle plantarflexed 30 lays this one flat)
+  S.objRot = { x: pose.tilt || 0, y: 0, z: pose.roll || 0 };
   S.legRot = pose.legs || 0; syncLegRotUI();
   S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg
   prepareJointVolume();                                     // its pose, made while the room is set
@@ -3316,7 +3314,7 @@ function applyPose(pose){
   }
   // the controls show what the protocol did, so the operator can see and change it
   const setSl = (id, v, label) => { const el = $(id); if (el) el.value = v; const t = $(id + 'v'); if (t) t.textContent = label; };
-  setSl('objRotX', 0, '0°'); setSl('objRotY', 0, '0°'); setSl('objRotZ', S.objRot.z, S.objRot.z + '°');
+  setSl('objRotX', S.objRot.x, S.objRot.x + '°'); setSl('objRotY', 0, '0°'); setSl('objRotZ', S.objRot.z, S.objRot.z + '°');
   setSl('objOffX', S.objOff.x.toFixed(1), S.objOff.x.toFixed(1) + ' cm');
   setSl('objOffZ', S.objOff.z.toFixed(1), S.objOff.z.toFixed(1) + ' cm');
   for (const id of ['tubeX', 'tubeZ', 'angLM']) { const el = $(id); if (el) el.value = 0; }
@@ -4333,6 +4331,7 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); }, setRealistic,
+           setSubject: (s) => setSubject(s),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
            refreshFilmViewer, compute, drawHistogram, contrastLatch: ctrstLatch,

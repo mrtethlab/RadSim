@@ -90,6 +90,22 @@
    "how": "the base of the 3rd metatarsal less 2 cm along the foot (toward the heel): the cuneiforms",
    "guide": "Lateral (mediolateral) foot: CR perpendicular to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager)",
    "confidence": "medium"
+  },
+  "mtp3Joint": {
+   "x": -5.3,
+   "y": 9.15,
+   "z": -46.65,
+   "how": "the gap along the 3rd ray between the metatarsal head and the proximal phalanx, 75 % of the way to the tip of the toes",
+   "guide": "AP toes: CR 10-15 degrees toward the heel to the 3rd MTP joint (all toes); AP oblique toes: CR perpendicular to it (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "calcaneus": {
+   "x": -5.67,
+   "y": -7.15,
+   "z": -45.98,
+   "how": "the bone behind the ankle and below the medial malleolus, its centroid: the body of the calcaneus",
+   "guide": "Lateral calcaneus: CR perpendicular to a point 2.5 cm inferior to the medial malleolus (the calcaneal body); axial (plantodorsal) calcaneus: CR 40 degrees cephalad to the long axis of the foot (Bontrager)",
+   "confidence": "medium"
   }
  },
  "upperextremity": {

@@ -49,7 +49,7 @@ function fmtTablePos(mm) { const r = Math.round(mm); return r > 0 ? 'I' + r.toFi
 // length. The landmark 2-char shorthand (SN/IC/XY/OM) is where the tech sets table 0,
 // so the scout start is usually NOT 0 (e.g. a CAP is set at the sternal notch, but the
 // coverage begins ~120 mm above it at the lung apices). `len:0` = use the full model.
-const LANDMARKS = { SN: 'Sternal notch', IC: 'Iliac crest', XY: 'Xiphoid', OM: 'Orbital margin' };
+const LANDMARKS = { SN: 'Sternal notch', IC: 'Iliac crest', XY: 'Xiphoid', OM: 'Orbital margin', MM: 'Medial malleolus' };
 const CT_PROTOCOLS = [
   { id: 'whole',     name: 'Whole scout',              land: '',   start: 0,    len: 0 },
   { id: 'cap',       name: 'Chest / Abdomen / Pelvis', land: 'SN', start: -120, len: 640 },
@@ -59,6 +59,12 @@ const CT_PROTOCOLS = [
   { id: 'lspine',    name: 'Lumbar Spine',             land: 'IC', start: -180, len: 300 },
   { id: 'head',      name: 'Head',                     land: 'OM', start: -20,  len: 180 },
   { id: 'neck',      name: 'Neck',                     land: 'SN', start: -230, len: 260 },
+  // the ankle and foot on the Foot (the foot and the distal third of the leg, a tenth of the leg's
+  // volume): zeroed at the medial malleolus. The ankle from 10 cm above the joint (the distal tibia
+  // and fibula, the syndesmosis) through the calcaneus; the foot, standing at 90 degrees to the
+  // leg, lies within 8 cm below the joint (its sole), so a short range takes it heel to toes
+  { id: 'ankle',     name: 'Ankle',                    land: 'MM', start: -100, len: 170, subject: 'foot' },
+  { id: 'foot',      name: 'Foot',                     land: 'MM', start: -30,  len: 120, subject: 'foot' },
 ];
 const ctProtocol = (id) => CT_PROTOCOLS.find((p) => p.id === (id || ctx.S.ct.protocol)) || CT_PROTOCOLS[0];
 // scout's superior-edge table position (landmark-relative). Every displayed table
@@ -2526,6 +2532,12 @@ function openProtocolPopup() {
 // isocentre landmark, then reset the scan box and refresh. `len:0` = whole model.
 function applyProtocol(id) {
   const c = ctx.S.ct, p = ctProtocol(id);
+  // a protocol written for one model loads it first (the ankle and foot: the Foot)
+  if (p.subject && ctx.S.subject !== p.subject && ctx.setSubject) {
+    const sel = ctx.$('subjectSel'); if (sel) sel.value = p.subject;
+    ctx.setSubject(p.subject).then(() => { if (ctx.S.subject === p.subject) applyProtocol(id); });
+    return;
+  }
   c.protocol = p.id;
   if (p.id !== 'whole') { c.scanStart = p.start; c.scanLen = p.len; }
   else { const L = ctx.S.voxelModel ? Math.round(ctx.S.voxelModel.extentMM[2]) : 300; c.scanStart = -Math.round(L / 2); c.scanLen = L; }
