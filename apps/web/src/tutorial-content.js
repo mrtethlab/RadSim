@@ -212,8 +212,8 @@ export const XRAY_STEPS = [
     sel: '.grp:has(#detSizeSeg)',
     title: 'Receptor and matrix',
     text: 'Receptor size and orientation decide how much anatomy fits: 25×30 for an extremity, '
-      + '35×43 for a trunk, and 43×43 for the broad ones (a large chest or abdomen, a pelvis '
-      + 'across both hips). The matrix the image is ray-cast at is a simulation control, not a '
+      + 'and 43×43 for the trunk and the broad ones (a chest, an abdomen, a pelvis across both '
+      + 'hips): collimate to the part, not to the plate. The matrix the image is ray-cast at is a simulation control, not a '
       + 'clinical one, so it sits under Simulation with the compute engine.',
     goal: {
       label: 'Switch the receptor between portrait and landscape',
