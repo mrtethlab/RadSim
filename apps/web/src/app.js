@@ -3916,6 +3916,23 @@ const fmtClock = (sec)=>{
   return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
 };
 
+/* What the injector is doing now: 'iodine' while a contrast phase runs, 'saline' during the chaser,
+   'idle' when it is on and nothing flows (before the start, in the start delay, after the chaser),
+   null when it is off. For the tab's chevrons (tabActivity). */
+function ctrstFlow(){
+  if(!S.contrast?.on) return null;
+  const t=ctrstClock(); if(t==null) return 'idle';
+  let a=0;
+  for(const p of ctrstPhases()){ if(t<a+p.t) return p.kind==='nacl' ? 'saline' : p.kind==='delay' ? 'idle' : 'iodine'; a+=p.t; }
+  return 'idle';
+}
+/* The pull-out tabs say which of their features is at work (styles.css .ctrst-tab[data-live]). */
+function tabActivity(){
+  const set=(id,v)=>{ const t=$(id); if(!t) return; if(v){ if(t.dataset.live!==v) t.dataset.live=v; } else if(t.dataset.live) delete t.dataset.live; };
+  set('ctrstTab', ctrstFlow());
+  set('giTab', S.barium?.on ? 'barium' : null);
+  set('palpTab', palpatedKeys().length ? 'palp' : null);
+}
 /* ---- the running clock -------------------------------------------------------------- */
 function ctrstClock(){
   const R=S.contrast.run;
@@ -4414,6 +4431,7 @@ let computePolling=false;
 window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
+  setInterval(tabActivity, 250);
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
            setSubject: (s) => setSubject(s),
