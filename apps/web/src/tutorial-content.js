@@ -329,6 +329,33 @@ export const XRAY_STEPS = [
     },
   },
   {
+    sel: '#pastePanel',
+    title: 'Long-length studies: pasting',
+    needs: 'Choose a Long length protocol (leg length, scoliosis or femur) at the wall stand or the table.',
+    text: 'A leg length, a scoliosis series or a whole femur is longer than one receptor, so it is taken '
+      + 'as several images and <b>pasted</b> into one. The tube stays where it is and only tilts; the '
+      + 'bucky drives along under each field. Set the <b>COI</b>, the height of the anatomy above the '
+      + 'cover or tabletop: the stitched image is measured at that depth, where it is magnified by '
+      + 'SID / (SID − COI). Tilt the central ray cephalad until its light falls just above the top '
+      + 'landmark (the ASIS for a leg length) and press the <b>superior</b> button, then caudad below the '
+      + 'bottom one (the lateral malleolus) and press the <b>inferior</b> button. <b>Confirm</b> works out '
+      + 'how many 43 cm images cover that length with an overlap between each, and drives the tube and '
+      + 'bucky to the first. Then hold the exposure switch until every image is taken: let go early and '
+      + 'the study is incomplete. Because every image comes from the same focal spot, they join without '
+      + 'a step at any depth, and the long image is processed as one, with a ruler down its side.',
+    before: async () => {
+      if (S().mode !== 'xray' || $('pastePanel')?.hidden === false) return;
+      if (S().room === 'detector') $('roomSel')?.querySelector('button[data-room="wall"]')?.click();
+      $('protocolBtn')?.click();
+      $('protoPopBody')?.querySelector('.proto-proj[data-proj="Leg length study"]')?.click();
+    },
+    goal: {
+      label: 'Accept both limits, confirm, and hold the switch through the study',
+      arm: () => S().imgHistory.at(-1) || null,
+      done: (a) => { const e = S().imgHistory.at(-1); return !!e && e !== a && !!e.paste; },
+    },
+  },
+  {
     sel: '.grp:has(#level)',
     title: 'Window and level',
     text: 'Post-processing: brightness and contrast applied to the stored image. The histogram '

@@ -45,6 +45,8 @@ import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
 import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR } from './room.js';
 import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay, dxaMirror } from './dxa.js';
 import { initDxaExam, dxaExamMode } from './dxaExam.js';
+import { initPasting, pastingSelect, pastingActive, pastingArmed, pastingBlocked, pastingStart, pastingRelease,
+         pastingRoomChanged, pastingSync, pastingState } from './pasting.js';
 // models cut from another (the foot from the lower extremity) take its measured points
 applyCrops(cropData, { joints: jointData, landmarks: landmarkData, centring: centringData, palpation: palpationData });
 
@@ -2190,6 +2192,7 @@ function gridFocusFor(sid){ return GRID_FOCI.reduce((a,b)=>Math.abs(b-sid)<Math.
 const ROOM_ORBIT={ table:190, wall:230, detector:115 };
 function setRoom(room){
   if(!ROOM_SID[room]) return;
+  if(room==='detector' && pastingActive()) return;   // pasting needs the tracking bucky (src/pasting.js)
   S.room=room;
   document.querySelectorAll('#roomSel button').forEach(b=>b.classList.toggle('on', b.dataset.room===room));
   // the set-up's usual distance (180 cm at the wall stand, the PA chest's), with the grid focused to it
@@ -2199,7 +2202,24 @@ function setRoom(room){
   giStandFromRoom();                    // standing at the wall is erect for the barium's gravity
   syncOidUI();
   three.setOrbitRad?.(ROOM_ORBIT[room]); three.resetOrbitTarget?.();
+  pastingRoomChanged();                 // a pasting study is planned for one room's distance
   syncScene();
+}
+/* A PASTING PROTOCOL HOLDS THE ROOM to what the study needs (src/pasting.js): the field length at
+   43 cm (each image is one whole receptor long), the 43x43 receptor, and a tracking bucky — the
+   wall stand or the table, so the free detector is off while the protocol is in. */
+function pasteLock(on){
+  const cz=$('collZ');
+  if(on){
+    if(S.detBaseW!==43) setDetSize(43,43);
+    S.collZ=43; if(cz) cz.value=S.collZ;
+    if(S.room==='detector') setRoom('wall');
+  }
+  if(cz) cz.disabled=on;
+  document.querySelectorAll('#detSizeSeg button').forEach(b=>{ b.disabled=on && +b.dataset.w!==43; });
+  const db=document.querySelector('#roomSel button[data-room="detector"]');
+  if(db){ db.disabled=on; db.title=on ? 'Free detector: not for a pasting study (it needs the tracking bucky)' : 'Free detector: the patient lying on the plate'; }
+  updateGeomReadouts(); syncScene();
 }
 /* OID is the patient's height over the receptor: the lift, plus the tabletop or cover. */
 function syncOidUI(){
@@ -2395,12 +2415,12 @@ function bind(){
   for(const id of geoSliders){
     $(id).addEventListener('input',e=>{ S[id]=parseFloat(e.target.value);
       if(id==='collRot' && Math.abs(S.collRot)<=COLL_ROT_DETENT) S.collRot=0;   // the detent at 0
-      updateGeomReadouts(); syncScene(); buckyFollow();});
+      updateGeomReadouts(); syncScene(); buckyFollow(); pastingSync();});
   }
   $('recenter').addEventListener('click',()=>{
     S.tubeX=0;S.tubeZ=0;S.angLM=0;S.angCC=0;S.collRot=0;
     $('tubeX').value=0;$('tubeZ').value=0;$('angLM').value=0;$('angCC').value=0;$('collRot').value=0;
-    updateGeomReadouts(); syncScene();
+    updateGeomReadouts(); syncScene(); pastingSync();
   });
   // steppers
   document.querySelectorAll('[data-step]').forEach(btn=>{
@@ -2479,7 +2499,7 @@ function bind(){
   $('protocolBtn')?.addEventListener('click',openProtocolPopup);
   $('protoPopClose')?.addEventListener('click',closeProtocolPopup);
   $('protoPop')?.addEventListener('click',e=>{ if(e.target.id==='protoPop') closeProtocolPopup(); });
-  $('protoPopBody')?.addEventListener('click',e=>{ const b=e.target.closest('.proto-proj'); if(!b) return;
+  $('protoPopBody')?.addEventListener('click',e=>{ const b=e.target.closest('.proto-proj'); if(!b || b.disabled) return;
     const p=findProtocol(b.dataset.part,b.dataset.proj); if(p){ applyProtocol(p,b.dataset.part); closeProtocolPopup(); } });
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeProtocolPopup(); });
   // bay options (top-right): independent dropdowns (View Options, Sound Options).
@@ -2618,6 +2638,17 @@ function startExposure(){
                       'SELECT L, C OR R - OR SWITCH AEC OFF', 'EXPOSURE', 'INHIBITED');
     return;
   }
+  // A pasting protocol takes its exposures as one study, from its first image's place: the
+  // switch runs the whole study (src/pasting.js), and does nothing until the study is confirmed.
+  const pasteWhy=pastingBlocked();
+  if(pasteWhy){
+    S.prepped=false; $('rotor').classList.remove('on');
+    $('fire').disabled=true; $('fire').classList.remove('armed');
+    setWarn('standby'); $('clock').textContent='EXPOSURE INHIBITED';
+    showExposureError(pasteWhy, 'ACCEPT BOTH LIMITS, CONFIRM, THEN PREP AGAIN', 'EXPOSURE', 'INHIBITED');
+    return;
+  }
+  if(pastingArmed()){ ctrstLatch(); pastingStart(); return; }
   // Freeze the contrast clock at the instant the tube fires: the image belongs to the delay
   // the operator actually achieved, not to wherever the clock has drifted by the time the
   // projection finishes computing.
@@ -2642,6 +2673,7 @@ function startExposure(){
 }
 
 function releaseExposure(){
+  if(pastingState()==='running'){ pastingRelease(); return; }
   if(!S.exposing || !EXP.holding || EXP.done) return;
   const el=performance.now()-EXP.t0;
   if(el < EXP.dur-1) finishExposure(false);          // switch let go too early
@@ -2931,6 +2963,20 @@ async function computeRadiograph(opts={}){
   // the lead side marker prints where it lies in the field (src/sideMarker.js), laid out to read
   // correctly on the film as hung: the same flips pushImage stores for the display
   // (flipH/flipV: how this film will be hung; the letter itself is laid by its facing — face up or pronated)
+  // one image of a pasting study (src/pasting.js): the receptor's dose as it stands, before the
+  // detector's noise and processing — those are done once, on the stitched image. The marker is
+  // on the receptor, so it is taken in the first image only (it would print in every one).
+  if(opts.tile){
+    if(opts.marker){ const mk=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
+      S.lastMarker=sideMarkerVerdict(mk); S.lastMarkerStamp=mk; }
+    S.lastDose=radiographDose({ kv:S.kv, mas:S.aecResult?S.aecResult.mas:S.mas, sidCm:S.sid,
+      fsdCm:entranceFsd(phantom, fsrc, fd), fieldCm2:S.collX*S.collZ });
+    S.doseLog.push(S.lastDose);
+    updateDoseReadout();
+    $('prog').style.width='0%';
+    return { dose, direct, mask, nx, ny, pxU, pxV, aec:S.aecResult && {...S.aecResult}, doseRec:S.lastDose,
+             meanE:spectrum.meanE, sid:S.sid, angCC:S.angCC };
+  }
   const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
   if(dry){
     const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
@@ -3031,6 +3077,10 @@ function renderRadiograph(target,entry){
     img.data[o]=img.data[o+1]=img.data[o+2]=g; img.data[o+3]=255;
   }
   cctx.putImageData(img,0,0);
+  // a pasting study's ruler, burned in over the stitched image (calibrated at its COI)
+  const ruler = entry? entry.ruler : S.imgRuler;
+  if(ruler) drawPasteRuler(cctx, ruler, cw, ch, j0,
+    ((rightAtPlusX)!==S.flipH)?-1:1, (true!==S.flipV)?-1:1);
   // orient (rotate + flip) into the target, sizing target to the exposed crop.
   // Hanging default for every voxel subject, applied before the user's adjustments:
   // the superior end (fingertips on the hand) is world +z, which the raw detector
@@ -3055,6 +3105,35 @@ function renderRadiograph(target,entry){
   tctx.scale((baseFlipH!==S.flipH)?-1:1, (baseFlipV!==S.flipV)?-1:1);
   tctx.drawImage(crop, -cw/2, -ch/2);
   tctx.restore();
+}
+/* The stitching ruler on the crop of a pasted image, before it is oriented: ticks along the edge
+   that hangs on the viewer's right, every centimetre at the COI plane, numbered every 10. The
+   numbers are drawn pre-flipped (sx, sy: the flips the orientation will apply) so they read the
+   right way round once hung. */
+function drawPasteRuler(g, ruler, cw, ch, j0, sx, sy){
+  const cm=ruler.pxPerCm||10, lw=Math.max(1, cm*0.12);
+  const len={ minor:cm*0.6, mid:cm*1.0, major:cm*1.6 };
+  const edge = sx<0 ? 0 : cw;                            // the crop column that hangs at the right
+  const inward = sx<0 ? 1 : -1;
+  g.save();
+  g.lineWidth=lw; g.strokeStyle='rgba(255,255,255,0.92)'; g.fillStyle='rgba(255,255,255,0.95)';
+  g.shadowColor='rgba(0,0,0,0.85)'; g.shadowBlur=Math.max(1, lw*1.5);
+  g.beginPath();
+  g.moveTo(edge+inward*lw, -1); g.lineTo(edge+inward*lw, ch+1);   // the ruler's spine
+  for(const t of ruler.ticks){
+    const y=t.row-j0+0.5; if(y<0 || y>ch) continue;
+    g.moveTo(edge, y); g.lineTo(edge+inward*len[t.kind], y);
+  }
+  g.stroke();
+  g.font=`bold ${Math.max(9, Math.round(cm*1.3))}px "Share Tech Mono",monospace`;
+  g.textAlign='right'; g.textBaseline='middle';
+  for(const t of ruler.ticks){
+    if(t.kind!=='major') continue;
+    const y=t.row-j0+0.5; if(y<0 || y>ch) continue;
+    g.save(); g.translate(edge+inward*(len.major+cm*0.4), y); g.scale(sx, sy);
+    g.fillText(String(t.cm), 0, 0); g.restore();
+  }
+  g.restore();
 }
 /* The film on the WHOLE receptor, not cropped to the exposed field: what lies outside the field
    (anatomy that was collimated off, the field that should have been used) can then be drawn
@@ -3356,6 +3435,8 @@ function applyProtocol(p,part,after){
   // … then the collimated field (clamped to the receptor)
   if(p.coll){ S.collX=Math.min(p.coll[0], S.detW); S.collZ=Math.min(p.coll[1], S.detH);
     const cx=$('collX'), cz=$('collZ'); if(cx) cx.value=S.collX; if(cz) cz.value=S.collZ; }
+  // a pasting study (src/pasting.js) brings its own panel, and holds the field length at 43
+  pastingSelect(p.paste ? { ...p.paste, proj:p.proj, mas:p.mas } : null);
   updateGeomReadouts();
   const pv=$('protocolV'); if(pv) pv.textContent=p.proj;
   refreshReadouts();
@@ -3370,6 +3451,7 @@ function applyProtocol(p,part,after){
     // pelvis went out at 120 kVp instead of 80. The protocol's technique is the one asked for.
     S.kv=Math.max(40,Math.min(120,p.kv)); const kvEl=$('kv'); if(kvEl) kvEl.value=S.kv; refreshReadouts();
     applyPose(p.pose);
+    pastingSync();                             // (the pasting panel's CR slider follows the pose's angle)
     applyCaliper(p);
     syncScene(); if(S.hasImage) drawFilm();
     after?.();                                 // e.g. the Trainer sets its own start pose
@@ -3477,8 +3559,12 @@ function openProtocolPopup(){
     gr.regions.map(rg=>
       '<div class="proto-region"><div class="proto-rname">'+rg.region+'</div><div class="proto-projs">'+
       rg.projections.map(p=>{ const cur=S.protocol&&S.protocol.part===gr.part&&S.protocol.proj===p.proj;
-        return '<button class="proto-proj'+(cur?' on':'')+'" data-part="'+gr.part+'" data-proj="'+p.proj+'">'
-          +p.proj+'<small>'+p.kv+' kVp · '+p.mas+' mAs'+(p.grid?' · grid':' · no grid')+'</small></button>'; }).join('')+
+        // a pasting study needs the tracking bucky: the wall stand or the table, not a free plate
+        const off=p.paste && S.room==='detector';
+        return '<button class="proto-proj'+(cur?' on':'')+'" data-part="'+gr.part+'" data-proj="'+p.proj+'"'
+          +(off?' disabled title="Wall stand or table only: the study needs the tracking bucky"':'')+'>'
+          +p.proj+'<small>'+p.kv+' kVp · '+p.mas+' mAs'+(p.grid?' · grid':' · no grid')
+          +(p.paste?' · wall / table':'')+'</small></button>'; }).join('')+
       '</div></div>').join('')
   ).join('');
   pop.classList.add('show');
@@ -3560,14 +3646,50 @@ function buildMeta(spec){
 
 /* ---- image history: keep the last 10 exposures, reviewable on the Image view ---- */
 const IMG_HISTORY_MAX=10;
-function pushImage(signal,nx,ny,mask,meta,voi){
+function pushImage(signal,nx,ny,mask,meta,voi,extra){
   const rescale=computeRescale(signal,voi||mask,nx);   // auto-rescale VOI window, fixed at capture
   // where the patient's RIGHT side lies after the roll, kept with the image so an older film
   // still hangs correctly when reviewed after the patient has been turned (see renderRadiograph)
   S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, plain: S.lut?.detail===false, rightAtPlusX: objMat()[0] > -0.5,
-                     detW:S.detW, detH:S.detH});
+                     detW:S.detW, detH:S.detH, ...(extra||{})});
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
+}
+/* The detector's read-out of a dose map: its quantum and electronic noise (as computeRadiograph). */
+const photonScaleFor=(pxU,pxV)=>6000 * (pxU*pxV)/(0.048*0.048);
+function detectorSignal(t){
+  return Detector.capture(t.dose,t.nx,t.ny,photonScaleFor(t.pxU,t.pxV),t.mask,t.direct,voiPercentile(S.protocol?.part,S.subject)).signal;
+}
+/* A PASTING STUDY'S IMAGE (src/pasting.js): the images, read out and stitched (matched and
+   blended), go through the console's processing once — the auto-rescale, the LUT, the
+   equalisation — so the long image is processed as one, with no step where one image meets the
+   next. The EI is of what the receptor received. Filed in the history like any other image,
+   with its ruler. */
+function publishStitched(r){
+  const {signal, dose, direct, mask, nx, ny, pxU, pxV, tiles}=r;
+  const voi=new Uint8Array(nx*ny); let nVoi=0;
+  for(let k=0;k<voi.length;k++) if(mask[k] && dose[k]<MISSED*direct[k]){ voi[k]=1; nVoi++; }
+  const voiMask = nVoi>=200 ? voi : mask;
+  const {EI}=Detector.capture(r.rawDose,nx,ny,photonScaleFor(pxU,pxV),mask,r.rawDirect,voiPercentile(S.protocol?.part,S.subject));
+  const pa=r.paste, n=pa.n, subjName=(VOXEL_MODELS[S.subject]?.title||S.subject).toUpperCase();
+  const dap=tiles.reduce((a,t)=>a+(t.doseRec?.dapUGym2||0),0);
+  const aec=tiles.some((t)=>t.aec);
+  const masTxt=aec ? 'AEC '+tiles.map((t)=>(t.aec?.mas??S.mas).toFixed(1)).join('/')+' mAs'
+                   : S.mas.toFixed(S.mas<10?1:0)+' mAs ×'+n;
+  const meta={
+    tl: subjName+' · '+poseLabel()+' · PASTED ×'+n,
+    tr: S.kv+' kVp  '+S.ma+' mA  '+masTxt,
+    bl: 'SID '+pa.H+'  COI '+pa.coi.toFixed(1)+'cm  '+pa.lengthAtCoi.toFixed(1)+' cm  Ē '+(tiles[0]?.meanE||0).toFixed(0)+'keV'
+      +'  DAP '+dap.toFixed(1)+' µGy·m²',
+    br: 'DR '+nx+'×'+ny+'  '+S.detW+'×'+r.detH.toFixed(1)+'cm  '+(S.gridOn?'GRID '+S.gridRatio+':1':'NO GRID'),
+  };
+  S.aecResult=null;                                             // (the per-image mAs are in the meta)
+  pushImage(signal,nx,ny,mask,meta,voiMask,{ detH:r.detH, ruler:r.ruler, paste:pa });
+  updateDI(EI);
+  updateDoseReadout();
+  if(S.bayContent==='image') setContent('image');
+  $('prog').style.width='100%';
+  setTimeout(()=>{$('prog').style.width='0%';},400);
 }
 /* QC hook: the PRE-display signal of the last exposure, for measuring the line-pair
    phantom. Modulation has to be read off the detector signal, not the windowed canvas —
@@ -3575,8 +3697,8 @@ function pushImage(signal,nx,ny,mask,meta,voi){
 if(typeof window!=='undefined') window.radsimQC={
   lastImage(){ const im=S.imgHistory[S.imgHistory.length-1]; if(!im) return null;
     return {nx:im.nx, ny:im.ny, sig:im.sig, mask:im.mask, subject:im.subject,
-            pxU:S.detW*10/im.nx, pxV:S.detH*10/im.ny,    // mm per pixel
-            meta:im.meta, aec:S.aecResult && {...S.aecResult}, mas:S.mas};
+            pxU:(im.detW||S.detW)*10/im.nx, pxV:(im.detH||S.detH)*10/im.ny,    // mm per pixel
+            meta:im.meta, paste:im.paste||null, aec:S.aecResult && {...S.aecResult}, mas:S.mas};
   },
   // chart calibration: set a protocol up as the sandbox would, expose it, and read the DI
   async protocol(part, proj){
@@ -3602,7 +3724,8 @@ function setActiveImage(idx){
   S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
   S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true; S.imgPlain=!!e.plain;
   S.imgRightAtPlusX=e.rightAtPlusX!==false;
-  reseedCurve();                     // handles land on THIS image's toe/inflection/shoulder
+  S.imgRuler=e.ruler||null;
+  reseedCurve();                    // handles land on THIS image's toe/inflection/shoulder
   drawFilm();
   updateImageMeta(); renderImageStrip(); updateScatterNote();
 }
@@ -4542,6 +4665,22 @@ window.addEventListener('load',()=>{
             setContent: (c) => setContent(c), syncScene,
             loadModelUrl, baseUrl: import.meta.env.BASE_URL });
   initDxaExam();
+  initPasting({ S, Sound, setWarn, receptorGap, publishStitched, detectorSignal,
+    computeTile: (o) => computeRadiograph({ tile:true, marker:!!o?.marker }),
+    exposureMs: () => Math.max(0.02, aecActive()? 0.05 : exposureTimeSec())*1000,
+    buckyBusy: () => buckyRaf!==0,
+    lockControls: pasteLock,
+    setSid: (v) => { S.sid=clampSid(v);
+      const sv=$('sidV'); if(sv) sv.textContent=S.sid+' cm';
+      const sr=$('sidRo'); if(sr) sr.innerHTML=S.sid+'<small>cm</small>';
+      S.gridFocus=gridFocusFor(S.sid); setGridFocusUI(); syncScene(); },
+    setMas: (v) => { S.mas=nearestStation(v, masSteps); fitMa();
+      const m=$('mas'); if(m) m.value=nearestMasIdx(); refreshReadouts(); },
+    // the tube was tilted about its focal spot: the room, the console's sliders, the bucky
+    geometryChanged: () => {
+      const cc=$('angCC'); if(cc) cc.value=S.angCC;
+      const tz=$('tubeZ'); if(tz) tz.value=S.tubeZ;
+      updateGeomReadouts(); syncScene(); buckyFollow(); } });
   initIV({ THREE, S, three, $, setSubject: (s) => setSubject(s), syncScene,
            phantomPose: () => ({ center: [S.objOff.x, restHeight() + S.objOff.y, S.objOff.z],
                                  flip: voxelFlips(), rot: objMat() }) });
