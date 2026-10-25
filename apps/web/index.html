@@ -165,10 +165,10 @@
         <div class="hc-art"></div>
         <div class="hc-body">
           <div class="hc-name">Ultrasound</div>
-          <div class="hc-tag">B-mode, M-mode and colour Doppler</div>
+          <div class="hc-tag">B-mode, M-mode, colour and spectral Doppler</div>
           <div class="hc-desc">Pulse-echo imaging through the same voxel anatomy, with speckle,
             acoustic shadowing and post-cystic enhancement coming from the scanline physics. A
-            beating heart for M-mode and colour Doppler of the flow.</div>
+            beating heart for M-mode, and colour and pulsed-wave Doppler of pulsatile flow.</div>
           <div class="hc-acts">
             <button class="hc-open" data-mode="us">Open</button>
             <button class="hc-tut" data-tut="us" title="Walk through this mode control by control">&#9654; Tutorial</button>
@@ -1502,6 +1502,7 @@
           <div class="seg" id="usDispSeg">
             <button data-disp="b" class="on">B-mode</button>
             <button data-disp="m">M-mode</button>
+            <button data-disp="pw">PW Doppler</button>
           </div>
           <div class="row" style="margin-top:9px"><div class="rl">M cursor <small>where the line cuts</small></div></div>
           <input type="range" id="usMLine" min="0" max="1" value="0.5" step="0.01">
@@ -1533,12 +1534,78 @@
           <input type="range" id="usDopH" min="0.10" max="0.80" value="0.40" step="0.01">
           <div class="row" style="margin-top:8px"><div class="rl">Box width</div></div>
           <input type="range" id="usDopW" min="0.15" max="1.00" value="0.50" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Box across <small>left / right</small></div></div>
+          <input type="range" id="usDopX" min="0.10" max="0.90" value="0.50" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Steer <small>linear array</small></div>
+            <div class="valchip" id="usSteerV">linear only</div></div>
+          <input type="range" id="usSteer" min="-20" max="20" value="0" step="5">
+          <div class="row" style="margin-top:8px"><div class="rl">Colour gain</div>
+            <div class="valchip" id="usCGainV">0 dB</div></div>
+          <input type="range" id="usCGain" min="-15" max="15" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Wall filter</div>
+            <div class="valchip" id="usCWallV">100 Hz</div></div>
+          <input type="range" id="usCWall" min="25" max="800" value="100" step="25">
+          <div class="row" style="margin-top:8px"><div class="rl">Baseline</div>
+            <div class="valchip" id="usCBaseV">centre</div></div>
+          <input type="range" id="usCBase" min="-0.8" max="0.8" value="0" step="0.1">
+          <div class="row" style="margin-top:8px"><div class="rl">Write priority <small>grey level</small></div>
+            <div class="valchip" id="usCPriV">60 %</div></div>
+          <input type="range" id="usCPri" min="0" max="100" value="60" step="5">
+          <div class="mini" style="margin-top:8px"><button id="usCInv">&#8645; Invert</button></div>
+          <div class="note" id="usDopRead" style="margin-top:6px">&mdash;</div>
           <div class="ctrst-note">Colour is the component of flow <b>along the beam</b>, so a
             vessel crossed at 90&deg; shows nothing however fast it runs &mdash; rock the probe
-            and it appears. Red toward, blue away. Drop the scale and the fast middle of a
-            vessel wraps to the opposite colour: that is aliasing, and it is the same phase
-            wrap as anywhere else. The box costs frame rate because the machine fires an
-            ensemble of pulses inside it instead of one.</div>
+            (or steer a linear array) and it appears. Red toward, blue away, as the bar says.
+            Drop the scale and the fast middle of a vessel wraps to the opposite colour, bright to
+            bright with no black between: that is aliasing, the same phase wrap as anywhere else.
+            Depth caps the scale (PRF &le; c/2d). Colour gain decides how much power counts as
+            flow &mdash; too high and noise speckles the box; the wall filter removes slow shifts
+            &mdash; too low and the moving liver flashes, too high and slow veins vanish.</div>
+        </div>
+      </div>
+      <div class="grp us-only">
+        <div class="lab">Spectral Doppler &middot; PW</div>
+        <div class="bod">
+          <button class="fldose-rst" id="usAorta" style="width:100%">seat on the aorta, gate in the lumen</button>
+          <div class="row" style="margin-top:9px"><div class="rl">Gate line <small>across the fan</small></div></div>
+          <input type="range" id="usPwLine" min="0" max="1" value="0.5" step="0.01">
+          <div class="row" style="margin-top:8px"><div class="rl">Gate depth</div>
+            <div class="valchip" id="usPwDepthV">8.0 cm</div></div>
+          <input type="range" id="usPwDepth" min="1" max="24" value="8" step="0.1">
+          <div class="row" style="margin-top:8px"><div class="rl">Gate size</div>
+            <div class="valchip" id="usPwGateV">3 mm</div></div>
+          <input type="range" id="usPwGate" min="1" max="20" value="3" step="0.5">
+          <div class="row" style="margin-top:8px"><div class="rl">Angle correction</div>
+            <div class="valchip" id="usPwAngleV">60&deg;</div></div>
+          <input type="range" id="usPwAngle" min="-85" max="85" value="60" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Scale <small>PRF</small></div>
+            <div class="valchip" id="usPwPrfV">4.0 kHz</div></div>
+          <input type="range" id="usPwPrf" min="500" max="15000" value="4000" step="250">
+          <div class="row" style="margin-top:8px"><div class="rl">Baseline</div>
+            <div class="valchip" id="usPwBaseV">centre</div></div>
+          <input type="range" id="usPwBase" min="-0.8" max="0.8" value="0" step="0.1">
+          <div class="row" style="margin-top:8px"><div class="rl">Wall filter</div>
+            <div class="valchip" id="usPwWallV">100 Hz</div></div>
+          <input type="range" id="usPwWall" min="25" max="1000" value="100" step="25">
+          <div class="row" style="margin-top:8px"><div class="rl">Spectral gain</div>
+            <div class="valchip" id="usPwGainV">0 dB</div></div>
+          <input type="range" id="usPwGain" min="-20" max="20" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Sweep</div></div>
+          <div class="seg" id="usPwSweepSeg">
+            <button data-sweep="2">2 s</button><button data-sweep="4" class="on">4 s</button>
+            <button data-sweep="6">6 s</button><button data-sweep="8">8 s</button>
+          </div>
+          <div class="mini" style="margin-top:8px"><button id="usPwInv">&#8645; Invert</button></div>
+          <div class="note" id="usPwRead" style="margin-top:6px">&mdash;</div>
+          <div class="note" id="usPwPrfRead">&mdash;</div>
+          <div class="note" id="usPwTruth" style="color:#8fb3c4">&mdash;</div>
+          <div class="ctrst-note">Choose <b>PW Doppler</b> in the display row. The gate is a depth
+            and a length on one line; what it hears is every scatterer inside, so a small gate on
+            the axis gives a thin trace with a clear window under it, and a gate as wide as the
+            lumen fills the window from the slow blood at the wall. The machine measures a
+            <i>shift</i>: the angle cursor is your claim about the vessel, and the velocity is only
+            as right as that claim &mdash; past 60&deg; a few degrees of misjudgement is a large
+            error (the grey line shows what the simulator knows and a machine cannot).</div>
         </div>
       </div>
       <div class="expose us-only" id="usScanRow">

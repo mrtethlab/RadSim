@@ -1033,6 +1033,14 @@ const S = {
        // Colour Doppler: the box, and the PRF that sets how fast a flow can be before
        // the phase wraps and the jet comes back the wrong colour.
        dop:false, prf:3000, dopY:0.42, dopH:0.4, dopW:0.5,
+       // ...steered (linear only), placed across the fan, and processed: colour gain is a
+       // power threshold, the wall filter a high-pass in Hz, the baseline slides the window,
+       // and write priority (% grey) keeps colour off echogenic tissue
+       dopX:0.5, steer:0, cGain:0, cWall:100, cBase:0, cInv:false, cPri:60,
+       // Spectral (PW) Doppler — disp 'pw': the gate (line, depth cm, length mm), the
+       // angle-correction cursor (deg), and the trace's PRF, baseline, filter, gain, sweep (s)
+       pwLine:0.5, pwDepth:8, pwGate:3, pwAngle:60, pwPrf:4000, pwBase:0, pwWall:100, pwGain:0,
+       pwSweep:4, pwInv:false,
        live:true },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine
