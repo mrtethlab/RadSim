@@ -623,7 +623,8 @@ export const CONTRAST_STEPS = [
     sel: '.grp:has(#ctrstSite)',
     title: 'Injection site',
     text: 'Where the needle is changes when — and how sharply — the bolus arrives. The basilic '
-      + 'vein is the reference route every timing chart assumes. A central line\'s tip already '
+      + 'vein is the reference route every timing chart assumes; a cannula in a hand vein caps the '
+      + 'flow rate at about 1.5 mL/s whatever its gauge, too slow for an arterial phase. A central line\'s tip already '
       + 'sits at the cavoatrial junction, so its bolus skips the peripheral veins and arrives '
       + 'earliest and sharpest. The arterial sites are the instructive ones: a radial or femoral '
       + 'bolus must first cross the limb\'s capillary bed before it can return to the heart, so '
