@@ -90,7 +90,7 @@ export function transducer(api, S) {
     const k = Math.floor(t / PER), out = [];
     for (const j of [k - 1, k]) {
       if (j < 0) continue;
-      out.push({ kind: 'plane', o: [0, g.face], d: [0, 1], t0: j * PER, c: CPX, a: 1, len: LAM * 2.6, keep: (x, y) => y > g.face && Math.abs(x - g.cx) < g.half + 30,
+      out.push({ kind: 'plane', o: [0, g.face], d: [0, 1], t0: j * PER, c: CPX, a: 1, len: LAM * 2.6, keep: (x, y) => y > g.face && Math.abs(x - g.cx) < g.half + 4,
         shape: (s) => [pulseP(s, LAM, 2.6), 0.6 * pulseP(s + LAM / 4, LAM, 2.6) * LAM / 6] });
     }
     return out;
@@ -101,7 +101,7 @@ export function transducer(api, S) {
     const k = Math.floor(t / PER), out = [];
     for (const j of [k - 1, k]) {
       if (j < 0) continue;
-      out.push({ kind: 'plane', o: [0, px.H + 2], d: [0, -1], t0: j * PER + ECHO_T, c: CPX, a: 0.9, len: LAM * 2.6, keep: (x, y) => y > g.face && Math.abs(x - g.cx) < g.half + 30,
+      out.push({ kind: 'plane', o: [0, px.H + 2], d: [0, -1], t0: j * PER + ECHO_T, c: CPX, a: 0.9, len: LAM * 2.6, keep: (x, y) => y > g.face && Math.abs(x - g.cx) < g.half + 4,
         shape: (s) => [pulseP(s, LAM, 2.6), -0.6 * pulseP(s + LAM / 4, LAM, 2.6) * LAM / 6] });
     }
     return out;
@@ -119,11 +119,12 @@ export function transducer(api, S) {
       enter() { S.roomReset(); R.sheet.visible = true; R.fan.visible = true; R.setFan(S.seat.fr, S.seat.g); },
       cam: [[0, [-150, 160, -240], [25, 10, 10], 40], [5.5, [W.face[0] - 50, W.face[1] + 55, W.face[2] - 55], [W.face[0], W.face[1] - 6, W.face[2]], 34],
         [8.5, [W.face[0] - 48, W.face[1] + 52, W.face[2] - 50], [W.face[0], W.face[1] - 6, W.face[2]], 34],
-        [12, [W.screenFront[0], W.screenFront[1] + 6, W.screenFront[2]], [W.screen[0], W.screen[1] - 2, W.screen[2]], 38]],
+        [12, W.monPos, W.monLook, 36]],
       frame(t) {
         R.sheet.material.opacity = 0.16;
         R.fan.material.opacity = 0.35 + 0.6 * span(t, 3, 6);
         roomPulses(t, span(t, 2, 4));
+        const fb = api.boxPx(R.sheet); if (fb) api.keepOut(fb);          // the pulses' way into the patient
         if (t > 4 && t < 8.5) api.mark(R.probe.shell, 'yellow', t);
         if (t > 9.5) api.mark(R.screen, 'cyan', t);
       },
@@ -161,10 +162,10 @@ export function transducer(api, S) {
         B.fire((k) => (i === 0 ? 0.25 + 0.25 * Math.sin(t * 6 - k * 0.3) : 0));
       },
       caption: [
-        { from: 4.5, to: 7.6, text: 'The <b>elements</b>: thin bars of a piezoelectric ceramic, lead zirconate titanate (<b>PZT</b>), each with its own wire.' },
-        { from: 7.6, to: 10.7, text: 'Behind them the <b>backing block</b>, a heavy absorbing epoxy that stops their ringing.' },
-        { from: 10.7, to: 13.8, text: 'In front, the <b>matching layers</b>, which help the sound out of the crystal into the body.' },
-        { from: 13.8, to: 17, text: 'Outermost, the <b>lens</b>: it focuses the beam across the array, into a thin slice.' },
+        { from: 4.5, to: 7.6, text: 'The <b>elements</b>: thin bars of a piezoelectric ceramic, lead zirconate titanate (<b>PZT</b>), each with its own wire.', place: 'right' },
+        { from: 7.6, to: 10.7, text: 'Behind them the <b>backing block</b>, a heavy absorbing epoxy that stops their ringing.', place: 'right' },
+        { from: 10.7, to: 13.8, text: 'In front, the <b>matching layers</b>, which help the sound out of the crystal into the body.', place: 'right' },
+        { from: 13.8, to: 17, text: 'Outermost, the <b>lens</b>: it focuses the beam across the array, into a thin slice.', place: 'right' },
       ],
     },
     {
@@ -191,9 +192,9 @@ export function transducer(api, S) {
         const c = crystal(t, v, { charge: 0, glowE: Math.abs(v) });
         wires(c, Math.abs(v) > 0.1 ? 'yellow' : 'grey');
         scope(px.W - 92, 8, 86, 40, drive, t, { c: 'yellow', span: 4 });
-        api.keepOut([c.cx - c.half - 30, c.top - 10, 2 * c.half + 60, px.H - c.top + 10]);   // the crystal, and the pulse's way down
-        if (t < 7) api.mark([c.cx - c.half - 2, c.top - 3, 2 * c.half + 4, c.bot - c.top + 6], 'yellow', t);
-        else api.mark([c.cx - c.half, c.face + 2, 2 * c.half, 40], 'cyan', t);
+        api.keepOut([c.cx - c.half - 6, c.top - 10, 2 * c.half + 12, px.H - c.top + 10]);   // the crystal, and the pulse's way down
+        if (t < 7) api.mark([c.cx - c.half - 6, c.top - 3, 2 * c.half + 12, c.bot - c.top + 6], 'yellow', t);
+        else api.mark([c.cx - c.half - 6, c.face + 2, 2 * c.half + 12, 40], 'cyan', t);
       },
       caption: [
         { from: 0.6, to: 7, text: 'The <b>piezoelectric effect</b>: a voltage across the crystal shifts the charged ions in its cells, and the whole crystal grows or shrinks in thickness.' },
@@ -212,10 +213,10 @@ export function transducer(api, S) {
         const c = crystal(t, -pe * 0.7, { charge: pe * 0.9, glowE: Math.abs(pe) });
         wires(c, Math.abs(pe) > 0.1 ? 'lime' : 'grey');
         scope(px.W - 92, 8, 86, 40, (tt) => echoAtFace(g, tt) * 0.35, t, { c: 'lime', span: 4 });
-        api.keepOut([c.cx - c.half - 30, c.top - 12, 2 * c.half + 60, px.H - c.top + 12]);   // the crystal, and the echo's way up
+        api.keepOut([c.cx - c.half - 6, c.top - 12, 2 * c.half + 12, px.H - c.top + 12]);   // the crystal, and the echo's way up
         // the arriving echo, then the charge on the faces
         const tt = ((t % PER) + PER) % PER;
-        if (tt < 1.9) api.mark([c.cx - c.half, c.face + 4, 2 * c.half, px.H - c.face - 8], 'cyan', t);
+        if (tt < 1.9) api.mark([c.cx - c.half - 6, c.face + 4, 2 * c.half + 12, px.H - c.face - 8], 'cyan', t);
         else api.mark([px.W - 92, 8, 86, 40], 'lime', t);
       },
       caption: [
@@ -231,7 +232,7 @@ export function transducer(api, S) {
         // two elements struck the same way: one alone, one on its backing; below each, the sound
         // it sends into the tissue
         const W2 = px.W / 2;
-        const left = { cx: W2 / 2 + 6, half: 40, face: 50 }, right = { cx: W2 + W2 / 2 - 6, half: 40, face: 50 };
+        const left = { cx: px.W * 0.2, half: 34, face: 50 }, right = { cx: px.W * 0.8, half: 34, face: 50 };
         const per = 8, k = Math.floor(t / per);
         for (const [g, backed] of [[left, false], [right, true]]) {
           const comps = [];
@@ -242,7 +243,7 @@ export function transducer(api, S) {
               shape: backed ? (s) => [pulseP(s, 14, 2.5), 0] : ringShape(14, 3.2) });
           }
           drawField(px, tissueField.filter((q) => q.y > g.face + 1 && Math.abs(q.x - g.cx) < g.half), comps, t, { gain: 0.4 });
-          api.keepOut([g.cx - g.half - 8, 12, 2 * g.half + 16, px.H - 12]);
+          api.keepOut([g.cx - g.half, 12, 2 * g.half, px.H - 12]);
           // the element (its own small block) and, on the right, its backing
           const ring = backed ? 0 : 1;
           const age = ((t - 0.3) % per + per) % per;
@@ -251,8 +252,8 @@ export function transducer(api, S) {
           px.rect(g.cx - g.half, 36 - vib * 2, 2 * g.half, 12 + vib * 2, 'gold', 0.9);
           px.rect(g.cx - g.half, 48, 2 * g.half, 2, 'grey');
           // the pulse's length, bracketed once it is all out
-          const len = backed ? 14 * 2.5 : 14 * 14 * 0.75, front = Math.min(px.H - 4, g.face + Math.max(0, age * 26));
-          if (age > 2.5) {
+          const len = backed ? 14 * 2.5 : 14 * 14 * 0.75, front = g.face + Math.max(0, age * 26);
+          if (age > 2.5 && front < px.H - 2) {
             const y0 = front - len, y1 = front;
             if (y0 > g.face) { px.line(g.cx + g.half + 4, y0, g.cx + g.half + 4, y1, 'yellow'); px.line(g.cx + g.half + 2, y0, g.cx + g.half + 6, y0, 'yellow'); px.line(g.cx + g.half + 2, y1, g.cx + g.half + 6, y1, 'yellow'); }
           }

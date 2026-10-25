@@ -87,7 +87,7 @@ export async function build(api) {
   // (development only: window.__usT pins every step's time, to inspect a frame at leisure)
   if (import.meta.env.DEV) {
     const T = (t) => (typeof window.__usT === 'number' ? window.__usT : t);
-    window.__usS = S;
+    window.__usS = S; window.__usChapters = chapters;
     for (const c of chapters) for (const s of c.steps) {
       const f = s.frame, cam = s.cam;
       if (f) s.frame = (t, dt) => f(T(t), dt);

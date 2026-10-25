@@ -235,7 +235,7 @@ export function artefacts(api, S) {
     {
       title: 'Slice thickness', dur: 15, scale: '1 cm',
       enter() { S.only('probe'); slab.visible = true; setOpacity(B.housing, 1); B.explode(0); B.fire(() => 0); B.g.rotation.set(0, 0, 0); },
-      cam: [[0, [4, -2, 36], [0, -4, 0], 36], [6, [4, -2, 36], [0, -4, 0], 36], [11, [38, -3, 1.5], [0, -4, 0], 36], [15, [36, -3, 4], [0, -4, 0], 36]],
+      cam: [[0, [4, -2, 36], [0, -4, 0], 36], [6, [4, -2, 36], [0, -4, 0], 36], [11, [30, 2, 17], [0, -4.5, 0], 36], [15, [33, -1, 12], [0, -4.5, 0], 36]],
       frame(t) {
         slab.visible = true;
         if (t < 6.5) api.mark(slab.children[0], 'cyan', t);

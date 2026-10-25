@@ -150,7 +150,7 @@ export function imaging(api, S) {
         poly(px, Math.floor(dRet * cmPx), (j) => [ax + aLine(j, cmPx) * aw, top + j], 'lime');
         // the gallbladder's front wall: the spike to look at
         const gb = strong.find((e) => e.to === 6) || strong[2];
-        if (tt > 6 && gb && gb.d < dRet) api.mark([ax - 2, top + gb.d * cmPx - 5, aw * 0.9, 10], 'yellow', t);
+        if (tt > 6 && gb && gb.d < dRet) api.mark([ax - 4, top + gb.d * cmPx - 5, aw + 8, 10], 'yellow', t);
         else api.mark([ax - 4, top - 2, aw + 8, Math.max(8, dRet * cmPx)], 'lime', t);
       },
       caption: [

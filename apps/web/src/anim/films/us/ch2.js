@@ -91,7 +91,7 @@ export function tissue(api, S) {
           // the band of the pulse now in the field
           const age = ((t % 4.5) + 4.5) % 4.5, yb = FACE + age * C;
           if (yb < px.H) api.mark([90, Math.max(FACE + 2, yb - NCYC * LAM), 80, Math.min(NCYC * LAM, yb - FACE)], 'white', t);
-          api.keepOut([0, Math.max(FACE, yb - NCYC * LAM - 4), x0, NCYC * LAM + 8]);
+          api.keepOut([0, Math.max(FACE, yb - NCYC * LAM - 1), x0, NCYC * LAM + 2]);       // (inside the caption's 12 px margin)
         } else api.mark([watch.x - 6, watch.y - 7, 13, 14], 'yellow', t);
       },
       caption: [
@@ -221,7 +221,7 @@ export function tissue(api, S) {
         const tHit = (yi - FACE) / C, e = ((tt % 6) + 6) % 6 - tHit;
         if (e > 0.2 && e < (yi - FACE) / C) api.mark([60, yi - e * C - NCYC * LAM / 2 - 6, 140, NCYC * LAM / 2 + 12], 'yellow', t);
         else api.mark([60, yi - 6, 140, 12], 'white', t);
-        api.keepOut([0, yi - 30, px.W, 60]);
+        api.keepOut([0, yi - 2, px.W, 4]);                              // the interface itself
       },
       caption: [
         { from: 0.8, to: 6, text: 'Where two tissues meet, the jump in impedance sends part of the pulse back: an <b>echo</b>. Reflected share R = ((Z₂ − Z₁) ÷ (Z₂ + Z₁))²: fat on liver, under 1%. The rest goes on.', place: 'above' },
@@ -257,7 +257,7 @@ export function tissue(api, S) {
             px.text(String(z), bx + 13 + i * 18, y0 + 3, 'white', 1, 1, 'center');
           });
           px.text('MRayl', bx + bw - 4, by + 4, 'mid', 1, 1, 'right');
-          api.mark([bx + 22, by + 10, 38, bh - 26], 'orange', t);
+          api.mark([bx, by, bw, bh], 'orange', t);
         } else api.mark([0, yGap - 4, px.W, yi - yGap + 8], gel ? 'cyan' : 'red', t);
         api.keepOut([0, FACE - 16, px.W, 30]);
       },

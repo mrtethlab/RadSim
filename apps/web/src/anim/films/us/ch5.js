@@ -218,7 +218,7 @@ export function motion(api, S) {
           void xd;
         }
         px.text(HR + '/min', x0 + w - 3, top + 2, 'white', 1, 1, 'right');
-        if (t < 6) api.mark([cx - 14, top, 28, px.H - top - 8], 'yellow', t);
+        if (t < 6) api.mark([cx - 14, top + 1.4 * cmPx, 28, 8.1 * cmPx], 'yellow', t);          // the line through the ventricles and septum
         else api.mark([x0, top + Ld[3][1] * cmPx - 4, w, (Ld[5][2] - Ld[3][1]) * cmPx + 8], 'lime', t);
       },
       caption: [
@@ -386,6 +386,7 @@ export function motion(api, S) {
       frame(t) {
         R.sheet.material.opacity = 0.14;
         if (t > 1) api.mark(R.sheet, 'cyan', t);
+        const fb = api.boxPx(R.sheet); if (fb) api.keepOut(fb);
       },
       caption: [{ from: 1, to: 12, text: 'Pulse, echo, time, brightness: thousands of times a second, a moving picture of the body’s inside, with no ionising radiation at all.' }],
     },
