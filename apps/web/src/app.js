@@ -204,7 +204,7 @@ function initScene(){
     const toRoom=(x,y,z)=>new THREE.Vector3(x,y,z).applyMatrix4(rig.matrixWorld);
     if(S.mode!=='ct' && S.viewMode==='tube'){
       // look from the tube along the central ray, framed to the hand (bird's eye)
-      const s=sourcePos(), t=[S.tubeX,0,S.tubeZ];
+      const s=sourcePos(), t=tubeFrame().iso;            // (the bucky's frame, like the rig)
       let dx=s[0]-t[0], dy=s[1]-t[1], dz=s[2]-t[2];
       // framing distance from the receptor: 46 cm frames a hand; a thicker patient is cleared
       // (its top is about twice its centre's height) so the view is never inside the body
@@ -216,7 +216,9 @@ function initScene(){
       cam.up.set(0,1,0);
       // the orbit turns about the patient (the physics point above the receptor's centre),
       // shifted by the two-finger pan
-      const c=toRoom(0,6,0).add(new THREE.Vector3(tx,ty-6,tz));
+      // (about a point of the ROOM, not of the rig: the rig rides with the bucky, and orbiting it
+      // slid the room past the camera, the patient seeming to move instead of the tube)
+      const c=toRoom(0,6,0).sub(rig.position).add(new THREE.Vector3(tx,ty-6,tz));
       const cx=Math.cos(el)*Math.cos(az), cy=Math.sin(el), cz=Math.cos(el)*Math.sin(az);
       cam.position.set(c.x+cx*rad, c.y+cy*rad, c.z+cz*rad);
       cam.lookAt(c);
@@ -1827,13 +1829,16 @@ function syncScene(){
   const ox=S.mode!=='ct'?S.objOff.x-BK().x:0, oz=S.mode!=='ct'?S.objOff.z-BK().z:0;   // x-ray object offset sliders (the bucky's frame)
   three.handGroup.rotation.z = 0;
   if(three.chestGroup) applyVoxelMeshTransform(three.chestGroup);       // flips are mode-dependent
-  if(S.mode!=='ct' && S.voxelModel){                // x-ray: rest the model on the detector + lift
-    three.handGroup.position.set(ox, restHeight() + S.objOff.y, oz);
+  if(S.mode!=='ct'){                                // x-ray: rest the model on the detector + lift
+    three.handGroup.position.x=ox; three.handGroup.position.z=oz;
+    if(S.voxelModel) three.handGroup.position.y=restHeight() + S.objOff.y;
   }
 
   // tube position + aim along the true central ray (isocentric: CR -> centering point)
   const src=sourcePos();
-  const aim=[S.tubeX,0,S.tubeZ];
+  // the central ray's point on the receptor plane, in the rig's (the bucky's) frame: aiming at the
+  // slider's own value, which is the room's, tilted the tube while the bucky moved under it
+  const aim=tubeFrame().iso;
   three.tube.position.set(src[0],src[1],src[2]);
   three.tube.lookAt(three.rig.localToWorld(new THREE.Vector3(...aim))); three.tube.rotateX(Math.PI/2);
   three.tube.rotateY(-Math.PI/2);  // square the housing with the light field it projects (field W along x, L along z)
@@ -2021,6 +2026,13 @@ function roomSync(){
   // the receptor sits inside the bucky (under the tabletop, behind the cover): its outline,
   // the AEC chambers and the hang arrow are shown on the surface the patient touches
   if(room==='table' || room==='wall') three.det.visible=false;
+  // at the table the top floats on its base only so far across: the cross offset stops at 21 cm
+  const ox=$('objOffX'), xlim=room==='table' ? TABLE_X_LIMIT : OFF_LIMIT;
+  if(ox && +ox.max!==xlim){ ox.min=-xlim; ox.max=xlim; }
+  if(Math.abs(S.objOff.x)>xlim){
+    S.objOff.x=Math.sign(S.objOff.x)*xlim;
+    if(ox) ox.value=S.objOff.x; const v=$('objOffXv'); if(v) v.textContent=S.objOff.x+' cm';
+  }
   // the tray under the tabletop / the stand's bucky where the receptor is; the tabletop where the
   // patient is (it floats: moving the patient moves the top over the tube and bucky)
   const B=BK();
@@ -3250,7 +3262,8 @@ function landmarkLocal(subject, name){
   const f = voxelFlips();                                          // the same flips the phantom uses
   return [f[0] ? -lm.x : lm.x, f[1] ? -(lm.y || 0) : (lm.y || 0), f[2] ? -lm.z : lm.z];
 }
-const OFF_LIMIT = 55;                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
+const OFF_LIMIT = 55;
+const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
 // dev server only: try a protocol pose from the console (roll, joints, centring), as applyProtocol would
 if (import.meta.env?.DEV) window.__applyPose = (pose) => { applyPose(pose); syncScene(); };
 function applyPose(pose){
@@ -3270,7 +3283,8 @@ function applyPose(pose){
   if (loc) {
     const w = applyMat3(objMat(), loc);                            // where the landmark sits after the roll
     const ox = -w[0], oz = -w[2];
-    S.objOff.x = Math.max(-OFF_LIMIT, Math.min(OFF_LIMIT, ox));
+    const xlim = S.mode === 'xray' && S.room === 'table' ? TABLE_X_LIMIT : OFF_LIMIT;
+    S.objOff.x = Math.max(-xlim, Math.min(xlim, ox));
     S.objOff.z = Math.max(-OFF_LIMIT, Math.min(OFF_LIMIT, oz));
     clamped = S.objOff.x !== ox || S.objOff.z !== oz;
   }
