@@ -27,6 +27,7 @@ from scipy import ndimage as ndi
 
 from app.build_model import TRABECULAR, CORTICAL, CARTILAGE, TITANIUM, STEEL, ALUMINUM, LEAD, BONE_GRADES
 from app.build_limbs import MODELS
+from app.bone_labels import labelled_bone
 
 BONE = [TRABECULAR, CORTICAL] + [b[0] for b in BONE_GRADES]
 METAL = [TITANIUM, STEEL, ALUMINUM, LEAD]
@@ -90,10 +91,17 @@ def build(name):
     s = float(h['spacing'][0])
     mat = np.fromfile(MODELS / name / f'{name}.mat.bin', dtype=np.uint8).reshape(nz, ny, nx)
     centre = np.array([nx, ny, nz]) * s / 2.0
+    # a model made from a segmented CT keeps only its labelled bones (bone_labels.py): a contrast
+    # CT's enhanced vessels and calcified walls are bone-dense but not bone
+    keep = labelled_bone(name, mat)
+    if keep is not None:
+        print(f'{name}: labelled bone only ({int((np.isin(mat, BONE) & ~keep).sum())} bone-dense voxels off the bones left out)')
     scene = trimesh.Scene()
     faces = 0
     for ids, rgba, label in ((BONE, BONE_RGBA, 'bone'), (METAL, METAL_RGBA, 'metal')):
         mask = np.isin(mat, ids)
+        if label == 'bone' and keep is not None:
+            mask &= keep            # the segmentation's bones, not every voxel over 120 HU
         if mask.sum() < 50:
             continue
         # the outside of the bone is what the eye sees: a marrow cavity enclosed by its cortex,

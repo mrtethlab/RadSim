@@ -10,7 +10,7 @@ handoff document and is not committed.)
 
 ### Bones only, the fingers curl, the OEC 9800's panel — [#87](https://github.com/mrtethlab/RadSim/pull/87)
 **Bones only.** A checkbox under the model hides everything but the skeleton in the 3D room (never the image).
-- *The mesh* (`build_bone_mesh.py`, `<name>_bone.glb`) is cut from the shipped material volume, in the frame of every other mesh of the model, from the bone materials only. Cartilage is left out, so the joint spaces stay open. Each bone is closed by itself over 2 mm, never into cartilage or another bone, so a thin cortex's marrow no longer leaves the carpus as lace; crumbs are dropped.
+- *The mesh* (`build_bone_mesh.py`, `<name>_bone.glb`) is cut from the shipped material volume, in the frame of every other mesh of the model, from the bone materials only. Cartilage is left out, so the joint spaces stay open. Each bone is closed by itself over 2 mm, never into cartilage or another bone, so a thin cortex's marrow no longer leaves the carpus as lace; crumbs are dropped. CAP and the chest keep only their segmentation's bones (`bone_labels.py` makes their label grids again, checked voxel for voxel against the shipped volume): the contrast CT's enhanced vessels and calcified walls are bone-dense but stay out of the bone view (they are still in the film).
 - *Posing* follows the volume's own rule for bone (`forwardBone`): rigid past a joint's plane, the patella by its rider, a digit by its share read inside the bone at its rest place. A triangle across two pieces is left out while bent.
 
 **The hand's digits curl.** There are five upright sliders, 1 (the thumb) to 5, from −20 % extension to a fist at 100 %.
@@ -21,7 +21,7 @@ handoff document and is not committed.)
 **Display and x-ray.**
 - *Automatic rescaling* now sets the response curve to the anatomy's VOI, which the histogram shades. It did nothing before: the curve was seeded only on a new image.
 - *Edge enhancement* (was detail enhancement) is off by default. Both settings are now in Display · window / level.
-- The scatter readout is one line. The marker critique is gone. Orientation is locked on the square 43×43.
+- The scatter readout is one line. The marker critique and the CAP's leg-rotation note are gone. Orientation is locked on the square 43×43.
 
 **The room.**
 - No text sits behind View Options or the pull-out tabs in any mode. The tabs step aside on image views, which keep their settings.
