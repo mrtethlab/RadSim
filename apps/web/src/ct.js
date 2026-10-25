@@ -274,6 +274,25 @@ function rebuildCTModel() {
   buildGantry(THREE, look); buildCouch(THREE, look);
   updateGantryDisplays();                              // initial draw — panel readouts must never sit black
 }
+/* A copy of the rig for the CT process animation (anim/films/ct): the same builders, run into
+   fresh groups, the module's own rig (and its live screens) left exactly as they were. The film
+   positions it itself (couchBase at z 82, the couch top at local y 0, the bore centre at ISO_Y). */
+export function buildCTRig(THREE) {
+  const keep = { gantry, couch, couchBase, gantrySpin, gantryShell, boreFrameRing, liveScr };
+  const rig = { gantry: new THREE.Group(), couch: new THREE.Group(), couchBase: new THREE.Group() };
+  gantry = rig.gantry; couch = rig.couch; couchBase = rig.couchBase;
+  liveScr = { top: null, timer: null, panel: null };
+  try {
+    const look = vendorLook();
+    buildGantry(THREE, look); buildCouch(THREE, look);
+    Object.assign(rig, { spin: gantrySpin, shell: gantryShell, ring: boreFrameRing, screens: liveScr, look,
+      ISO_Y, BORE_R, FRONT_Z, GANT_DEPTH, FLOOR_Y });
+  } finally {
+    ({ gantry, couch, couchBase, gantrySpin, gantryShell, boreFrameRing, liveScr } = keep);
+  }
+  rig.gantry.visible = rig.couch.visible = rig.couchBase.visible = true;
+  return rig;
+}
 const stdMat = (THREE, c, m, r) => new THREE.MeshStandardMaterial({ color: c, metalness: m == null ? 0.1 : m, roughness: r == null ? 0.55 : r });
 function canvasTex(THREE, cv) { const t = new THREE.CanvasTexture(cv); t.minFilter = THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.anisotropy = 4; return t; }
 function cvRoundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
