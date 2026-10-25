@@ -11,7 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
-import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
+import { axisToward, forwardChain, forwardCompiled, forwardSkin, forwardBone, boneSide, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
@@ -338,7 +338,6 @@ const VOXEL_MODELS = {
   upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
   lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
   foot:            { title:'Foot',                  scoutKv:80,  scoutMa:50,  xrayKv:60  },
-  totalhipreplacement: { title:'Total Hip Replacement', scoutKv:120, scoutMa:250, xrayKv:90 },
   wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
   metalphantom:    { title:'Metal Test Phantom',    scoutKv:120, scoutMa:200, xrayKv:120 },
   // QC tools, not anatomy: a lead bar-pattern gauge for measuring limiting spatial
@@ -406,7 +405,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:43, upperextremity:38};
+      const MB={chest:40, wholebody:30, headneck:16, lowerextremity:43, upperextremity:38};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -445,6 +444,8 @@ async function setSubject(sub){
   }
   if(req!==subjectReq) return;          // a newer request has been made: this one is only cached
   S.voxelModel=vm; S.subject=sub;
+  syncBoneViewUI();                     // (bones only carries over to the next model that has bone)
+  if(S.boneView) ensureBoneMesh(sub).then(()=>{ if(S.subject===sub){ applyPhotoSkin(); syncScene(); } });
   // Phones: one material volume resident at a time. A desktop keeps every subject it has
   // touched (instant switching); a phone that did that would hold hundreds of MB of
   // Uint8Arrays and get killed by the OS. Re-downloading on switch-back is the cheaper
@@ -483,7 +484,7 @@ async function setSubject(sub){
   syncLegRotUI();
   S.lastDose=null; S.doseLog=[]; updateDoseReadout();   // a new patient starts a new dose record
   S.joints={}; renderJointUI();                         // and with their joints straight
-  S.lastMarker=null; updateMarkerNote();
+  S.lastMarker=null;
   window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
 /* Everything an injected study leaves behind on the model. A study belongs to one patient
@@ -528,6 +529,42 @@ function prepSkinMesh(grp){
 }
 /* Show either the photographic skin or the material-shaded mesh for every loaded subject.
    Models without a skin mesh always show the plain one. */
+/* BONES ONLY. The room can show the skeleton alone, to see where the bones are while positioning.
+   It is the bone of the volume the film is traced through (build_bone_mesh.py: cut from the
+   material volume, in the frame of every other mesh of the model), it sits in the same group as the
+   skin, so it is where the skin is, and it bends by the volume's own rigid rule for bone
+   (bendVoxelMesh: forwardBone). Display only: nothing is hidden from the image. Fetched the first
+   time it is asked for, per model. */
+async function ensureBoneMesh(sub){
+  const vm=S.voxelCache?.[sub], wrap=three.voxelMeshes?.[sub];
+  if(!vm?.boneUrl || !wrap || wrap.userData.bone) return !!wrap?.userData.bone;
+  if(wrap.userData.boneLoading) return wrap.userData.boneLoading;
+  wrap.userData.boneLoading=loadModelUrl(vm.boneUrl).then(grp=>{
+    grp.traverse(o=>{ if(!o.isMesh) return;
+      o.castShadow=true; o.receiveShadow=true; o.userData.bone=true;
+      if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+      const ms=Array.isArray(o.material)?o.material:[o.material];
+      for(const m of ms){ if(!m) continue; const metal=/metal/i.test(o.name);
+        m.vertexColors=!!o.geometry.attributes.color; m.color.setRGB(1,1,1);
+        m.metalness=metal?0.8:0; m.roughness=metal?0.35:0.6; m.transparent=false; m.opacity=1; m.side=THREE.FrontSide; m.needsUpdate=true; }
+    });
+    grp.userData.role='bone'; grp.visible=false; wrap.add(grp); wrap.userData.bone=grp;
+    return true;
+  }).catch(err=>{ console.warn(sub+' bone mesh failed to load', err); return false; })
+    .finally(()=>{ wrap.userData.boneLoading=null; });
+  return wrap.userData.boneLoading;
+}
+function syncBoneViewUI(){
+  const cb=$('boneView'); if(!cb) return;
+  const has=!!S.voxelModel?.boneUrl;
+  cb.disabled=!has; cb.checked=!!S.boneView && has;
+  $('boneViewRow')?.classList.toggle('off', !has);
+}
+async function setBoneView(on){
+  S.boneView=!!on; syncBoneViewUI();
+  if(S.boneView) await ensureBoneMesh(S.subject);
+  applyPhotoSkin(); syncScene();
+}
 function applyPhotoSkin(){
   // The photo-textured skin is simply the default whenever the model ships one — there is
   // no toggle. It is display only; the physics always reads the voxel volume. Every body model
@@ -536,8 +573,9 @@ function applyPhotoSkin(){
   for(const k in (three.voxelMeshes||{})){
     const wrap=three.voxelMeshes[k]; if(!wrap||!wrap.children) continue;
     const hasSkin=wrap.children.some(c=>c.userData&&c.userData.role==='skin');
+    const bones=S.boneView && wrap.children.some(c=>c.userData&&c.userData.role==='bone');
     wrap.children.forEach(c=>{ const r=c.userData&&c.userData.role; if(!r) return;
-      c.visible = r === (hasSkin?'skin':'plain'); });
+      c.visible = bones ? r==='bone' : r === (hasSkin?'skin':'plain'); });
   }
 }
 
@@ -817,6 +855,7 @@ function restHeightOnReceptor(){
    per pose, not once per vertex, and the normals, the dearest part, are redone once the joint has
    rested: while it moves the shading lags a frame or two, which no one sees. */
 let normalsTimer=null, normalsDue=new Set();
+const BONE_IN=0.07;          // cm: most of a 1 mm voxel, past the blur's half a voxel
 function bendVoxelMesh(){
   const wrap=three.chestGroup; if(!wrap) return;
   const ch=jointsActive();
@@ -824,16 +863,46 @@ function bendVoxelMesh(){
   const f=voxelFlips().map(b=>b?-1:1);
   const cc=ch ? compileChain(ch, S.joints) : null;
   wrap.traverse(o=>{
-    if(!o.isMesh || !o.visible || !o.geometry?.attributes?.position) return;
+    if(!o.isMesh || !o.geometry?.attributes?.position) return;
+    for(let x=o; x && x!==wrap; x=x.parent) if(!x.visible) return;   // only what is on show (the skin, or the bone)
     const g=o.geometry, pos=g.attributes.position;
     if((g.userData.bentKey||'')===key) return;
-    if(!g.userData.rest){ if(!cc) return; g.userData.rest=Float32Array.from(pos.array); }
+    const bone=!!o.userData.bone;
+    if(!g.userData.rest){
+      if(!cc) return;
+      g.userData.rest=Float32Array.from(pos.array);
+      if(bone){ if(!g.attributes.normal) g.computeVertexNormals(); g.userData.restN=Float32Array.from(g.attributes.normal.array); }
+    }
     g.userData.bentKey=key;
-    const rest=g.userData.rest, a=pos.array;
+    const rest=g.userData.rest, a=pos.array, N=g.userData.restN;
+    // where a bone vertex's digit share is read: BONE_IN cm inside the bone it bounds (on the surface
+    // the share blends into the joint space beside it, and a metacarpal head's rim went with the finger)
+    const at=(v)=>{ const i=3*v, p=[f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10];
+      return N ? [p, [p[0]-BONE_IN*f[0]*N[i], p[1]-BONE_IN*f[1]*N[i+1], p[2]-BONE_IN*f[2]*N[i+2]]] : [p, p]; };
+    // bone: rigid on each side of a joint, as the volume moves it (the skin's crease map would bend
+    // a condyle across the joint); the skin: taut over a bend, folded inside it
     if(!cc){ a.set(rest); }
     else for(let i=0;i<a.length;i+=3){
-      const q=forwardSkin([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], cc);   // taut over a bend, folded inside it
+      const [p, pin]=at(i/3);
+      const q=bone ? forwardBone(p, cc, pin) : forwardSkin(p, cc);
       a[i]=f[0]*q[0]*10; a[i+1]=f[1]*q[1]*10; a[i+2]=f[2]*q[2]*10;
+    }
+    if(bone && g.index){
+      // a triangle with corners on two rigid pieces would stretch across the bent joint: left out
+      // while it is bent (the bone surfaces either side of a joint space never share one)
+      if(!g.userData.restIndex) g.userData.restIndex=g.index.array.slice();
+      const I=g.userData.restIndex;
+      if(!cc) g.index.array.set(I);
+      else {
+        const side=new Int32Array(rest.length/3);
+        for(let v=0;v<side.length;v++){ const [p, pin]=at(v); side[v]=boneSide(p, cc, pin); }
+        const out=g.index.array;
+        for(let t=0;t<I.length;t+=3){
+          const A=I[t], B=I[t+1], C=I[t+2], keep=side[A]===side[B] && side[B]===side[C];
+          out[t]=A; out[t+1]=keep?B:A; out[t+2]=keep?C:A;      // a dropped one collapses to a point
+        }
+      }
+      g.index.needsUpdate=true;
     }
     pos.needsUpdate=true; g.computeBoundingSphere(); normalsDue.add(g);
   });
@@ -851,20 +920,35 @@ function jointMoved(){
   if(!jointFrame) jointFrame=requestAnimationFrame(()=>{ jointFrame=0; resetPrep?.(); syncScene(); });
   prepareJointVolume();
 }
-/* The sandbox's joint sliders, one per motion the current subject has. */
+/* The sandbox's joint sliders, one per motion the current subject has. A hand's digits curl, one
+   slider a digit (its joints' motions share the key, m.curl): five upright sliders under the rest,
+   numbered as the digits are (1 the thumb), in 10 % stations: extension at the top (-20 %), the
+   hand as scanned a station below it (0, ticked), a fist at the bottom (100 %). */
+const CURL_STEP = 10;
 function renderJointUI(){
   const host=$('jointRows'); if(!host) return;
   const ch=jointChain(S.subject);
   if(!ch){ host.innerHTML=''; return; }
-  host.innerHTML=ch.map(j=>j.motions.map(m=>{
+  const curls=[...new Map(ch.flatMap(j=>j.motions.filter(m=>m.curl).map(m=>[m.key, m]))).values()];
+  host.innerHTML=ch.map(j=>j.motions.filter(m=>!m.curl).map(m=>{
     const v=Math.round(S.joints[m.key] ?? m.rest ?? 0);   // anatomical: the model as scanned when unset
     return `<div class="row" style="margin-top:8px"><div class="rl">${j.label} <small>${m.label.toLowerCase()} (${m.neg} &minus; / ${m.pos} +)</small></div>`
       +`<div class="valchip" id="jv_${m.key.replace('.','_')}">${v}°</div></div>`
-      +`<input type="range" class="jointSl" data-key="${m.key}" min="${m.range[0]}" max="${m.range[1]}" step="${JOINT_STEP}" value="${v}">`;
-  }).join('')).join('');
+      +`<input type="range" class="jointSl" data-key="${m.key}" data-unit="°" min="${m.range[0]}" max="${m.range[1]}" step="${JOINT_STEP}" value="${v}">`;
+  }).join('')).join('')
+    +(curls.length ? `<div class="row" style="margin-top:10px"><div class="rl">Fingers <small>${curls[0].label.toLowerCase()} (${curls[0].neg} &minus; / ${curls[0].pos} +)</small></div></div>`
+      +`<datalist id="curlZero"><option value="0"></option></datalist>`
+      +`<div style="display:flex;justify-content:space-around;margin-top:4px">`+curls.map(m=>{
+        const k=m.key, v=Math.round(S.joints[k] ?? 0), n=k.split('.')[1];
+        return `<div style="display:flex;flex-direction:column;align-items:center;gap:4px">`
+          +`<div class="valchip" id="jv_${k.replace('.','_')}" style="min-width:0">${v}%</div>`
+          +`<input type="range" class="jointSl" data-key="${k}" data-unit="%" min="${m.range[0]}" max="${m.range[1]}" step="${CURL_STEP}" value="${v}" `
+          +`list="curlZero" title="Digit ${n}: ${m.range[0]}% extension to ${m.range[1]}% flexion, 0 as scanned" style="writing-mode:vertical-lr;width:auto;height:104px">`
+          +`<div class="rl" style="text-align:center">${n}</div></div>`;
+      }).join('')+`</div>` : '');
   host.querySelectorAll('.jointSl').forEach(el=>el.addEventListener('input',()=>{
     S.joints[el.dataset.key]=+el.value;
-    const t=$('jv_'+el.dataset.key.replace('.','_')); if(t) t.textContent=el.value+'°';
+    const t=$('jv_'+el.dataset.key.replace('.','_')); if(t) t.textContent=el.value+el.dataset.unit;
     jointMoved();
   }));
 }
@@ -891,7 +975,10 @@ function applyDet(){
   const rv=$('resV'); if(rv) rv.textContent=nx+'×'+ny;
   // full-resolution (Low/Std/High) ray-casting is heavy — show the compute warning
   const rw=$('resWarn'); if(rw) rw.style.display = (S.resolution==='quick') ? 'none' : '';
-  const os=$('detOrientSeg'); if(os)[...os.children].forEach(b=>b.classList.toggle('on',b.dataset.orient===S.detOrient));
+  // a square receptor has no orientation: the choice is off while the 43x43 is in
+  const sq=S.detBaseW===S.detBaseH, os=$('detOrientSeg');
+  if(os)[...os.children].forEach(b=>{ b.classList.toggle('on',b.dataset.orient===S.detOrient); b.disabled=sq;
+    b.title=sq ? 'A square receptor has no orientation' : ''; });
   // the light field can open to the full detector: cap the collimation sliders at the receptor size
   const cx=$('collX'), cz=$('collZ');
   if(cx){ cx.max=S.detW; if(S.collX>S.detW){ S.collX=S.detW; cx.value=S.detW; } }
@@ -928,6 +1015,7 @@ const S = {
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
   legRot:0,                    // both legs turned about the femoral heads, deg (+ internal) — core/limbPose.js
+  boneView:false,              // the room shows the bones alone (display only: the image is the whole patient)
   joints:{},                   // bent joints of the current subject, deg by motion key — core/jointPose.js
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
@@ -935,7 +1023,7 @@ const S = {
   aecOn:false, aecCells:{l:false,c:true,r:false}, aecResult:null,  // AEC: cells + achieved mAs of the last exposure
   lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
   showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
-  detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
+  detailEnh:false, _proc:null,                     // DR detail (edge) enhancement, off by default + its cached tone map
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   curve:null, curveManual:false,                   // response-curve handles; null = follow the image
@@ -991,7 +1079,7 @@ const S = {
            prot:{ apron:true, collar:true, glasses:false, ceiling:false, skirt:false },
            staff:{ eyes:0, thyroid:0, trunk:0, gonads:0, legs:0, neckBare:0 }, skinMGy:0,
            // Phase C: motion clocks (phases accumulated here; the worker is stateless)
-           hold:false, still:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
+           hold:false, still:true, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
            // electronic image orientation (display-space): accumulated rotation, flips,
            // and the pending rotation being dialled in for the NEXT run (the triangle)
            dispRot:0, flipH:false, flipV:false, pendRot:0, invert:false,
@@ -2370,8 +2458,14 @@ function bind(){
   // LUT/response-curve visibility (does NOT change the LUT shape — image is unaffected)
   $('curveToggle')?.addEventListener('change',e=>{ S.showCurve=e.target.checked;
     updateXrayHistogram(); ctRenderViewer?.(); });
-  // automatic rescaling (DR auto-ranging) — normalizes the VOI to the display range
+  // Automatic rescaling (DR auto-ranging): the response curve set to this anatomy's values of
+  // interest on the histogram — its toe at the VOI's low end, its shoulder at the high end (the raw
+  // beam and the collimated-off tail left out), as a DR system's body-part processing does. Off,
+  // the curve spans the detector's whole range and the image shows the exposure as it came. The
+  // display draws through the curve, which was seeded only when an image arrived, so this toggle
+  // changed nothing on screen until the next exposure: it re-seeds now (and drops a dragged curve).
   $('rescaleToggle')?.addEventListener('change',e=>{ S.autoRescale=e.target.checked;
+    S.curveManual=false; reseedCurve();
     if(S.hasImage) drawFilm(); else updateXrayHistogram(); });
   // DR detail (edge) enhancement — multiscale unsharp on the acquired image
   $('detailToggle')?.addEventListener('change',e=>{ S.detailEnh=e.target.checked;
@@ -2416,6 +2510,7 @@ function bind(){
   $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
   // subject: analytic hand  <->  any voxel model
   $('subjectSel')?.addEventListener('change',e=>setSubject(e.target.value));
+  $('boneView')?.addEventListener('change',e=>setBoneView(e.target.checked));
   // collimator light on/off
   $('lfBtn').addEventListener('click',()=>{ S.lfOn=!S.lfOn;
     $('lfBtn').classList.toggle('on',S.lfOn); $('lfBtn').setAttribute('aria-pressed',S.lfOn);
@@ -2853,7 +2948,6 @@ async function computeRadiograph(opts={}){
   pushImage(signal,nx,ny,mask,buildMeta(spectrum),voiMask);   // -> active image + drawFilm + meta + strip
   updateDI(EI);
   updateDoseReadout();
-  updateMarkerNote();
   if(S.bayContent==='image') setContent('image');
 
   $('prog').style.width='100%';
@@ -3151,7 +3245,7 @@ function displayCurve(x){ return displayTone(x, S.rescale); }
    Draws a proper histogram (blue bars, axis ticks) of the image's base grey values,
    overlaid with the current LUT/response curve and a dashed identity diagonal so the
    sigmoid roll-off is visible. curveFn maps input tone [0,1] -> output [0,1]. */
-export function drawHistogram(canvas, hist, curveFn, xlabels){
+export function drawHistogram(canvas, hist, curveFn, xlabels, voi=null){
   if(!canvas) return;
   const g=canvas.getContext('2d'), W=canvas.width, H=canvas.height;
   const padL=3, padR=3, padT=4, padB=11, pw=W-padL-padR, ph=H-padT-padB;
@@ -3164,7 +3258,16 @@ export function drawHistogram(canvas, hist, curveFn, xlabels){
   let hmax=1; for(const v of hist) if(v>hmax) hmax=v;
   const n=hist.length, bw=pw/n;
   g.fillStyle='#5b83d6';
+  // the values of interest the automatic rescaling found (the anatomy: the raw beam's peak and the
+  // collimated-off tail left out), shaded behind the bars and bracketed along the axis
+  if(voi){ const x0=padL+voi.lo*pw, x1=padL+voi.hi*pw;
+    g.fillStyle='rgba(255,207,107,.08)'; g.fillRect(x0, padT, x1-x0, ph); g.fillStyle='#5b83d6'; }
   for(let x=0;x<n;x++){ const h=hist[x]/hmax*ph; if(h>0) g.fillRect(padL+x*bw, padT+ph-h, Math.max(1,bw), h); }
+  if(voi){ const x0=padL+voi.lo*pw, x1=padL+voi.hi*pw, y=padT+ph-3;
+    g.strokeStyle='rgba(255,207,107,.8)'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(x0,y-4); g.lineTo(x0,y); g.lineTo(x1,y); g.lineTo(x1,y-4); g.stroke();
+    g.fillStyle='rgba(255,207,107,.9)'; g.font='7px "Share Tech Mono",monospace'; g.textAlign='center'; g.textBaseline='bottom';
+    g.fillText('VOI', (x0+x1)/2, y-1); g.fillStyle='#5b83d6'; }
   // response curve + identity diagonal — visibility toggled (shape is unchanged)
   if(S.showCurve){
     g.strokeStyle='rgba(200,215,230,.35)'; g.setLineDash([3,3]); g.lineWidth=1;
@@ -3198,7 +3301,7 @@ function updateXrayHistogram(){
   const canvas=$('xrayHist'); if(!canvas) return;
   if(!S.showHist || !S.hasImage){ canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); return; }
   const hist=xrayHistData(); if(!hist) return;
-  drawHistogram(canvas, hist, displayCurve);   // curve = auto-rescale (VOI) then LUT
+  drawHistogram(canvas, hist, displayCurve, null, S.autoRescale && S.rescale ? S.rescale : null);   // curve = auto-rescale (VOI) then LUT
 }
 
 /* ---- APR protocol picker ---------------------------------------------------
@@ -3416,15 +3519,9 @@ function entranceFsd(phantom, src, d, maxLen=S.sid){
 }
 const fmtMGy=(v)=> v==null ? '—' : (v<0.1 ? v.toFixed(3) : v<10 ? v.toFixed(2) : v.toFixed(1))+'<small>mGy</small>';
 const fmtDap=(v)=> (v<10 ? v.toFixed(2) : v<100 ? v.toFixed(1) : v.toFixed(0))+'<small>µGy·m²</small>';
-function updateMarkerNote(){
-  const el=$('xrMarkerNote'); if(!el) return;
-  const v=S.lastMarker;
-  el.className='mknote fl-hide'+(v?' '+v.level:'');
-  el.textContent=v ? v.text : '';
-}
 /* Subjects with a midline, where the marker's letter can be checked against the side it lies on.
    A single limb cannot be told left from right here, so only its placement is judged. */
-const BILATERAL=new Set(['chest','headneck','chestabdopelvis','totalhipreplacement','wholebody']);
+const BILATERAL=new Set(['chest','headneck','chestabdopelvis','wholebody']);
 function updateDoseReadout(){
   const d=S.lastDose, set=(id,h)=>{ const el=$(id); if(el) el.innerHTML=h; };
   if(!d){ set('esdV','—'); set('dapV','—'); set('dapSumV','—'); return; }
@@ -3618,15 +3715,10 @@ function boxBlur2D(a, nx, ny, r){
 function updateScatterNote(){
   const v=$('scatterVal'); if(v) v.textContent=Math.round(S.scatter*100)+' %';
   const el=$('scatterNote'); if(!el) return;
-  if(S.scatter===0){ el.textContent='Off — primary beam only. Not physical, but it shows '
-    + 'you exactly how much contrast the scatter is costing.'; return; }
+  if(S.scatter===0){ el.textContent='Off: primary beam only.'; return; }
   const i=(typeof window!=='undefined')&&window.__scatterInfo;
-  if(!i){ el.textContent='Fraction of the receptor signal that is scattered rather than '
-    + 'image-forming. Expose to measure it.'; return; }
-  el.textContent=`Last exposure: ${Math.round(i.sf*100)} % of the signal was scatter `
-    + `(S/P ${i.spr.toFixed(2)})${i.grid?', grid fitted':' — no grid'}. `
-    + `Field size sets ${Math.round(i.areaF*100)} % of the maximum; collimating tighter is `
-    + 'what actually removes it.';
+  // the current image's: how much of its signal is scatter
+  el.textContent=i && S.hasImage ? `${Math.round(i.sf*100)} % of this image's signal is scatter (S/P ${i.spr.toFixed(2)}${i.grid?', grid in':''})` : '';
 }
 /* ---- the realistic modes ----
    Realistic X-ray and Realistic CT are the ordinary rooms with the Python GPU engine forced on
@@ -3848,6 +3940,23 @@ const fmtClock = (sec)=>{
   return String(Math.floor(s/60)).padStart(2,'0')+':'+String(s%60).padStart(2,'0');
 };
 
+/* What the injector is doing now: 'iodine' while a contrast phase runs, 'saline' during the chaser,
+   'idle' when it is on and nothing flows (before the start, in the start delay, after the chaser),
+   null when it is off. For the tab's chevrons (tabActivity). */
+function ctrstFlow(){
+  if(!S.contrast?.on) return null;
+  const t=ctrstClock(); if(t==null) return 'idle';
+  let a=0;
+  for(const p of ctrstPhases()){ if(t<a+p.t) return p.kind==='nacl' ? 'saline' : p.kind==='delay' ? 'idle' : 'iodine'; a+=p.t; }
+  return 'idle';
+}
+/* The pull-out tabs say which of their features is at work (styles.css .ctrst-tab[data-live]). */
+function tabActivity(){
+  const set=(id,v)=>{ const t=$(id); if(!t) return; if(v){ if(t.dataset.live!==v) t.dataset.live=v; } else if(t.dataset.live) delete t.dataset.live; };
+  set('ctrstTab', ctrstFlow());
+  set('giTab', S.barium?.on ? 'barium' : null);
+  set('palpTab', palpatedKeys().length ? 'palp' : null);
+}
 /* ---- the running clock -------------------------------------------------------------- */
 function ctrstClock(){
   const R=S.contrast.run;
@@ -4346,6 +4455,7 @@ let computePolling=false;
 window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
+  setInterval(tabActivity, 250);
   // CT mode lives in its own module; give it the handles it needs from the app glue.
   initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
            setSubject: (s) => setSubject(s),

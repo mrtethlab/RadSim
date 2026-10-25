@@ -36,7 +36,7 @@ export const K_FACTOR = {
 export const SUBJECT_REGION = {
   hand: 'extremity', upperextremity: 'extremity', lowerextremity: 'extremity', foot: 'extremity',
   headneck: 'headNeck', chest: 'chest',
-  chestabdopelvis: 'chestAbdomenPelvis', totalhipreplacement: 'abdomenPelvis', wholebody: 'trunk',
+  chestabdopelvis: 'chestAbdomenPelvis', wholebody: 'trunk',
 };
 const REGION_LABEL = {
   head: 'head', headNeck: 'head & neck', neck: 'neck', chest: 'chest', abdomenPelvis: 'abdomen/pelvis',

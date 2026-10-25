@@ -148,7 +148,7 @@ export function judge(view, m) {
     if (mo.key === alignKey) continue;                // judged on the bones, below
     const v = (m.joints || {})[mo.key] ?? mo.rest ?? 0;
     const r = view.joints?.[mo.key] || [-10, 10];
-    const say = (a) => (a === 0 ? 'neutral' : `${Math.abs(a)}° ${a < 0 ? mo.neg : mo.pos}`);
+    const say = (a) => (a === 0 ? 'neutral' : `${Math.abs(a)}${mo.curl ? '%' : '°'} ${a < 0 ? mo.neg : mo.pos}`);   // (a digit's curl: %)
     if (v < r[0] || v > r[1]) jointFaults.push(`${mo.joint.toLowerCase()} ${say(v)}, want ${view.joints?.[mo.key] ? `${say(r[0])} to ${say(r[1])}` : 'neutral'}`);
     else if (view.joints?.[mo.key]) jointNotes.push(`${mo.joint.toLowerCase()} ${say(v)}`);
   }

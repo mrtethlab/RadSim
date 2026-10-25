@@ -177,7 +177,7 @@ function stepHTML(view, S) {
       ${slider('trOffZ', 'Patient <small>along the table</small>', -55, 55, 0.1, S.objOff.z, ' cm')}
       ${slider('trOffX', 'Patient <small>across the table</small>', -55, 55, 0.1, S.objOff.x, ' cm')}
       ${motionsOf().map((m) => slider('trJ_' + m.key.replace('.', '_'), `${esc(m.joint)} <small>${esc(m.label.toLowerCase())}: ${esc(m.neg)} &minus; / ${esc(m.pos)} +</small>`,
-        m.range[0], m.range[1], 5, 5 * Math.round((S.joints[m.key] ?? m.rest ?? 0) / 5), '°')).join('')}
+        m.range[0], m.range[1], m.curl ? 10 : 5, (m.curl ? 10 : 5) * Math.round((S.joints[m.key] ?? m.rest ?? 0) / (m.curl ? 10 : 5)), m.curl ? '%' : '°')).join('')}
       <div class="tr-tip">Watch the patient in the room: the rotation is judged against the view's,
         within ${view.pose.tol}°. The film is the only feedback after the exposure &mdash; as on the job.</div>
       ${next('centre', 'Centre')}</div>`;
@@ -270,10 +270,12 @@ function soleAngle(rot = H.S.objRot) {
   return Math.asin(v[1] / Math.hypot(...v)) * 180 / Math.PI;
 }
 
-// the joints the patient on the table can bend, flattened to their motions
+// the joints the patient on the table can bend, flattened to their motions (a digit's joints share
+// its curl, 0-100 %: one slider and one judgement a digit, named for the digit)
 function motionsOf() {
   const ch = H.jointChain();
-  return ch ? ch.flatMap((j) => j.motions.map((m) => ({ ...m, joint: j.label }))) : [];
+  const all = ch ? ch.flatMap((j) => j.motions.map((m) => ({ ...m, joint: m.curl ? j.label.replace(/ \S+$/, '') : j.label }))) : [];
+  return all.filter((m, i) => !m.curl || all.findIndex((o) => o.key === m.key) === i);
 }
 
 /* The centring rule the view is marked on, with its source (data/centring.json) */

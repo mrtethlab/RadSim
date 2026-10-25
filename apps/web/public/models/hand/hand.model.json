@@ -15,6 +15,7 @@
   "volume": "hand.mat.bin",
   "dtype": "uint8",
   "mesh": "hand.glb",
+  "boneMesh": "hand_bone.glb",
   "materials": [
     {
       "id": 0,

@@ -15,6 +15,7 @@
  "volume": "chest.mat.bin",
  "dtype": "uint8",
  "mesh": "chest.glb",
+ "boneMesh": "chest_bone.glb",
  "skinMesh": "chest_skin.glb",
  "materials": [
   {

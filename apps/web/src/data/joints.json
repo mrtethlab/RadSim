@@ -48,6 +48,916 @@
      ]
     }
    ]
+  },
+  "cmc1": {
+   "label": "Thumb CMC",
+   "c": [
+    2.263,
+    -0.3,
+    -2.994
+   ],
+   "distal": [
+    0.469,
+    -0.2729,
+    0.84
+   ],
+   "blend": 0,
+   "digit": 1,
+   "field": {
+    "file": "hand.digit1.bin",
+    "dims": [
+     103,
+     54,
+     117
+    ],
+    "sp": 0.1,
+    "origin": [
+     -1.95,
+     -2.675,
+     -7.0
+    ],
+    "band": 0
+   },
+   "slab": [
+    -6.23,
+    3.11
+   ],
+   "reach": 9.59,
+   "crease": 6.07,
+   "how": "the thumb's CMC: 51.9 degrees at full curl about an axis solved so the curled thumb lies across the middle phalanges of the curled index and middle fingers, as in a fist; its centre 0.3 cm into the trapezium from the base of the metacarpal; the thenar eminence and first web share it by distance from the thumb's bones; 10 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.1",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      51.9,
+      1.0,
+      10
+     ],
+     "from": [
+      0.7728,
+      -0.1787,
+      0.609
+     ],
+     "toward": [
+      0.0417,
+      -0.9432,
+      -0.3297
+     ]
+    }
+   ]
+  },
+  "mcp1": {
+   "label": "Thumb MCP",
+   "c": [
+    4.086,
+    -0.95,
+    0.027
+   ],
+   "distal": [
+    0.5746,
+    -0.0699,
+    0.8155
+   ],
+   "blend": 0,
+   "digit": 1,
+   "field": {
+    "file": "hand.digit1.bin",
+    "dims": [
+     103,
+     54,
+     117
+    ],
+    "sp": 0.1,
+    "origin": [
+     -1.95,
+     -2.675,
+     -7.0
+    ],
+    "band": 1
+   },
+   "slab": [
+    -2.32,
+    2.65
+   ],
+   "reach": 6.0,
+   "crease": 2.82,
+   "how": "the centre of the metacarpal head: half its depth (1.35 cm) back from the joint space; flexion toward the palmar side of the distal bone; 10 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.1",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      55,
+      1.0,
+      10
+     ],
+     "toward": [
+      -0.5782,
+      -0.7399,
+      0.3439
+     ]
+    }
+   ]
+  },
+  "ip1": {
+   "label": "Thumb IP",
+   "c": [
+    5.717,
+    -0.967,
+    2.169
+   ],
+   "distal": [
+    0.8538,
+    0.0552,
+    0.5177
+   ],
+   "blend": 0,
+   "digit": 1,
+   "field": {
+    "file": "hand.digit1.bin",
+    "dims": [
+     103,
+     54,
+     117
+    ],
+    "sp": 0.1,
+    "origin": [
+     -1.95,
+     -2.675,
+     -7.0
+    ],
+    "band": 2
+   },
+   "slab": [
+    -1.64,
+    1.94
+   ],
+   "reach": 3.35,
+   "crease": 2.36,
+   "how": "the centre of the phalangeal head: half its depth (1.02 cm) back from the joint space; flexion toward the palmar side of the distal bone; 15 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.1",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      75,
+      1.1,
+      15
+     ],
+     "toward": [
+      -0.3899,
+      -0.591,
+      0.7062
+     ]
+    }
+   ]
+  },
+  "mcp2": {
+   "label": "Index finger MCP",
+   "c": [
+    1.637,
+    -0.096,
+    2.695
+   ],
+   "distal": [
+    -0.004,
+    -0.1604,
+    0.987
+   ],
+   "blend": 0,
+   "digit": 2,
+   "field": {
+    "file": "hand.digit2.bin",
+    "dims": [
+     43,
+     43,
+     108
+    ],
+    "sp": 0.1,
+    "origin": [
+     -0.35,
+     -2.675,
+     1.3
+    ],
+    "band": 0
+   },
+   "slab": [
+    -2.2,
+    2.22
+   ],
+   "reach": 9.53,
+   "crease": 2.91,
+   "how": "the centre of the metacarpal head: half its depth (1.32 cm) back from the joint space; flexion toward the palmar side of the distal bone, 90.0 degrees at full curl about an axis tilted 15 degrees from square to the finger, solved so the curled finger lies under its knuckle, its middle phalanx along the hand (the spread of the scan closes as the collateral ligaments tighten in flexion); 20 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.2",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      90.0,
+      1.15,
+      20
+     ],
+     "from": [
+      0.0239,
+      -0.1605,
+      0.9867
+     ],
+     "toward": [
+      -0.0051,
+      -0.987,
+      -0.1605
+     ]
+    }
+   ]
+  },
+  "pip2": {
+   "label": "Index finger PIP",
+   "c": [
+    1.654,
+    -1.023,
+    6.695
+   ],
+   "distal": [
+    -0.0641,
+    -0.1035,
+    0.9926
+   ],
+   "blend": 0,
+   "digit": 2,
+   "field": {
+    "file": "hand.digit2.bin",
+    "dims": [
+     43,
+     43,
+     108
+    ],
+    "sp": 0.1,
+    "origin": [
+     -0.35,
+     -2.675,
+     1.3
+    ],
+    "band": 1
+   },
+   "slab": [
+    -1.77,
+    1.81
+   ],
+   "reach": 5.46,
+   "crease": 2.28,
+   "how": "the centre of the phalangeal head: half its depth (0.95 cm) back from the joint space; flexion toward the palmar side of the distal bone; 5 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.2",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      105,
+      0.85,
+      5
+     ],
+     "toward": [
+      -0.0081,
+      -0.9945,
+      -0.1042
+     ]
+    }
+   ]
+  },
+  "dip2": {
+   "label": "Index finger DIP",
+   "c": [
+    1.569,
+    -1.244,
+    9.192
+   ],
+   "distal": [
+    -0.1642,
+    -0.1161,
+    0.9796
+   ],
+   "blend": 0,
+   "digit": 2,
+   "field": {
+    "file": "hand.digit2.bin",
+    "dims": [
+     43,
+     43,
+     108
+    ],
+    "sp": 0.1,
+    "origin": [
+     -0.35,
+     -2.675,
+     1.3
+    ],
+    "band": 2
+   },
+   "slab": [
+    -1.67,
+    1.6
+   ],
+   "reach": 2.98,
+   "crease": 2.13,
+   "how": "the centre of the phalangeal head: half its depth (0.66 cm) back from the joint space; flexion toward the palmar side of the distal bone; 10 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.2",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      75,
+      1.1,
+      10
+     ],
+     "toward": [
+      0.0564,
+      -0.9925,
+      -0.1081
+     ]
+    }
+   ]
+  },
+  "mcp3": {
+   "label": "Middle finger MCP",
+   "c": [
+    -0.49,
+    -0.158,
+    2.327
+   ],
+   "distal": [
+    -0.0941,
+    -0.0867,
+    0.9918
+   ],
+   "blend": 0,
+   "digit": 3,
+   "field": {
+    "file": "hand.digit3.bin",
+    "dims": [
+     37,
+     43,
+     114
+    ],
+    "sp": 0.1,
+    "origin": [
+     -2.75,
+     -2.675,
+     0.9
+    ],
+    "band": 0
+   },
+   "slab": [
+    -2.6,
+    1.47
+   ],
+   "reach": 10.44,
+   "crease": 2.8,
+   "how": "the centre of the metacarpal head: half its depth (1.40 cm) back from the joint space; flexion toward the palmar side of the distal bone, 90.8 degrees at full curl about an axis tilted 11 degrees from square to the finger, solved so the curled finger lies under its knuckle, its middle phalanx along the hand (the spread of the scan closes as the collateral ligaments tighten in flexion); 20 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.3",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      90.8,
+      1.15,
+      20
+     ],
+     "from": [
+      0.0203,
+      -0.0772,
+      0.9968
+     ],
+     "toward": [
+      0.0858,
+      -0.9932,
+      -0.0787
+     ]
+    }
+   ]
+  },
+  "pip3": {
+   "label": "Middle finger PIP",
+   "c": [
+    -0.819,
+    -0.876,
+    6.884
+   ],
+   "distal": [
+    -0.1552,
+    -0.1106,
+    0.9817
+   ],
+   "blend": 0,
+   "digit": 3,
+   "field": {
+    "file": "hand.digit3.bin",
+    "dims": [
+     37,
+     43,
+     114
+    ],
+    "sp": 0.1,
+    "origin": [
+     -2.75,
+     -2.675,
+     0.9
+    ],
+    "band": 1
+   },
+   "slab": [
+    -1.63,
+    1.63
+   ],
+   "reach": 5.87,
+   "crease": 2.19,
+   "how": "the centre of the phalangeal head: half its depth (0.88 cm) back from the joint space; flexion toward the palmar side of the distal bone; 5 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.3",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      105,
+      0.85,
+      5
+     ],
+     "toward": [
+      0.0777,
+      -0.992,
+      -0.0995
+     ]
+    }
+   ]
+  },
+  "dip3": {
+   "label": "Middle finger DIP",
+   "c": [
+    -1.19,
+    -1.12,
+    9.597
+   ],
+   "distal": [
+    -0.2991,
+    -0.2325,
+    0.9255
+   ],
+   "blend": 0,
+   "digit": 3,
+   "field": {
+    "file": "hand.digit3.bin",
+    "dims": [
+     37,
+     43,
+     114
+    ],
+    "sp": 0.1,
+    "origin": [
+     -2.75,
+     -2.675,
+     0.9
+    ],
+    "band": 2
+   },
+   "slab": [
+    -1.61,
+    1.53
+   ],
+   "reach": 3.17,
+   "crease": 2.2,
+   "how": "the centre of the phalangeal head: half its depth (0.67 cm) back from the joint space; flexion toward the palmar side of the distal bone; 10 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.3",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      75,
+      1.1,
+      10
+     ],
+     "toward": [
+      0.1776,
+      -0.9665,
+      -0.1854
+     ]
+    }
+   ]
+  },
+  "mcp4": {
+   "label": "Ring finger MCP",
+   "c": [
+    -2.344,
+    -0.433,
+    1.844
+   ],
+   "distal": [
+    -0.2577,
+    -0.0569,
+    0.9645
+   ],
+   "blend": 0,
+   "digit": 4,
+   "field": {
+    "file": "hand.digit4.bin",
+    "dims": [
+     51,
+     41,
+     111
+    ],
+    "sp": 0.1,
+    "origin": [
+     -5.85,
+     -2.675,
+     0.3
+    ],
+    "band": 0
+   },
+   "slab": [
+    -2.83,
+    1.21
+   ],
+   "reach": 9.93,
+   "crease": 2.63,
+   "how": "the centre of the metacarpal head: half its depth (1.28 cm) back from the joint space; flexion toward the palmar side of the distal bone, 91.2 degrees at full curl about an axis tilted 12 degrees from square to the finger, solved so the curled finger lies under its knuckle, its middle phalanx along the hand (the spread of the scan closes as the collateral ligaments tighten in flexion); 20 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.4",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      91.2,
+      1.15,
+      20
+     ],
+     "from": [
+      -0.1161,
+      -0.038,
+      0.9925
+     ],
+     "toward": [
+      0.1362,
+      -0.9904,
+      -0.022
+     ]
+    }
+   ]
+  },
+  "pip4": {
+   "label": "Ring finger PIP",
+   "c": [
+    -3.439,
+    -0.772,
+    5.968
+   ],
+   "distal": [
+    -0.2831,
+    -0.1892,
+    0.9402
+   ],
+   "blend": 0,
+   "digit": 4,
+   "field": {
+    "file": "hand.digit4.bin",
+    "dims": [
+     51,
+     41,
+     111
+    ],
+    "sp": 0.1,
+    "origin": [
+     -5.85,
+     -2.675,
+     0.3
+    ],
+    "band": 1
+   },
+   "slab": [
+    -1.66,
+    1.63
+   ],
+   "reach": 5.65,
+   "crease": 2.22,
+   "how": "the centre of the phalangeal head: half its depth (0.86 cm) back from the joint space; flexion toward the palmar side of the distal bone; 5 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.4",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      105,
+      0.85,
+      5
+     ],
+     "toward": [
+      0.0427,
+      -0.9819,
+      -0.1847
+     ]
+    }
+   ]
+  },
+  "dip4": {
+   "label": "Ring finger DIP",
+   "c": [
+    -4.206,
+    -1.194,
+    8.492
+   ],
+   "distal": [
+    -0.1692,
+    -0.2198,
+    0.9608
+   ],
+   "blend": 0,
+   "digit": 4,
+   "field": {
+    "file": "hand.digit4.bin",
+    "dims": [
+     51,
+     41,
+     111
+    ],
+    "sp": 0.1,
+    "origin": [
+     -5.85,
+     -2.675,
+     0.3
+    ],
+    "band": 2
+   },
+   "slab": [
+    -1.56,
+    1.65
+   ],
+   "reach": 2.98,
+   "crease": 2.1,
+   "how": "the centre of the phalangeal head: half its depth (0.60 cm) back from the joint space; flexion toward the palmar side of the distal bone; 10 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.4",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      75,
+      1.1,
+      10
+     ],
+     "toward": [
+      0.0345,
+      -0.9755,
+      -0.2171
+     ]
+    }
+   ]
+  },
+  "mcp5": {
+   "label": "Little finger MCP",
+   "c": [
+    -3.974,
+    -1.047,
+    1.065
+   ],
+   "distal": [
+    -0.5711,
+    0.0324,
+    0.8202
+   ],
+   "blend": 0,
+   "digit": 5,
+   "field": {
+    "file": "hand.digit5.bin",
+    "dims": [
+     60,
+     36,
+     88
+    ],
+    "sp": 0.1,
+    "origin": [
+     -8.25,
+     -2.675,
+     -0.8
+    ],
+    "band": 0
+   },
+   "slab": [
+    -3.94,
+    1.49
+   ],
+   "reach": 7.95,
+   "crease": 2.71,
+   "how": "the centre of the metacarpal head: half its depth (1.24 cm) back from the joint space; flexion toward the palmar side of the distal bone, 101.6 degrees at full curl about an axis tilted 29 degrees from square to the finger, solved so the curled finger lies under its knuckle, its middle phalanx along the hand (the spread of the scan closes as the collateral ligaments tighten in flexion); 20 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.5",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      101.6,
+      1.15,
+      20
+     ],
+     "from": [
+      -0.2156,
+      0.2057,
+      0.9546
+     ],
+     "toward": [
+      0.3373,
+      -0.9017,
+      0.2705
+     ]
+    }
+   ]
+  },
+  "pip5": {
+   "label": "Little finger PIP",
+   "c": [
+    -5.786,
+    -1.01,
+    3.919
+   ],
+   "distal": [
+    -0.5227,
+    -0.2706,
+    0.8084
+   ],
+   "blend": 0,
+   "digit": 5,
+   "field": {
+    "file": "hand.digit5.bin",
+    "dims": [
+     60,
+     36,
+     88
+    ],
+    "sp": 0.1,
+    "origin": [
+     -8.25,
+     -2.675,
+     -0.8
+    ],
+    "band": 1
+   },
+   "slab": [
+    -1.71,
+    1.64
+   ],
+   "reach": 4.58,
+   "crease": 2.24,
+   "how": "the centre of the phalangeal head: half its depth (0.72 cm) back from the joint space; flexion toward the palmar side of the distal bone; 5 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.5",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      105,
+      0.85,
+      5
+     ],
+     "toward": [
+      0.344,
+      -0.9346,
+      -0.0904
+     ]
+    }
+   ]
+  },
+  "dip5": {
+   "label": "Little finger DIP",
+   "c": [
+    -6.696,
+    -1.357,
+    5.371
+   ],
+   "distal": [
+    -0.438,
+    -0.2073,
+    0.8747
+   ],
+   "blend": 0,
+   "digit": 5,
+   "field": {
+    "file": "hand.digit5.bin",
+    "dims": [
+     60,
+     36,
+     88
+    ],
+    "sp": 0.1,
+    "origin": [
+     -8.25,
+     -2.675,
+     -0.8
+    ],
+    "band": 2
+   },
+   "slab": [
+    -1.58,
+    1.6
+   ],
+   "reach": 2.83,
+   "crease": 2.11,
+   "how": "the centre of the phalangeal head: half its depth (0.63 cm) back from the joint space; flexion toward the palmar side of the distal bone; 10 degrees of hyperextension at -20 %",
+   "motions": [
+    {
+     "key": "digit.5",
+     "label": "Curl",
+     "neg": "extension",
+     "pos": "flexion",
+     "range": [
+      -20,
+      100
+     ],
+     "curl": [
+      75,
+      1.1,
+      10
+     ],
+     "toward": [
+      0.1789,
+      -0.9737,
+      -0.1412
+     ]
+    }
+   ]
   }
  },
  "upperextremity": {

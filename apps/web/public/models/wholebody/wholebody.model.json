@@ -15,6 +15,7 @@
   "volume": "wholebody.mat.bin",
   "dtype": "uint8",
   "mesh": "wholebody.glb",
+  "boneMesh": "wholebody_bone.glb",
   "skinMesh": "wholebody_skin.glb",
   "materials": [
     {

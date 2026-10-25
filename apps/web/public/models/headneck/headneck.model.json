@@ -15,6 +15,7 @@
   "volume": "headneck.mat.bin",
   "dtype": "uint8",
   "mesh": "headneck.glb",
+  "boneMesh": "headneck_bone.glb",
   "skinMesh": "headneck_skin.glb",
   "materials": [
     {
