@@ -8,6 +8,18 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### Ultrasound: the beam has width, and Doppler you can hear
+Shadows were knife edges because each scanline was a single ray. Each line is now a beam (`core/beam.js`, docs/ultrasound.md §4.5–4.6).
+- **Beam width.** Three rays across the slice through a fixed elevation lens, and lateral sub-rays that converge on the transmit focus and diverge past it. Each pays its neighbours' losses, so a shadow has a penumbra as wide as the beam, widening with depth and sharpest with the focus on the obstacle. A rib's 10–90 % edge is 0.4 / 0.9 / 1.1 cm at 5 / 8 / 12 cm (focus 8), and 0.4 / 0.5 / 0.8 with the focus on the rib.
+- **Speckle** is complex, so its envelope is Rayleigh. The lateral PSF is two-way: transmit focus × dynamic receive.
+- **Reverberation** off strong reflectors, with a coherence per material: dirty shadows and A-lines behind gas and lung, clean shadows behind bone and stones.
+- **Fluid walls** follow Fresnel and Snell, giving edge shadows past the critical angle. Specular echoes fade as a wall turns away from the beam.
+- **Side lobes and scan conversion.** A −34 dB side-lobe pedestal, and bilinear scan conversion through a cached map.
+- **Gel and the frame clock.** Gel now fills the skin staircase's air slivers. The live loop counts the display in its frame budget: the 16 cm abdomen goes from 15 to 21 fps, and 12 MHz at 4 cm from 27 to 22 fps.
+- **Doppler.** Everything was already there except audio. PW now plays its own spectrum (`core/dopplerAudio.js`): toward the probe in the left channel, away in the right, aliasing with the trace (*Audio* and *Volume* in the PW panel). Colour averages its autocorrelation over neighbouring gates, so a lumen fills solidly instead of as salt and pepper. The ultrasound toggles now show their on state.
+
+**Checked:** in the app, before and after at six seats (RUQ liver/gallbladder, Morison's pouch, bowel gas, ribs, lung base, the aorta). Penetration is 21 / 17 / 12.5 / 8.3 / 5.4 cm at 2.5–12 MHz. The aorta PW still reads PSV 54–55, EDV 12, RI 0.78. Colour aliasing is 0 / 3 / 25 / 49 % at v_nyq 54 / 26 / 19 / 13 cm/s. `npm test` passes; the new beam and audio tests caught 10 of 10 re-introduced bugs.
+
 ### Process animations for every mode — [#88](https://github.com/mrtethlab/RadSim/pull/88)
 An **Animation** button on each mode's card opens a film of that mode's whole process, start to finish.
 

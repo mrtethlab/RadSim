@@ -1948,6 +1948,8 @@ body.mode-fluoro .scr2{display:block}
 .uscal-k{color:#6f8ea2}
 .uscal-v{flex:1; color:#ffe25a}
 body.mode-us #film, body.mode-us #bigFilm{cursor:crosshair}
+/* the ultrasound console's toggles (colour box, invert, audio, breath hold, motion off) say when they are on */
+body.mode-us .us-only .mini button.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
 #usPwAngleV.warn{color:#ffb45a}                 /* angle correction past 60 degrees */
 /* ---- fluoro: floating monitors over the room ---------------------------------------- */
 .flmon{position:absolute; right:12px; bottom:12px; width:min(58%,760px); height:min(46%,420px);
