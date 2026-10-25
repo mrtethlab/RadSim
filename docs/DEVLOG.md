@@ -8,6 +8,31 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### Twenty refinements across the modes — [#84](https://github.com/mrtethlab/RadSim/pull/84)
+**X-ray, foot and ankle.**
+- *Anatomical ankle:* `bake_pose --trim` took out what the leg's bake left (the foot rested 11° turned out and 10° inverted): every ankle slider now opens within 2° of 0. The Foot is cut again from it, its cut end domed.
+- *Views:* the AP and oblique foot lay the sole flat with the leg raised as a flexed knee does (protocol poses take a tilt), no longer approximate; new AP and oblique toes (CR to the 3rd MTP joint, found as the gap along the 3rd ray) and axial and lateral calcaneus (CR to the calcaneal body, measured). The foot and ankle protocols load the Foot.
+- *AP ankle:* an `ankle` LUT with latitude (equalisation, `core/equalise.js`): the foot standing end-on over the talus left 35 % of the film in the top tone band; now none.
+- the collimator's screen shows its rotation; the protocols' 35×43 receptors read 43×43; the Trainer's tilt raises one end, to 75°.
+
+**CT.** Ankle and Foot protocols, zeroed at the medial malleolus, load the Foot.
+
+**Fluoroscopy.** An ankle ORIF case on the Foot: a Weber B distal fibula (traced from the voxels, cut by a 55° plane) reduced with forceps under AP, mortise and lateral screening, judged to 2 mm and 5° with the screening used. A 0.035″ guidewire steered through the contrast solver's vessel tree, imaged by the beam (its path length through steel at each spectrum bin); the roadmap is now subtracted, vessels white and the wire black.
+
+**DXA.** The forearm (33 % radius of the non-dominant arm, the ulna measured on the volume, the intake's indications), and a precision assessment (RMS-SD, LSC = 2.77 × precision against ISCD minimums, from the learner's own repositioning) whose LSC the reports then use. It found two hip bugs: landmarks that did not follow the patient, and a coarse femoral-head search (neutral leg now reads 3 % higher, not 8 %).
+
+**Mammography.** CC and MLO positioning (pull, fold lift, C-arm angle, rotation, nipple roll) on a patient of her own build, and the film graded P/G/M/I by measuring it: PNL, pectoral muscle to the PNL, its border and angle, IMF, nipple in profile, cut-off, CC vs MLO PNL within 1 cm. The MLO now projects superomedial to inferolateral (it was geometrically an LMO).
+
+**Ultrasound.** Colour Doppler rebuilt as signal processing (ensembles, Kasai, wall filter, aliasing that wraps) and spectral PW Doppler (gate, angle correction, PRF capped by depth), with flow by vascular bed; a seat on the aorta reads PSV 53 / EDV 12 cm/s, RI 0.78.
+
+**IV.** The back of the hand with its own technique: 22–24 G at 10–15°, a mobile vein, pain on probing, valves, joint and nerve sites, and contrast capped at 1.5 mL/s.
+
+**Around the app.** A model that fails to load is said over the room with a retry; the local backend check stops after three misses; three.js and each room build into chunks of their own (the app core 257 kB).
+
+**Found, not yet fixed.** Much of the leg's talus is materialised as cartilage, and the malleoli, the ankle landmark and the ankle's pivot hung from it sit 2–3 cm below the tibial plafond (the AP and lateral ankle centre low). To re-measure with the ankle's materials.
+
+**Checked:** each feature in the running app and on the production build (every room opens clean); `npm test`: 272 pass, with each new test proved by reintroducing its bug.
+
 ### A Foot model, cut from the lower extremity — [#83](https://github.com/mrtethlab/RadSim/pull/83)
 A new **Foot** subject: the foot and the distal third of the tibia and fibula, cut from the lower
 extremity, so a foot or ankle film loads a 4.8 MB volume instead of 50 MB.
