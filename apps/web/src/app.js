@@ -1055,7 +1055,7 @@ const S = {
            prot:{ apron:true, collar:true, glasses:false, ceiling:false, skirt:false },
            staff:{ eyes:0, thyroid:0, trunk:0, gonads:0, legs:0, neckBare:0 }, skinMGy:0,
            // Phase C: motion clocks (phases accumulated here; the worker is stateless)
-           hold:false, still:false, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
+           hold:false, still:true, hr:72, brPhase:0, cardPhase:0, periT:0, swallowAt:0,
            // electronic image orientation (display-space): accumulated rotation, flips,
            // and the pending rotation being dialled in for the NEXT run (the triangle)
            dispRot:0, flipH:false, flipV:false, pendRot:0, invert:false,

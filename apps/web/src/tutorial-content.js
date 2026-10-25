@@ -1107,16 +1107,15 @@ export const FLUORO_STEPS = [
   {
     sel: '.grp:has(#flHold)',
     title: 'Motion, and holding it',
-    text: 'The heart beats at whatever the HR slider says, the diaphragm runs its cycle, '
-      + 'the stomach crawls. <b>Breath hold</b> stops the breathing clock alone — every '
-      + 'other rhythm keeps its own time, which is exactly what a patient does when you '
-      + 'ask. <b>Swallow</b> sends a wall wave down the oesophagus (and a mouthful of '
-      + 'barium with it, if a study is on). <b>Motion off</b> freezes everything: a '
-      + 'verification pose, not a physiology.',
+    text: 'The patient starts still: <b>Motion off</b> is lit, a verification pose, not a '
+      + 'physiology. Release it and the heart beats at whatever the HR slider says, the '
+      + 'diaphragm runs its cycle, the stomach crawls. <b>Breath hold</b> then stops the '
+      + 'breathing clock alone — every other rhythm keeps its own time, which is exactly '
+      + 'what a patient does when you ask. <b>Swallow</b> sends a wall wave down the '
+      + 'oesophagus (and a mouthful of barium with it, if a study is on).',
     goal: {
-      label: 'Hold the breath',
-      arm: () => S().fluoro.hold,
-      done: (a) => S().fluoro.hold !== a,
+      label: 'Turn motion on',
+      done: () => !S().fluoro.still,
     },
   },
   {

@@ -769,6 +769,20 @@
         </div>
       </div>
 
+      <div class="grp fl-only">
+        <div class="lab">Motion</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Heart rate</div>
+            <div class="valchip" id="flHrV">72 bpm</div></div>
+          <input type="range" id="flHr" min="40" max="140" value="72" step="2">
+          <div class="mini" style="margin-top:10px">
+            <button id="flHold">&#10074;&#10074; Breath hold</button>
+            <button id="flSwallow">&#10515; Swallow</button>
+            <button id="flStill" class="on" title="Freeze every motion — heart, gut and all. A verification pose for judging a DSA subtraction against pure noise.">&#9724; Motion off</button>
+          </div>
+        </div>
+      </div>
+
       <div class="grp ed-only">
         <div class="lab">Model</div>
         <div class="bod">
@@ -1456,19 +1470,6 @@
             <div><div class="k">Effective</div><div class="v" id="flStEV">0.00 µSv</div></div>
             <div><div class="k">Patient skin</div><div class="v" id="flSkinV">0.00 mGy</div></div>
             <div title="Focal spot to the patient's skin on the central ray. A mobile C-arm must not bring the focus closer than 30 cm: the spacer cone is there to stop it"><div class="k">Source&ndash;skin</div><div class="v" id="flSsdV">&mdash;</div></div>
-          </div>
-        </div>
-      </div>
-      <div class="grp fl-only">
-        <div class="lab">Motion</div>
-        <div class="bod">
-          <div class="row"><div class="rl">Heart rate</div>
-            <div class="valchip" id="flHrV">72 bpm</div></div>
-          <input type="range" id="flHr" min="40" max="140" value="72" step="2">
-          <div class="mini" style="margin-top:10px">
-            <button id="flHold">&#10074;&#10074; Breath hold</button>
-            <button id="flSwallow">&#10515; Swallow</button>
-            <button id="flStill" title="Freeze every motion — heart, gut and all. A verification pose for judging a DSA subtraction against pure noise.">&#9724; Motion off</button>
           </div>
         </div>
       </div>
