@@ -40,13 +40,13 @@ test('the AP and oblique foot and toes lay the sole flat: the leg raised as a fl
   const d = fresh(); applyCrops(crops, d);
   const protocols = read('protocols'), all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections));
   const chain = Object.values(d.joints.foot).map((j) => ({ ...j, motions: j.motions.map((m) => ({ ...m, axis: JP.axisToward(m.from || j.distal, m.toward) })) }));
-  const c = d.centring.foot, P = (n) => [c[n].x, c[n].y, c[n].z];
   for (const proj of ['AP foot', 'Oblique foot', 'AP toes', 'Oblique toes']) {
     const p = all.find((x) => x.proj === proj), D = Math.PI / 180;
     assert.equal(p.subject, 'foot', proj);
-    // the foot's long axis (midway between the malleoli to the base of the 3rd metatarsal: the
+    // the foot's long axis (the one the ankle's flexion is measured from: parallel to the sole, the
     // Trainer's soleAngle) through the bent ankle and the tilt and roll, against the receptor
-    const a = JP.forwardChain(P('intermalleolar'), chain, p.pose.joints), b = JP.forwardChain(P('mt3Base'), chain, p.pose.joints);
+    const ank = d.joints.foot.ankle, toes = ank.motions.find((m) => m.key === 'ankle.flex').from;
+    const a = JP.forwardChain(ank.c, chain, p.pose.joints), b = JP.forwardChain(ank.c.map((x, i) => x + 5 * toes[i]), chain, p.pose.joints);
     const R = eulerMatrix((p.pose.tilt || 0) * D, 0, (p.pose.roll || 0) * D), v = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     const up = R[3] * v[0] + R[4] * v[1] + R[5] * v[2];
     const sole = Math.asin(up / Math.hypot(...v)) / D;

@@ -101,14 +101,17 @@ def foot_axis(ank, leg):
 def foot_inversion(ank, leg, fa):
     """How far the foot is rolled about its own long axis (inversion +: the dorsum turned toward
     the lateral side, the sole toward the midline): the metatarsals' width axis, the middle principal
-    axis of the bone 35-70 % of the way along the foot, measured from the lateral about the foot's
+    axis of the bone 50-72 % of the way along the foot, measured from the lateral about the foot's
     axis. z053's right foot lay inverted some 60 degrees under the crossed left leg, and its
     lateral film showed the five metatarsals fanned out as on a dorsoplantar."""
     V = Vol('lowerextremity')
     P = np.stack(V.coords(V.bone), 1)
     f = P[(P - ank) @ leg > 1.0]
     t = (f - ank) @ fa
-    g = f[(t > 0.35 * t.max()) & (t < 0.70 * t.max())]
+    # the metatarsal shafts: from the ankle's true centre (the tibiotalar joint, measure_landmarks)
+    # 35 % reached back into the tarsals, whose arch is steepest, and read 14.6 degrees where the
+    # shafts' own row, cut square across, tilts 6
+    g = f[(t > 0.50 * t.max()) & (t < 0.72 * t.max())]
     # the width in the plane square to the foot (in 3-D the middle axis took in the metatarsals'
     # divergence along the foot, and read an upright foot as 44 degrees inverted)
     e1 = perp([1, 0, 0], fa); e2 = np.cross(fa, e1)

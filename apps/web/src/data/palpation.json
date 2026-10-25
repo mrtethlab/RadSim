@@ -71,8 +71,8 @@
   "medialMalleolus": {
    "label": "Medial malleolus",
    "x": -7.55,
-   "y": -6.75,
-   "z": -44.85,
+   "y": -4.65,
+   "z": -40.05,
    "dir": [
     -1.0,
     0.0,
@@ -83,9 +83,9 @@
   },
   "lateralMalleolus": {
    "label": "Lateral malleolus",
-   "x": -2.05,
-   "y": -3.75,
-   "z": -43.65,
+   "x": -2.35,
+   "y": -6.45,
+   "z": -41.45,
    "dir": [
     1.0,
     0.0,
@@ -96,15 +96,15 @@
   },
   "base5th": {
    "label": "Base of the 5th metatarsal",
-   "x": -0.55,
-   "y": 4.85,
-   "z": -46.15,
+   "x": -1.15,
+   "y": -0.05,
+   "z": -45.35,
    "dir": [
     1.0,
     0.0,
     0.0
    ],
-   "how": "the most lateral bone 30-50 % of the way from the ankle to the tip of the toes (14.8 cm): the 5th metatarsal tuberosity",
+   "how": "the most lateral bone 30-50 % of the way from the ankle to the tip of the toes (19.2 cm): the 5th metatarsal tuberosity",
    "confidence": "medium"
   },
   "patella": {

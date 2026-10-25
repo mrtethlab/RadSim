@@ -22,6 +22,7 @@ from scipy.signal import find_peaks
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODELS = ROOT / 'apps' / 'web' / 'public' / 'models'
 OUT = ROOT / 'apps' / 'web' / 'src' / 'data' / 'landmarks.json'
+SHEETS = ROOT / 'services' / 'compute' / 'data' / 'joints'          # the joint sheets (app.joint_space), read only
 
 
 def load(name):
@@ -103,6 +104,47 @@ def mark(mask, z, sp, how, sure, prefer='largest'):
     return {**at(mask, z, sp, prefer), 'how': how, 'confidence': sure}
 
 
+def tibiotalar(h, vol, sp):
+    """The ankle joint: where the tibia meets the talus, read off the joint sheets (the joints'
+    mid-surfaces, services/compute/app/joint_space.py; only read here, never changed). Down the
+    tibia's own axis (the shaft's centre at 4 and 8 cm above the foot, the line between them carried
+    on: the leg leans) the first sheet it meets is the tibiotalar joint; the next, 2.5 cm on, the
+    subtalar. The malleolar bulge stood in for it before, and with the foot at 90 degrees the
+    hindfoot's bones filled that profile: it sat 4 cm low, on the calcaneus, and the malleoli and
+    the ankle's pivot hung from it went with it."""
+    nx, ny, nz = h['dims']
+    path = SHEETS / 'lowerextremity.sheet.bin'
+    if not path.exists():
+        return None
+    sheet = np.fromfile(path, np.uint8).reshape(nz, ny, nx) == 1
+    hard = np.isin(vol, [17, 18] + list(range(54, 62)))            # bone, not the joints' cartilage
+    K = lambda z: int(round(z / sp[2] + (nz - 1) / 2))
+    # from the sole: a foot at 90 degrees stands 8-9 cm tall, so the shaft is sampled clear above it
+    nzb = np.nonzero(hard.any(axis=(1, 2)))[0]
+    z0 = (nzb.min() - (nz - 1) / 2) * sp[2]
+    def tibia(z):
+        sl = hard[K(z)]
+        lab, n = ndi.label(sl)
+        if not n:
+            return None
+        s = ndi.sum(sl, lab, range(1, n + 1)); t = int(np.argmax(s)) + 1
+        cy, cx = ndi.center_of_mass(sl, lab, t)
+        return np.array([cx, cy])
+    a, b = tibia(z0 + 17.0), tibia(z0 + 13.0)
+    if a is None or b is None:
+        return None
+    yy, xx = np.mgrid[0:ny, 0:nx]
+    for z in np.arange(z0 + 13.0, z0 + 3.0, -sp[2]):
+        c = b + (a - b) * (z - (z0 + 13.0)) / 4.0                 # the axis, carried down
+        disk = ((xx - c[0]) * sp[0]) ** 2 + ((yy - c[1]) * sp[1]) ** 2 < 0.8 ** 2
+        if (sheet[K(z)] & disk).sum() >= 0.3 * disk.sum():
+            return {'x': round(float((c[0] - (nx - 1) / 2) * sp[0]), 2), 'y': round(float((c[1] - (ny - 1) / 2) * sp[1]), 2),
+                    'z': round(float(z), 2),
+                    'how': "the tibiotalar joint: the first joint sheet down the tibia's axis (the subtalar is the next)",
+                    'confidence': 'high'}
+    return None
+
+
 def lower_extremity():
     h, vol, bone, sp = load('lowerextremity')
     m = main_component(bone); p = profile(m, sp)
@@ -111,6 +153,7 @@ def lower_extremity():
     top = m.shape[0] * sp[2]
     knee, prom = valley(p, sp, top - 57, top - 44)
     ankle = bulge(p, sp, top - 98, top - 86)
+    tt = tibiotalar(h, vol, sp)
     # the femoral head 33-47 cm above the knee (a femur's length; from the top, the iliac wing's
     # bulge stood in for it on a shorter patient)
     kz = knee * sp[2]
@@ -119,8 +162,7 @@ def lower_extremity():
     foot = int(3.0 / sp[2])
     return {
         'knee': mark(m, knee, sp, f'joint-space valley between the condyles and the plateau (prominence {prom:.1f} cm2)', 'high'),
-        'ankle': mark(m, ankle, sp, 'peak of the malleolar bulge — the clinical centring point, midway between the malleoli; '
-                                     'tibia and talus are fused in the segmentation, so there is no joint-space dip to find', 'medium'),
+        'ankle': tt or mark(m, ankle, sp, 'peak of the malleolar bulge (no joint sheets to read the joint from)', 'low'),
         'hip': mark(m, hip, sp, 'peak of the proximal bulge: femoral head and trochanters', 'medium'),
         'femur': mark(m, femur, sp, 'midway between the knee and hip landmarks', 'medium'),
         'foot': mark(m, foot, sp, 'tarsals, 3 cm above the inferior end (the sole of the foot at 90 degrees)', 'low'),
