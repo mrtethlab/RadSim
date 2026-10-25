@@ -1330,14 +1330,29 @@ export const US_STEPS = [
   {
     sel: '.grp:has(#usPrf)',
     title: 'Make it alias, then make the frame rate pay',
-    text: 'Wind the scale down and watch the aliasing arrive: at a Nyquist velocity of 99 cm/s '
-      + 'none of the aorta reads wrong, at 28 cm/s <b>a quarter of it does</b>. And look at the '
-      + 'fps: the box fires an ensemble of pulses on every line inside it, so a half-width box '
-      + 'takes 20 fps down to <b>4.5</b>. That is the real reason a sonographer keeps the box '
-      + 'small and puts it only where the question is.',
+    text: 'Wind the scale down and watch the aliasing arrive: on the aorta seat at peak systole, '
+      + 'at a Nyquist velocity of 32 cm/s none of the aorta reads wrong, at 19 cm/s <b>a third of '
+      + 'it does</b> — bright red straight into bright cyan, no black between. Depth caps the scale '
+      + '(PRF ≤ c/2d), so a deep vessel cannot be rescued by the knob. And look at the fps: the box '
+      + 'fires eight pulses per line at the colour PRF, so a half-width box at 16 cm takes 25 fps '
+      + 'down to <b>6</b>. That is why a sonographer keeps the box small.',
     goal: {
-      label: 'Drop the scale below 2.5 kHz',
-      done: () => S().us.prf <= 2500,
+      label: 'Drop the scale to 1.5 kHz or below',
+      done: () => S().us.prf <= 1500,
+    },
+  },
+  {
+    sel: '.grp:has(#usPwGate)',
+    title: 'Spectral Doppler: what the gate hears',
+    text: 'Press <i>seat on the aorta</i>. The gate is a depth and a length on one line, and the '
+      + 'trace is every scatterer inside it: a 3 mm gate on the axis gives a thin band with a clear '
+      + 'window beneath, a 20 mm gate fills the window from the slow blood at the wall. The machine '
+      + 'measures a <b>shift</b>; the angle cursor is your claim about the vessel. A 5° misjudgement '
+      + 'costs 6 % at 30° and <b>18 % at 60°</b> — past 60 it runs away. PSV, EDV and RI come off '
+      + 'the last whole beat.',
+    goal: {
+      label: 'Switch the display to PW Doppler',
+      done: () => S().us.disp === 'pw',
     },
   },
   {

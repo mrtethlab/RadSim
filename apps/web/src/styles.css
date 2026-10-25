@@ -1887,6 +1887,7 @@ body.mode-fluoro .scr2{display:block}
 .uscal-k{color:#6f8ea2}
 .uscal-v{flex:1; color:#ffe25a}
 body.mode-us #film, body.mode-us #bigFilm{cursor:crosshair}
+#usPwAngleV.warn{color:#ffb45a}                 /* angle correction past 60 degrees */
 /* ---- fluoro: floating monitors over the room ---------------------------------------- */
 .flmon{position:absolute; right:12px; bottom:12px; width:min(58%,760px); height:min(46%,420px);
   min-width:300px; min-height:190px; z-index:12; background:#04070a; border:1px solid #2b3a46;
