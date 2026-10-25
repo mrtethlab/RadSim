@@ -1,8 +1,9 @@
 /* ============================================================================
    FLUORO PULSE WORKER
-   One pulse = one raycast of the circular field, off the main thread so the pedal, the
-   C-arm and the UI never stutter. The volume is COPIED in once per subject (GitHub Pages
-   cannot set the COOP/COEP headers SharedArrayBuffer needs), then each pulse sends only
+   One pulse = one raycast of the field (the intensifier's circle, or the flat panel's
+   square), off the main thread so the pedal, the C-arm and the UI never stutter. The
+   volume is COPIED in once per subject (GitHub Pages cannot set the COOP/COEP headers
+   SharedArrayBuffer needs), then each pulse sends only
    geometry + technique and gets a Float32Array frame back, transferred.
 
    THE MARCHER IS SPECIALISED, NOT SHARED. VoxelPhantom.trace stays pristine for x-ray
@@ -24,6 +25,7 @@ import { BodyMaterials } from './core/materials.js';
 import { deriveMotion, motionState, brWall } from './core/anatomyMotion.js';
 import { boxSave, stampFragment } from './core/fracture.js';
 import { wireFactors } from './core/guidewire.js';
+import { inField } from './core/fieldArea.js';
 
 let ph = null;
 let anim = null;
@@ -328,20 +330,21 @@ onmessage = (e) => {
   let roiSum = 0, roiCnt = 0;
   const roiR2 = (0.30 * half) * (0.30 * half);
   const cutR = Math.min(half, iris);
+  const flat = !!m.fpd;
   for (let j = 0; j < n; j++) {
     const v = ((j + 0.5) / n - 0.5) * 2 * half;
     for (let i = 0; i < n; i++) {
       const u = ((i + 0.5) / n - 0.5) * 2 * half;
       // circular II field: outside the circle there is no detector; inside it but outside
       // the IRIS the beam never left the collimator — both draw black, but the iris is the
-      // one that saves the patient dose
-      const r2 = u * u + v * v;
-      if (r2 > cutR * cutR) { img[j * n + i] = -1; continue; }
+      // one that saves the patient dose. A FLAT PANEL is square to its corners, and its iris
+      // closes as a square (core/fieldArea.js inField, which the DAP is measured against).
       // ...and the SHUTTERS: a rotatable pair of parallel leaves, so the collimated field
-      // is a band across the circle rather than a smaller circle. Closing them onto the
+      // is a band across the field rather than a smaller one. Closing them onto the
       // anatomy of interest is the cheapest dose saving on the machine, and the only one
       // that costs nothing you wanted to see.
-      if (shutHalf < 1e8 && Math.abs(v * shutC - u * shutS) > shutHalf) { img[j * n + i] = -1; continue; }
+      if (!inField(u, v, flat, cutR, shutHalf, shutC, shutS)) { img[j * n + i] = -1; continue; }
+      const r2 = u * u + v * v;
       const px = detC[0] + u * detU[0] + v * detV[0];
       const py = detC[1] + u * detU[1] + v * detV[1];
       const pz = detC[2] + u * detU[2] + v * detV[2];

@@ -383,3 +383,55 @@ from leaves a faint white ghost; move the table or the C and the map no longer f
 real behaviour. In the room the femoral preset (a venous injection: IVC 33 mgI/mL at 33 s,
 iliac arteries 11 at 55 s) only arms the roadmap at a manual ~66 kV, and the pelvic roadmap at
 that dose is noisy; the wire still reads black inside the white vessel.
+
+## The OEC 9800 panel, a flat panel, and one set of monitors
+
+**The control panel is the machine's.** The console's button grid is rebuilt as the OEC 9800's
+membrane panel: a dark LCD strip (kVp, the mode name over the fluoro clock, mA/mAs), then grey
+group boxes with white labels under them and an LED beside every key that has a state. Folded
+into two decks to fit the column, in the machine's left-to-right order: ORIENTATION (rotate
+anticlockwise / rotation reset / clockwise, then left-right reverse and top-bottom flip), the
+mag selector (NORM / MAG 1 / MAG 2 lamps and the key that steps them), SAVE / WORKSTATION / MODE,
+COLLIMATION (shutter rotation on top; iris and shutters open/close below), CONTRAST, GENERATOR
+and ALARM RESET. The keys map to the simulator as follows:
+
+| Key | Does |
+| --- | --- |
+| SAVE | files what is on the live monitor in the image directory — no exposure |
+| WORKSTATION | the image swap: the live monitor's image goes to the reference monitor and the reference comes to the live one, held until the pedal goes down; pressed again, back to the live image (`core/fluoroDisplay.js wsSwap`) |
+| MODE | steps the imaging mode: fluoro → DSA → roadmap (once a DSA run has made one) → fluoro; locked while the pedal is down; the LCD names the mode |
+| CONTRAST ▲ / sun / ▼ | the sun chooses brightness or contrast, the arrows set it; touching them takes the display off AUTO and HOLDS the display window (`displayMap` `win`), so a pan onto thicker anatomy goes darker |
+| CONTRAST AUTO | the window refitted to every frame (lamp lit), brightness and contrast back to neutral |
+| GENERATOR AUTO | the ABC (lamp lit); off, the kVp and mA keys and the sliders set the technique |
+| PULSE | steps 3 / 7.5 / 15 / 30 pps; lit while pulsed, i.e. below the continuous 30 |
+| FILM | one spot image at 12× the pulse dose, filed; lit while its frame is out |
+| LOW DOSE | half the detector dose (the ABC's target), lit while on |
+| ALARM RESET | acknowledges the five-minute alarm; lit (and blinking) while it is due |
+
+Invert, which had a key on the old grid, has none on the 9800's panel: it sits with the display
+processing (C-arm window, beside noise reduction). The image directory opens from a DIRECTORY
+button under the pedal. The old MODE ("the reference screen follows the live image") is gone with
+the old WORKSTATION semantics. Fixed on the way: the kVp/mA keys and LOW DOSE by hand now update
+the operator's requested mA, which the per-pulse rate ceiling clips from — they were silently
+undone by the next pulse after the slider had been touched.
+
+**Flat panel detector.** A checkbox above the pulse rate puts a square flat panel in place of the
+9" intensifier: in the room the drum at the top of the C becomes a rounded square housing of the
+same span; on the monitor the image is square and runs edge to edge (no circle, no black margin);
+the iris closes as a square; and the shutter band cuts the square. The worker draws the field and
+the DAP measures it with the same function (`core/fieldArea.js inField`, `squareShutterArea`), so
+they cannot disagree — tested by counting the pixels `inField` lets through against the area,
+within 1 % on both receptors, shutters open, closed and at 45°. The panel keeps the intensifier's
+field sizes (its side is the II's diameter; the mag modes zoom by the same steps, named 23 / 15 /
+11 cm), so the ABC, the rate ceiling and the dose rate are unchanged; what changes is the area.
+Measured in the room at fixed technique: DAP per mGy of air kerma 14.96 (II) → 19.04 (panel),
+×1.273 = 4/π; shutters at half, 9.52 square-on and 11.09 at 45° (the band runs corner to corner),
+matching the formula. Cost: the panel images 4/π the rays, 30 → 41 ms per hand pulse, 0 dropped
+at 15 pps; the sampling tiers absorb it at 30.
+
+**Monitors on, one copy.** With the floating monitors up (the default) the docked viewer and
+reference screen over the pedal stand down — they showed the same two images a second time — and
+what lived over the viewer moves onto the monitors: the LIH and REC badges and loop playback onto
+the live screen, the image directory over both. Monitors off, everything goes back. Cine still
+records from the docked canvas while it is hidden (checked: a 2 s run recorded and played back on
+the live monitor). The fluoro windows lost their explanatory notes; the tutorial carries them.

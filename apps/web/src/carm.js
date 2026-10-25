@@ -2,7 +2,7 @@
    FLUOROSCOPY ROOM: the mobile C-arm and its monitor cart
    ============================================================================
    Modelled after a GE OEC 9800 / Elite: off-white shells with lavender-grey trim, a 9" image
-   intensifier over the patient, the tube and collimator housing under the table, the C sliding
+   intensifier (or, setReceptor, a square flat panel) over the patient, the tube and collimator housing under the table, the C sliding
    through its holder, the holder turning on a hub at the end of the cross-arm, the cross-arm
    on a telescoping column over the cart. The monitor cart (the workstation) stands apart with
    its two screens: they show the live and reference images as the console does (fluoro.js).
@@ -146,16 +146,24 @@ export function buildCarm(SID, SRC_ISO) {
   }
   // the image intensifier: its face DET above the isocentre, a drum, a lavender ring, the cap
   // that meets the C's upper end
-  const ii = new THREE.Group();
+  const ii = new THREE.Group(); ii.name = 'ii';
   ii.add(mesh(new THREE.CylinderGeometry(17.5, 17.5, 22, 48), M.shell, 0, DET + 11, 0));
   ii.add(mesh(new THREE.CylinderGeometry(18.6, 18.6, 3.2, 48), M.lav, 0, DET + 6, 0));
   ii.add(mesh(new THREE.CylinderGeometry(18.2, 18.2, 1.0, 48), M.grey, 0, DET + 0.6, 0));
   ii.add(mesh(new THREE.CylinderGeometry(15.2, 15.2, 0.4, 48), M.dark, 0, DET + 0.05, 0));    // the input face
-  ii.add(mesh(rbox(40, 22, 36, 6), M.shell, 2, DET + 32, 0));                                  // the cap
-  ii.add(mesh(rbox(41, 1.2, 37, 0.5), M.lav, 2, DET + 21.4, 0));
-  const oec = decal(badge('OEC'), 14, 5.2); oec.position.set(22.1, DET + 34, 0); oec.rotation.y = Math.PI / 2;
-  ii.add(oec);
   C.add(ii);
+  // ...or a FLAT PANEL in its place (setReceptor): the same housing squared off — the drum a
+  // rounded box of the same span and height, the trim band and the face square, the cap shared
+  const fpd = new THREE.Group(); fpd.name = 'fpd'; fpd.visible = false;
+  fpd.add(mesh(rbox(35, 22, 35, 3), M.shell, 0, DET + 11, 0));
+  fpd.add(mesh(rbox(37.2, 3.2, 37.2, 1.4), M.lav, 0, DET + 6, 0));
+  fpd.add(mesh(rbox(36.4, 1.0, 36.4, 0.4), M.grey, 0, DET + 0.6, 0));
+  fpd.add(mesh(new THREE.BoxGeometry(30, 0.4, 30), M.dark, 0, DET + 0.05, 0));                 // the input face
+  C.add(fpd);
+  C.add(mesh(rbox(40, 22, 36, 6), M.shell, 2, DET + 32, 0));                                   // the cap
+  C.add(mesh(rbox(41, 1.2, 37, 0.5), M.lav, 2, DET + 21.4, 0));
+  const oec = decal(badge('OEC'), 14, 5.2); oec.position.set(22.1, DET + 34, 0); oec.rotation.y = Math.PI / 2;
+  C.add(oec);
   // the tube and collimator housing under the patient: the focal spot SRC_ISO below the
   // isocentre, the housing reaching forward of the beam with its grille at the front
   const tubeH = new THREE.Group();
@@ -258,6 +266,13 @@ export function buildCarm(SID, SRC_ISO) {
 
   for (const g of Object.values(parts)) g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   return parts;
+}
+
+/* The receptor at the top of the C: the round image intensifier, or a square flat panel. */
+export function setReceptor(parts, flat) {
+  const ii = parts.c.getObjectByName('ii'), fpd = parts.c.getObjectByName('fpd');
+  if (ii) ii.visible = !flat;
+  if (fpd) fpd.visible = !!flat;
 }
 
 /* ------------------------------------------------------- the monitor cart */

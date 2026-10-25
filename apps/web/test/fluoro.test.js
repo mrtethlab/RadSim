@@ -1,7 +1,7 @@
 // Fluoroscopy image processing.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NR_K, recursiveStep, displayMap, edgeEnhance, roadmapSubtract } from '../src/core/fluoroDisplay.js';
+import { NR_K, recursiveStep, displayMap, edgeEnhance, roadmapSubtract, wsSwap } from '../src/core/fluoroDisplay.js';
 
 let seed = 7;
 const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
@@ -38,6 +38,40 @@ test('the display map is log, windowed to 0..1, with dense tissue dark and the f
   const out2 = new Float32Array(n * n);
   displayMap(img.map((t) => (t < 0 ? t : t / 10)), n, out2);
   assert.ok(Math.abs(out2[32 * n + 32] - at(32, 32)) < 0.02 && Math.abs(out2[32 * n + 20] - at(20, 32)) < 0.02);
+});
+
+test('CONTRAST AUTO off holds the window: the thicker patient then reads darker', () => {
+  const n = 64, img = new Float32Array(n * n), out = new Float32Array(n * n), sc = {};
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) img[j * n + i] = i > 28 && i < 36 ? 0.002 : 0.02;
+  displayMap(img, n, out, { scratch: sc });
+  const held = sc.win;
+  assert.ok(Array.isArray(held) && held[1] > held[0], 'the fitted window is left in scratch.win');
+  const thick = img.map((t) => t / 10), a = new Float32Array(n * n), h = new Float32Array(n * n);
+  displayMap(thick, n, a);                                   // AUTO: refitted, the same picture
+  displayMap(thick, n, h, { win: held, scratch: sc });       // held: the old window
+  const k = 32 * n + 20;
+  assert.ok(Math.abs(a[k] - out[k]) < 0.02, 'auto follows the anatomy');
+  assert.ok(h[k] < out[k] - 0.2, `held, the soft tissue goes darker (${out[k].toFixed(2)} -> ${h[k].toFixed(2)})`);
+  assert.deepEqual(sc.win, held, 'and the window stays held');
+});
+
+test('WORKSTATION swaps the two monitors and swaps them back to the live image', () => {
+  let shots = 0;
+  const snap = () => `live${++shots}`;
+  // a reference on the second monitor: the live image goes over, the reference comes to the live one
+  let st = wsSwap({ held: undefined, ref: 'refA', from: null }, snap);
+  assert.deepEqual(st, { held: 'refA', ref: 'live1', from: 'live1' });
+  // pressed again: changed back, and the live monitor shows the LIVE image again, not a copy
+  st = wsSwap(st, snap);
+  assert.deepEqual(st, { held: undefined, ref: 'refA', from: null });
+  assert.equal(shots, 1, 'one snapshot, taken on the first press only');
+  // an empty reference: the live monitor goes black (null), and comes back on the second press
+  st = wsSwap({ held: undefined, ref: null, from: null }, snap);
+  assert.deepEqual(st, { held: null, ref: 'live2', from: 'live2' });
+  assert.equal(wsSwap(st, snap).held, undefined);
+  // a different still chosen for the reference while swapped: the next press brings it over
+  st = wsSwap({ held: 'refA', ref: 'refB', from: 'live3' }, snap);
+  assert.deepEqual(st, { held: 'refB', ref: 'refA', from: 'live3' });
 });
 
 test('edge enhancement leaves flat regions alone and steepens a step', () => {

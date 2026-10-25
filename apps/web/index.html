@@ -1163,6 +1163,7 @@
             <div><div class="k">Beam-on</div><div class="v green" id="flBeamV">00:00</div></div>
             <div><div class="k">ms/pulse</div><div class="v" id="flPerfV">&mdash;</div></div>
           </div>
+          <label class="cttoggle" style="margin-top:10px" title="A flat-panel detector in place of the 9&quot; image intensifier: a square field that fills the monitor"><input type="checkbox" id="flFpd"><span>Flat panel detector</span></label>
           <div class="row" style="margin-top:10px"><div class="rl">Pulse rate <small>pps</small></div></div>
           <div class="seg" id="flPpsSeg">
             <button data-pps="3">3</button>
@@ -1174,100 +1175,175 @@
           <input type="range" id="flKv" min="50" max="120" value="70" step="1">
           <div class="row" style="margin-top:6px"><div class="rl">mA</div></div>
           <input type="range" id="flMa" min="0.5" max="10" value="2" step="0.5">
-          <div class="ctrst-note">ABC is the fluoroscopic AEC: a closed loop on the detector
-            that drives kV and mA along the machine's fluoro curve, every pulse. Pan from lung
-            to abdomen and watch the readouts climb &mdash; and the contrast fall as the kV
-            takes it. <b>AUTO</b> on the control panel arms it; with it off these sliders and
-            their consequences are yours.</div>
         </div>
       </div>
-      <!-- ============ OEC CONTROL PANEL (fl-only) — the console, laid out as it is
-           on the machine: orientation, mag, collimation, contrast, generator. ============ -->
+      <div class="grp fl-only">
+        <div class="lab">C-arm</div>
+        <div class="bod">
+          <div class="row"><div class="rl">Orbital <small>LAO / RAO</small></div>
+            <div class="valchip" id="flOrbV">0&deg;</div></div>
+          <input type="range" id="flOrb" min="-95" max="95" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Tilt <small>cran / caud</small></div>
+            <div class="valchip" id="flTiltV">0&deg;</div></div>
+          <input type="range" id="flTilt" min="-45" max="45" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Lift <small>column up / down</small></div>
+            <div class="valchip" id="flLiftV">0 cm</div></div>
+          <input type="range" id="flLift" min="0" max="30" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Extend <small>boom in / out</small></div>
+            <div class="valchip" id="flExtV">0 cm</div></div>
+          <input type="range" id="flExt" min="-10" max="10" value="0" step="1">
+          <div class="row" style="margin-top:8px"><div class="rl">Wig-wag <small>boom swivel</small></div>
+            <div class="valchip" id="flWigV">0&deg;</div></div>
+          <input type="range" id="flWig" min="-10" max="10" value="0" step="1">
+          <div class="row" style="margin-top:10px"><div class="rl">Noise reduction <small>recursive filter</small></div></div>
+          <div class="seg" id="flNrSeg">
+            <button data-nr="0">Off</button><button data-nr="1">Low</button>
+            <button data-nr="2" class="on">Med</button><button data-nr="3">High</button>
+          </div>
+          <label class="cttoggle" style="margin-top:6px"><input type="checkbox" id="flEdge" checked>
+            <span>Edge enhancement</span></label>
+          <label class="cttoggle" style="margin-top:6px"><input type="checkbox" id="flInvert">
+            <span>Invert grey scale</span></label>
+          <div class="flro" style="margin-top:10px">
+            <div><div class="k">Field</div><div class="v" id="flMagV">9&Prime;</div></div>
+            <div><div class="k">Iris</div><div class="v" id="flIrisV">100 %</div></div>
+            <div><div class="k">Shutters</div><div class="v" id="flShutV2">100 %</div></div>
+            <div><div class="k">Shut angle</div><div class="v" id="flShutRotV">0&deg;</div></div>
+          </div>
+        </div>
+      </div>
+      <!-- ============ OEC CONTROL PANEL (fl-only) — the OEC 9800's own membrane panel, as it
+           sits on the C-arm: the LCD strip, then ORIENTATION, the mag selector and SAVE /
+           WORKSTATION / MODE on the left, COLLIMATION, CONTRAST, GENERATOR and ALARM RESET to
+           the right. Folded into two decks to fit the column; the left-to-right order is the
+           machine's. Icons are the panel's own, drawn once as symbols below. ============ -->
       <div class="grp fl-only">
         <div class="lab">Control panel</div>
         <div class="bod">
-          <div class="oecpanel">
-            <div class="oecg">
-              <div class="oecrow">
-                <button class="oecb grn wide" id="flRotCCW" title="Rotate image counter-clockwise — tap to nudge, hold for large adjustment">&#8634;</button>
-                <button class="oecb grn wide" id="flInvert" title="Invert the grey scale — white bone or black bone">&#9681;</button>
-                <button class="oecb grn wide" id="flRotCW" title="Rotate image clockwise — tap to nudge, hold for large adjustment">&#8635;</button>
-              </div>
-              <div class="oecrow">
-                <button class="oecb grn rnd" id="flFlipH" title="Mirror the image left / right"><span class="orR orRh">R</span></button>
-                <button class="oecb grn rnd" id="flFlipV" title="Flip the image top / bottom"><span class="orR orRv">R</span></button>
-              </div>
-              <div class="oecl">Orientation</div>
+          <div class="oec">
+            <svg class="oecdefs" aria-hidden="true" focusable="false"><defs>
+              <symbol id="oiRot" viewBox="0 0 24 24"><path d="M18.6 9.2A7.2 7.2 0 1 0 19.2 14" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round"/><path d="M20.8 4.6l-.4 6.6-6.2-2.3z" fill="currentColor"/></symbol>
+              <symbol id="oiRotReset" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="M6.6 17.4L17.4 6.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></symbol>
+              <symbol id="oiMag" viewBox="0 0 24 24"><circle cx="10" cy="10" r="6.4" fill="none" stroke="currentColor" stroke-width="2.2"/><circle cx="10" cy="10" r="2.6" fill="currentColor"/><path d="M14.8 14.8L20.5 20.5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></symbol>
+              <symbol id="oiSave" viewBox="0 0 24 24"><path d="M4 4h12.5L20 7.5V20H4z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M12 7.5v8M8.6 12.6L12 16l3.4-3.4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+              <symbol id="oiWs" viewBox="0 0 24 24"><rect x="1.8" y="4" width="8" height="6.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.7"/><rect x="14.2" y="4" width="8" height="6.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M6 14.6h12M15.6 12.4l2.6 2.2-2.6 2.2M18 19.2H6M8.4 17l-2.6 2.2 2.6 2.2" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+              <symbol id="oiMode" viewBox="0 0 24 24"><path d="M11 4.5h8.5v15H11" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M2.5 12h12M11 8.4l3.6 3.6-3.6 3.6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+              <symbol id="oiColRot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M8.6 15.4l6.8-6.8" stroke="currentColor" stroke-width="1.8"/><path d="M19.4 9A8 8 0 1 0 19.6 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M21.6 4.8l-.5 5.6-5.2-2z" fill="currentColor"/></symbol>
+              <symbol id="oiIrisOpen" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.6" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 1.6l2.4 3.6H9.6zM12 22.4l2.4-3.6H9.6zM1.6 12l3.6 2.4V9.6zM22.4 12l-3.6 2.4V9.6z" fill="currentColor"/></symbol>
+              <symbol id="oiIrisClose" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2.2" fill="currentColor"/><path d="M12 7.2l2.4-3.6H9.6zM12 16.8l2.4 3.6H9.6zM7.2 12l-3.6 2.4V9.6zM16.8 12l3.6 2.4V9.6z" fill="currentColor"/></symbol>
+              <symbol id="oiShutOpen" viewBox="0 0 24 24"><path d="M9.6 4v16M14.4 4v16" stroke="currentColor" stroke-width="2.2"/><path d="M1.6 12l4.4-3v6zM22.4 12L18 9v6z" fill="currentColor"/></symbol>
+              <symbol id="oiShutClose" viewBox="0 0 24 24"><path d="M5 4v16M19 4v16" stroke="currentColor" stroke-width="2.2"/><path d="M12.6 12L8 9v6zM11.4 12L16 9v6z" fill="currentColor"/></symbol>
+              <symbol id="oiUp" viewBox="0 0 24 24"><path d="M12 6l7 11H5z" fill="currentColor"/></symbol>
+              <symbol id="oiSun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4.6" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M12 7.4a4.6 4.6 0 0 0 0 9.2z" fill="currentColor"/><path d="M12 2v2.6M12 19.4V22M2 12h2.6M19.4 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></symbol>
+              <symbol id="oiCont" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 4a8 8 0 0 0 0 16z" fill="currentColor"/></symbol>
+              <symbol id="oiBell"viewBox="0 0 24 24"><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.6 1.8H4.4z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path d="M10 20.4a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="1.9"/></symbol>
+              <symbol id="oiClock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.4" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 7v5.4l3.4 2.2" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+            </defs></svg>
+            <div class="oeclcd">
+              <div class="oeclcd-c"><span class="k">kVp</span><span class="v" id="flLcdKv">70</span></div>
+              <div class="oeclcd-c mid"><span class="k" id="flLcdMode">FLUORO</span><span class="v"><svg class="oi"><use href="#oiClock"/></svg><span id="flLcdClock">00:00</span></span></div>
+              <div class="oeclcd-c r"><span class="k">mA/mAs</span><span class="v" id="flLcdMa">2.0</span></div>
             </div>
-            <div class="oecg">
-              <div class="oeclamps">
-                <div class="oeclamp on" data-mag="0"><span>NORM</span><i></i></div>
-                <div class="oeclamp" data-mag="1"><span>MAG 1</span><i></i></div>
-                <div class="oeclamp" data-mag="2"><span>MAG 2</span><i></i></div>
+            <div class="oecmem">
+              <div class="oecdeck">
+                <div class="oeccol">
+                  <div class="oecdeck">
+                    <div class="oecg">
+                      <div class="oecbox grn">
+                        <div class="oecpill h">
+                          <button class="oecb" id="flRotCCW" title="Rotate the image anticlockwise — tap to nudge, hold for a large turn (taken up at the next run)"><svg class="oi flipx"><use href="#oiRot"/></svg></button>
+                          <button class="oecb" id="flRotReset" title="Rotation reset — the image upright again"><svg class="oi"><use href="#oiRotReset"/></svg></button>
+                          <button class="oecb" id="flRotCW" title="Rotate the image clockwise — tap to nudge, hold for a large turn (taken up at the next run)"><svg class="oi"><use href="#oiRot"/></svg></button>
+                        </div>
+                        <div class="oecrow">
+                          <span class="ledw"><button class="oecb rnd" id="flFlipH" title="Reverse the image left for right"><span class="orR orRh">R</span></button><i class="led"></i></span>
+                          <span class="ledw"><button class="oecb rnd" id="flFlipV" title="Flip the image top for bottom"><span class="orR orRv">R</span></button><i class="led"></i></span>
+                        </div>
+                      </div>
+                      <div class="oecl">Orientation</div>
+                    </div>
+                    <div class="oecg">
+                      <div class="oecbox grn narrow">
+                        <div class="oeclamps">
+                          <div class="oeclamp on" data-mag="0" title="Normal field"><span>NORM</span><i class="led"></i></div>
+                          <div class="oeclamp" data-mag="1" title="Magnification 1"><span>MAG 1</span><i class="led"></i></div>
+                          <div class="oeclamp" data-mag="2" title="Magnification 2"><span>MAG 2</span><i class="led"></i></div>
+                        </div>
+                        <button class="oecb rnd" id="flMagCycle" title="Step the field: normal, MAG 1, MAG 2. A smaller field is sharper and costs dose rate."><svg class="oi"><use href="#oiMag"/></svg></button>
+                      </div>
+                      <div class="oecl">&nbsp;</div>
+                    </div>
+                  </div>
+                  <div class="oecg">
+                    <div class="oecbox blu oecrow sp">
+                      <div class="oeck"><span class="ledw"><button class="oecb rnd" id="flSave" title="Save the image on the monitor (the last image held) to the directory"><svg class="oi"><use href="#oiSave"/></svg></button><i class="led"></i></span><span>Save</span></div>
+                      <div class="oeck"><span class="ledw"><button class="oecb rnd" id="flWorkstation" title="Swap the images on the live and reference monitors (live screening takes the live monitor back)"><svg class="oi"><use href="#oiWs"/></svg></button><i class="led"></i></span><span>Workstation</span></div>
+                      <div class="oeck"><span class="ledw"><button class="oecb rnd" id="flModeBtn" title="Step the imaging mode: fluoro, DSA, roadmap (once a DSA run has made one)"><svg class="oi"><use href="#oiMode"/></svg></button><i class="led"></i></span><span>Mode</span></div>
+                    </div>
+                  </div>
+                </div>
+                <div class="oecg">
+                  <div class="oecbox pur">
+                    <div class="oecpill h">
+                      <button class="oecb" id="flShutCCW" title="Rotate the shutters anticlockwise"><svg class="oi flipx"><use href="#oiColRot"/></svg></button>
+                      <button class="oecb" id="flShutCW" title="Rotate the shutters clockwise"><svg class="oi"><use href="#oiColRot"/></svg></button>
+                    </div>
+                    <div class="oecrow">
+                      <div class="oecpill v">
+                        <button class="oecb" id="flIrisOpen" title="Open the iris"><svg class="oi"><use href="#oiIrisOpen"/></svg></button>
+                        <button class="oecb" id="flIrisClose" title="Close the iris — less field, less dose"><svg class="oi"><use href="#oiIrisClose"/></svg></button>
+                      </div>
+                      <div class="oecpill v">
+                        <button class="oecb" id="flShutOpen" title="Open the shutters"><svg class="oi"><use href="#oiShutOpen"/></svg></button>
+                        <button class="oecb" id="flShutClose" title="Close the shutters onto the anatomy of interest"><svg class="oi"><use href="#oiShutClose"/></svg></button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="oecl">Collimation</div>
+                </div>
               </div>
-              <button class="oecb grn rnd big" id="flMagCycle" title="Cycle the image intensifier field: 9&quot; / 6&quot; / 4.5&quot;. A smaller field is sharper and costs dose.">&#9186;</button>
-              <div class="oecl">Field</div>
-            </div>
-            <div class="oecg span2">
-              <div class="oecrow">
-                <button class="oecb pur wide" id="flShutCCW" title="Rotate the shutters counter-clockwise">&#8634;&#9647;</button>
-                <button class="oecb pur wide" id="flShutCW" title="Rotate the shutters clockwise">&#9647;&#8635;</button>
-                <button class="oecb pur wide" id="flIrisOpen" title="Open the iris">&#9711;&#9650;</button>
-                <button class="oecb pur wide" id="flIrisClose" title="Close the iris — less field, less dose">&#9679;&#9660;</button>
+              <div class="oecdeck">
+                <div class="oecg">
+                  <div class="oecbox grn">
+                    <div class="oecpill v">
+                      <button class="oecb" id="flWinUp" title="Up: brighter (or more contrast)"><svg class="oi"><use href="#oiUp"/></svg></button>
+                      <button class="oecb" id="flWinSel" title="Brightness or contrast: which the arrows set"><svg class="oi"><use href="#oiSun"/></svg></button>
+                      <button class="oecb" id="flWinDn" title="Down: darker (or less contrast)"><svg class="oi flipy"><use href="#oiUp"/></svg></button>
+                    </div>
+                    <span class="ledw"><button class="oecb rnd txt" id="flWinAuto" title="Automatic brightness and contrast on the display">AUTO</button><i class="led"></i></span>
+                  </div>
+                  <div class="oecl">Contrast</div>
+                </div>
+                <div class="oecg">
+                  <div class="oecbox pur">
+                    <div class="oecrow">
+                      <div class="oecpillw"><span>kVp</span><div class="oecpill v">
+                        <button class="oecb" id="flKvUp" title="kVp up (manual technique)"><svg class="oi"><use href="#oiUp"/></svg></button>
+                        <button class="oecb" id="flKvDn" title="kVp down (manual technique)"><svg class="oi flipy"><use href="#oiUp"/></svg></button>
+                      </div></div>
+                      <div class="oecpillw"><span>mA/mAs</span><div class="oecpill v">
+                        <button class="oecb" id="flMaUp" title="mA up (manual technique)"><svg class="oi"><use href="#oiUp"/></svg></button>
+                        <button class="oecb" id="flMaDn" title="mA down (manual technique)"><svg class="oi flipy"><use href="#oiUp"/></svg></button>
+                      </div></div>
+                      <span class="ledw"><button class="oecb rnd txt" id="flAutoBtn" title="Automatic brightness control: the machine chooses kV and mA every pulse">AUTO</button><i class="led"></i></span>
+                    </div>
+                    <div class="oecrow">
+                      <span class="ledw"><button class="oecb rnd txt" id="flPulseBtn" title="Pulsed fluoro: step the rate 30 (continuous) / 15 / 7.5 / 3 pps — lit while pulsed">PULSE</button><i class="led"></i></span>
+                      <span class="ledw"><button class="oecb rnd txt" id="flFilm" title="Digital spot film: one high-dose frame, straight to the directory">FILM</button><i class="led"></i></span>
+                      <span class="ledw"><button class="oecb rnd txt sm" id="flLowDose" title="Low dose: half the detector dose, and the noise to match">LOW<br>DOSE</button><i class="led"></i></span>
+                    </div>
+                  </div>
+                  <div class="oecl">Generator</div>
+                </div>
+                <div class="oecg">
+                  <div class="oecbox grn">
+                    <span class="ledw"><button class="oecb rnd" id="flAlarmReset" title="Reset the five-minute fluoroscopy timer alarm"><svg class="oi"><use href="#oiBell"/></svg></button><i class="led"></i></span>
+                  </div>
+                  <div class="oecl">Alarm<br>reset</div>
+                </div>
               </div>
-              <div class="oecrow">
-                <button class="oecb pur wide" id="flShutOpen" title="Open the shutters">&#8597;&#9650;</button>
-                <button class="oecb pur wide" id="flShutClose" title="Close the shutters onto the anatomy of interest">&#8597;&#9660;</button>
-                <div class="oecval"><span id="flIrisV2">100%</span> iris</div>
-                <div class="oecval"><span id="flShutV">100%</span> shut</div>
-              </div>
-              <div class="oecl">Collimation</div>
-            </div>
-            <div class="oecg">
-              <div class="oecrow">
-                <button class="oecb grn wide" id="flBrightUp" title="Brighter display">&#9788;&#9650;</button>
-                <button class="oecb grn wide" id="flBrightDn" title="Darker display">&#9788;&#9660;</button>
-              </div>
-              <div class="oecrow">
-                <button class="oecb grn wide" id="flContUp" title="More display contrast">&#9681;&#9650;</button>
-                <button class="oecb grn wide" id="flContDn" title="Less display contrast">&#9681;&#9660;</button>
-              </div>
-              <button class="oecb grn rnd" id="flWinAuto" title="Re-window the display to the current image">AUTO</button>
-              <div class="oecl">Contrast</div>
-            </div>
-            <div class="oecg">
-              <button class="oecb red rnd big" id="flAlarmReset" title="Silence and reset the five-minute beam-on alarm">ALARM<br>RESET</button>
-              <div class="oecl">Alarm</div>
-            </div>
-            <div class="oecg span2">
-              <div class="oecrow">
-                <button class="oecb pur wide" id="flKvUp">kVp &#9650;</button>
-                <button class="oecb pur wide" id="flKvDn">kVp &#9660;</button>
-                <button class="oecb pur wide" id="flMaUp">mA &#9650;</button>
-                <button class="oecb pur wide" id="flMaDn">mA &#9660;</button>
-              </div>
-              <div class="oecrow">
-                <button class="oecb pur wide" id="flPulseBtn" title="Cycle the pulse rate: 30 / 15 / 8 / 3 pps">PULSE</button>
-                <button class="oecb pur wide" id="flFilm" title="Digital spot image — one high-dose frame, straight to the directory">FILM</button>
-                <button class="oecb pur wide" id="flLowDose" title="Half the dose rate. The noise is the price.">LOW<br>DOSE</button>
-                <button class="oecb pur wide" id="flAutoBtn" title="Automatic brightness control: the machine chooses kV and mA">AUTO</button>
-              </div>
-              <div class="oecl">Generator</div>
-            </div>
-            <div class="oecg span2 blue">
-              <div class="oecrow">
-                <button class="oecb blu wide" id="flSave" title="Save the image on the monitor to the directory">&#10515; SAVE</button>
-                <button class="oecb blu wide" id="flWorkstation" title="Swap the live image and the reference screen">&#8646; WORK&#8203;STATION</button>
-                <button class="oecb blu wide" id="flModeBtn" title="What the reference screen holds: the saved reference, or a second live view">&#8594;&#9646; MODE</button>
-                <button class="oecb blu wide" id="flImgDir" title="Image Directory — every saved image and loop">&#9638; IMAGE<br>DIRECTORY</button>
-              </div>
-              <div class="oecl">Workstation</div>
             </div>
           </div>
-          <div class="ctrst-note">The console as it sits on the machine. Orientation and contrast
-            are ELECTRONIC &mdash; the display turns and brightens, the beam does nothing. Field and
-            collimation are in the BEAM, and both of them change the dose. The five-minute alarm is
-            not a nuisance: it is the regulation, and the reset is the acknowledgement.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1286,12 +1362,6 @@
             <button class="orbtn" data-px="0,1" title="Shift the mask down">&#8595;</button>
             <button class="orbtn" data-px="1,0" title="Shift the mask right">&#8594;</button>
           </div></div>
-          <div class="ctrst-note">Arm DSA, inject (CONTRAST panel), and screen: the first frame
-            is the mask, and everything that has not changed vanishes &mdash; only the iodine
-            draws. Breathing wrecks the subtraction; BREATH HOLD is the rescue. The run's peak
-            opacification becomes the ROADMAP: live fluoro subtracted against it, the vessels
-            WHITE and anything new &mdash; the wire &mdash; black. Move the table or the C and it
-            no longer fits.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1312,11 +1382,6 @@
             <div><div class="k">Inserted</div><div class="v" id="flWireLenV">&mdash;</div></div>
             <div style="grid-column:span 3"><div class="k">Tip in</div><div class="v" id="flWireTipV">&mdash;</div></div>
           </div>
-          <div class="ctrst-note">A steel wire 0.89 mm across, imaged as what it is: the beam's own
-            attenuation through it, not a drawing. It follows the vessel tree the contrast solver
-            runs on; at a branch it goes where its angled tip points &mdash; torque the tip toward
-            the branch, then advance. Withdraw past a branch and the choice is undone. Make a
-            roadmap first (DSA, inject, screen) and steer on it.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1339,10 +1404,7 @@
             <div class="seg" style="margin-top:4px"><button data-frag="ant,1">Anterior</button><button data-frag="ant,-1">Posterior</button></div>
             <div class="seg" style="margin-top:4px"><button data-frag="rot,-1">&#8630; Int. rotate</button><button data-frag="rot,1">Ext. rotate &#8631;</button></div>
           </div>
-          <div class="ctrst-note" id="flAnkleResult">A displaced Weber B: the distal fibula broken
-            obliquely at the syndesmosis, short, shifted out and turned out. Screen, reduce, and
-            check: out to length and in line within 2 mm and 5&deg;. Length and rotation show on
-            the MORTISE, front-to-back on the LATERAL. Every second of beam is the patient's.</div>
+          <div class="ctrst-note" id="flAnkleResult"></div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1352,9 +1414,6 @@
             <button id="flRec">&#9679; Record runs</button>
           </div>
           <div class="cinelist" id="flCineList"></div>
-          <div class="ctrst-note">Armed, every pedal run is captured; DSA runs record
-            themselves, as the real suite does. Play a loop on the monitor, download it
-            as .webm.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1366,9 +1425,6 @@
             <div><div class="k">DAP</div><div class="v" id="flDapV">0.0 uGy&middot;m&sup2;</div></div>
             <div><div class="k">&nbsp;</div><button class="fldose-rst" id="flDoseReset">reset</button></div>
           </div>
-          <div class="ctrst-note">Beam-on time alarms at every five minutes, as the real
-            machine must. The iris shrinks DAP without touching air kerma &mdash; collimation
-            protects everything the beam no longer crosses.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1404,50 +1460,6 @@
             <div><div class="k">Patient skin</div><div class="v" id="flSkinV">0.00 mGy</div></div>
             <div title="Focal spot to the patient's skin on the central ray. A mobile C-arm must not bring the focus closer than 30 cm: the spacer cone is there to stop it"><div class="k">Source&ndash;skin</div><div class="v" id="flSsdV">&mdash;</div></div>
           </div>
-          <div class="ctrst-note">Scatter comes from where the beam enters the patient, strongest
-            back toward the tube. Tube under the table sends it at the floor; on a lateral, stand
-            on the detector side. Skin dose is at the real entrance: bring the patient toward the
-            tube and it climbs, whatever the reference-point air kerma says. Doses since the last
-            reset.</div>
-        </div>
-      </div>
-      <div class="grp fl-only">
-        <div class="lab">C-arm</div>
-        <div class="bod">
-          <div class="row"><div class="rl">Orbital <small>LAO / RAO</small></div>
-            <div class="valchip" id="flOrbV">0&deg;</div></div>
-          <input type="range" id="flOrb" min="-95" max="95" value="0" step="1">
-          <div class="row" style="margin-top:8px"><div class="rl">Tilt <small>cran / caud</small></div>
-            <div class="valchip" id="flTiltV">0&deg;</div></div>
-          <input type="range" id="flTilt" min="-45" max="45" value="0" step="1">
-          <div class="row" style="margin-top:8px"><div class="rl">Lift <small>column up / down</small></div>
-            <div class="valchip" id="flLiftV">0 cm</div></div>
-          <input type="range" id="flLift" min="0" max="30" value="0" step="1">
-          <div class="row" style="margin-top:8px"><div class="rl">Extend <small>boom in / out</small></div>
-            <div class="valchip" id="flExtV">0 cm</div></div>
-          <input type="range" id="flExt" min="-10" max="10" value="0" step="1">
-          <div class="row" style="margin-top:8px"><div class="rl">Wig-wag <small>boom swivel</small></div>
-            <div class="valchip" id="flWigV">0&deg;</div></div>
-          <input type="range" id="flWig" min="-10" max="10" value="0" step="1">
-          <div class="row" style="margin-top:10px"><div class="rl">Noise reduction <small>recursive filter</small></div></div>
-          <div class="seg" id="flNrSeg">
-            <button data-nr="0">Off</button><button data-nr="1">Low</button>
-            <button data-nr="2" class="on">Med</button><button data-nr="3">High</button>
-          </div>
-          <label class="cttoggle" style="margin-top:6px"><input type="checkbox" id="flEdge" checked>
-            <span>Edge enhancement</span></label>
-          <div class="ctrst-note">Each displayed frame averages the new pulse into the last ones:
-            the mottle falls for anything holding still, and anything moving smears &mdash; the lag
-            you see when you pan. High suits a still spine; Off shows what one pulse really is.</div>
-          <div class="flro" style="margin-top:10px">
-            <div><div class="k">Field</div><div class="v" id="flMagV">9&Prime;</div></div>
-            <div><div class="k">Iris</div><div class="v" id="flIrisV">100 %</div></div>
-            <div><div class="k">Shutters</div><div class="v" id="flShutV2">100 %</div></div>
-            <div><div class="k">Shut angle</div><div class="v" id="flShutRotV">0&deg;</div></div>
-          </div>
-          <div class="ctrst-note">SID is fixed at 99 cm on the OEC &mdash; the C moves, the
-            patient does not. Field, iris and shutters are set on the CONTROL PANEL above;
-            mag trades field for sharpness and pays in dose rate.</div>
         </div>
       </div>
       <div class="grp fl-only">
@@ -1461,10 +1473,6 @@
             <button id="flSwallow">&#10515; Swallow</button>
             <button id="flStill" title="Freeze every motion — heart, gut and all. A verification pose for judging a DSA subtraction against pure noise.">&#9724; Motion off</button>
           </div>
-          <div class="ctrst-note">The motion is derived from this subject's own segmentation
-            &mdash; the lungs give the diaphragm, the heart its beat, the oesophagus and
-            stomach their walls. Breath hold stops the dome mid-cycle (and will one day
-            rescue your DSA); everything else keeps its own clock.</div>
         </div>
       </div>
       <!-- ============ ULTRASOUND console (us-only) ============ -->
@@ -1926,10 +1934,8 @@
           <button class="fllock" id="flLiveLock" type="button" aria-pressed="false"
             title="Keep screening until pressed again. No real machine has this — the pedal is a dead-man switch for a reason.">&#128274; LIVE LOCK</button>
           <button class="fllock" id="flMonShow" type="button" title="Show the floating monitors">&#9635; MONITORS</button>
+          <button class="fllock" id="flImgDir" type="button" title="Image directory: every saved image, spot film and loop">&#9638; DIRECTORY</button>
         </div>
-        <div class="note" style="margin-top:8px; text-align:center">Press and hold (or hold
-          <b>Space</b>). Release for Last Image Hold. LIVE LOCK keeps the beam on until you
-          press it again &mdash; a toy, not a feature of any real machine.</div>
         <div class="note" id="flStatus" style="margin-top:6px; text-align:center">&mdash;</div>
       </div>
 
@@ -1989,7 +1995,7 @@
     <!-- the second screen: on a real cart it is the one you study while the live one waits -->
     <div class="scr2 fl-only" id="flScreen2">
       <div class="scr2hdr"><span id="flScr2Lab">REFERENCE</span>
-        <span class="scr2hint">WORKSTATION swaps &middot; MODE picks</span></div>
+        <span class="scr2hint">WORKSTATION swaps</span></div>
       <div class="scr2mon"><canvas id="film2" width="264" height="264"></canvas>
         <div class="scr2empty" id="flScr2Empty">NO REFERENCE</div></div>
     </div>
