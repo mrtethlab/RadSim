@@ -1006,7 +1006,8 @@ export const FLUORO_STEPS = [
     text: 'The screen genuinely updates at the rate you pick: 30 pps is smooth, 3 pps is a '
       + 'slideshow — and one quarter the dose rate at the same technique. Watch the beam-on '
       + 'clock and the dose rate as you switch. Dropping from 30 to 7.5 pps is the single '
-      + 'highest-yield habit this machine can teach.',
+      + 'highest-yield habit this machine can teach. (The <b>PULSE</b> key on the control panel '
+      + 'steps the same rates; its lamp is lit whenever the beam is pulsed, below the continuous 30.)',
     goal: {
       label: 'Change the pulse rate',
       arm: () => S().fluoro.pps,
@@ -1014,14 +1015,32 @@ export const FLUORO_STEPS = [
     },
   },
   {
-    sel: '.grp:has(#flAutoBtn)',
-    title: 'Automatic brightness control',
-    text: 'The ABC is fluoroscopy&rsquo;s AEC: a closed loop that re-meters kV and mA on '
-      + 'every pulse. Pan from lung to abdomen while screening and watch the readouts climb '
-      + 'the machine&rsquo;s fluoro curve — and the image contrast fall as the kV takes it. '
-      + '<b>Manual</b> hands you the sliders and the consequences.',
+    sel: 'label:has(#flFpd)',
+    title: 'Intensifier or flat panel',
+    text: 'The OEC 9800 carries a 9&Prime; image intensifier: a ROUND field in a black monitor, the '
+      + 'drum at the top of the C. Tick <b>Flat panel detector</b> and a square panel takes its place '
+      + '— watch the housing square off in the room — and the image fills the monitor edge to edge. '
+      + 'The iris now closes as a square, and the dose meter knows it: the same field size '
+      + 'irradiates 4/&pi; the area, so the DAP per pulse rises by a quarter at the same air kerma.',
     goal: {
-      label: 'Switch to Manual (and back, if you like)',
+      label: 'Change the detector (Space screens with it)',
+      arm: () => S().fluoro.fpd,
+      done: (a) => S().fluoro.fpd !== a,
+    },
+  },
+  {
+    sel: '.grp:has(#flAutoBtn)',
+    title: 'The control panel, and its ABC',
+    text: 'This is the OEC&rsquo;s own panel: the LCD reads kVp, the fluoro clock and mA, and a lamp '
+      + 'beside a key says it is on. The ABC is fluoroscopy&rsquo;s AEC: a closed loop that re-meters '
+      + 'kV and mA on every pulse. Pan from lung to abdomen while screening and watch the LCD climb '
+      + 'the machine&rsquo;s fluoro curve — and the image contrast fall as the kV takes it. Press '
+      + '<b>AUTO</b> in the GENERATOR group: its lamp goes out and the kVp and mA keys (and the '
+      + 'sliders) hand you the technique and the consequences. <b>LOW DOSE</b> halves the dose rate '
+      + 'and shows you the noise it costs; <b>FILM</b> takes one high-dose spot image straight to '
+      + 'the directory.',
+    goal: {
+      label: 'Press AUTO for manual technique (and back, if you like)',
       arm: () => S().fluoro.abc,
       done: (a) => S().fluoro.abc !== a,
     },
@@ -1042,11 +1061,14 @@ export const FLUORO_STEPS = [
   },
   {
     sel: '.grp:has(#flIrisOpen)',
-    title: 'Iris and magnification',
-    text: 'The iris is a circular collimator: close it and the DAP falls with the AREA — '
-      + 'the air kerma at the centre does not move, which is exactly the difference between '
-      + 'the two numbers on the dose meter. Mag modes trade field size for sharpness and '
-      + 'pay for it in dose rate, like every II ever built.',
+    title: 'Collimation and magnification',
+    text: 'COLLIMATION is two devices. The iris (the left pill: open above, close below) narrows the '
+      + 'whole field; the shutters (the right pill) bring two parallel leaves in from the sides, and '
+      + 'the top pill turns them, so the field closes onto a long thin structure without cutting it. '
+      + 'The leaves are drawn on the held image, so you can collimate WITHOUT screening. Close either '
+      + 'and the DAP falls with the AREA — the air kerma at the centre does not move, which is '
+      + 'exactly the difference between the two numbers on the dose meter. The mag selector (NORM, '
+      + 'MAG 1, MAG 2) trades field size for sharpness and pays for it in dose rate.',
     goal: {
       label: 'Close the iris below 100 %',
       done: () => S().fluoro.iris < 1.0,
@@ -1055,14 +1077,31 @@ export const FLUORO_STEPS = [
   {
     sel: '.grp:has(#flRotCW)',
     title: 'Electronic orientation',
-    text: 'The pad turns the DISPLAY, not the beam — rotate with a tap (hold for a large '
-      + 'adjustment) and a triangle appears inside the exposure circle of the held image, '
-      + 'marking where the top of the NEXT run will be. The flips mirror the image live. '
-      + 'This is how a real suite matches the monitor to the operator&rsquo;s view of the '
-      + 'patient.',
+    text: 'ORIENTATION turns the DISPLAY, not the beam — rotate with a tap (hold for a large '
+      + 'adjustment) and a triangle appears on the held image, marking where the top of the NEXT '
+      + 'run will be; the middle key resets the rotation. The round keys reverse the image left for '
+      + 'right and top for bottom, live, each with its lamp. CONTRAST is electronic too: the middle '
+      + 'key chooses brightness or contrast and the arrows set it — which takes the display off '
+      + '<b>AUTO</b> and holds its window, so a pan onto thicker anatomy goes darker until AUTO is '
+      + 'pressed again. This is how a real suite matches the monitor to the operator&rsquo;s view of '
+      + 'the patient.',
     goal: {
       label: 'Dial a rotation — watch the triangle',
       done: () => S().fluoro.pendRot !== 0 || S().fluoro.dispRot !== 0,
+    },
+  },
+  {
+    sel: '.oecg:has(#flWorkstation)',
+    title: 'Save, workstation, mode',
+    text: '<b>SAVE</b> files what is on the live monitor in the image directory (the DIRECTORY '
+      + 'button under the pedal opens it) and exposes nobody — a FILM is a new exposure, a save '
+      + 'is not. <b>WORKSTATION</b> swaps the two monitors: the held image goes to the reference '
+      + 'monitor and the reference comes to the live one, until the pedal takes the live monitor '
+      + 'back. <b>MODE</b> steps the imaging mode: fluoro, DSA, and roadmap once a DSA run has made '
+      + 'one; the LCD names it.',
+    goal: {
+      label: 'Swap the monitors',
+      done: () => !!$('flWorkstation')?.classList.contains('on'),
     },
   },
   {
@@ -1083,8 +1122,9 @@ export const FLUORO_STEPS = [
   {
     sel: '.grp:has(#flDsaSeg)',
     title: 'DSA — everything unchanged vanishes',
-    text: 'Arm DSA and screen: the start of the run takes a mask, and every following frame '
-      + 'shows only what CHANGED — which should be nothing but iodine. Open the CONTRAST '
+    text: 'Arm DSA (here, or with MODE on the control panel) and screen: the start of the run '
+      + 'takes a mask, and every following frame shows only what CHANGED — which should be '
+      + 'nothing but iodine. Open the CONTRAST '
       + 'panel on the left edge, start an injection, and the vessels draw themselves. '
       + 'Breathing wrecks the subtraction (that is the lesson); breath-hold rescues it; '
       + 'pixel-shift nudges the mask; the run&rsquo;s peak opacification becomes a ROADMAP: '

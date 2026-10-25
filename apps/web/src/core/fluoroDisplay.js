@@ -46,8 +46,11 @@ export function boxBlurSq(a, n, r, row = new Float32Array(n)) {
 }
 
 /* img: transmission (>= 0 in the field, < 0 outside). out: receives 0..1, or -1 outside.
-   harmonise: fraction of the log background lifted out (0 = plain log display). */
-export function displayMap(img, n, out, { harmonise = 0.6, scratch = null } = {}) {
+   harmonise: fraction of the log background lifted out (0 = plain log display).
+   win: [lo, hi] holds the window instead of fitting it to this frame — the console's CONTRAST
+   AUTO switched off: the display stops following the anatomy, so a pan onto thicker tissue goes
+   darker, as it does on the machine. The window fitted (or held) is left in scratch.win. */
+export function displayMap(img, n, out, { harmonise = 0.6, scratch = null, win = null } = {}) {
   const N = n * n;
   const L = scratch?.L && scratch.L.length === N ? scratch.L : new Float32Array(N);
   const B = scratch?.B && scratch.B.length === N ? scratch.B : new Float32Array(N);
@@ -69,9 +72,14 @@ export function displayMap(img, n, out, { harmonise = 0.6, scratch = null } = {}
     const i = k % n, j = (k / n) | 0;
     if (i >= c0 && i < c1 && j >= c0 && j < c1) vals.push(h);
   }
-  if (!vals.length) return out;
-  vals.sort((a, b) => a - b);
-  const lo = vals[Math.floor(vals.length * 0.01)], hi = vals[Math.floor(vals.length * 0.99)];
+  let lo, hi;
+  if (win) [lo, hi] = win;
+  else {
+    if (!vals.length) return out;
+    vals.sort((a, b) => a - b);
+    lo = vals[Math.floor(vals.length * 0.01)]; hi = vals[Math.floor(vals.length * 0.99)];
+  }
+  if (scratch) scratch.win = [lo, hi];
   const span = hi - lo || 1;
   for (let k = 0; k < N; k++) if (out[k] !== -1) { const v = (out[k] - lo) / span; out[k] = v < 0 ? 0 : v > 1 ? 1 : v; }
   return out;
@@ -128,4 +136,19 @@ export function edgeEnhance(lum, n, amount, tmp = null) {
     lum[k] = v < 0 ? 0 : v > 1 ? 1 : v;
   }
   return lum;
+}
+
+/* WORKSTATION, the OEC's image swap between its two monitors. st: { held, ref, from } — held is
+   the still the LIVE monitor shows in place of the live image (undefined: the live image itself;
+   null: a swap brought over an empty reference, so black), ref the reference monitor's still,
+   from the snapshot of the live image the first swap sent across. snap() takes that snapshot,
+   and is called only on the first press. A second press changes them back, and once the live
+   image would come back to the live monitor it is the live image again, not a copy of it. */
+export function wsSwap(st, snap) {
+  if (st.held === undefined) {
+    const from = snap();
+    return { held: st.ref ?? null, ref: from, from };
+  }
+  const held = st.ref ?? null, ref = st.held;
+  return held === st.from ? { held: undefined, ref, from: null } : { held, ref, from: st.from };
 }

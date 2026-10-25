@@ -8,11 +8,11 @@
    readout Phase A exists to measure.
    ============================================================================ */
 import { dockConsole } from './core/paneDock.js';
-import { buildCarm, buildTower, CARM } from './carm.js';
+import { buildCarm, buildTower, setReceptor, CARM } from './carm.js';
 import { carmBeam } from './core/carmPose.js';
 import { ownsSpace } from './core/keys.js';
-import { irisShutterArea } from './core/fieldArea.js';
-import { NR_K, recursiveStep, displayMap, edgeEnhance, roadmapSubtract } from './core/fluoroDisplay.js';
+import { fieldArea } from './core/fieldArea.js';
+import { NR_K, recursiveStep, displayMap, edgeEnhance, roadmapSubtract, wsSwap } from './core/fluoroDisplay.js';
 import { rightOnScreen } from './core/orientation.js';
 import { staffPulse, staffEffective, skinEntranceMGy } from './core/staffDose.js';
 import { akPerPulse, maCeiling } from './core/fluoroRate.js';
@@ -223,6 +223,7 @@ function ensureWorker() {
   giVolSent = false; sVolSent = false;       // the fresh pool has no arclength maps yet
   fragSent = false;                          // nor a fracture
   workerPose = ''; workerOff = null;         // and holds the patient as scanned
+  filmBusy = false;                          // a spot film in the old pool never comes back
   const pose = ctx.phantomPose();
   for (let i = 0; i < poolSize(); i++) {
     const w = new Worker(new URL('./fluoro-worker.js', import.meta.url), { type: 'module' });
@@ -248,6 +249,7 @@ function ensureWorker() {
           drawFrame(m.img, Math.sqrt(m.img.length) | 0, !!m.film);
           if (m.film) saveToDirectory('film');
         }
+        if (m.film) { filmBusy = false; syncLeds(); }   // the FILM lamp: lit while its frame is out
         renderReadouts();
       }
     };
@@ -392,6 +394,12 @@ function fieldCm() { return [23, 15, 11][F.mag] || 23; }
 function irisCm() { return (fieldCm() / 2) * F.iris; }
 // the shutter pair's half-separation, in the same detector-plane centimetres as the iris
 function shutCm() { return (fieldCm() / 2) * F.shut; }
+/* The FLAT PANEL keeps the intensifier's field sizes — its side is the II's diameter, and the
+   mag modes zoom it by the same steps — so the ABC, the rate ceiling and the dose-rate scaling
+   are the machine's either way. What changes is the SHAPE: the whole square is detector, the
+   iris closes as a square, and the DAP takes the square's area (fieldArea). Its fields are
+   named in centimetres, as panels are, not in inches. */
+const magLabel = () => (F.fpd ? `${fieldCm()} cm` : ['9"', '6"', '4.5"'][F.mag]);
 // DSA acquisition runs at far higher detector dose per frame than screening fluoro —
 // that is what makes subtraction quiet enough to read (sd(lnT) drops from ~0.21 between
 // two fluoro frames to ~0.05), and it is why a DSA run costs what it costs on the meter.
@@ -405,10 +413,11 @@ function akPerPulseMGy(film = false) {
 function dosePulse(film = false) {
   const ak = akPerPulseMGy(film);
   F.akMGy += ak;
-  // field area at the patient entrance (~0.6 of the detector plane), in m^2: the iris circle
-  // as the shutters cut it (core/fieldArea.js) — the shutters cut DAP as they cut the image
+  // field area at the patient entrance (~0.6 of the detector plane), in m^2: the iris (a circle,
+  // or the flat panel's square) as the shutters cut it (core/fieldArea.js) — the shutters cut DAP
+  // as they cut the image, and the panel's square field is 4/pi the intensifier's circle
   const k = 0.6 / 100;
-  const dap = ak * 1000 * irisShutterArea(irisCm() * k, shutCm() * k);
+  const dap = ak * 1000 * fieldArea(!!F.fpd, irisCm() * k, shutCm() * k, F.shutRot * Math.PI / 180);
   F.dapUGym2 += dap;
   // the patient's skin at the real entrance, and the scatter that reaches the operator from it
   const e = entranceNow();
@@ -465,12 +474,17 @@ function operatorDist() {
 /* The 5-minute alarm every real machine mandates: three beeps and a flashing timer at
    each multiple, acknowledged by the dose-reset button (between-patient reset). */
 let alarmAt = 300;
+// the alarm as the console shows it: both beam-on clocks flash, ALARM RESET blinks with its lamp lit
+function alarmShow() {
+  for (const id of ['flBeamV', 'flLcdClock']) $(id)?.classList.toggle('alarm', !!F.alarm);
+  $('flAlarmReset')?.classList.toggle('armed', !!F.alarm);
+  syncLeds();
+}
 function doseAlarm(beamS) {
   if (beamS < alarmAt) return;
   alarmAt += 300;
   F.alarm = true;
-  ctx.$('flAlarmReset')?.classList.add('armed');
-  ctx.$('flBeamV')?.classList.add('alarm');
+  alarmShow();
   try {
     const ac = new (window.AudioContext || window.webkitAudioContext)();
     for (let i = 0; i < 3; i++) {
@@ -554,6 +568,7 @@ function firePulse(opts) {
   workers[slot].postMessage({ type: 'pulse', id: ++pulseId, kv: F.kv,
     photons: photonsPerPulse(film) * (dsaOn ? DSA_BOOST : 1),
     src: g.src, detC: g.detC, detU: g.detU, detV: g.detV, half: fieldCm() / 2, iris: irisCm(), shut: shutCm(), shutRot: F.shutRot * Math.PI / 180,
+    fpd: !!F.fpd,
     n: dsaOn ? dsaN : nPx(), rot: pose.rot, center: pose.center, anim: animTick(),
     ba: bp ? bp.ba : null, gas: bp ? bp.gas : null, giNS: bp ? bp.ns : 0,
     iod: cp ? cp.iod : null, svNS: cp ? cp.ns : 0,
@@ -657,7 +672,9 @@ function drawFrame(img, n, isFilm = false) {
     }
   } else {
     img = recursiveFilter(img, n, isFilm);
-    displayMap(img, n, lum, { scratch: dispScratch });
+    // CONTRAST AUTO fits the window to every frame; off, the window it last fitted is HELD
+    displayMap(img, n, lum, { scratch: dispScratch, win: F.winAuto ? null : (F.win || dispScratch.win || null) });
+    if (!F.winAuto && !F.win) F.win = dispScratch.win;
     // the roadmap: live fluoro subtracted against the DSA run's map (core/fluoroDisplay.js) —
     // the vessels white, the wire black. The first version laid the map over the live image as
     // a darkening, which drew the vessels black: exactly the colour of the wire inside them.
@@ -680,17 +697,20 @@ function blitFilm() {
   syncScreens();                     // which monitor is live is the WORKSTATION button's
   // the monitor's own corner stamps — otherwise the last mode's are still sitting there
   const tl = $('fnTL'); if (tl) tl.textContent = `FLUORO ${F.pps} pps` + (F.lowDose ? ' · LOW' : '');
-  const br = $('fnBR'); if (br) br.textContent = `${F.kv} kV · ${F.ma.toFixed(1)} mA · ${['9"', '6"', '4.5"'][F.mag]}`;
+  const br = $('fnBR'); if (br) br.textContent = `${F.kv} kV · ${F.ma.toFixed(1)} mA · ${magLabel()}`;
   $('noexp')?.style.setProperty('display', 'none');
   // the bay's Image view mirrors the fluoro monitor live (instead of the last x-ray)
   if (ctx.S.bayContent === 'image' && ctx.S.mode === 'fluoro') fluoroImageToBay();
 }
 /* Render the current frame (with orientation) into any canvas — the monitor and the
    bay's big Image view share this one pipeline. */
+/* How big the frame is drawn on a screen w x h: the intensifier's circle sits in a black margin,
+   the flat panel's square runs edge to edge — the whole screen's height (or width), no margin. */
+const frameSide = (w, h) => Math.min(w, h) - (F.fpd ? 0 : 10);
 function renderTo(cv) {
   const g2 = cv.getContext('2d');
   g2.fillStyle = '#000'; g2.fillRect(0, 0, cv.width, cv.height);
-  const s = Math.min(cv.width, cv.height) - 10;
+  const s = frameSide(cv.width, cv.height);
   const cx = cv.width / 2, cy = cv.height / 2;
   g2.imageSmoothingEnabled = true;
   g2.save();
@@ -788,13 +808,15 @@ if (typeof window !== 'undefined') window.radsimFluoroSide = fluoroRightOnScreen
    screen — which is what the second monitor is for. */
 const FILM_BOOST = 12;
 const DIR_MAX = 24;
-let refImg = null, refImgEl = null;
+let refImg = null;
+let filmBusy = false;                  // a spot film is out (the FILM lamp)
 
 function filmShot() {
   if (ctx.S.mode !== 'fluoro') return;
   if (readyCount !== workers.length || !workers.length) { ensureWorker(); setStatus('Warming up the workers…'); return; }
   // one pulse, boosted, outside the pedal's clock — or none, said plainly, if the pool is busy
   if (!firePulse({ film: true })) setStatus('Every worker is busy with a pulse — FILM not taken; press it again.');
+  else { filmBusy = true; syncLeds(); }
 }
 function saveToDirectory(kind) {
   if (!frameCanvas || !frameCanvas.width) { setStatus('Nothing on the monitor to save.'); return; }
@@ -803,12 +825,13 @@ function saveToDirectory(kind) {
   c.width = 256; c.height = 256;
   renderTo(c);
   F.saved.unshift({ url: c.toDataURL('image/jpeg', 0.72), kind: k,
-    meta: `${F.kv.toFixed(0)}kV ${F.ma.toFixed(1)}mA ${['9"', '6"', '4.5"'][F.mag]}`,
+    meta: `${F.kv.toFixed(0)}kV ${F.ma.toFixed(1)}mA ${magLabel()}`,
     t: Math.round(F.beamS) });
   if (F.saved.length > DIR_MAX) F.saved.length = DIR_MAX;
   if (!refImg) refImg = F.saved[0].url;   // the first save fills the empty reference screen
   renderDirectory();
   syncScreens();
+  flashLed('flSave');
   setStatus(k === 'film' ? `Spot image filed (${F.saved.length} in the directory).`
                          : `Saved (${F.saved.length} in the directory).`);
 }
@@ -824,7 +847,7 @@ function renderDirectory() {
       + `<div class="cap">${it.meta}</div>`;
     d.addEventListener('click', () => {
       if (it.clip) { openDirectory(false); cinePlay(it.clip, null); return; }   // a run plays
-      refImg = it.url; F.ws2 = 'ref';
+      refImg = it.url;
       renderDirectory(); syncScreens();
       setStatus('On the reference screen.');
     });
@@ -840,57 +863,76 @@ function openDirectory(on) {
 }
 
 /* ---- the two screens --------------------------------------------------------
-   One live, one to study. WORKSTATION swaps which is which, exactly as it does on the
-   cart: the image you want to look at takes the big monitor and the live one steps
-   down, without anything stopping. MODE chooses what the second screen holds — the
-   saved reference, or a second copy of the live image. */
-function drawRefInto(cv) {
+   One live, one to study. WORKSTATION is the OEC's image swap (core/fluoroDisplay.js wsSwap):
+   the image on the live monitor goes to the reference monitor and the reference comes over to
+   the live one, held there until the pedal goes down — live screening always takes the live
+   monitor back. Press it again and they change back. */
+let swap = { held: undefined, ref: null, from: null };   // held: what the live monitor shows instead
+const imgCache = new Map();                              // decoded stills, by url
+function stillImg(url) {
+  let im = imgCache.get(url);
+  if (!im) {
+    im = new Image();
+    im.onload = () => syncScreens();             // repaint once it has decoded
+    im.src = url;
+    imgCache.set(url, im);
+    if (imgCache.size > DIR_MAX + 4) imgCache.delete(imgCache.keys().next().value);
+  }
+  return im;
+}
+// a still (the reference, by default) into a screen; whether there was one to draw
+function drawRefInto(cv, url = refImg) {
   const g = cv.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, cv.width, cv.height);
-  if (!refImg) return false;
-  if (!refImgEl || refImgEl.dataset_src !== refImg) {
-    refImgEl = new Image();
-    refImgEl.dataset_src = refImg;
-    refImgEl.onload = () => syncScreens();      // repaint once it has decoded
-    refImgEl.src = refImg;
-  }
-  if (refImgEl.complete && refImgEl.naturalWidth) {
+  if (!url) return false;
+  const im = stillImg(url);
+  if (im.complete && im.naturalWidth) {
     const s = Math.min(cv.width, cv.height);
-    g.drawImage(refImgEl, (cv.width - s) / 2, (cv.height - s) / 2, s, s);
+    g.drawImage(im, (cv.width - s) / 2, (cv.height - s) / 2, s, s);
   }
   return true;
+}
+const swapped = () => swap.held !== undefined;
+// the live monitor: the live image, or the still WORKSTATION brought over (black if there was none)
+function drawLiveInto(cv, haveLive) {
+  if (swapped()) { drawRefInto(cv, swap.held); return true; }
+  if (haveLive) renderTo(cv);
+  return haveLive;
+}
+function workstation() {
+  const haveLive = !!(frameCanvas && frameCanvas.width);
+  if (!swapped() && !haveLive) { setStatus('Nothing on the live monitor to swap.'); return; }
+  swap = wsSwap({ ...swap, ref: refImg }, () => {
+    const c = document.createElement('canvas');
+    c.width = 512; c.height = 512;
+    renderTo(c);
+    return c.toDataURL('image/jpeg', 0.85);
+  });
+  refImg = swap.ref;
+  renderDirectory(); syncScreens(); syncLeds();
+  setStatus(swapped() ? 'Swapped: the live image is on the reference monitor.' : 'Swapped back.');
 }
 function syncScreens() {
   const film = $('film'), c2 = $('film2');
   if (!film) return;
-  const liveOnMain = !F.ws;
   const haveLive = !!(frameCanvas && frameCanvas.width);
-  if (liveOnMain) { if (haveLive) renderTo(film); } else drawRefInto(film);
-  if (!c2) return;
-  let has;
-  if (!liveOnMain) { has = haveLive; if (has) renderTo(c2); else drawRefInto(c2); }
-  else if (F.ws2 === 'live') { has = haveLive; if (has) renderTo(c2); }
-  else has = drawRefInto(c2);
-  $('flScr2Empty')?.classList.toggle('hide', !!has);
-  const lab = $('flScr2Lab');
-  if (lab) lab.textContent = liveOnMain ? (F.ws2 === 'live' ? 'LIVE (COPY)' : 'REFERENCE') : 'LIVE';
-  film.parentElement?.classList.toggle('refonmain', !liveOnMain);
+  drawLiveInto(film, haveLive);
+  if (c2) $('flScr2Empty')?.classList.toggle('hide', drawRefInto(c2));
+  film.parentElement?.classList.toggle('refonmain', swapped());
   syncMonitor(haveLive);
-  syncTower(liveOnMain, haveLive);
+  syncTower(haveLive);
 }
-/* The monitor cart's two screens in the room: the big one shows what the console's main screen
-   does (live, or the reference when WORKSTATION swaps them), the other the second screen. A
-   status bar under each, as on the cart: what the screen holds, the technique, the beam. */
-function syncTower(liveOnMain, haveLive) {
+/* The monitor cart's two screens in the room: the live monitor and the reference, as the console's
+   two screens show them. A status bar under each, as on the cart: what the screen holds, the
+   technique, the beam. */
+function syncTower(haveLive) {
   if (!tower || !ctx || ctx.S.mode !== 'fluoro') return;
-  const paint = (scr, live, label) => {
+  const paint = (scr, draw, live, label) => {
     const cv = scr.canvas, g = cv.getContext('2d'), W = cv.width, H = cv.height, bar = 34;
     g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
-    const img = { width: W, height: H - bar };
     const tmp = paint.tmp || (paint.tmp = document.createElement('canvas'));
-    tmp.width = img.width; tmp.height = img.height;
-    const shown = live ? (haveLive && (renderTo(tmp), true)) : drawRefInto(tmp);
-    if (shown) g.drawImage(tmp, 0, 0);
+    tmp.width = W; tmp.height = H - bar;
+    if (draw(tmp)) g.drawImage(tmp, 0, 0);
     g.fillStyle = '#0d1a26'; g.fillRect(0, H - bar, W, bar);
     g.font = 'bold 20px monospace'; g.textBaseline = 'middle';
     g.fillStyle = live && F.pedal ? '#ffcf3a' : '#7fd1ff';
@@ -901,8 +943,8 @@ function syncTower(liveOnMain, haveLive) {
     if (live && F.pedal) { g.fillStyle = '#ffcf3a'; g.beginPath(); g.arc(W - 22, 22, 9, 0, 2 * Math.PI); g.fill(); }
     scr.texture.needsUpdate = true;
   };
-  paint(tower.live, liveOnMain, liveOnMain ? 'LIVE' : 'REFERENCE');
-  paint(tower.ref, !liveOnMain || F.ws2 === 'live', !liveOnMain ? 'LIVE' : (F.ws2 === 'live' ? 'LIVE (COPY)' : 'REFERENCE'));
+  paint(tower.live, (cv) => drawLiveInto(cv, haveLive), true, swapped() ? 'LIVE · SWAP' : 'LIVE');
+  paint(tower.ref, (cv) => drawRefInto(cv), false, 'REFERENCE');
 }
 
 /* ---- the floating monitors -------------------------------------------------
@@ -921,8 +963,9 @@ function syncMonitor(haveLive) {
   const live = $('flMonLive'), ref = $('flMonRef');
   if (live) {
     fitCanvas(live);
-    if (haveLive) renderTo(live); else live.getContext('2d').clearRect(0, 0, live.width, live.height);
+    if (!drawLiveInto(live, haveLive)) live.getContext('2d').clearRect(0, 0, live.width, live.height);
   }
+  const lab = $('flMonLiveLab'); if (lab) lab.textContent = swapped() ? 'LIVE · SWAP' : 'LIVE';
   if (ref) { fitCanvas(ref); $('flMonRefEmpty')?.classList.toggle('hide', drawRefInto(ref)); }
   mon.classList.toggle('beam', !!F.pedal);
   mon.classList.toggle('locked', !!F.lock);
@@ -939,7 +982,7 @@ function screenToPatient(dxPx, dyPx, cv) {
   if (F.flipH) x = -x;
   if (F.flipV) y = -y;
   const d = Math.min(2, window.devicePixelRatio || 1);
-  const sPx = (Math.min(cv.width, cv.height) - 10) / d;          // the frame's size on screen
+  const sPx = frameSide(cv.width, cv.height) / d;                // the frame's size on screen
   const cmPerPx = fieldCm() / sPx / (OEC.SID / OEC.SRC_ISO);
   const { detU, detV } = beamFrame();
   // image columns run along +u, rows along +v (row 0 is -v, at the top)
@@ -962,6 +1005,23 @@ function nudgeCarm(key, d, id, lo, hi) {
   const el = $(id); if (el) el.value = F[key];
   fluoroSyncScene(); renderReadouts();
 }
+/* MONITORS ON, ONE COPY. With the floating monitors up, the viewer docked over the pedal was a
+   second live screen and a second reference showing the same two images, so it stands down
+   (styles.css, body.flmon-on) and what lived over its screen comes with the images: the LIH and
+   REC badges and loop playback onto the live monitor, the image directory over both. Monitors
+   off, they go back, and the docked viewer is the screen again. A phone keeps its own layout
+   (its Image page is the viewer). */
+const OVER_LIVE = ['lihBadge', 'recBadge', 'flCineView', 'flCineClose'];
+function placeOverlays(active = ctx.S.mode === 'fluoro') {
+  const mon = $('flMon');
+  const on = !!mon && !mon.classList.contains('off') && active && !document.body.classList.contains('mobile');
+  document.body.classList.toggle('flmon-on', on);
+  const home = $('film')?.parentElement, live = $('flMonLive')?.parentElement, both = mon?.querySelector('.flmon-body');
+  if (!home || !live || !both) return;
+  for (const id of OVER_LIVE) { const el = $(id), to = on ? live : home; if (el && el.parentElement !== to) to.appendChild(el); }
+  const dir = $('flImgDirPane'), to = on ? both : home;
+  if (dir && dir.parentElement !== to) to.appendChild(dir);
+}
 const MON_KEY = 'radsim.flmon';
 function wireMonitor() {
   const mon = $('flMon'), bar = $('flMonBar'), live = $('flMonLive');
@@ -980,7 +1040,7 @@ function wireMonitor() {
         w: mon.style.width, h: mon.style.height, l: mon.style.left || null, t: mon.style.top || null }));
     } catch (_) { /* fine without it */ }
   };
-  const show = (on) => { mon.classList.toggle('off', !on); $('flMonShow')?.classList.toggle('on', on); save(); syncScreens(); };
+  const show = (on) => { mon.classList.toggle('off', !on); $('flMonShow')?.classList.toggle('on', on); save(); placeOverlays(); syncScreens(); };
   $('flMonHide')?.addEventListener('click', () => show(false));
   $('flMonShow')?.addEventListener('click', () => show(mon.classList.contains('off')));
   $('flMonShow')?.classList.toggle('on', !mon.classList.contains('off'));
@@ -1042,7 +1102,7 @@ function arrowKeys(e) {
   const live = mon && !mon.classList.contains('off') ? $('flMonLive') : $('film');
   if (!live) return;
   const d = Math.min(2, window.devicePixelRatio || 1);
-  const sPx = (Math.min(live.width, live.height) - 10) / d;
+  const sPx = frameSide(live.width, live.height) / d;
   const px = sPx / fieldCm() * (OEC.SID / OEC.SRC_ISO);          // display px per cm of table
   const [dx, dz, dy] = screenToPatient(dir[0] * px, dir[1] * px, live);
   floatPatient(dx, dz, dy);
@@ -1082,6 +1142,8 @@ function pedalDown() {
   // fold the pending orientation into the display: the marked direction becomes top,
   // and the first frame of this run erases the triangle
   if (pendShown) { F.dispRot = (F.dispRot + F.pendRot) % 360; F.pendRot = 0; pendShown = false; }
+  // live screening takes the live monitor back from a WORKSTATION swap (the reference keeps its still)
+  if (swapped()) { swap = { held: undefined, ref: refImg, from: null }; syncLeds(); }
   $('flPedal')?.classList.add('on');
   $('lihBadge')?.classList.remove('show');
   cineStop();                                  // live screening takes the monitor back
@@ -1124,6 +1186,11 @@ function renderReadouts() {
   set('flKvV', F.kv + ' kV');
   set('flMaV', F.ma.toFixed(1) + ' mA');
   set('flBeamV', `${String(Math.floor(beam / 60)).padStart(2, '0')}:${String(Math.floor(beam % 60)).padStart(2, '0')}`);
+  // the control panel's LCD: kVp, the mode over its fluoro clock, and mA
+  set('flLcdKv', String(F.kv));
+  set('flLcdMa', F.ma.toFixed(1));
+  set('flLcdClock', $('flBeamV')?.textContent || '');
+  set('flLcdMode', dsaOn ? 'DSA' : roadOn ? 'ROADMAP' : 'FLUORO');
   set('flPerfV', F.msAvg ? `${F.msAvg.toFixed(0)} ms · ${F.dropped} dropped` : '—');
   set('flOrbV', F.orbital + '°');
   set('flTiltV', F.tilt + '°');
@@ -1152,16 +1219,34 @@ function renderReadouts() {
     }
   }
   set('flIrisV', Math.round(F.iris * 100) + ' %');
-  set('flIrisV2', Math.round(F.iris * 100) + '%');
-  set('flShutV', Math.round(F.shut * 100) + '%');
   set('flShutV2', Math.round(F.shut * 100) + ' %');
   set('flShutRotV', F.shutRot + '°');
-  set('flMagV', ['9"', '6"', '4.5"'][F.mag]);
+  set('flMagV', magLabel());
   const kvS = $('flKv'), maS = $('flMa');
   if (F.abc) { if (kvS) kvS.value = F.kv; if (maS) maS.value = F.ma; }
   doseAlarm(beam);
 }
 function setStatus(msg) { const el = $('flStatus'); if (el) el.textContent = msg; }
+/* The control panel's lamps: an LED beside every key that has a state (the mag selector's three
+   are its own, on the NORM / MAG 1 / MAG 2 labels). */
+function led(id, on) {
+  const b = $(id); if (!b) return;
+  b.classList.toggle('on', !!on);
+  b.closest('.ledw')?.querySelector('.led')?.classList.toggle('lit', !!on);
+}
+function syncLeds() {
+  if (!ctx) return;
+  led('flFlipH', F.flipH); led('flFlipV', F.flipV);
+  led('flWinAuto', F.winAuto); led('flAutoBtn', F.abc);
+  led('flPulseBtn', F.pps < 30); led('flFilm', filmBusy); led('flLowDose', F.lowDose);
+  led('flAlarmReset', F.alarm); led('flWorkstation', swapped()); led('flModeBtn', dsaOn || roadOn);
+  document.querySelectorAll('.oeclamp').forEach((l) => l.classList.toggle('on', +l.dataset.mag === F.mag));
+}
+// a lamp that only acknowledges (SAVE): lit for a moment
+function flashLed(id) {
+  const l = $(id)?.closest('.ledw')?.querySelector('.led'); if (!l) return;
+  l.classList.add('lit'); setTimeout(() => l.classList.remove('lit'), 500);
+}
 
 /* ---- the rig ------------------------------------------------------------- */
 function buildStretcher(THREE) {
@@ -1339,9 +1424,8 @@ function ankleStart() {
   ankleView('ap');
   $('flAnkleCheck')?.removeAttribute('disabled');
   const r = $('flAnkleResult');
-  if (r) r.innerHTML = 'Case on. The distal fibula is broken at the syndesmosis &mdash; short, shifted out and '
-    + `turned out. Screen the AP, the MORTISE (${ankle.mortise}&deg; toward lateral here) and the LATERAL, `
-    + 'reduce with the forceps, and CHECK. The leg is on a bump so the lateral meets it at the isocentre.';
+  // (the result line; what the case is and how to work it is the tutorial's to say)
+  if (r) r.innerHTML = `Case on &middot; mortise ${ankle.mortise}&deg; toward lateral.`;
   setStatus('Ankle ORIF — screen to see the fracture.');
 }
 /* The ankle at the isocentre: the table floated under it, and the leg raised on a radiolucent
@@ -1398,8 +1482,7 @@ function ankleCheck() {
     + ` (check ${ankle.checks}; limits ${LIMITS.mm} mm, ${LIMITS.deg}&deg;)<br>`
     + `${ok(r.lengthOK)} Length: ${len}<br>${ok(r.transOK)} Translation: ${tr}<br>${ok(r.rotOK)} Rotation: ${rot}<br>`
     + `Screening for this case: ${t < 60 ? t.toFixed(1) + " s" : mmss(t)} &middot; ${pulses} pulses &middot; ${ak.toFixed(2)} mGy &middot; ${dap.toFixed(1)} uGy&middot;m&sup2;`
-    + (tips.length ? '<br>' + tips.join('; ') + '.' : '')
-    + '<br>The beam time is the patient\'s: check on LAST IMAGE HOLD and a low pulse rate, screen only to see a change.';
+    + (tips.length ? '<br>' + tips.join('; ') + '.' : '');
   setStatus(r.ok ? 'Reduction accepted.' : 'Not yet — see the check.');
 }
 function ankleEnd() {
@@ -1503,6 +1586,7 @@ export function fluoroApplyMode(on) {
   // Desktop layout: the monitor moves one pane left and the pedal follows it — see
   // core/paneDock.js, which ultrasound shares.
   dockConsole(on, $('flPedalRow'));
+  placeOverlays(on);
   if (on) {
     ensureWorker();
     renderReadouts();
@@ -1521,6 +1605,9 @@ export function fluoroApplyMode(on) {
 export function initFluoro(context) {
   ctx = context;
   F = ctx.S.fluoro;
+  // the panel's own state: the receptor (the 9" intensifier unless the flat panel is ticked), and
+  // CONTRAST — AUTO windowing, which of brightness / contrast the arrows set, the held window
+  F.fpd = !!F.fpd; F.winAuto = F.winAuto ?? true; F.winSel = F.winSel || 'bright'; F.win = null;
   buildRig();
   const ped = $('flPedal');
   if (ped) {
@@ -1560,6 +1647,7 @@ export function initFluoro(context) {
       document.querySelectorAll('#flPpsSeg button').forEach((x) => x.classList.toggle('on', x === b));
       if (F.pedal) { clearInterval(timer); timer = setInterval(firePulse, 1000 / F.pps); }
       renderReadouts();          // the dose RATE depends on pps even while the beam is off
+      syncLeds();                // (PULSE's lamp: lit below the continuous 30)
     });
   });
   const slide = (id, key) => {
@@ -1573,27 +1661,29 @@ export function initFluoro(context) {
   slide('flKv', 'kv'); slide('flMa', 'ma'); slide('flOrb', 'orbital'); slide('flTilt', 'tilt');
   slide('flLift', 'lift'); slide('flExt', 'ext'); slide('flWig', 'wig');
   // ================= THE CONTROL PANEL =================
-  // Everything on the machine's own console. The rule the panel is arranged around, and
-  // the one the note under it states: ORIENTATION and CONTRAST are electronic — the
-  // display turns and brightens and the beam does nothing — while FIELD and COLLIMATION
-  // are in the beam, and both of them change the patient's dose.
+  // The OEC 9800's own membrane panel, key for key. The rule it is arranged around: ORIENTATION
+  // and CONTRAST are electronic — the display turns and brightens and the beam does nothing —
+  // while the mag selector, COLLIMATION and the GENERATOR are in the beam, and change the dose.
   const panelSync = () => {
-    document.querySelectorAll('.oeclamp').forEach((l) => l.classList.toggle('on', +l.dataset.mag === F.mag));
-    $('flInvert')?.classList.toggle('on', F.invert);
-    $('flLowDose')?.classList.toggle('on', F.lowDose);
-    $('flAutoBtn')?.classList.toggle('on', F.abc);
-    $('flWorkstation')?.classList.toggle('on', F.ws);
-    $('flAlarmReset')?.classList.toggle('armed', F.alarm);
+    syncLeds();
     const kvEl = $('flKv'), maEl = $('flMa');
     if (kvEl) kvEl.disabled = F.abc;
     if (maEl) maEl.disabled = F.abc;
     renderReadouts();
   };
-  // ---- ORIENTATION: invert joins rotate and the flips (all display-side) ----
-  // redrawLast, not blitFilm: the invert lives in the grey mapping, so the frame has to be
-  // re-mapped from the stored luminance, not merely blitted again
-  $('flInvert')?.addEventListener('click', () => { F.invert = !F.invert; panelSync(); redrawLast(); });
-  // ---- FIELD: 9" / 6" / 4.5", and the lamps say which ----
+  // ---- the receptor: the 9" intensifier, or a flat panel in its place ----
+  $('flFpd')?.addEventListener('change', (e) => {
+    F.fpd = e.target.checked;
+    setReceptor(carm, F.fpd);
+    recFresh = true;                              // a new detector starts its average afresh
+    panelSync();
+    setStatus(F.fpd ? 'Flat panel: a square field, edge to edge on the monitor.' : 'Image intensifier: the round 9" field.');
+  });
+  // the grey scale, inverted (with the display processing, beside noise reduction): redrawLast,
+  // not blitFilm — the invert lives in the grey mapping, so the frame is re-mapped from the
+  // stored luminance, not merely blitted again
+  $('flInvert')?.addEventListener('change', (e) => { F.invert = e.target.checked; redrawLast(); });
+  // ---- the mag selector: NORM / MAG 1 / MAG 2, the lamps say which; the key steps it ----
   $('flMagCycle')?.addEventListener('click', () => { F.mag = (F.mag + 1) % 3; panelSync(); });
   document.querySelectorAll('.oeclamp').forEach((l) => {
     l.addEventListener('click', () => { F.mag = +l.dataset.mag; panelSync(); });
@@ -1627,34 +1717,47 @@ export function initFluoro(context) {
   wireHold('flShutClose', shut(-0.03), shut(-0.035));
   wireHold('flShutCW', srot(2), srot(3));
   wireHold('flShutCCW', srot(-2), srot(-3));
-  // ---- CONTRAST: display windowing. The echo underneath never moves. ----
+  // ---- CONTRAST: display windowing; the patient is not exposed again. One pill: the middle
+  // key (the half-lit sun) chooses what the arrows set, brightness or contrast. AUTO fits the
+  // window to every frame (its lamp lit); touching the arrows takes the display off AUTO and
+  // HOLDS the window where it was (core/fluoroDisplay.js displayMap win), so a pan onto thicker
+  // anatomy then goes darker until AUTO is pressed again. ----
   const win = (fn) => () => { fn(); panelSync(); redrawLast(); };
-  $('flBrightUp')?.addEventListener('click', win(() => { F.bright = clamp(F.bright + 0.06, -0.6, 0.6); }));
-  $('flBrightDn')?.addEventListener('click', win(() => { F.bright = clamp(F.bright - 0.06, -0.6, 0.6); }));
-  $('flContUp')?.addEventListener('click', win(() => { F.cont = clamp(F.cont * 1.12, 0.4, 3.0); }));
-  $('flContDn')?.addEventListener('click', win(() => { F.cont = clamp(F.cont / 1.12, 0.4, 3.0); }));
-  $('flWinAuto')?.addEventListener('click', win(() => { F.bright = 0; F.cont = 1; }));
+  const winStep = (sg) => win(() => {
+    if (F.winAuto) { F.winAuto = false; F.win = dispScratch.win || null; }   // hold the last fitted window
+    if (F.winSel === 'cont') F.cont = clamp(sg > 0 ? F.cont * 1.12 : F.cont / 1.12, 0.4, 3.0);
+    else F.bright = clamp(F.bright + sg * 0.06, -0.6, 0.6);
+  });
+  $('flWinUp')?.addEventListener('click', winStep(1));
+  $('flWinDn')?.addEventListener('click', winStep(-1));
+  $('flWinSel')?.addEventListener('click', () => {
+    F.winSel = F.winSel === 'cont' ? 'bright' : 'cont';
+    $('flWinSel')?.querySelector('use')?.setAttribute('href', F.winSel === 'cont' ? '#oiCont' : '#oiSun');
+    setStatus(F.winSel === 'cont' ? 'The arrows set CONTRAST.' : 'The arrows set BRIGHTNESS.');
+  });
+  $('flWinAuto')?.addEventListener('click', win(() => { F.winAuto = true; F.win = null; F.bright = 0; F.cont = 1; }));
   // ---- GENERATOR ----
   const stepKv = (d) => { if (F.abc) return; F.kv = clamp(F.kv + d, 50, 120); const e = $('flKv'); if (e) e.value = F.kv; panelSync(); };
-  const stepMa = (d) => { if (F.abc) return; F.ma = clamp(+(F.ma + d).toFixed(1), 0.5, 10); const e = $('flMa'); if (e) e.value = F.ma; panelSync(); };
+  const stepMa = (d) => { if (F.abc) return; F.ma = clamp(+(F.ma + d).toFixed(1), 0.5, 10); F.maWant = F.ma; const e = $('flMa'); if (e) e.value = F.ma; panelSync(); };
   $('flKvUp')?.addEventListener('click', () => stepKv(2));
   $('flKvDn')?.addEventListener('click', () => stepKv(-2));
   $('flMaUp')?.addEventListener('click', () => stepMa(0.5));
   $('flMaDn')?.addEventListener('click', () => stepMa(-0.5));
   $('flAutoBtn')?.addEventListener('click', () => {
     F.abc = !F.abc;
-    if (!F.abc) { F.kv = +$('flKv').value; F.ma = +$('flMa').value; }
+    if (!F.abc) { F.kv = +$('flKv').value; F.ma = F.maWant = +$('flMa').value; }
     panelSync();
     setStatus(F.abc ? 'ABC armed — the machine sets kV and mA.' : 'Manual technique.');
   });
-  // PULSE cycles the four authentic rates, and keeps the rate segment in step
+  // PULSE steps the four authentic rates and keeps the rate segment in step; its lamp is lit
+  // while the beam is PULSED — 30 pps is the machine's continuous rate
   $('flPulseBtn')?.addEventListener('click', () => {
     const rates = [3, 7.5, 15, 30];
     F.pps = rates[(rates.indexOf(F.pps) + 1) % rates.length];
     document.querySelectorAll('#flPpsSeg button').forEach((x) => x.classList.toggle('on', +x.dataset.pps === F.pps));
     if (F.pedal) { clearInterval(timer); timer = setInterval(firePulse, 1000 / F.pps); }
     panelSync();
-    setStatus(`${F.pps} pulses per second.`);
+    setStatus(F.pps < 30 ? `Pulsed: ${F.pps} pulses per second.` : 'Continuous: 30 frames per second.');
   });
   // LOW DOSE halves the dose rate. It is not free, and the noise says so.
   $('flLowDose')?.addEventListener('click', () => {
@@ -1663,36 +1766,31 @@ export function initFluoro(context) {
     // the same bargain, made by hand
     if (!F.abc) {
       F.ma = clamp(+(F.lowDose ? F.ma / 2 : F.ma * 2).toFixed(1), 0.5, 10);
+      F.maWant = F.ma;
       const e = $('flMa'); if (e) e.value = F.ma;
     }
     panelSync();
     setStatus(F.lowDose ? 'Low dose — half the rate, and it will look like it.' : 'Normal dose rate.');
   });
-  // FILM: the digital spot image. One frame at ~10x the per-pulse dose, straight to the
+  // FILM: the digital spot image. One frame at ~12x the per-pulse dose, straight to the
   // directory — the acquisition that is actually worth keeping, and worth its dose.
   $('flFilm')?.addEventListener('click', () => filmShot());
-  // ---- ALARM: five minutes of beam-on, as the regulation requires ----
+  // ---- ALARM RESET: five minutes of beam-on, as the regulation requires ----
   $('flAlarmReset')?.addEventListener('click', () => {
     // acknowledging silences the flashing timer too (it kept flashing until a full dose reset);
     // the next alarm is still due at the next five-minute mark, which is alarmAt's job
     F.alarm = false;
-    $('flBeamV')?.classList.remove('alarm');
+    alarmShow();
     panelSync();
     setStatus('Alarm reset — five more minutes.');
   });
-  // ---- WORKSTATION row ----
+  // ---- SAVE / WORKSTATION / MODE ----
   $('flSave')?.addEventListener('click', () => saveToDirectory());
-  $('flWorkstation')?.addEventListener('click', () => { F.ws = !F.ws; panelSync(); syncScreens(); });
-  $('flModeBtn')?.addEventListener('click', () => {
-    F.ws2 = F.ws2 === 'ref' ? 'live' : 'ref';
-    setStatus(F.ws2 === 'ref' ? 'Reference screen holds the saved image.' : 'Reference screen follows the live image.');
-    syncScreens();
-  });
+  $('flWorkstation')?.addEventListener('click', () => workstation());
   $('flImgDir')?.addEventListener('click', () => openDirectory(!F.dirOpen));
   $('flDirClose')?.addEventListener('click', () => openDirectory(false));
-  panelSync();
-  // ---- the orientation pad: tap = 2° nudge, hold = continuous large adjustment (the
-  // CT table-button behaviour). Rotation is PENDING until the next run; flips are live.
+  // ---- ORIENTATION: tap = 2° nudge, hold = continuous large adjustment (the CT table-button
+  // behaviour). Rotation is PENDING until the next run; the flips and the reset are live. ----
   const rotStep = (d) => {
     F.pendRot = (F.pendRot + d) % 360;
     pendShown = true;
@@ -1712,33 +1810,43 @@ export function initFluoro(context) {
     });
   };
   wireRot('flRotCW', 1); wireRot('flRotCCW', -1);
-  $('flFlipH')?.addEventListener('click', () => {
-    F.flipH = !F.flipH; $('flFlipH').classList.toggle('on', F.flipH); blitFilm();
+  // ROTATION RESET: the image upright again, and any rotation being dialled in dropped with it
+  $('flRotReset')?.addEventListener('click', () => {
+    F.dispRot = 0; F.pendRot = 0; pendShown = false;
+    blitFilm();
+    setStatus('Rotation reset.');
   });
-  $('flFlipV')?.addEventListener('click', () => {
-    F.flipV = !F.flipV; $('flFlipV').classList.toggle('on', F.flipV); blitFilm();
-  });
+  $('flFlipH')?.addEventListener('click', () => { F.flipH = !F.flipH; syncLeds(); blitFilm(); });
+  $('flFlipV')?.addEventListener('click', () => { F.flipV = !F.flipV; syncLeds(); blitFilm(); });
   // ---- DSA / roadmap ----
-  // One lit button tells the truth about the display chain: Off, DSA or Roadmap.
+  // One lit button tells the truth about the display chain: Off, DSA or Roadmap — and the
+  // panel's MODE lamp and the LCD say the same.
   const syncDsaSeg = () => {
     $('flDsaOff')?.classList.toggle('on', !dsaOn && !roadOn);
     $('flDsa')?.classList.toggle('on', dsaOn);
     $('flRoad')?.classList.toggle('on', roadOn);
+    syncLeds(); renderReadouts();
   };
   const dsaAllOff = () => {
     dsaOn = false; roadOn = false; dsaMask = null; dsaAcc = null;
     syncDsaSeg();
     if (lastRaw) drawFrame(lastRaw, lastN);  // back to plain fluoro on the held image
   };
-  $('flDsaOff')?.addEventListener('click', dsaAllOff);
-  $('flDsa')?.addEventListener('click', () => {
-    if (dsaOn) { dsaAllOff(); return; }
+  const dsaArm = () => {
     dsaOn = true;
     dsaN = nPx();                            // freeze the sampling tier for the whole run
     dsaMask = null; dsaAcc = null; roadOn = false;
     syncDsaSeg();
     setStatus('DSA armed — the start of the next run takes the mask.');
-  });
+  };
+  const roadOnNow = () => {
+    roadOn = true; dsaOn = false; dsaMask = null; dsaAcc = null;
+    syncDsaSeg();
+    if (lastRaw) drawFrame(lastRaw, lastN);
+    setStatus('Roadmap — live fluoro subtracted against the DSA run.');
+  };
+  $('flDsaOff')?.addEventListener('click', dsaAllOff);
+  $('flDsa')?.addEventListener('click', () => { if (dsaOn) dsaAllOff(); else dsaArm(); });
   $('flRemask')?.addEventListener('click', () => {
     if (!dsaOn) return;
     remaskNext = true;
@@ -1746,11 +1854,17 @@ export function initFluoro(context) {
   });
   $('flRoad')?.addEventListener('click', () => {
     if (!roadmap) return;
-    if (roadOn) { dsaAllOff(); return; }
-    roadOn = true; dsaOn = false; dsaMask = null; dsaAcc = null;
-    syncDsaSeg();
-    if (lastRaw) drawFrame(lastRaw, lastN);
+    if (roadOn) dsaAllOff(); else roadOnNow();
   });
+  // MODE steps the imaging mode the way the panel's key does: fluoro -> DSA -> roadmap (once a
+  // DSA run has made one) -> fluoro. The mode changes the display chain; it fires nothing.
+  $('flModeBtn')?.addEventListener('click', () => {
+    if (F.pedal) { setStatus('Release the pedal to change mode.'); return; }
+    if (dsaOn) { if (roadmap) roadOnNow(); else { dsaAllOff(); setStatus('Fluoro.'); } }
+    else if (roadOn) { dsaAllOff(); setStatus('Fluoro.'); }
+    else dsaArm();
+  });
+  panelSync();
   // pixel shift: nudge the mask under the live frame (the real button for a patient who
   // moved a little). Hold repeats, like every other positioning control here.
   document.querySelectorAll('#flPxPad button').forEach((b) => {
@@ -1795,7 +1909,7 @@ export function initFluoro(context) {
     F.akMGy = 0; F.dapUGym2 = 0; F.beamS = 0; alarmAt = 300;
     F.skinMGy = 0; for (const k of Object.keys(F.staff)) F.staff[k] = 0;
     F.alarm = false;                              // a new patient: nothing left to acknowledge
-    $('flBeamV')?.classList.remove('alarm');
+    alarmShow();
     panelSync();
     renderReadouts();
   });
