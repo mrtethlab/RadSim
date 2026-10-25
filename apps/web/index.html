@@ -386,13 +386,15 @@
             <div class="lab">Patient position</div>
             <div class="bod">
               <div class="seg" id="giStandSeg">
-                <button data-erect="0" class="on">Recumbent</button>
-                <button data-erect="1">Erect</button>
+                <button data-erect="0" class="on" disabled>Supine / prone &middot; table</button>
+                <button data-erect="1" disabled>Erect &middot; wall stand</button>
               </div>
               <div class="gi-pose" id="giPose">&mdash;</div>
               <div class="ctrst-note">Rotation comes from the <b>Object &middot; rotate / tilt</b>
                 sliders, so positioning the patient to move the agent is the same control it is
-                for positioning them to image. Gravity is applied from the moment you turn.</div>
+                for positioning them to image. Erect or lying is the room set-up's: the wall stand
+                stands the patient up, the table lays them supine (or prone, rolled over). Gravity is
+                applied from the moment you turn.</div>
             </div>
           </div>
 

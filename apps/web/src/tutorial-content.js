@@ -903,17 +903,19 @@ export const BARIUM_STEPS = [
   {
     // One rect, not two: lighting this group AND the rotate sliders across the screen made
     // the ring span the whole viewport, which isolates nothing.
-    sel: '.grp:has(#giStandSeg)',
+    sel: ['.grp:has(#giStandSeg)', '#roomSel'],
     title: 'The patient is the pump',
     text: 'There is no injector here — gravity is the only control you have over where the '
-      + 'barium goes, and you steer it by turning the patient. The stand toggle and the rotate / '
-      + 'tilt / roll sliders are the same controls you position with, because positioning the '
-      + 'patient to move the agent IS the examination. Gravity applies from the moment you turn: '
-      + 'stand the patient up and the stomach empties faster; roll them left and the fundus '
+      + 'barium goes, and you steer it by turning the patient. Erect or lying is the room&rsquo;s: '
+      + 'at the <b>wall stand</b> the patient stands, on the <b>table</b> they lie, supine or prone '
+      + 'by the roll. The room selector and the rotate / tilt / roll sliders are the same controls '
+      + 'you position with, because positioning the patient to move the agent IS the examination. '
+      + 'Gravity applies from the moment you turn: stand the patient up at the wall and the stomach '
+      + 'empties faster; roll them left and the fundus '
       + 'fills. In a double-contrast study the gas re-levels the instant you turn, pushing '
       + 'barium into whatever has just become dependent.',
     goal: {
-      label: 'Change the patient\'s position — stand them up, or roll them',
+      label: 'Change the patient\'s position — stand them at the wall, or roll them',
       arm: () => JSON.stringify([S().barium.erect, S().objRot]),
       done: (a) => JSON.stringify([S().barium.erect, S().objRot]) !== a,
     },

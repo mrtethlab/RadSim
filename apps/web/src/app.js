@@ -1436,6 +1436,21 @@ function giSip(ml = 15){
   giRender();
 }
 
+/* ERECT OR LYING IS THE ROOM'S. A patient at the wall stand stands; on the table or a free plate,
+   or on the fluoroscopy stretcher, they lie (supine or prone: the roll says which). The study's
+   gravity follows the set-up the patient is actually in, so the two can never disagree: the
+   buttons show it, and the room selector is how it changes. */
+function giStandFromRoom(mode=S.mode){             // (a mode change calls it before S.mode is set)
+  const B=S.barium, erect=mode==='xray' && S.room==='wall';
+  const changed=B.erect!==erect;
+  B.erect=erect;
+  document.querySelectorAll('#giStandSeg button').forEach(x=>{
+    x.classList.toggle('on', (x.dataset.erect==='1')===erect);
+    x.disabled=true;
+    x.title='Set by the room: the wall stand stands the patient up; the table, a free detector and the fluoroscopy stretcher lay them down';
+  });
+  if(changed){ giSetPose(); giRender(); }
+}
 function giSetPose(){
   const B = S.barium;
   if(B.study) B.study.setPose(giPose());
@@ -1629,13 +1644,7 @@ function initGIPanel(){
     if(B.study){ B.study = null; B.running = false; }
     giRender();
   });
-  document.querySelectorAll('#giStandSeg button').forEach(b=>{
-    b.addEventListener('click', ()=>{
-      B.erect = b.dataset.erect === '1';
-      document.querySelectorAll('#giStandSeg button').forEach(x=>x.classList.toggle('on', x===b));
-      giSetPose(); giRender();
-    });
-  });
+  giStandFromRoom();
   $('giVol').addEventListener('input', e=>{
     B.volumeMl = +e.target.value; $('giVolV').textContent = B.volumeMl+' mL';
     if(B.study){ B.study = null; B.running = false; }      // dose changed: start again
@@ -2099,8 +2108,7 @@ function setRoom(room){
   S.sid=clampSid(ROOM_SID[room]); S.gridFocus=gridFocusFor(S.sid); setGridFocusUI();
   const sv=$('sidV'); if(sv) sv.textContent=S.sid+' cm';
   const sr=$('sidRo'); if(sr) sr.innerHTML=S.sid+'<small>cm</small>';
-  // standing at the wall is erect for the barium study's gravity; the table and detector recumbent
-  if(S.barium.erect!==(room==='wall')) document.querySelector('#giStandSeg [data-erect="'+(room==='wall'?1:0)+'"]')?.click();
+  giStandFromRoom();                    // standing at the wall is erect for the barium's gravity
   syncOidUI();
   three.setOrbitRad?.(ROOM_ORBIT[room]); three.resetOrbitTarget?.();
   syncScene();
@@ -4339,7 +4347,7 @@ window.addEventListener('load',()=>{
   initScene(); bind(); refreshReadouts(); updateGeomReadouts(); applyDet(); syncScene();
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   // CT mode lives in its own module; give it the handles it needs from the app glue.
-  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); }, setRealistic,
+  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
            setSubject: (s) => setSubject(s),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,

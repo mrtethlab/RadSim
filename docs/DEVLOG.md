@@ -17,6 +17,7 @@ Every tutorial was run end to end in the app, each goal performed through the co
 - **CT:** the ankle and foot protocols load the Foot. **Editor:** the Foot preset.
 - Mammography, ultrasound and the IV's guided mode were already up to date (their features' authors wrote their steps).
 - `tutorials.test.js`: every id a step names must be in the page, and each new feature must have its step (proved on a renamed id).
+- **Barium, erect or lying is the room's:** the wall stand stands the patient up; the table, a free detector and the fluoroscopy stretcher lay them supine (or prone, by the roll). The stand buttons now show it rather than set it, so the study's gravity can no longer disagree with the room the patient is in.
 
 ### The ankle measured where it is — [#85](https://github.com/mrtethlab/RadSim/pull/85)
 **The fault.** The leg's ankle landmark was the peak of the bone's cross-section profile; with the foot at 90° the hindfoot's bones fill that profile, and it sat 4 cm below the joint, on the calcaneus. The malleoli were searched for below it, so they landed on the calcaneus too; the AP ankle centred 3.5 cm low, the lateral ankle likewise, and the ankle bent about a point in the calcaneus.
