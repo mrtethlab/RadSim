@@ -8,6 +8,29 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### Process animations for every mode — [#88](https://github.com/mrtethlab/RadSim/pull/88)
+An **Animation** button on each mode's card opens a film of that mode's whole process, start to finish.
+
+**The player** (`anim/player.js`, loaded only when opened):
+- Larger objects are 3D, the app's own equipment where it exists. Small things (atoms, photons, electrons, pixels) are 8-bit sprites. A pixelated camera zoom with a scale bar moves between the two scales.
+- One caption at a time, placed by the highlighted thing and kept off the action and any panel.
+- 8-bit synthesised sound effects, used sparingly.
+- Chapters and steps to jump between. A step holds its last shot until **next**; **AUTO** runs on and loops.
+
+**The films** (each frame is a function of step time alone, so jumping lands where playing would):
+- **X-ray** (42 steps): tube internals, a tungsten field of heat, bremsstrahlung and characteristic events building the spectrum, filtration and collimation; tissue interactions by the app's own μ, kV and contrast, projection distortions, scatter and grids, barium; AEC, the flat panel to the ADC; matrix, histogram, VOI, LUT and window on the hand's own projection.
+- **CT** (44): the app's gantry, slip ring, bowtie, detector; scout, axial/helical, pitch; a real sinogram, back-projection, filtering, iterative recon; HU, windows, MPR; bolus tracking, CTDI/DLP, mA modulation.
+- **Fluoroscopy** (40): the C-arm; image intensifier physics and gains, magnification, the flat panel; pulsing, ABC, noise, recursive filter, LIH; collimation, DAP, barium, DSA, roadmap; staff scatter and protection.
+- **Mammography** (40): Mo/Rh/W targets and K-edge filters, compression, CC/MLO, low-kV contrast, calcifications, grid, a-Se direct detector; images from the app's own projector; tomosynthesis.
+- **Ultrasound** (40): piezoelectric probe, waves in a particle field, impedance, reflection, attenuation; A/B-mode, beamforming, TGC; resolution and artefacts; M-mode and Doppler; B-mode frames from the app's scan code.
+- **DXA** (30): the Lunar scanner, K-edge dual energy, the two-equation solve on the app's own scan; ROIs, T/Z scores, LSC, the report.
+- **IV placement** (34): anatomy, flow and gauge, tourniquet, antisepsis; the insertion from the app's own IV simulation; securing, complications, contrast through a power injector.
+- **Model editor** (22): from CT slices to a voxel model, materials and μ(E), painting, and the same voxels imaged by x-ray, CT, fluoroscopy and ultrasound.
+
+**Assets:** small images projected from the shipped models (`build_anim_images.py`), the CAP gut mesh (`build_gi_mesh.py`), breast gland meshes, DXA and mammography bakes run through the app's own code. `ct.js` and `iv.js` gained behaviour-neutral rig exports.
+
+**Checked:** every film in the app, every step opened with no errors (loads 0.5–2.7 s); `npm test` 285 pass; build passes.
+
 ### Bones only, the fingers curl, the OEC 9800's panel — [#87](https://github.com/mrtethlab/RadSim/pull/87)
 **Bones only.** A checkbox under the model hides everything but the skeleton in the 3D room (never the image).
 - *The mesh* (`build_bone_mesh.py`, `<name>_bone.glb`) is cut from the shipped material volume, in the frame of every other mesh of the model, from the bone materials only. Cartilage is left out, so the joint spaces stay open. Each bone is closed by itself over 2 mm, never into cartilage or another bone, so a thin cortex's marrow no longer leaves the carpus as lace; crumbs are dropped. CAP, the chest and the head and neck keep only their segmentation's bones (`bone_labels.py` makes their label grids again and checks them against the shipped volume): enhanced vessels, calcified walls, the face's and neck's dense soft tissue and what filled the mouth are bone-dense but stay out of the bone view (they are still in the film). The postmortem models, which no segmentation covers reliably (TotalSegmentator found a fraction of z045's spine), lose what is not bone by shape: a piece under 0.3 solid (body-bag folds, tubes, strands) is dropped.
