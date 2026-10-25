@@ -145,12 +145,16 @@ export function findFibula(data, dims, sp, latSign) {
   const minN = Math.max(6, Math.round(0.12 / (sp[0] * sp[1])));      // 0.12 cm^2: a fibula, not a speck
   const lab = new Int32Array(nx * ny);
   const erode = Math.max(1, Math.round(0.2 / sp[0]));               // a bridge up to ~4 mm wide
-  // the start: the highest slice with two islands, the fibula the lateral one of the smaller
+  // the start: the highest slice with two islands, the fibula the lateral one of the smaller; and
+  // both whole there, a tibia of 3 cm^2 or more beside a fibula of 0.5 (the Foot's cut end is
+  // domed, and in its narrowing top slices the bones are cut to slivers the trace then followed)
+  const tibN = Math.round(3 / (sp[0] * sp[1])), fibN = Math.round(0.5 / (sp[0] * sp[1]));
   let k = nz - 1, prev = null;
   for (; k >= 0 && !prev; k--) {
     const isl = islands(sliceMask(data, nx, ny, k), nx, ny, minN, lab);
     if (isl.length < 2) continue;
     isl.sort((a, b) => b.length - a.length);
+    if (isl[0].length < tibN) continue;
     const tib = centroid(isl[0], nx);
     if (!latSign) latSign = Math.sign(centroid(isl[1], nx)[0] - tib[0]) || 1;
     let best = null, bestL = 0;
@@ -158,7 +162,7 @@ export function findFibula(data, dims, sp, latSign) {
       const l = (centroid(p, nx)[0] - tib[0]) * latSign;
       if (l > bestL) { bestL = l; best = p; }
     }
-    if (best) prev = best;
+    if (best && best.length >= fibN) prev = best;
   }
   if (!prev) return null;
   const slices = [{ k: k + 1, px: Int32Array.from(prev) }];

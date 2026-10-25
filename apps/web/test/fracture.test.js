@@ -20,7 +20,8 @@ const vox = (o) => [o % nx, ((o / nx) | 0) % ny, Math.floor(o / (nx * ny))];
 
 test('the fibula is found whole and alone, from the top of the volume to the malleolar tip', (t) => {
   assert.ok(fib, 'a two-bone leg');
-  assert.equal(fib.slices[0].k, dims[2] - 1, 'it starts in the top slice');
+  // from the top, below the cut end's dome (2.5 cm, data/crops.json's source: build_crop.py)
+  assert.ok(fib.slices[0].k >= dims[2] - 1 - Math.round(2.5 / sp[2]), `it starts at the top: slice ${fib.slices[0].k} of ${dims[2]}`);
   const len = (fib.slices[0].k - fib.tipK) * sp[2];
   assert.ok(len > 8 && len < 13, `${len.toFixed(1)} cm of fibula in an 18.6 cm foot-and-ankle volume`);
   // a fibula is ~1-3 cm^2 in section; the tibia beside it is 5+. A slice that took in the tibia
