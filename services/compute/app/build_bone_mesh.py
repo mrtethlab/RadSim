@@ -1,0 +1,105 @@
+"""The bone-only display mesh of every body model: <name>_bone.glb, beside the skin.
+
+    python -m app.build_bone_mesh                 # every body model with bone
+    python -m app.build_bone_mesh hand foot       # some
+
+The room can hide everything but the skeleton, to see where the bones are while positioning. That
+view is only worth having if it is the SAME bones the film is traced through, so the surface is
+cut from the shipped material volume itself, in the frame every other mesh of the model uses
+(voxel centres at index * spacing less half the extent, as build_skin and build_model's display
+mesh), at the volume's own resolution:
+- the bone materials only (trabecular, cortical, the graded bone): not the joints' cartilage, so
+  the joint spaces stay open as the film shows them, and not the costal or any other cartilage;
+- metal implants (a hip prosthesis) as their own surface, since they are fixed to the bone;
+- a blur of 0.6 voxel before the surface is found: it takes the staircase off a 1 mm grid and
+  moves a flat face by nothing (the 0.5 level of a symmetric blur sits on the step's edge);
+  then a light Taubin pass, which does not shrink.
+The room bends it with the volume's own rigid rule for bone (core/jointPose.js forwardBone), so a
+bent joint shows its bones where the film has them. Display only: the physics reads the volume.
+"""
+from __future__ import annotations
+
+import json
+import sys
+
+import numpy as np
+from scipy import ndimage as ndi
+
+from app.build_model import TRABECULAR, CORTICAL, TITANIUM, STEEL, ALUMINUM, LEAD, BONE_GRADES
+from app.build_limbs import MODELS
+
+BONE = [TRABECULAR, CORTICAL] + [b[0] for b in BONE_GRADES]
+METAL = [TITANIUM, STEEL, ALUMINUM, LEAD]
+BODY = ['hand', 'foot', 'lowerextremity', 'upperextremity', 'headneck', 'chest', 'chestabdopelvis',
+        'wholebody', 'totalhipreplacement']
+BONE_RGBA = (236, 228, 205, 255)          # an ivory, as the plain mesh's bone
+# the triangles' size, mm: a hand's and a foot's small bones at 1 mm, the limbs and the chest at 2
+# (at the grid's own 1 mm a whole leg came to 1.2 M faces and 25 MB), the head and neck at 3 and the
+# trunks on their 2 mm grids at 4 (at 2 they were 15-19 MB: a skeleton's worth of ribs and
+# vertebrae, centimetres across). The surface is interpolated in the blurred field between samples,
+# so it keeps within a fraction of a voxel of the bone at any of these.
+EDGE_MM = {'hand': 1.0, 'foot': 1.0, 'headneck': 3.0, 'chestabdopelvis': 4.0, 'wholebody': 4.0, 'totalhipreplacement': 3.0}
+METAL_RGBA = (154, 165, 176, 255)
+
+
+def surface(mask, s, step=1, sigma_vox=0.6, taubin=6):
+    import trimesh
+    from skimage import measure
+    pad = 3
+    field = ndi.gaussian_filter(np.pad(mask, pad).astype(np.float32), sigma=sigma_vox)
+    verts, faces, _, _ = measure.marching_cubes(field, level=0.5, step_size=step)
+    verts = verts - pad
+    m = trimesh.Trimesh(vertices=np.column_stack([verts[:, 2], verts[:, 1], verts[:, 0]]) * s, faces=faces, process=True)
+    m.update_faces(m.nondegenerate_faces())
+    m.remove_unreferenced_vertices()
+    if taubin:
+        m = trimesh.smoothing.filter_taubin(m, lamb=0.5, nu=-0.53, iterations=taubin)
+    return m
+
+
+def build(name):
+    import trimesh
+    hdr_path = MODELS / name / f'{name}.model.json'
+    h = json.loads(hdr_path.read_text(encoding='utf-8'))
+    nx, ny, nz = h['dims']
+    s = float(h['spacing'][0])
+    mat = np.fromfile(MODELS / name / f'{name}.mat.bin', dtype=np.uint8).reshape(nz, ny, nx)
+    centre = np.array([nx, ny, nz]) * s / 2.0
+    scene = trimesh.Scene()
+    faces = 0
+    for ids, rgba, label in ((BONE, BONE_RGBA, 'bone'), (METAL, METAL_RGBA, 'metal')):
+        mask = np.isin(mat, ids)
+        if mask.sum() < 50:
+            continue
+        # the outside of the bone is what the eye sees: a marrow cavity enclosed by its cortex,
+        # and specks of bone-dense voxels loose in the soft tissue (calcification, noise), only
+        # added surfaces no one could look at (a third of a trunk's faces)
+        mask = ndi.binary_fill_holes(mask)
+        lab, n = ndi.label(mask)
+        if n > 1:
+            sizes = ndi.sum(mask, lab, range(1, n + 1))
+            keep = np.zeros(n + 1, bool); keep[1:] = sizes * s ** 3 >= 100.0      # 0.1 cm^3
+            mask = keep[lab]
+        m = surface(mask, s, step=max(1, round(EDGE_MM.get(name, 2.0) / s)))
+        m.vertices -= centre
+        m.visual.vertex_colors = np.tile(np.array(rgba, np.uint8), (len(m.vertices), 1))
+        scene.add_geometry(m, node_name=label, geom_name=label)
+        faces += len(m.faces)
+    if not faces:
+        print(f'{name}: no bone'); return
+    out = MODELS / name / f'{name}_bone.glb'
+    scene.export(str(out))
+    # point the header at it by inserting the one key, the rest of the header left as it was
+    txt = hdr_path.read_text(encoding='utf-8')
+    if '"boneMesh"' not in txt:
+        key = f'"mesh": "{h["mesh"]}"'
+        line = next(l for l in txt.splitlines() if key in l)
+        indent = line[:len(line) - len(line.lstrip())]
+        txt = txt.replace(key, key + f',\n{indent}"boneMesh": "{out.name}"', 1)
+        hdr_path.write_text(txt, encoding='utf-8')
+    print(f'{name:20s} {faces:8d} faces  {out.stat().st_size / 1e6:5.1f} MB')
+
+
+if __name__ == '__main__':
+    for n in sys.argv[1:] or BODY:
+        build(n)

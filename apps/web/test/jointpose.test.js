@@ -359,3 +359,41 @@ test('the pose pool, in stages, makes the very volume one worker poses whole', (
     }
   }
 });
+
+test('the bone-only mesh moves as the volume moves bone: rigid on each side of the joint', async () => {
+  const { forwardBone, boneSide } = await import('../src/core/jointPose.js');
+  // a joint at 2 mm: bone rods 3 cm across (a knee's condyles) above and below a gap at the origin,
+  // soft tissue (7) round them, a crease 3 cm wide so a good length of each bone lies inside it.
+  // Each 2 mm slab of bone is its own graded-bone material (54-61 in turn), so a voxel carries its
+  // identity through the pose: a bone point is where the volume put it when it lands on its own slab
+  const sp = 2, n = [31, 31, 81], [nx, ny, nz] = n, data = new Uint8Array(nx * ny * nz);
+  const P = (i, j, k) => [(i - (nx - 1) / 2) * sp / 10, (j - (ny - 1) / 2) * sp / 10, (k - (nz - 1) / 2) * sp / 10];
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const [x, y, z] = P(i, j, k), r = Math.hypot(x, y);
+    data[(k * ny + j) * nx + i] = r < 1.5 && Math.abs(z) > 0.2 ? 54 + (k % 8) : r < 2.6 ? 7 : 0;
+  }
+  const knee = { c: [0, 0, 0], distal: [0, 0, -1], blend: 1.5, motions: [{ key: 'flex', axis: axisToward([0, 0, -1], [0, 1, 0]) }] };
+  for (const flex of [30, 45]) {
+    const angles = { flex };
+    const r = poseVolume({ dims: n, spacingMM: [sp, sp, sp], data }, [false, false, false], [knee], angles);
+    const [Nx, Ny, Nz] = r.dims;
+    const at = (q) => r.data[(Math.round(q[2] * 10 / sp + (Nz - 1) / 2) * Ny + Math.round(q[1] * 10 / sp + (Ny - 1) / 2)) * Nx + Math.round(q[0] * 10 / sp + (Nx - 1) / 2)];
+    const cc = compileChain([knee], angles);
+    let all = 0, own = 0, crease = 0, rigid = 0, blended = 0;
+    for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const m = data[(k * ny + j) * nx + i]; if (m < 54) continue;
+      const p = P(i, j, k); all++;
+      const hit = at(forwardBone(p, cc)) === m; if (hit) own++;
+      if (Math.abs(p[2]) < 1.5) { crease++; if (hit) rigid++; if (at(forwardChain(p, [knee], angles)) === m) blended++; }
+    }
+    // (the misses are a voxel's rounding through the turn)
+    assert.ok(own / all > 0.93, `${flex} deg: ${own} of ${all} bone points on their own slab of the posed volume`);
+    assert.ok(rigid / crease > 0.9, `${flex} deg: in the crease ${rigid} of ${crease}`);
+    // the soft tissue's blended map bends the bone across the crease (why bone has its own map)
+    assert.ok(rigid - blended > 0.1 * crease, `${flex} deg: blended, only ${blended} of ${crease}`);
+  }
+  // and the two rods are two pieces: no triangle may join them across the bent joint
+  const cc = compileChain([knee], { flex: 30 });
+  assert.notEqual(boneSide([0, 0, 1], cc), boneSide([0, 0, -1], cc));
+  assert.equal(boneSide([0, 0, 3], cc), boneSide([0.3, 0.2, 0.5], cc));
+});

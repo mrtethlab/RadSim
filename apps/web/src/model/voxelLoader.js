@@ -33,6 +33,8 @@ export async function loadVoxelModel(baseUrl, name) {
     // optional photo-textured display skin (build_hand_skin.py). Display ONLY — the
     // physics always uses the material volume, never this mesh.
     skinUrl: hdr.skinMesh ? `${baseUrl}/${hdr.skinMesh}` : null,
+    // the bone-only display mesh (build_bone_mesh.py), fetched when the room is first asked for it
+    boneUrl: hdr.boneMesh ? `${baseUrl}/${hdr.boneMesh}` : null,
     extentMM: [nx * hdr.spacing[0], ny * hdr.spacing[1], nz * hdr.spacing[2]],
     // Contrast: models built with build_vessels carry a vascular transport coordinate.
     // Loaded lazily — the expanded per-voxel form is as big as the material volume, so a

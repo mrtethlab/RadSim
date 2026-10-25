@@ -15,6 +15,7 @@
   "volume": "totalhipreplacement.mat.bin",
   "dtype": "uint8",
   "mesh": "totalhipreplacement.glb",
+  "boneMesh": "totalhipreplacement_bone.glb",
   "skinMesh": "totalhipreplacement_skin.glb",
   "materials": [
     {

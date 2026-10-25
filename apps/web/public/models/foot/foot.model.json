@@ -15,6 +15,7 @@
   "volume": "foot.mat.bin",
   "dtype": "uint8",
   "mesh": "foot.glb",
+  "boneMesh": "foot_bone.glb",
   "skinMesh": "foot_skin.glb",
   "materials": [
     {

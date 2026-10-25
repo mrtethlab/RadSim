@@ -320,6 +320,41 @@ export function forwardSkin(p, cc) {
   for (let i = cc.length - 1; i >= 0; i--) q = skinOne(q, cc[i]);
   return q;
 }
+/* THE BONE in the room, by the volume's own rule for it (posePlan: BONE IS RIGID). A bone point past a
+   plain joint's plane turns whole with the joint, its roll included, and one short of it does not
+   move at all, crease or not; the rider (the patella) is carried by its own turn, and a field joint
+   (the neck, the jaw) by its weights, as the volume carries its bone. So the bone-only mesh sits on
+   the bone the film is traced through at every pose. */
+function bonePlain(p, J) {
+  const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
+  const s = dot(d, J.d);
+  if (s < 0 || !inLimb(d, J, s)) return p;
+  let r = roll(d, J, 1);
+  if (J.T) r = rotate(r, J.n, J.T);
+  return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
+}
+function boneOne(p, J) {
+  if (J.wf) return forwardOne(p, J);
+  if (J.rd && J.T) { const w = fieldWeight(J.rd, p); if (w > 0) return riderBlend(p, J, w, bonePlain(p, J)); }
+  return bonePlain(p, J);
+}
+export function forwardBone(p, cc) {
+  let q = p;
+  for (let i = cc.length - 1; i >= 0; i--) q = boneOne(q, cc[i]);
+  return q;
+}
+// which rigid piece a rest point is on: one bit per plain joint (past its plane, within its limb).
+// A triangle of the bone mesh with corners on two pieces would stretch across the bent joint.
+export function boneSide(p, cc) {
+  let k = 0;
+  for (let i = 0; i < cc.length; i++) {
+    const J = cc[i];
+    if (J.wf) continue;
+    const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], s = dot(d, J.d);
+    if (s >= 0 && inLimb(d, J, s)) k |= 1 << i;
+  }
+  return k;
+}
 export function forwardChain(p, chain, angles) {
   return forwardCompiled(p, compileChain(chain, angles));
 }

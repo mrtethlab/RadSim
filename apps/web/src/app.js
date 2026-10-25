@@ -11,7 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
-import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
+import { axisToward, forwardChain, forwardCompiled, forwardSkin, forwardBone, boneSide, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
@@ -445,6 +445,8 @@ async function setSubject(sub){
   }
   if(req!==subjectReq) return;          // a newer request has been made: this one is only cached
   S.voxelModel=vm; S.subject=sub;
+  syncBoneViewUI();                     // (bones only carries over to the next model that has bone)
+  if(S.boneView) ensureBoneMesh(sub).then(()=>{ if(S.subject===sub){ applyPhotoSkin(); syncScene(); } });
   // Phones: one material volume resident at a time. A desktop keeps every subject it has
   // touched (instant switching); a phone that did that would hold hundreds of MB of
   // Uint8Arrays and get killed by the OS. Re-downloading on switch-back is the cheaper
@@ -528,6 +530,42 @@ function prepSkinMesh(grp){
 }
 /* Show either the photographic skin or the material-shaded mesh for every loaded subject.
    Models without a skin mesh always show the plain one. */
+/* BONES ONLY. The room can show the skeleton alone, to see where the bones are while positioning.
+   It is the bone of the volume the film is traced through (build_bone_mesh.py: cut from the
+   material volume, in the frame of every other mesh of the model), it sits in the same group as the
+   skin, so it is where the skin is, and it bends by the volume's own rigid rule for bone
+   (bendVoxelMesh: forwardBone). Display only: nothing is hidden from the image. Fetched the first
+   time it is asked for, per model. */
+async function ensureBoneMesh(sub){
+  const vm=S.voxelCache?.[sub], wrap=three.voxelMeshes?.[sub];
+  if(!vm?.boneUrl || !wrap || wrap.userData.bone) return !!wrap?.userData.bone;
+  if(wrap.userData.boneLoading) return wrap.userData.boneLoading;
+  wrap.userData.boneLoading=loadModelUrl(vm.boneUrl).then(grp=>{
+    grp.traverse(o=>{ if(!o.isMesh) return;
+      o.castShadow=true; o.receiveShadow=true; o.userData.bone=true;
+      if(!o.geometry.attributes.normal) o.geometry.computeVertexNormals();
+      const ms=Array.isArray(o.material)?o.material:[o.material];
+      for(const m of ms){ if(!m) continue; const metal=/metal/i.test(o.name);
+        m.vertexColors=!!o.geometry.attributes.color; m.color.setRGB(1,1,1);
+        m.metalness=metal?0.8:0; m.roughness=metal?0.35:0.6; m.transparent=false; m.opacity=1; m.side=THREE.FrontSide; m.needsUpdate=true; }
+    });
+    grp.userData.role='bone'; grp.visible=false; wrap.add(grp); wrap.userData.bone=grp;
+    return true;
+  }).catch(err=>{ console.warn(sub+' bone mesh failed to load', err); return false; })
+    .finally(()=>{ wrap.userData.boneLoading=null; });
+  return wrap.userData.boneLoading;
+}
+function syncBoneViewUI(){
+  const cb=$('boneView'); if(!cb) return;
+  const has=!!S.voxelModel?.boneUrl;
+  cb.disabled=!has; cb.checked=!!S.boneView && has;
+  $('boneViewRow')?.classList.toggle('off', !has);
+}
+async function setBoneView(on){
+  S.boneView=!!on; syncBoneViewUI();
+  if(S.boneView) await ensureBoneMesh(S.subject);
+  applyPhotoSkin(); syncScene();
+}
 function applyPhotoSkin(){
   // The photo-textured skin is simply the default whenever the model ships one — there is
   // no toggle. It is display only; the physics always reads the voxel volume. Every body model
@@ -536,8 +574,9 @@ function applyPhotoSkin(){
   for(const k in (three.voxelMeshes||{})){
     const wrap=three.voxelMeshes[k]; if(!wrap||!wrap.children) continue;
     const hasSkin=wrap.children.some(c=>c.userData&&c.userData.role==='skin');
+    const bones=S.boneView && wrap.children.some(c=>c.userData&&c.userData.role==='bone');
     wrap.children.forEach(c=>{ const r=c.userData&&c.userData.role; if(!r) return;
-      c.visible = r === (hasSkin?'skin':'plain'); });
+      c.visible = bones ? r==='bone' : r === (hasSkin?'skin':'plain'); });
   }
 }
 
@@ -824,16 +863,37 @@ function bendVoxelMesh(){
   const f=voxelFlips().map(b=>b?-1:1);
   const cc=ch ? compileChain(ch, S.joints) : null;
   wrap.traverse(o=>{
-    if(!o.isMesh || !o.visible || !o.geometry?.attributes?.position) return;
+    if(!o.isMesh || !o.geometry?.attributes?.position) return;
+    for(let x=o; x && x!==wrap; x=x.parent) if(!x.visible) return;   // only what is on show (the skin, or the bone)
     const g=o.geometry, pos=g.attributes.position;
     if((g.userData.bentKey||'')===key) return;
     if(!g.userData.rest){ if(!cc) return; g.userData.rest=Float32Array.from(pos.array); }
     g.userData.bentKey=key;
-    const rest=g.userData.rest, a=pos.array;
+    const rest=g.userData.rest, a=pos.array, bone=!!o.userData.bone;
+    // bone: rigid on each side of a joint, as the volume moves it (the skin's crease map would bend
+    // a condyle across the joint); the skin: taut over a bend, folded inside it
+    const map=bone ? forwardBone : forwardSkin;
     if(!cc){ a.set(rest); }
     else for(let i=0;i<a.length;i+=3){
-      const q=forwardSkin([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], cc);   // taut over a bend, folded inside it
+      const q=map([f[0]*rest[i]/10, f[1]*rest[i+1]/10, f[2]*rest[i+2]/10], cc);
       a[i]=f[0]*q[0]*10; a[i+1]=f[1]*q[1]*10; a[i+2]=f[2]*q[2]*10;
+    }
+    if(bone && g.index){
+      // a triangle with corners on two rigid pieces would stretch across the bent joint: left out
+      // while it is bent (the bone surfaces either side of a joint space never share one)
+      if(!g.userData.restIndex) g.userData.restIndex=g.index.array.slice();
+      const I=g.userData.restIndex;
+      if(!cc) g.index.array.set(I);
+      else {
+        const side=new Int32Array(rest.length/3);
+        for(let v=0;v<side.length;v++) side[v]=boneSide([f[0]*rest[3*v]/10, f[1]*rest[3*v+1]/10, f[2]*rest[3*v+2]/10], cc);
+        const out=g.index.array;
+        for(let t=0;t<I.length;t+=3){
+          const A=I[t], B=I[t+1], C=I[t+2], keep=side[A]===side[B] && side[B]===side[C];
+          out[t]=A; out[t+1]=keep?B:A; out[t+2]=keep?C:A;      // a dropped one collapses to a point
+        }
+      }
+      g.index.needsUpdate=true;
     }
     pos.needsUpdate=true; g.computeBoundingSphere(); normalsDue.add(g);
   });
@@ -928,6 +988,7 @@ const S = {
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
   legRot:0,                    // both legs turned about the femoral heads, deg (+ internal) — core/limbPose.js
+  boneView:false,              // the room shows the bones alone (display only: the image is the whole patient)
   joints:{},                   // bent joints of the current subject, deg by motion key — core/jointPose.js
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
   lastSignal:null, nx:0, ny:0, mask:null, win:100, lev:0, eiTarget:250, showHist:true,
@@ -2416,6 +2477,7 @@ function bind(){
   $('camSegCt')?.addEventListener('click',e=>{const b=e.target.closest('button'); if(!b)return; setCTPov(b.dataset.cam);});
   // subject: analytic hand  <->  any voxel model
   $('subjectSel')?.addEventListener('change',e=>setSubject(e.target.value));
+  $('boneView')?.addEventListener('change',e=>setBoneView(e.target.checked));
   // collimator light on/off
   $('lfBtn').addEventListener('click',()=>{ S.lfOn=!S.lfOn;
     $('lfBtn').classList.toggle('on',S.lfOn); $('lfBtn').setAttribute('aria-pressed',S.lfOn);

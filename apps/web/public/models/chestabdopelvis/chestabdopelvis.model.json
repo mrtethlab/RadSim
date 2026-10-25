@@ -15,6 +15,7 @@
  "volume": "chestabdopelvis.mat.bin",
  "dtype": "uint8",
  "mesh": "chestabdopelvis.glb",
+ "boneMesh": "chestabdopelvis_bone.glb",
  "skinMesh": "chestabdopelvis_skin.glb",
  "materials": [
   {
