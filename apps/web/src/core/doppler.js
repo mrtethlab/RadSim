@@ -156,7 +156,9 @@ export function kasai(comps, nc, n, prf, noise, gauss) {
     if (k) { r1re += xr * pre + xi * pim; r1im += xi * pre - xr * pim; }
     pre = xr; pim = xi;
   }
-  return { f: prf * Math.atan2(r1im, r1re) / (2 * Math.PI), p: r0 / n };
+  // r1 is returned too (per pulse pair), so a display can average it over neighbouring gates
+  // before taking the phase — the spatial smoothing every colour processor does
+  return { f: prf * Math.atan2(r1im, r1re) / (2 * Math.PI), p: r0 / n, r1re: r1re / (n - 1), r1im: r1im / (n - 1) };
 }
 
 /* SPECTRAL: one column of the trace — the power at every shift in the window. Each component

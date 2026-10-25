@@ -11,9 +11,10 @@
      bs   backscatter strength (arbitrary, 0..1): how much a tissue's sub-resolution
           structure scatters back. This is the SPECKLE, and it is what makes liver
           look like liver rather than a grey box.
-     c    speed of sound, m/s. Shipped because it is the honest place for it, but v1
-          renders at a fixed 1540 m/s — the speed-error artifacts (a fatty layer
-          displacing deep structures) are explicitly out of scope.
+     c    speed of sound, m/s. Echoes are still timed at a fixed 1540 m/s — the
+          speed-error artifacts (a fatty layer displacing deep structures) are out of
+          scope — but the CONTRAST in c bends the beam at an oblique boundary (Snell),
+          and past the critical angle stops it: the edge shadows beside a gallbladder.
 
    Values are the textbook ones, rounded. Where a segmentation label has no
    acoustic literature of its own (an "iliac vein" is blood in a wall), it inherits
@@ -71,9 +72,25 @@ export function acousticOf(id) {
   return ACOUSTIC[10];                 // anything unlabelled behaves as soft tissue
 }
 
+/* REVERBERATION COHERENCE (docs/ultrasound.md §4.5): of the wave a surface reflects, how much
+   comes back to the face as a WAVE, able to be reflected again and make the trip twice. A broad
+   smooth mirror returns it whole: a gas surface (a pressure-release boundary, ~100 % reflected),
+   the pleura, a metal plate. A rib or a stone is small, curved and rough, so its echo spreads
+   and is largely absorbed, and almost nothing is re-launched — which is the whole difference
+   between the DIRTY shadow behind gas and the CLEAN one behind bone. Soft-tissue fascia sits
+   between. A choice, documented, not a measured constant. */
+export function reverbCoherence(id) {
+  if (id === 0 || id === 47) return 1.0;              // gas
+  if (id === 1) return 0.9;                           // aerated lung: the pleural line and its A-lines
+  if (id >= 24 && id <= 28) return 1.0;               // metal, acrylic: smooth mirrors that ring
+  if (id === 17 || id === 18 || id === 19 || (id >= 54 && id <= 61)) return 0.12;   // bone
+  if (id === 21 || id === 22) return 0.08;            // calcification, stones
+  return 0.5;                                         // soft-tissue interfaces
+}
+
 /* Flat tables for the scan loop: one array lookup instead of an object hop. */
 export function acousticTables(nmat = 64) {
-  const z = new Float64Array(nmat), att = new Float64Array(nmat), bs = new Float64Array(nmat);
-  for (let i = 0; i < nmat; i++) { const a = acousticOf(i); z[i] = a.z; att[i] = a.att; bs[i] = a.bs; }
-  return { z, att, bs };
+  const z = new Float64Array(nmat), att = new Float64Array(nmat), bs = new Float64Array(nmat), coh = new Float64Array(nmat), c = new Float64Array(nmat);
+  for (let i = 0; i < nmat; i++) { const a = acousticOf(i); z[i] = a.z; att[i] = a.att; bs[i] = a.bs; coh[i] = reverbCoherence(i); c[i] = a.c; }
+  return { z, att, bs, coh, c };
 }

@@ -1143,6 +1143,8 @@ const S = {
        // angle-correction cursor (deg), and the trace's PRF, baseline, filter, gain, sweep (s)
        pwLine:0.5, pwDepth:8, pwGate:3, pwAngle:60, pwPrf:4000, pwBase:0, pwWall:100, pwGain:0,
        pwSweep:4, pwInv:false,
+       // Doppler audio: the spectrum played, toward in one ear and away in the other
+       pwAudio:false, pwVol:60,
        live:true },
   // ---- compute engine: in-browser JS, or the Python GPU backend (voxel subjects) ----
   xrayBackend:'local',         // 'local' | 'python' — x-ray projection engine

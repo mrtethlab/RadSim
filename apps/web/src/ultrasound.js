@@ -4,9 +4,9 @@
    image made entirely of interfaces and scattering.
 
    THE ARTIFACTS ARE NOT DRAWN — THEY ARE CONSEQUENCES. There is no shadow code
-   and no enhancement code. One pulse-echo march per scanline carries an amplitude
-   that is spent on reflection at every impedance mismatch and on attenuation
-   through every centimetre, and:
+   and no enhancement code. A pulse-echo march down each scanline carries an
+   amplitude that is spent on reflection at every impedance mismatch and on
+   attenuation through every centimetre, and:
 
      - bone and gas reflect ~all of it at the first interface, so nothing returns
        from beyond: a SHADOW;
@@ -17,12 +17,22 @@
        convolved with the beam's own point-spread function, so what emerges is
        interference: SPECKLE, the texture that makes liver look like liver.
 
+   And the scanline is a BEAM, not a ray (docs/ultrasound.md §4.5, core/beam.js): three
+   rays across the slice, each carried through its neighbours' losses by sub-rays that
+   follow the beam as it converges on the focus and diverges past it. So a shadow has a
+   penumbra as wide as the beam, softens with depth and sharpens at the focus; a small
+   cyst fills in from the slice either side; gas re-launches the echo train above it (a
+   DIRTY shadow, A-lines) where bone absorbs (a CLEAN one); and a fluid wall met at a
+   grazing angle bends the beam away (an EDGE shadow).
+
    The point-spread function is where the knobs get their teeth: axial width is the
    pulse length (2 lambda, so it shrinks with frequency), lateral width is the beam
    width (which grows away from the focus). Frequency therefore buys resolution and
    costs penetration, on the same image, from the same number.
    ============================================================================ */
 import { acousticTables } from './core/acoustics.js';
+import { audioState, synthColumn } from './core/dopplerAudio.js';
+import { beamAt, profileNodes, ELEV_NODES, FWHM_SIGMA, beamTransmission, addReverb, obliqueInterface } from './core/beam.js';
 import { deriveMotion, motionState, warpPoint, breathAmp } from './core/anatomyMotion.js';
 import { dockConsole } from './core/paneDock.js';
 import { buildSVolume } from './core/contrast.js';
@@ -227,6 +237,16 @@ function hash3(a, b, c) {
    apex clips it — the one layer you can always see on a real machine is the one this
    was throwing away. The pad also gives the near field somewhere to be. */
 const GEL_PAD = 0.6;                   // cm of coupling between the face and the skin
+/* ...and gel fills the skin's folds. The segmentation's surface is a 2 mm staircase, so a line
+   that has just touched skin can cross a voxel of "air" in the next step — a sliver no real
+   probe would leave unfilled. Treated as air it was a perfect mirror 2 mm under the skin: a
+   dead line, and once reverberation was modelled, a stack of A-lines down the fan's edge. Air
+   within this distance of where the line first coupled is gel; deeper, it is gas. */
+const GEL_FILL = 0.4;
+/* ...where the face is actually ON the skin. A fan-edge line that first meets skin centimetres
+   out — skimming a flank that curves away from the face — is not in contact, and the gaps it
+   crosses are air. */
+const GEL_MAX = 2.5;
 
 /* One surface column: coarse at the voxel pitch (finer buys nothing — the data has no
    more), then refined so the answer is continuous rather than quantised to the grid. */
@@ -591,7 +611,11 @@ const steerOf = (P) => (P.apert ? (U.steer || 0) * Math.PI / 180 : 0);
 /* One step of the pulse-echo march, shared so the Doppler lines lose amplitude exactly as the
    B lines do: reflection at every mismatch, attenuation through every step. */
 function stepAmp(st, id, freq, ds) {
-  if (!st.coupled) { if (id === 0) id = 3; else st.coupled = true; }
+  if (!st.coupled) {
+    st.r = (st.r || 0) + ds;
+    if (id === 0) id = 3; else { st.coupled = true; st.since = st.r < GEL_MAX ? 0 : 1e9; }
+  } else if (id === 0 && st.since < GEL_FILL) id = 3;
+  st.since += ds;
   if (st.prev >= 0 && id !== st.prev) {
     const zp = TBL.z[st.prev], zz = TBL.z[id], rc = (zz - zp) / (zz + zp);
     st.amp *= Math.sqrt(Math.max(0, 1 - rc * rc));
@@ -630,6 +654,8 @@ function colourFrame(P, ds, freq, lamCm, card, insp) {
   // vid: which vessel a coloured sample came from, so a measurement can ask what the AORTA did
   // instead of averaging every vessel in the box (how Phase E's first angle test said nothing)
   const ves = new Uint8Array(nC * NSAMP);          // which samples sit in a lumen, coloured or not
+  const R0a = new Float32Array(nC * NSAMP), R1r = new Float32Array(nC * NSAMP), R1i = new Float32Array(nC * NSAMP);
+  const cidA = new Uint8Array(nC * NSAMP);
   waveTable(card, insp);
   const M = 4, comps = new Float64Array(3 * M), am = 1 / Math.sqrt(M);
   const st = { amp: 1, prev: -1, coupled: false };
@@ -642,7 +668,7 @@ function colourFrame(P, ds, freq, lamCm, card, insp) {
     const th = Math.atan2(dx * P.ux + dz * P.uz, -dy);          // the line's angle in the plane
     const lx = P.ux * Math.cos(th), ly = Math.sin(th), lz = P.uz * Math.cos(th);
     const ex = -P.uz, ez = P.ux;
-    st.amp = 1; st.prev = -1; st.coupled = false;
+    st.amp = 1; st.prev = -1; st.coupled = false; st.r = 0;
     for (let k = 0; k <= k1; k++) {
       const r = k * ds;
       const x = sx + dx * r, y = sy + dy * r, z = sz + dz * r;
@@ -675,6 +701,31 @@ function colourFrame(P, ds, freq, lamCm, card, insp) {
       }
       const est = kasai(comps, nc, ENS, prf, sig, gauss);
       const i = c * NSAMP + k;
+      R0a[i] = est.p; R1r[i] = est.r1re; R1i[i] = est.r1im; cidA[i] = cid;
+      if (isVesselId(cid)) ves[i] = 1;
+      if (st.amp < 1e-7) break;
+    }
+  }
+  /* SPATIAL AVERAGING, as every colour processor does: the autocorrelation is summed over a few
+     neighbouring range gates and the neighbouring colour lines BEFORE its phase is taken. One
+     8-pulse estimate per sample is noisy enough that a lumen came out as red salt and pepper;
+     a colour sample volume is a millimetre or two long anyway, so this costs no resolution the
+     pulses had. */
+  const KA = 2;
+  for (let c = 0; c < nC; c++) {
+    for (let k = k0; k <= k1; k++) {
+      let p = 0, rr = 0, ri = 0, w = 0;
+      for (let dc = -1; dc <= 1; dc++) {
+        const cc = c + dc; if (cc < 0 || cc >= nC) continue;
+        const wc = dc ? 0.5 : 1;
+        for (let dk = -KA; dk <= KA; dk++) {
+          const kk = k + dk; if (kk < k0 || kk > k1) continue;
+          const j = cc * NSAMP + kk;
+          p += wc * R0a[j]; rr += wc * R1r[j]; ri += wc * R1i[j]; w += wc;
+        }
+      }
+      p /= w;
+      const fEst = prf * Math.atan2(ri, rr) / (2 * Math.PI), i = c * NSAMP + k;
       /* Two tests, as on a machine: enough POWER (the colour gain), and a mean shift the wall
          filter was not set to remove. The second is the clutter reject. Tissue echoes stand
          ~45 dB above blood's, so the few tens of dB a slow-time filter takes off a breathing
@@ -682,16 +733,14 @@ function colourFrame(P, ds, freq, lamCm, card, insp) {
          cutoff, and a mean shift under the cutoff is clutter by definition. What survives is
          tissue moving FASTER than the cutoff: the heart, which is the flash a real machine shows
          too, and which a higher wall filter clears. */
-      if (est.p > thr && Math.abs(est.f) >= fc) {
+      if (p > thr && Math.abs(fEst) >= fc) {
         // the estimate is a phase in (-pi, pi], kept as measured: the baseline only decides
         // which window it is READ in, so it is applied at display time (drawFan), as the
         // post-processing re-map it is on a machine — it works on a frozen frame too
-        v[i] = velocityFromShift(est.f, f0, 0) * 100 || 1e-6;
+        v[i] = velocityFromShift(fEst, f0, 0) * 100 || 1e-6;
         on[i] = 1;
-        vid[i] = isVesselId(cid) ? cid : 0;
+        vid[i] = isVesselId(cidA[i]) ? cidA[i] : 0;
       }
-      if (isVesselId(cid)) ves[i] = 1;
-      if (st.amp < 1e-7) break;
     }
   }
   return { nC, l0, l1, k0, k1, cstep: CSTEP, steer, v, on, vid, ves, vNyq, prf, prfLim };
@@ -784,6 +833,85 @@ function pwFrame(P, ds, freq, lamCm) {
   return pwSet;
 }
 
+/* ---- the beam's geometry, per depth (core/beam.js) -----------------------------
+   Three numbers a scanline needs at every depth: the TRANSMIT beam's sigma in line spacings
+   (what the sub-rays spread over, so what softens a shadow), the TWO-WAY lateral sigma in line
+   spacings (the receive PSF that sets the speckle grain and the lateral blur of an echo), and
+   the elevation sigma in cm (where the three slice rays sit). Lines diverge on a curvilinear
+   probe, so a fixed beam width is fewer lines deep than shallow. */
+const NEL = 3;                                   // rays across the slice
+// a table of random unit phasors: speckle phases and reverberation decorrelation without a
+// cos and a sin per sample (hash3 indexes it for speckle; reverberation walks it)
+const NPH = 4096, PH_C = new Float32Array(NPH), PH_S = new Float32Array(NPH);
+for (let i = 0; i < NPH; i++) { const a = 2 * Math.PI * hash3(i, 7, 3); PH_C[i] = Math.cos(a); PH_S[i] = Math.sin(a); }
+const LAT_NODES = profileNodes(7), LAT_NODES_EDGE = profileNodes(5);   // sub-rays across the transmit beam
+const R_FACE = 0.3;                              // what the transducer face reflects back in
+const SIDE_LOBE = 0.02;                          // integrated side-lobe level, relative to the main lobe (-34 dB)
+const BEAMT = {};
+function beamTables(P, ds, lam) {
+  const key = `${U.probe},${ds},${lam},${U.focus},${P.R0},${P.sector},${P.apert}`;
+  if (BEAMT.key === key) return BEAMT;
+  BEAMT.key = key;
+  BEAMT.txSigLines = new Float64Array(NSAMP); BEAMT.latSigLines = new Float64Array(NSAMP);
+  BEAMT.elevSig = new Float64Array(NSAMP); BEAMT.lineSp = new Float64Array(NSAMP);
+  const o = {};
+  for (let k = 0; k < NSAMP; k++) {
+    const r = k * ds;
+    beamAt(r, U.probe === 'linear' ? 'linear' : 'curvi', lam, U.focus, o);
+    const sp = P.sector ? Math.max((P.R0 + r) * P.sector / (NLINE - 1), 1e-4) : P.apert / (NLINE - 1);
+    BEAMT.lineSp[k] = sp;
+    BEAMT.txSigLines[k] = o.tx / FWHM_SIGMA / sp;
+    BEAMT.latSigLines[k] = o.lat / FWHM_SIGMA / sp;
+    BEAMT.elevSig[k] = o.elev / FWHM_SIGMA;
+  }
+  return BEAMT;
+}
+/* THE SURFACE NORMAL at a boundary, from the segmentation: the gradient of "is this the tissue
+   just entered" over the 18 face and edge neighbours a voxel and a bit away. A 2 mm staircase has risers and
+   treads; averaged over a 5 mm cube it has the slope of the surface it stands for. Room frame,
+   pointing INTO the entered tissue. Returns 0 where the neighbourhood has no gradient. */
+const NRM = new Float64Array(3), OBL = { t: 1, r: 0 };
+const FLUID = new Uint8Array(64);
+for (const i of [3, 4, 5, 6, 8, 48, 49, 50, 51, 52]) FLUID[i] = 1;
+for (let i = 29; i <= 46; i++) FLUID[i] = 1;
+const NB_H = 0.25;
+function normalAt(x, y, z, id) {
+  let gx = 0, gy = 0, gz = 0;
+  for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) for (let c = -1; c <= 1; c++) {
+    if (!a && !b && !c) continue;
+    if (a && b && c) continue;                     // the 18 face and edge neighbours: corners add little
+    if (idAt(x + a * NB_H, y + b * NB_H, z + c * NB_H) !== id) continue;
+    const w = 1 / Math.sqrt(a * a + b * b + c * c);
+    gx += a * w; gy += b * w; gz += c * w;
+  }
+  // a clean wall between two thick tissues scores ~4; a layer thinner than the stencil, ~0
+  const L = Math.hypot(gx, gy, gz);
+  if (!(L > 2)) return 0;
+  NRM[0] = gx / L; NRM[1] = gy / L; NRM[2] = gz / L;
+  return 1;
+}
+let FAM = null;
+function famScratch() {
+  if (!FAM) FAM = Array.from({ length: NEL }, () => ({ M: new Float32Array(NLINE * NSAMP), I: new Float32Array(NLINE * NSAMP),
+    Q: new Float32Array(NLINE * NSAMP), T: new Float32Array(NLINE * NSAMP) }));
+  return FAM;
+}
+/* The strongest specular reflectors on each line, [k, rc, coherence] x MAXREF: the sources of
+   reverberation. Kept by size, so a line full of fascia cannot crowd out its one gas bubble. */
+const MAXREF = 12;
+let REFS = null;
+function famRefl() {
+  if (!REFS) REFS = Array.from({ length: NLINE }, () => new Float64Array(3 * MAXREF));
+  return REFS;
+}
+function keepReflector(REF, l, nRef, k, rc, coh) {
+  const R = REF[l], n = nRef[l];
+  if (n < MAXREF) { R[3 * n] = k; R[3 * n + 1] = rc; R[3 * n + 2] = coh; nRef[l] = n + 1; return; }
+  let mi = 0;
+  for (let a = 1; a < MAXREF; a++) if (Math.abs(R[3 * a + 1] * R[3 * a + 2]) < Math.abs(R[3 * mi + 1] * R[3 * mi + 2])) mi = a;
+  if (Math.abs(rc * coh) > Math.abs(R[3 * mi + 1] * R[3 * mi + 2])) { R[3 * mi] = k; R[3 * mi + 1] = rc; R[3 * mi + 2] = coh; }
+}
+
 /* ---- one frame ------------------------------------------------------------- */
 let lastEcho = null, lastMs = 0, lastAcqMs = 0;
 function scanFrame() {
@@ -813,58 +941,120 @@ function scanFrame() {
   const P = probeFrame();
   const { R0, sector, apert } = P;
   const ds = depth / NSAMP;
-  const echo = new Float32Array(NLINE * NSAMP);
   const lamCm = C_SND / freq;                          // wavelength, cm
+  const beam = beamTables(P, ds, lamCm);
+  const echo = new Float32Array(NLINE * NSAMP), echoQ = new Float32Array(NLINE * NSAMP);
+  const F = famScratch();
+  const Ct = TBL.coh, Cs = TBL.c;
+  const ex = -P.uz, ez = P.ux;                         // the elevation direction, out of the plane
+  // after a line dies its sub-rays still cross that ground: charge them ordinary tissue
+  const mDead = Math.exp(-0.7 * freq * ds / 8.686);
+  const nRef = new Int32Array(NLINE), REF = famRefl();
+  const stepAtt = new Float64Array(64);
+  for (let i = 0; i < 64; i++) stepAtt[i] = Math.exp(-At[i] * freq * ds / 8.686);
 
-  // THE SCAN PLANE IS THE PROBE'S, NOT THE VOLUME'S. u is the in-plane lateral
-  // direction: rot = 0 lays the fan across the patient (transverse), rot = 90 lays it
-  // along them (sagittal), and anything between is the oblique a real hand produces.
-  // Rocking steers the whole fan by adding to every line's angle.
-  for (let l = 0; l < NLINE; l++) {
-    const { sx: startX, sy: startY, sz: startZ, dx, dy, dz } = lineGeom(P, l / (NLINE - 1), 0);
-    let amp = 1;                                       // one-way amplitude remaining
-    let prevId = -1;
-    let coupled = false;      // has this line reached the patient yet?
-    const base = l * NSAMP;
-    for (let k = 0; k < NSAMP; k++) {
-      const r = k * ds;
-      const x = startX + dx * r, y = startY + dy * r, zc = startZ + dz * r;
-      let id = idAt(x, y, zc);
-      // GEL. A convex face touches the skin at its centre and stands off it at the
-      // edges, so every oblique line would cross an air gap and lose ~30 dB at the
-      // air-skin mismatch — which is precisely what happens when you forget the gel,
-      // and precisely what the gel is for. Air BEFORE the beam has entered the
-      // patient is therefore coupling medium; air after it (bowel gas, the far skin
-      // line) is real air and keeps its mirror.
-      if (!coupled) { if (id === 0) id = 3; else coupled = true; }
-      const zz = Zt[id];
-      let e = 0;
-      if (prevId >= 0 && id !== prevId) {
-        // specular reflection at the impedance mismatch — the boundary itself
-        const zp = Zt[prevId];
-        const rc = (zz - zp) / (zz + zp);
-        const Rp = rc * rc;
-        e += Math.sqrt(Rp) * amp;                      // amplitude of the returned echo
-        amp *= Math.sqrt(Math.max(0, 1 - Rp));         // what carries on into the tissue
+  /* THE BEAM, NOT THE RAY (docs/ultrasound.md §4.5). Each line is marched as THREE rays across
+     the slice — the elevation profile's Gauss-Hermite nodes, curving with the lens's own
+     width — and each records, per step, its local reflectivity (the interface and the speckle,
+     before any loss) and the amplitude factor the step costs. The lateral beam is then carried
+     through those tables by sub-rays that cross the neighbouring lines as the beam converges
+     on the focus and diverges past it (beamTransmission), and each elevation ray's echo is
+     its reflectivity times its two-way transmission. A rib half in the beam leaves half a beam:
+     the shadow's edge is a penumbra as wide as the beam there, and it widens with depth. */
+  for (let j = 0; j < NEL; j++) {
+    const es = ELEV_NODES.s[j], Fj = F[j], M = Fj.M, RI = Fj.I, RQ = Fj.Q;
+    // THE SCAN PLANE IS THE PROBE'S, NOT THE VOLUME'S. u is the in-plane lateral
+    // direction: rot = 0 lays the fan across the patient (transverse), rot = 90 lays it
+    // along them (sagittal), and anything between is the oblique a real hand produces.
+    // Rocking steers the whole fan by adding to every line's angle.
+    for (let l = 0; l < NLINE; l++) {
+      const { sx: startX, sy: startY, sz: startZ, dx, dy, dz } = lineGeom(P, l / (NLINE - 1), 0);
+      let amp = 1;                                       // one-way amplitude remaining (centre ray)
+      let prevId = -1;
+      let coupled = false, cAt = 0;   // has this line reached the patient yet, and where?
+      const base = l * NSAMP;
+      let k = 0;
+      for (; k < NSAMP; k++) {
+        const r = k * ds, eo = es * beam.elevSig[k];
+        const x = startX + dx * r + ex * eo, y = startY + dy * r, zc = startZ + dz * r + ez * eo;
+        let id = idAt(x, y, zc);
+        // GEL. A convex face touches the skin at its centre and stands off it at the
+        // edges, so every oblique line would cross an air gap and lose ~30 dB at the
+        // air-skin mismatch — which is precisely what happens when you forget the gel,
+        // and precisely what the gel is for. Air BEFORE the beam has entered the
+        // patient is therefore coupling medium; air after it (bowel gas, the far skin
+        // line) is real air and keeps its mirror.
+        if (!coupled) { if (id === 0) id = 3; else { coupled = true; cAt = r < GEL_MAX ? r : -1e9; } }
+        else if (id === 0 && r - cAt < GEL_FILL) id = 3;
+        const zz = Zt[id];
+        let ei = 0, eq = 0, m = 1;
+        /* diffuse backscatter from sub-resolution structure: a scatterer per cell with a
+           PHASE hashed on its material position. Complex, so that what the PSF sums is a
+           random walk in the plane and the envelope is Rayleigh — fully developed speckle,
+           SNR 1.91 — rather than the half-normal a real-valued sum gives. Scaled 1/sqrt 3 so
+           the power is what the old real-valued uniform scatterer had. */
+        const bs = Bt[id];
+        if (bs > 0) {
+          const pi = (hash3((MP[0] * 50) | 0, (MP[1] * 50) | 0, (MP[2] * 50) | 0) * NPH) | 0;
+          const a = bs * SCAT * 0.5773502691896258;
+          ei = a * PH_C[pi]; eq = a * PH_S[pi];
+        }
+        if (prevId >= 0 && id !== prevId) {
+          // specular reflection at the impedance mismatch — the boundary itself, with its sign
+          const zp = Zt[prevId];
+          let rc = (zz - zp) / (zz + zp);
+          m = Math.sqrt(Math.max(0, 1 - rc * rc));       // what carries on into the tissue
+          /* ...at the angle the beam actually meets it (core/beam.js obliqueInterface): the
+             normal is measured from the segmentation, and only where it can matter — between
+             soft tissues and fluids, where the beam is neither stopped dead (gas, bone) nor
+             crossing a boundary with nothing to bend it */
+          // (the gel is water, id 3, and conforms to the skin: it bends nothing)
+          const fl = FLUID[id] !== FLUID[prevId] && id !== 3 && prevId !== 3;
+          if (zz > 0.5 && zz < 2.5 && zp > 0.5 && zp < 2.5 && (fl || Math.abs(rc) > 0.03) && normalAt(x, y, zc, id)) {
+            obliqueInterface(zp, zz, Cs[prevId], Cs[id], dx * NRM[0] + dy * NRM[1] + dz * NRM[2], OBL);
+            rc = OBL.r;
+            // the beam bends only at a wall the voxels can actually shape: a FLUID body (a
+            // gallbladder, a cyst, a vessel) against tissue. A fascia one voxel thick has no
+            // measurable normal, and a guessed one would scatter shadows across the field
+            if (fl) m = OBL.t;
+          }
+          ei += rc;
+          // (a line that only meets skin far out, skimming a flank, sees that surface edge-on: its
+          // echoes leave sideways and nothing re-launches from them)
+          if (j === 1 && cAt >= 0 && Math.abs(rc) >= 0.03) keepReflector(REF, l, nRef, k, rc, Ct[id]);
+        }
+        RI[base + k] = ei; RQ[base + k] = eq;
+        // attenuation over this step, one way — the echo pays it again on the way back
+        m *= stepAtt[id];
+        M[k * NLINE + l] = m;
+        amp *= m;
+        prevId = id;
+        if (amp < 1e-6) { k++; break; }                // nothing is coming back from here
       }
-      // diffuse backscatter from sub-resolution structure, random phase: SPECKLE
-      const bs = Bt[id];
-      if (bs > 0) {
-        const q = hash3((MP[0] * 50) | 0, (MP[1] * 50) | 0, (MP[2] * 50) | 0);
-        e += bs * (q - 0.5) * 2.0 * amp * SCAT;
-      }
-      /* THE ECHO COMES BACK THE WAY IT WENT IN. `amp` is what survives the trip DOWN to this
-         depth; the echo must make the same trip back up, through the same tissue and the same
-         interfaces, so it is scaled by `amp` a second time. Without this the image paid
-         attenuation one way while the TGC repaid it both ways — 0.5·f·d dB of free gain
-         (+17 dB at 3.5 MHz and 10 cm), liver brightening with depth, and 19 cm of
-         penetration at 12 MHz, which is what made the frequency lesson mean nothing. */
-      echo[base + k] = e * amp;
-      // attenuation over this step, one way — the echo pays it again on the way back (above)
-      amp *= Math.exp(-At[id] * freq * ds / 8.686);
-      if (amp < 1e-6) { prevId = id; break; }          // nothing is coming back from here
-      prevId = id;
+      for (; k < NSAMP; k++) { RI[base + k] = 0; RQ[base + k] = 0; M[k * NLINE + l] = mDead; }
     }
+    // the centre ray carries the full lateral profile; the two slice-edge rays, a coarser one
+    beamTransmission(M, NLINE, NSAMP, beam.txSigLines, j === 1 ? LAT_NODES : LAT_NODES_EDGE, Fj.T);
+    /* THE ECHO COMES BACK THE WAY IT WENT IN: reflectivity times the beam's transmission
+       SQUARED — down through the tissue and back up through the same tissue. (Paying it one way
+       while the TGC repaid it both ways was 0.5·f·d dB of free gain, and 19 cm of penetration at
+       12 MHz.) The three elevation rays add as the different scatterers they are. */
+    const wj = ELEV_NODES.w[j], T = Fj.T;
+    for (let i = 0; i < NLINE * NSAMP; i++) {
+      const t2 = wj * T[i] * T[i];
+      echo[i] += t2 * RI[i]; echoQ[i] += t2 * RQ[i];
+    }
+  }
+  // the strong reflectors re-launch the echo train: A-lines, dirty shadows, near-field clutter
+  const T1 = F[1].T;
+  for (let l = 0; l < NLINE; l++) {
+    const nr = nRef[l]; if (!nr) continue;
+    const R = REF[l];
+    for (let a = 0; a < nr; a++) { const ka = R[3 * a] | 0; R[3 * a + 1] *= T1[l * NSAMP + ka] * T1[l * NSAMP + ka]; }
+    addReverb(echo, echoQ, l * NSAMP, NSAMP, R, nr, R_FACE, 3, (kk, o, out) => {
+      const pi = (kk * 37 + l * 1031 + o * 4099) & (NPH - 1);
+      out[0] = PH_C[pi]; out[1] = PH_S[pi];
+    });
   }
   // colour and PW, each on lines of its own (steered, on a linear array), after the B lines
   const col = dopOn ? colourFrame(P, ds, freq, lamCm, card, insp) : null;
@@ -884,50 +1074,63 @@ function scanFrame() {
   const tLineMs = 2 * depth / (C_SND * 1e6) * 1e3;          // round trip, ms
   lastAcqMs = NLINE * tLineMs + (col ? col.nC * ENS / col.prf * 1e3 : 0);
   if (pw) lastAcqMs *= 2;
-  lastEcho = { echo, depth, freq, ds, sector, R0, apert, lamCm, col, pw, acqMs: lastAcqMs,
+  lastEcho = { echo, echoQ, beam, depth, freq, ds, sector, R0, apert, lamCm, col, pw, acqMs: lastAcqMs,
     vel: col ? col.v : null, vNyq: col ? col.vNyq : 0, box: col ? { l0: col.l0, l1: col.l1, k0: col.k0, k1: col.k1 } : null };
   return lastEcho;
 }
 
 /* ---- the beam's point-spread function --------------------------------------
    Separable, and both widths are physics rather than taste: axial = pulse length
-   (2 lambda), lateral = beam width, narrowest at the focus and diverging away
-   from it. This is the whole frequency trade in two lines. */
+   (2 lambda), lateral = the TWO-WAY beam width (transmit focus x dynamic receive,
+   core/beam.js), narrowest at the focus. This is the whole frequency trade in two
+   lines. The echo is complex (I, Q), so the envelope is a magnitude: Rayleigh speckle. */
 function envelope(fr) {
-  const { echo, ds, lamCm, sector, R0 } = fr;
-  const out = new Float32Array(NLINE * NSAMP);
-  const tmp = new Float32Array(NLINE * NSAMP);
+  const { echo, echoQ, ds, lamCm, beam } = fr;
+  const N = NLINE * NSAMP;
+  const out = new Float32Array(N);
+  const tI = new Float32Array(N), tQ = new Float32Array(N);
   const wax = Math.max(1, Math.round((2 * lamCm) / ds / 2));       // half-width, samples
-  // axial
+  const gax = new Float64Array(2 * wax + 1);
+  for (let d = -wax; d <= wax; d++) gax[d + wax] = Math.exp(-(d * d) / (wax * wax + 0.5));
+  // axial: the pulse. Interfaces stay as crisp along the beam as the pulse is short
   for (let l = 0; l < NLINE; l++) {
     const b = l * NSAMP;
     for (let k = 0; k < NSAMP; k++) {
-      let s = 0, w = 0;
+      let si = 0, sq = 0, w = 0;
       for (let d = -wax; d <= wax; d++) {
         const kk = k + d; if (kk < 0 || kk >= NSAMP) continue;
-        const g = Math.exp(-(d * d) / (wax * wax + 0.5));
-        s += echo[b + kk] * g; w += g;
+        const g = gax[d + wax];
+        si += echo[b + kk] * g; sq += echoQ[b + kk] * g; w += g;
       }
-      tmp[b + k] = s / (w || 1);
+      tI[b + k] = si / w; tQ[b + k] = sq / w;
     }
   }
-  // lateral, depth-dependent
-  const focus = U.focus;
+  /* lateral: the TWO-WAY beam (transmit focus x dynamic receive), in line spacings at this
+     depth — the speckle's lateral grain and the blur of an echo across the image. Plus the
+     SIDE LOBES: a low pedestal ~0.6 cm either side that leaks a little of every bright echo
+     sideways, which is the faint haze a real gallbladder or vessel has against bright walls. */
+  const csI = new Float64Array(NLINE + 1), csQ = new Float64Array(NLINE + 1), g = new Float64Array(41);
   for (let k = 0; k < NSAMP; k++) {
-    const r = R0 + k * ds;
-    const bw = lamCm * 3 * (1 + Math.abs(k * ds - focus) / Math.max(focus, 1));   // cm
-    const lineSp = sector ? Math.max(r * sector / (NLINE - 1), 1e-4) : 4.0 / NLINE;
-    const wl = Math.max(0, Math.min(6, Math.round(bw / lineSp / 2)));
+    const sg = Math.max(0.35, beam.latSigLines[k]);
+    const wl = Math.min(20, Math.ceil(2.5 * sg));
+    for (let d = 0; d <= wl; d++) g[d] = Math.exp(-0.5 * d * d / (sg * sg));
+    const H = Math.max(wl + 2, Math.min(48, Math.round(0.6 / beam.lineSp[k])));
+    for (let l = 0; l < NLINE; l++) { csI[l + 1] = csI[l] + tI[l * NSAMP + k]; csQ[l + 1] = csQ[l] + tQ[l * NSAMP + k]; }
     for (let l = 0; l < NLINE; l++) {
-      let s = 0, w = 0;
+      let si = 0, sq = 0, w = 0;
       for (let d = -wl; d <= wl; d++) {
         const ll = l + d; if (ll < 0 || ll >= NLINE) continue;
-        const g = Math.exp(-(d * d) / (wl * wl + 0.5));
-        s += tmp[ll * NSAMP + k] * g; w += g;
+        const gg = g[d < 0 ? -d : d];
+        si += tI[ll * NSAMP + k] * gg; sq += tQ[ll * NSAMP + k] * gg; w += gg;
       }
-      // receiver noise rides on every sample, uncorrelated and stable per frame
-      const nz = hash3(l * 7919, k * 104729, 17) - 0.5;
-      out[l * NSAMP + k] = Math.abs(s / (w || 1)) + NOISE * (0.5 + Math.abs(nz));
+      si /= w; sq /= w;
+      const a = Math.max(0, l - H), b2 = Math.min(NLINE, l + H + 1);
+      const sl = SIDE_LOBE / (b2 - a);
+      si += sl * (csI[b2] - csI[a]); sq += sl * (csQ[b2] - csQ[a]);
+      // receiver noise rides on every sample, complex, uncorrelated and stable per frame
+      si += NOISE * 2 * (hash3(l * 7919, k * 104729, 17) - 0.5);
+      sq += NOISE * 2 * (hash3(l * 7919, k * 104729, 23) - 0.5);
+      out[l * NSAMP + k] = Math.sqrt(si * si + sq * sq);
     }
   }
   return out;
@@ -972,6 +1175,35 @@ function colourOf(v, half, b, inv, out) {
 }
 const CRGB = new Float64Array(3);
 let lastColStats = null;
+/* Scan conversion, pixel -> (line, sample), BILINEAR — as every machine's converter does: the
+   fan is sampled on 192 lines, and nearest-neighbour put every sample on the screen as a little
+   horizontal dash wherever a line is wider than a pixel (most of a curvilinear fan), which reads
+   as a texture no real scanner has. Interpolating between the lines it was acquired on adds no
+   blur the beam did not have. The geometry only changes with the probe and the depth, so the map
+   is built once and reused (it was an atan2 and a hypot per pixel, per frame). */
+let SMAP = null, SFL = null, SFK = null, smapKey = '';
+function scanMap(W, H, cx, cy, scale, sector, R0, depth, apert, ds) {
+  const key = `${W},${H},${cx},${cy},${scale},${sector},${R0},${depth},${apert},${ds}`;
+  if (key === smapKey) return SMAP;
+  smapKey = key;
+  SMAP = new Int32Array(W * H).fill(-1); SFL = new Uint8Array(W * H); SFK = new Uint8Array(W * H);
+  for (let j = 0; j < H; j++) {
+    for (let i = 0; i < W; i++) {
+      const X = (i - cx) / scale, Y = (j - cy) / scale;
+      let lf = -1, kf = -1;
+      if (sector) {
+        const r = Math.hypot(X, Y), th = Math.atan2(X, Y);
+        if (!(r < R0 || r > R0 + depth || Math.abs(th) > sector / 2)) { lf = (th / sector + 0.5) * (NLINE - 1); kf = (r - R0) / ds; }
+      } else if (!(Math.abs(X) > apert / 2 || Y < 0 || Y > depth)) { lf = (X / apert + 0.5) * (NLINE - 1); kf = Y / ds; }
+      if (lf < 0 || kf < 0) continue;
+      const l0 = Math.min(NLINE - 2, lf | 0), k0 = Math.min(NSAMP - 2, kf | 0);
+      const p = j * W + i;
+      SMAP[p] = l0 * NSAMP + k0;
+      SFL[p] = Math.round(Math.min(1, lf - l0) * 255); SFK[p] = Math.round(Math.min(1, kf - k0) * 255);
+    }
+  }
+  return SMAP;
+}
 /* The B fan, scan-converted. Returns the geometry so the M cursor can be drawn in the
    same frame the image was built in. */
 function drawFan(env, fr, tgcLut) {
@@ -991,28 +1223,27 @@ function drawFan(env, fr, tgcLut) {
   const tS = col ? Math.tan(col.steer) : 0, cS = col ? Math.cos(col.steer) : 1;
   // what the screen shows, by what is under it: the measurement hook for flash and bleed
   const cst = { ves: 0, vesOn: 0, tis: 0, tisOn: 0, vesHist: new Uint32Array(11), tisHist: new Uint32Array(11) };
+  // TGC: every machine compensates for an ASSUMED uniform tissue. That
+  // assumption is what makes a cyst's far wall bright and a stone's shadow
+  // black — the compensation is right for tissue and wrong for both.
+  // Grey once per SAMPLE, then looked up per pixel through a cached scan-conversion map.
+  const grey = new Uint8ClampedArray(NLINE * NSAMP);
+  for (let l = 0; l < NLINE; l++) for (let k = 0; k < NSAMP; k++) grey[l * NSAMP + k] = greyOf(env[l * NSAMP + k], k, tgcLut, dr);
+  const map = scanMap(W, H, cx, cy, scale, sector, R0, depth, apert, ds);
   for (let j = 0; j < H; j++) {
     for (let i = 0; i < W; i++) {
-      const X = (i - cx) / scale, Y = (j - cy) / scale;
-      let l, k;
-      if (sector) {
-        const r = Math.hypot(X, Y);
-        const th = Math.atan2(X, Y);
-        if (r < R0 || r > R0 + depth || Math.abs(th) > sector / 2) { l = -1; }
-        else { l = Math.round((th / sector + 0.5) * (NLINE - 1)); k = Math.round((r - R0) / ds); }
-      } else {
-        if (Math.abs(X) > apert / 2 || Y < 0 || Y > depth) { l = -1; }
-        else { l = Math.round((X / apert + 0.5) * (NLINE - 1)); k = Math.round(Y / ds); }
+      const p = j * W + i, si = map[p];
+      const o = p * 4;
+      const inB = si >= 0;
+      let l = -1, k = -1, v = 0;
+      if (inB) {
+        const fl = SFL[p] / 255, fk = SFK[p] / 255;
+        v = (grey[si] * (1 - fk) + grey[si + 1] * fk) * (1 - fl) + (grey[si + NSAMP] * (1 - fk) + grey[si + NSAMP + 1] * fk) * fl;
+        l = ((si / NSAMP) | 0) + (fl >= 0.5 ? 1 : 0); k = si % NSAMP + (fk >= 0.5 ? 1 : 0);
       }
-      const o = (j * W + i) * 4;
-      let v = 0;
-      // TGC: every machine compensates for an ASSUMED uniform tissue. That
-      // assumption is what makes a cyst's far wall bright and a stone's shadow
-      // black — the compensation is right for tissue and wrong for both.
-      const inB = l >= 0 && l < NLINE && k >= 0 && k < NSAMP;
-      if (inB) v = greyOf(env[l * NSAMP + k], k, tgcLut, dr);
       let R = v, G = v, B = v;
       if (col && inB) {
+        const X = (i - cx) / scale, Y = (j - cy) / scale;
         let lc = l, kc = k;
         if (!sector && col.steer) { lc = Math.round(((X - Y * tS) / apert + 0.5) * (NLINE - 1)); kc = Math.round(Y / cS / ds); }
         const c = Math.round((lc - col.l0) / col.cstep);
@@ -1372,6 +1603,7 @@ function appendSpectrum() {
     const wrap = sPrevPh >= 0 && ph < sPrevPh - 0.5;  // the ECG trigger: a new beat began
     sPrevPh = ph;
     sRows[sHead] = { pos: env.pos, neg: env.neg, wrap, prf: pw.prf };
+    if (AU && AU.on) AU.cols.push(SPEC.slice());
     for (let i = 0; i < NBIN; i++) {
       const db = 10 * Math.log10(SPEC[i] / noiseP + 1e-9) + U.pwGain - 4;
       const v = Math.pow(Math.max(0, Math.min(1, db / PW_DR)), 0.8) * 255;
@@ -1381,6 +1613,48 @@ function appendSpectrum() {
     g.putImageData(sCol1, sHead, 0);
     sHead = (sHead + 1) % SCOLS;
   }
+  if (AU && AU.on) playColumns(pw.prf, colDt, noiseP);
+}
+
+/* ---- Doppler audio (core/dopplerAudio.js) -------------------------------------------
+   The spectrum the trace draws, played as it is swept: one oscillator per bin at its shift,
+   toward the probe in the left channel and away in the right. Queued ahead of the audio
+   clock by the columns' own real-time length, so the sound runs at the trace's speed and a
+   frozen trace falls silent. */
+let AU = null;
+function audioEnsure() {
+  if (AU) return AU;
+  const AC = typeof window !== 'undefined' && (window.AudioContext || window.webkitAudioContext);
+  if (!AC) return null;
+  const ac = new AC();
+  const master = ac.createGain(), comp = ac.createDynamicsCompressor();
+  comp.threshold.value = -12; comp.ratio.value = 8;
+  master.connect(comp); comp.connect(ac.destination);
+  AU = { ac, master, on: false, next: 0, cols: [], st: audioState(NBIN) };
+  audioVolume();
+  return AU;
+}
+function audioVolume() { if (AU) AU.master.gain.value = Math.pow((U.pwVol ?? 60) / 100, 2); }
+function setAudio(on) {
+  U.pwAudio = on;
+  if (on) { const a = audioEnsure(); if (!a) { U.pwAudio = false; setStatus('This browser has no Web Audio.'); return; } a.on = true; a.ac.resume?.(); a.next = 0; }
+  else if (AU) { AU.on = false; AU.cols = []; }
+  $('usPwAudio')?.classList.toggle('on', !!U.pwAudio);
+}
+function playColumns(prf, colDt, noiseP) {
+  const a = AU, cols = a.cols; a.cols = [];
+  if (!cols.length || U.disp !== 'pw' || !U.live) return;
+  const fs = a.ac.sampleRate, n = Math.max(1, Math.round(colDt * fs)), N = n * cols.length;
+  const buf = a.ac.createBuffer(2, N, fs), L = buf.getChannelData(0), R = buf.getChannelData(1);
+  // per-bin amplitude against the noise floor: the aorta seat plays at ~0.2 rms full-scale with
+  // the receiver's hiss ~40 dB under it, and the spectral gain moves both, as it does the trace
+  const gain = Math.pow(10, (U.pwGain - 72) / 20);
+  cols.forEach((P, c) => synthColumn(P, prf, U.pwBase, fs, n, gain, noiseP, a.st, L, R, c * n));
+  const now = a.ac.currentTime;
+  if (a.next < now + 0.01 || a.next > now + 0.6) a.next = now + 0.15;   // (re)prime the queue
+  const src = a.ac.createBufferSource();
+  src.buffer = buf; src.connect(a.master); src.start(a.next);
+  a.next += N / fs;
 }
 /* The swept rows oldest-first, and the measurements made on them, in angle-corrected cm/s. */
 function sweptRows() { return [...sRows.slice(sHead), ...sRows.slice(0, sHead)].filter(Boolean); }
@@ -1491,17 +1765,22 @@ export function usImageToBay() {
 /* ---- the loop -------------------------------------------------------------- */
 let liveTimer = null;
 function sweep() {
+  const t0 = performance.now();
   const fr = scanFrame();
   if (fr) { lastFr = fr; render(fr); dopReadouts(fr); }
+  // the whole frame's compute — the scan AND the display. Waiting out (acoustic - scan) alone
+  // left the render unaccounted, so the loop ran at acoustic + render: 15 fps where the status
+  // line promised 25
+  const comp = performance.now() - t0;
   // M-mode fires ONE line per column, so its budget is one round trip, not a whole frame
   const acq = U.disp === 'm' ? lastAcqMs / NLINE : lastAcqMs;
-  const fps = 1000 / Math.max(acq, lastMs, 1);
-  if (performance.now() >= noteUntil) setStatus(`${fps.toFixed(0)} fps · ${acq.toFixed(0)} ms acoustic · ${lastMs.toFixed(0)} ms compute`
+  const fps = 1000 / Math.max(acq, comp, 1);
+  if (performance.now() >= noteUntil) setStatus(`${fps.toFixed(0)} fps · ${acq.toFixed(0)} ms acoustic · ${comp.toFixed(0)} ms compute`
     + (U.live ? ' · LIVE' : ' · FROZEN'));
   if (U.live) {
     clearTimeout(liveTimer);
     // wait out whatever is left of the acoustic budget after the compute
-    liveTimer = setTimeout(sweep, Math.max(8, acq - lastMs));
+    liveTimer = setTimeout(sweep, Math.max(4, acq - comp));
   }
 }
 function setLive(on) {
@@ -1552,6 +1831,8 @@ function renderReadouts() {
   set('usPwBaseV', U.pwBase === 0 ? 'centre' : (U.pwBase > 0 ? '▼ ' : '▲ ') + Math.abs(U.pwBase * 100).toFixed(0) + ' %');
   set('usPwWallV', U.pwWall + ' Hz');
   set('usPwGainV', (U.pwGain > 0 ? '+' : '') + U.pwGain + ' dB');
+  set('usPwVolV', (U.pwVol ?? 60) + ' %');
+  $('usPwAudio')?.classList.toggle('on', !!U.pwAudio);
   $('usPwAngleV')?.classList.toggle('warn', Math.abs(U.pwAngle) > 60);
   $('usCInv')?.classList.toggle('on', !!U.cInv);
   $('usPwInv')?.classList.toggle('on', !!U.pwInv);
@@ -1717,6 +1998,7 @@ export function usApplyMode(on) {
     setTimeout(() => { bindVolume(); setLive(true); }, 400);
   } else {
     clearTimeout(liveTimer); liveTimer = null; U.live = false;
+    if (AU) { AU.on = false; AU.cols = []; U.pwAudio = false; $('usPwAudio')?.classList.remove('on'); }
   }
   usSyncScene();
 }
@@ -1771,6 +2053,8 @@ export function initUS(context) {
   slide('usPwAngle', 'pwAngle'); slide('usPwPrf', 'pwPrf', sReset); slide('usPwBase', 'pwBase', sReset);
   slide('usPwWall', 'pwWall'); slide('usPwGain', 'pwGain');
   $('usPwInv')?.addEventListener('click', () => { U.pwInv = !U.pwInv; renderReadouts(); redisplay(); });
+  $('usPwAudio')?.addEventListener('click', () => setAudio(!U.pwAudio));
+  $('usPwVol')?.addEventListener('input', (e) => { U.pwVol = +e.target.value; audioVolume(); renderReadouts(); });
   document.querySelectorAll('#usPwSweepSeg button').forEach((b) => b.addEventListener('click', () => {
     U.pwSweep = +b.dataset.sweep; sReset(); renderReadouts();
   }));
@@ -1830,7 +2114,7 @@ export function initUS(context) {
     });
   });
   if (typeof window !== 'undefined') window.__usProbe = () => ({
-    U, lastMs, lastEcho, scanFrame, envelope, anim, WST, mReset,
+    U, lastMs, lastEcho, scanFrame, envelope, anim, WST, mReset, usCanvas: () => usCanvas, render, fam: () => FAM, audio: () => AU,
     bind: bindVolume, vdims: () => ({ vnx, vny, vnz, vsx, vsy, vsz, vex, vey, vez }),
     idAt, buildTgc, greyOf, NLINE, NSAMP, mCanvas: () => mCanvas,
     contact: (x, z) => { cpKey = ''; return contactPoint(x, z); }, surfaceAt, GEL_PAD,
