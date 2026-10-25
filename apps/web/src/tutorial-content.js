@@ -248,12 +248,13 @@ export const XRAY_STEPS = [
     title: 'Receptor and matrix',
     text: 'Receptor size and orientation decide how much anatomy fits: 25×30 for an extremity, '
       + 'and 43×43 for the trunk and the broad ones (a chest, an abdomen, a pelvis across both '
-      + 'hips): collimate to the part, not to the plate. The matrix the image is ray-cast at is a simulation control, not a '
-      + 'clinical one, so it sits under Simulation with the compute engine.',
+      + 'hips): collimate to the part, not to the plate. The 25×30 turns portrait or landscape '
+      + 'to lie along the part; the square 43×43 has no orientation. The matrix the image is '
+      + 'ray-cast at is a simulation control, not a clinical one, so it sits under Simulation '
+      + 'with the compute engine.',
     goal: {
-      label: 'Switch the receptor between portrait and landscape',
-      arm: () => S().detOrient,
-      done: (a) => S().detOrient !== a,
+      label: 'Take the 25×30 and turn it landscape',
+      done: () => S().detBaseW === 25 && S().detOrient === 'landscape',
     },
   },
   {
@@ -274,10 +275,9 @@ export const XRAY_STEPS = [
   {
     sel: '#simGrp',
     title: 'Simulation',
-    text: 'How the image is made and shown. <b>Scatter</b> scales the veiling fog that scattered '
-      + 'photons lay over the image: collimating tighter and fitting a grid are what remove it. '
-      + '<b>Automatic rescaling</b> and <b>detail enhancement</b> are the processing a DR system '
-      + 'applies before you see the image; turn them off to see the raw exposure.',
+    text: 'How the image is made. <b>Scatter</b> scales the scattered photons the patient sends '
+      + 'to the receptor, and the line under it says how much of the current image&rsquo;s signal '
+      + 'they are: collimating tighter and fitting a grid are what remove it.',
   },
   {
     sel: '#rotor',
@@ -333,7 +333,11 @@ export const XRAY_STEPS = [
     title: 'Window and level',
     text: 'Post-processing: brightness and contrast applied to the stored image. The histogram '
       + 'above shows the pixel distribution with the response curve laid over it — drag the toe and '
-      + 'shoulder to reshape it. Remember that this changes only the display. A dark image from too '
+      + 'shoulder to reshape it. <b>Automatic rescaling</b> sets that curve to the anatomy&rsquo;s '
+      + 'values of interest (the VOI bracket: the raw beam and the collimated edge left out), as a '
+      + 'DR system does; off, the curve spans the whole detector range and you see the exposure as '
+      + 'it came. <b>Edge enhancement</b> sharpens structure edges. Remember that this changes only '
+      + 'the display. A dark image from too '
       + 'little exposure can be brightened here, but the noise comes up with it; windowing cannot '
       + 'put back photons you never sent.',
     goal: {

@@ -485,7 +485,7 @@ async function setSubject(sub){
   syncLegRotUI();
   S.lastDose=null; S.doseLog=[]; updateDoseReadout();   // a new patient starts a new dose record
   S.joints={}; renderJointUI();                         // and with their joints straight
-  S.lastMarker=null; updateMarkerNote();
+  S.lastMarker=null;
   window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
 /* Everything an injected study leaves behind on the model. A study belongs to one patient
@@ -951,7 +951,10 @@ function applyDet(){
   const rv=$('resV'); if(rv) rv.textContent=nx+'×'+ny;
   // full-resolution (Low/Std/High) ray-casting is heavy — show the compute warning
   const rw=$('resWarn'); if(rw) rw.style.display = (S.resolution==='quick') ? 'none' : '';
-  const os=$('detOrientSeg'); if(os)[...os.children].forEach(b=>b.classList.toggle('on',b.dataset.orient===S.detOrient));
+  // a square receptor has no orientation: the choice is off while the 43x43 is in
+  const sq=S.detBaseW===S.detBaseH, os=$('detOrientSeg');
+  if(os)[...os.children].forEach(b=>{ b.classList.toggle('on',b.dataset.orient===S.detOrient); b.disabled=sq;
+    b.title=sq ? 'A square receptor has no orientation' : ''; });
   // the light field can open to the full detector: cap the collimation sliders at the receptor size
   const cx=$('collX'), cz=$('collZ');
   if(cx){ cx.max=S.detW; if(S.collX>S.detW){ S.collX=S.detW; cx.value=S.detW; } }
@@ -996,7 +999,7 @@ const S = {
   aecOn:false, aecCells:{l:false,c:true,r:false}, aecResult:null,  // AEC: cells + achieved mAs of the last exposure
   lut:lutData.luts.linear, protocol:null,          // display LUT (sigmoid) + selected APR protocol
   showCurve:true, autoRescale:true, rescale:null,  // LUT-curve visibility; DR auto-rescale + active VOI window
-  detailEnh:true, _proc:null,                      // DR detail (edge) enhancement + cached enhanced-tone map
+  detailEnh:false, _proc:null,                     // DR detail (edge) enhancement, off by default + its cached tone map
   imgHistory:[], histIdx:-1, activeSubject:'hand', imgMeta:null,   // last-10 image review strip
   viewMode:'orbit', bayContent:'3d', lfOn:true, imgRot:0, flipH:false, flipV:false,
   curve:null, curveManual:false,                   // response-curve handles; null = follow the image
@@ -2431,8 +2434,14 @@ function bind(){
   // LUT/response-curve visibility (does NOT change the LUT shape — image is unaffected)
   $('curveToggle')?.addEventListener('change',e=>{ S.showCurve=e.target.checked;
     updateXrayHistogram(); ctRenderViewer?.(); });
-  // automatic rescaling (DR auto-ranging) — normalizes the VOI to the display range
+  // Automatic rescaling (DR auto-ranging): the response curve set to this anatomy's values of
+  // interest on the histogram — its toe at the VOI's low end, its shoulder at the high end (the raw
+  // beam and the collimated-off tail left out), as a DR system's body-part processing does. Off,
+  // the curve spans the detector's whole range and the image shows the exposure as it came. The
+  // display draws through the curve, which was seeded only when an image arrived, so this toggle
+  // changed nothing on screen until the next exposure: it re-seeds now (and drops a dragged curve).
   $('rescaleToggle')?.addEventListener('change',e=>{ S.autoRescale=e.target.checked;
+    S.curveManual=false; reseedCurve();
     if(S.hasImage) drawFilm(); else updateXrayHistogram(); });
   // DR detail (edge) enhancement — multiscale unsharp on the acquired image
   $('detailToggle')?.addEventListener('change',e=>{ S.detailEnh=e.target.checked;
@@ -2915,7 +2924,6 @@ async function computeRadiograph(opts={}){
   pushImage(signal,nx,ny,mask,buildMeta(spectrum),voiMask);   // -> active image + drawFilm + meta + strip
   updateDI(EI);
   updateDoseReadout();
-  updateMarkerNote();
   if(S.bayContent==='image') setContent('image');
 
   $('prog').style.width='100%';
@@ -3213,7 +3221,7 @@ function displayCurve(x){ return displayTone(x, S.rescale); }
    Draws a proper histogram (blue bars, axis ticks) of the image's base grey values,
    overlaid with the current LUT/response curve and a dashed identity diagonal so the
    sigmoid roll-off is visible. curveFn maps input tone [0,1] -> output [0,1]. */
-export function drawHistogram(canvas, hist, curveFn, xlabels){
+export function drawHistogram(canvas, hist, curveFn, xlabels, voi=null){
   if(!canvas) return;
   const g=canvas.getContext('2d'), W=canvas.width, H=canvas.height;
   const padL=3, padR=3, padT=4, padB=11, pw=W-padL-padR, ph=H-padT-padB;
@@ -3226,7 +3234,16 @@ export function drawHistogram(canvas, hist, curveFn, xlabels){
   let hmax=1; for(const v of hist) if(v>hmax) hmax=v;
   const n=hist.length, bw=pw/n;
   g.fillStyle='#5b83d6';
+  // the values of interest the automatic rescaling found (the anatomy: the raw beam's peak and the
+  // collimated-off tail left out), shaded behind the bars and bracketed along the axis
+  if(voi){ const x0=padL+voi.lo*pw, x1=padL+voi.hi*pw;
+    g.fillStyle='rgba(255,207,107,.08)'; g.fillRect(x0, padT, x1-x0, ph); g.fillStyle='#5b83d6'; }
   for(let x=0;x<n;x++){ const h=hist[x]/hmax*ph; if(h>0) g.fillRect(padL+x*bw, padT+ph-h, Math.max(1,bw), h); }
+  if(voi){ const x0=padL+voi.lo*pw, x1=padL+voi.hi*pw, y=padT+ph-3;
+    g.strokeStyle='rgba(255,207,107,.8)'; g.lineWidth=1;
+    g.beginPath(); g.moveTo(x0,y-4); g.lineTo(x0,y); g.lineTo(x1,y); g.lineTo(x1,y-4); g.stroke();
+    g.fillStyle='rgba(255,207,107,.9)'; g.font='7px "Share Tech Mono",monospace'; g.textAlign='center'; g.textBaseline='bottom';
+    g.fillText('VOI', (x0+x1)/2, y-1); g.fillStyle='#5b83d6'; }
   // response curve + identity diagonal — visibility toggled (shape is unchanged)
   if(S.showCurve){
     g.strokeStyle='rgba(200,215,230,.35)'; g.setLineDash([3,3]); g.lineWidth=1;
@@ -3260,7 +3277,7 @@ function updateXrayHistogram(){
   const canvas=$('xrayHist'); if(!canvas) return;
   if(!S.showHist || !S.hasImage){ canvas.getContext('2d').clearRect(0,0,canvas.width,canvas.height); return; }
   const hist=xrayHistData(); if(!hist) return;
-  drawHistogram(canvas, hist, displayCurve);   // curve = auto-rescale (VOI) then LUT
+  drawHistogram(canvas, hist, displayCurve, null, S.autoRescale && S.rescale ? S.rescale : null);   // curve = auto-rescale (VOI) then LUT
 }
 
 /* ---- APR protocol picker ---------------------------------------------------
@@ -3478,12 +3495,6 @@ function entranceFsd(phantom, src, d, maxLen=S.sid){
 }
 const fmtMGy=(v)=> v==null ? '—' : (v<0.1 ? v.toFixed(3) : v<10 ? v.toFixed(2) : v.toFixed(1))+'<small>mGy</small>';
 const fmtDap=(v)=> (v<10 ? v.toFixed(2) : v<100 ? v.toFixed(1) : v.toFixed(0))+'<small>µGy·m²</small>';
-function updateMarkerNote(){
-  const el=$('xrMarkerNote'); if(!el) return;
-  const v=S.lastMarker;
-  el.className='mknote fl-hide'+(v?' '+v.level:'');
-  el.textContent=v ? v.text : '';
-}
 /* Subjects with a midline, where the marker's letter can be checked against the side it lies on.
    A single limb cannot be told left from right here, so only its placement is judged. */
 const BILATERAL=new Set(['chest','headneck','chestabdopelvis','totalhipreplacement','wholebody']);
@@ -3680,15 +3691,10 @@ function boxBlur2D(a, nx, ny, r){
 function updateScatterNote(){
   const v=$('scatterVal'); if(v) v.textContent=Math.round(S.scatter*100)+' %';
   const el=$('scatterNote'); if(!el) return;
-  if(S.scatter===0){ el.textContent='Off — primary beam only. Not physical, but it shows '
-    + 'you exactly how much contrast the scatter is costing.'; return; }
+  if(S.scatter===0){ el.textContent='Off: primary beam only.'; return; }
   const i=(typeof window!=='undefined')&&window.__scatterInfo;
-  if(!i){ el.textContent='Fraction of the receptor signal that is scattered rather than '
-    + 'image-forming. Expose to measure it.'; return; }
-  el.textContent=`Last exposure: ${Math.round(i.sf*100)} % of the signal was scatter `
-    + `(S/P ${i.spr.toFixed(2)})${i.grid?', grid fitted':' — no grid'}. `
-    + `Field size sets ${Math.round(i.areaF*100)} % of the maximum; collimating tighter is `
-    + 'what actually removes it.';
+  // the current image's: how much of its signal is scatter
+  el.textContent=i && S.hasImage ? `${Math.round(i.sf*100)} % of this image's signal is scatter (S/P ${i.spr.toFixed(2)}${i.grid?', grid in':''})` : '';
 }
 /* ---- the realistic modes ----
    Realistic X-ray and Realistic CT are the ordinary rooms with the Python GPU engine forced on

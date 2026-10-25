@@ -1010,7 +1010,7 @@
             </div>
             <div class="note warn" id="resWarn" style="margin-top:4px; display:none">Full-resolution ray casting is heavy: expect long processing times on the Python GPU engine.</div>
             </div>
-            <div class="row" style="margin-top:12px"><div class="rl">Scatter <small>veiling fog</small></div>
+            <div class="row" style="margin-top:12px"><div class="rl">Scatter</div>
               <div class="val" id="scatterVal">100 %</div></div>
             <input type="range" id="scatterSld" min="0" max="200" step="5" value="100">
             <div class="note" id="scatterNote" style="margin-top:4px"></div>
@@ -1039,11 +1039,7 @@
             </div>
             <div class="note warn" id="ctDetWarn" style="margin-top:4px; display:none"></div>
           </div>
-          <label class="cttoggle xray-only" style="margin-top:12px"><input type="checkbox" id="rescaleToggle" checked>
-            <span>Automatic rescaling <small style="color:var(--muted)">(DR auto-ranging)</small></span></label>
-          <label class="cttoggle xray-only" style="margin-top:8px"><input type="checkbox" id="detailToggle" checked>
-            <span>Detail enhancement <small style="color:var(--muted)">(DR multiscale edge boost)</small></span></label>
-          <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="histToggle" checked>
+          <label class="cttoggle" style="margin-top:12px"><input type="checkbox" id="histToggle" checked>
             <span>Show display histogram</span></label>
           <label class="cttoggle" style="margin-top:8px"><input type="checkbox" id="curveToggle" checked>
             <span>Show LUT / response curve</span></label>
@@ -2014,7 +2010,6 @@
       <div class="dib" title="Dose-area product: kerma × beam area, the same at any distance. Collimation moves it directly"><div class="k">DAP</div><div class="v" id="dapV">—</div></div>
       <div class="dib" title="Dose-area product of every exposure of this patient, repeats included"><div class="k">Σ DAP</div><div class="v" id="dapSumV">—</div></div>
     </div>
-    <div class="mknote fl-hide" id="xrMarkerNote"></div>
 
     <div class="pad">
       <div class="grp ct-only" id="ctStorageGrp">
@@ -2040,6 +2035,10 @@
             <input type="range" id="level" min="-120" max="120" value="0"></div>
           <div class="row"><div class="rl">Contrast</div>
             <input type="range" id="windo" min="15" max="340" value="100"></div>
+          <label class="cttoggle xray-only" style="margin-top:10px"><input type="checkbox" id="rescaleToggle" checked>
+            <span>Automatic rescaling</span></label>
+          <label class="cttoggle xray-only" style="margin-top:6px"><input type="checkbox" id="detailToggle">
+            <span>Edge enhancement</span></label>
         </div>
       </div>
     </div>
