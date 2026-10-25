@@ -36,7 +36,7 @@ import numpy as np
 import trimesh
 from scipy import ndimage as ndi
 
-from .build_model import (AIR, FAT, MUSCLE, SOFT, TRABECULAR, CORTICAL, SKIN,
+from .build_model import (AIR, FAT, MUSCLE, SOFT, TRABECULAR, CORTICAL, SKIN, CARTILAGE,
                           LEGEND, write_model)
 
 SOURCE = ("Scan the World · 'Hand bones' CT scan of a human hand "
@@ -382,6 +382,129 @@ def ray_frame(rays, i, name, spacing):
     return zz, yy, xx, P, c, a, s, smcp
 
 
+# ---------------------------------------------------------------- the joint spaces
+# This skeleton was segmented from CT at a threshold that bridged every joint: the cartilage
+# between two bones came out as bone, so the voxelised hand is one solid and a PA showed the
+# joints closed. A PA hand's joints are its reading: every MCP, PIP and DIP, the intercarpal
+# joints, the radiocarpal joint and the DRUJ open as a clear gap. So the gaps are cut back in,
+# as the PA sees them: each joint surface is laid edge-on to a dorsopalmar beam (a curve on the
+# hand's plane, carried through the hand's depth), as the cartilage space is on a true PA.
+#
+# THE DIGITS. Along each ray the joints are where the section pinches between a head and the
+# next base. Each is first placed by standard phalanx lengths (P1, P2, P3; the thumb P1, P2,
+# scaled to the ray past its knuckle), then moved to the narrowest section within 4 mm. The gap
+# curves convex distally, the head's round seen on the PA.
+# Typical adult phalanx lengths, mm (only their proportions are used: each ray is scaled to its own
+# length, and every joint is then moved to its narrowest section).
+PHALANX_MM = {'thumb': (31.0, 22.0), 'index': (40.0, 23.0, 16.0), 'middle': (45.0, 27.0, 18.0),
+              'ring': (42.0, 26.0, 17.0), 'little': (33.0, 18.0, 16.0)}
+# joint space on a normal adult PA, mm: wide enough to read on the default 0.75 mm film
+GAP_MM = {'mcp': 2.0, 'pip': 1.7, 'dip': 1.5, 'ip': 1.7, 'carpus': 1.2}
+# THE CARPUS fused into one block with no neck between its bones, so no shape rule parts them
+# (a watershed on the distance map split the radius and merged the rows). On the PA, though,
+# each carpal's rounded edge leaves a groove in the summed bone thickness: the dark lines of
+# the carpal outlines, the radiocarpal joint and the DRUJ. Those valleys are found (a ridge
+# filter for dark lines on the thickness map, skeletonised) and cut. This scan's own exceptions,
+# mm on the bone frame (x, z): the hook of the hamate and the pisiform lie OVER the hamate and
+# triquetrum, and the groove round each is an overlap, not a joint; the lines below 50 mm are
+# the edges of cavities inside the radius and ulna.
+CARPUS_OVERLAPS_MM = [((93.75, 78.0), 6.5), ((99.5, 64.5), 4.5)]
+CARPUS_ABOVE_MM = 50.0
+CARPUS_MIN_LINE_MM = 30.0
+
+
+def digit_joints(bone, rays, names, spacing):
+    """The gap voxels of the MCP, PIP and DIP joints (thumb: MCP, IP), and the joints found."""
+    gaps = np.zeros(bone.shape, bool)
+    found = []
+    for i, nm in enumerate(names):
+        zz, yy, xx, P, c, a, s, smcp = ray_frame(rays, i, nm, spacing)
+        ph = PHALANX_MM[nm]
+        k = (s.max() - smcp) / sum(ph)
+        cuts = [('mcp', smcp)]
+        at = smcp
+        for j, ln in enumerate(ph[:-1]):
+            at += ln * k
+            cuts.append(('ip' if nm == 'thumb' else ('pip', 'dip')[j], at))
+        b = np.round(s / spacing).astype(int)
+        area = np.bincount(b, minlength=b.max() + 1).astype(float)
+        area = ndi.uniform_filter1d(area, 3)
+        for kind, s0 in cuts:
+            if kind != 'mcp':                                   # (ray_frame has refined the knuckle)
+                lo, hi = int((s0 - 4) / spacing), int((s0 + 4) / spacing)
+                if 0 < lo < hi < len(area) - 1:
+                    w = int(np.argmin(area[lo:hi + 1])) + lo
+                    if area[max(0, w - 12):w].max() > 1.1 * area[w] and area[w + 1:w + 13].max() > 1.1 * area[w]:
+                        s0 = w * spacing
+            # the ray's line here, over the two bones either side (a short window is wider
+            # than it is long, and its main axis would lie across the finger)
+            Q = P[np.abs(s - s0) < 15.0][:, [0, 2]]             # the PA plane (x, z), mm
+            cq = Q.mean(0)
+            u = np.linalg.svd(Q - cq, full_matrices=False)[2][0]
+            u = u * np.sign(u @ a[[0, 2]])                      # toward the fingertip
+            w = np.array([-u[1], u[0]])
+            J = P[np.abs(s - s0) < 1.0][:, [0, 2]].mean(0)
+            Qj = P[np.abs(s - s0) < 3.0][:, [0, 2]]
+            half = float(np.percentile(np.abs((Qj - Qj.mean(0)) @ w), 95))
+            R = 1.8 * half                                      # the head's round on the PA
+            q = P[:, [0, 2]] - J
+            t = q @ w
+            along = q @ u + t * t / (2 * R)
+            g = GAP_MM[kind] / 2
+            sel = (np.abs(along) <= g) & (np.abs(t) <= half + 1.5)
+            gaps[zz[sel], yy[sel], xx[sel]] = True
+            found.append((nm, kind, round(float(s0), 1)))
+    return gaps, found
+
+
+def carpal_joints(bone, rays, spacing):
+    """The gap voxels of the intercarpal and radiocarpal joints and the DRUJ: the dark valleys of
+    the carpus on the PA, cut through the hand's depth."""
+    from skimage.filters import sato
+    from skimage.morphology import skeletonize
+    filled = ndi.binary_fill_holes(bone)
+    t = filled.sum(axis=1).astype(np.float32) * spacing          # bone thickness on the PA, mm
+    rest = (filled & (rays == 0)).any(axis=1)
+    core = ndi.binary_erosion(rest, iterations=max(1, int(round(1.0 / spacing))))
+    sig = [m / spacing for m in (0.5, 0.75, 1.0)]
+    ridge = sato(t, sigmas=sig, black_ridges=True)
+    v = (ridge > np.percentile(ridge[core], 80)) & core
+    sk = skeletonize(v)
+    nz, nx = sk.shape
+    Z, X = np.mgrid[0:nz, 0:nx] * spacing
+    for (cx, cz), r in CARPUS_OVERLAPS_MM:
+        sk &= (X - cx) ** 2 + (Z - cz) ** 2 > r * r
+    lab, n = ndi.label(sk, structure=np.ones((3, 3)))
+    keep = np.zeros_like(sk)
+    for k in range(1, n + 1):
+        m = lab == k
+        if m.sum() * spacing >= CARPUS_MIN_LINE_MM and Z[m].mean() > CARPUS_ABOVE_MM:
+            keep |= m
+    # the line smoothed (a skeleton steps pixel by pixel, and a cut along the steps reads as a
+    # staircase), then opened to the gap's width
+    # (a one-voxel line blurred by sigma keeps half its peak out to sigma*1.18 either side: with
+    # sigma at 0.85 of the half-gap, the band is the gap wide)
+    half = GAP_MM['carpus'] / 2
+    line = ndi.gaussian_filter(keep.astype(np.float32), 0.85 * half / spacing)
+    near = line >= 0.5 * float(np.median(line[keep]))
+    return (near[:, None, :] & bone & (rays == 0)[:, :, :]), int(keep.sum())
+
+
+def joint_spaces(bone, spacing):
+    """Every joint gap of the PA hand, as voxel masks on the bone frame: (the digits', the
+    carpus's)."""
+    rays, names, zf, cut = hand_rays(bone, spacing)
+    g1, found = digit_joints(bone, rays, names, spacing)
+    g2, nline = carpal_joints(bone, rays, spacing)
+    for nm in names:
+        print('        ' + nm + ': ' + ', '.join(f'{k} {s} mm' for n_, k, s in found if n_ == nm))
+    print(f'        carpus: {nline * spacing:.0f} mm of joint line')
+    g1 &= bone
+    g2 &= bone & ~g1
+    print(f'        joint spaces: {int(g1.sum())} + {int(g2.sum())} voxels opened')
+    return g1, g2
+
+
 def local_hull(mask, axis2, spacing, length=HULL_MM, step=HULL_STEP_MM):
     """Fill the dips in a PA outline (z, x) along a direction: the union of the convex hulls of
     its stretches `length` long, every `step`, across `axis2` (a unit (x, z) vector). A dip
@@ -477,7 +600,7 @@ def oval_wrist(soft, bone, zcut, spacing, stop_mm=10.0, ease_mm=25.0, clear_mm=4
 
 
 def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2,
-                    tendon_mm=2.0, fat_mm=4.5):
+                    tendon_mm=2.0, fat_mm=4.5, gaps=None, crack=None):
     """Bone mask -> full material volume: an anatomical soft-tissue envelope.
 
     The envelope was a uniform shell grown on the bone (5 mm round every phalanx, 9.5 mm round
@@ -652,7 +775,17 @@ def build_materials(bone: np.ndarray, spacing: float, smooth_mm=1.4, skin_mm=1.2
     mat[soft & (sdepth <= skin_mm)] = SKIN
     del sdepth, soft, dist, uy, near_digit, near_palm, fat_d
 
-    bone_architecture(mat, bone, spacing)
+    # the joint spaces (joint_spaces): the envelope above is laid on the whole skeleton, the bone
+    # on the skeleton less its joints, so each gap stays soft tissue and every joint surface
+    # gets its own thin cortex, the subchondral plate that draws the joint's line on the film
+    bone_architecture(mat, bone & ~gaps if gaps is not None else bone, spacing)
+    if gaps is not None:
+        mat[gaps] = CARTILAGE                                       # the joint space itself
+    # the carpal joints are cut after: a carpal's joint surface is curved, and the beam meets
+    # it edge-on only along a short arc, so its margin is a fine line on a PA. A plate laid on
+    # a cut that runs through the carpus's whole depth projects as a bright wall instead.
+    if crack is not None:
+        mat[crack] = CARTILAGE
 
     for nm, m in (('skin', SKIN), ('fat', FAT), ('muscle', MUSCLE), ('soft', SOFT),
                   ('cortical', CORTICAL), ('trabecular', TRABECULAR)):
@@ -724,10 +857,15 @@ def build(glb, out_dir, name, title, spacing, component, flip, mesh, source,
     # soft-tissue dilation was silently clipped at the array edge — the envelope could
     # not grow past the skeleton (no fingertip pads, no dorsal/palmar flesh). Pad first;
     # the tight crop below trims back to the real extent.
+    # (the joints first, on the bone's own frame: the carpus's exceptions are measured there)
+    print("      the joint spaces …")
+    gaps, crack = joint_spaces(bone, spacing)
     margin = int(np.ceil(26.0 / spacing))                  # the thenar's cover is 22 mm
     bone = np.pad(bone, margin, mode='constant', constant_values=False)
+    gaps = np.pad(gaps, margin, mode='constant', constant_values=False)
+    crack = np.pad(crack, margin, mode='constant', constant_values=False)
     print(f"      padded by {margin} vox ({margin*spacing:.0f} mm) so soft tissue can grow: {bone.shape}")
-    mat = build_materials(bone, spacing)
+    mat = build_materials(bone, spacing, gaps=gaps, crack=crack)
 
     # tight crop with a small air margin so the model is not padded with empty space
     zs, ys, xs = np.where(mat > AIR)

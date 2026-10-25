@@ -29,14 +29,17 @@ def load(name):
     nx, ny, nz = h['dims']
     sp = np.array(h['spacing'], float) / 10.0                          # cm per voxel
     vol = np.fromfile(MODELS / name / f'{name}.mat.bin', dtype=np.uint8).reshape(nz, ny, nx)
-    bone = np.isin(vol, [m['id'] for m in h['materials'] if 'bone' in m['name'].lower()])
+    from measure_palpation import skeleton_ids                       # (with its joint cartilage)
+    bone = np.isin(vol, skeleton_ids(name, h))
     return h, vol, bone, sp
 
 
-def main_component(bone):
-    lab, n = ndi.label(bone)
+def main_component(bone, bridge=4):
+    """The main skeleton: with its joint spaces open (services/compute/app/joint_space.py) a part is
+    many separate bones, so pieces are joined across a joint's width (`bridge` voxels) first."""
+    lab, n = ndi.label(ndi.binary_dilation(bone, iterations=bridge))
     sizes = ndi.sum(bone, lab, range(1, n + 1))
-    return lab == (int(np.argmax(sizes)) + 1)
+    return bone & (lab == (int(np.argmax(sizes)) + 1))
 
 
 def at(mask, z, sp, prefer='largest'):
@@ -232,7 +235,7 @@ def vertebrae_from_labels(bone, sp, levels=('C1', 'C2', 'C3', 'C4', 'C5', 'C6', 
     idx = np.argwhere(union)
     lo, hi = idx.min(0), idx.max(0) + 1
     tmpl = union[lo[0]:hi[0], lo[1]:hi[1], lo[2]:hi[2]].astype(np.float32)
-    bxyz = bone.transpose(2, 1, 0).astype(np.float32)                                  # model as [x, y, z]
+    bxyz = bone.transpose(2, 1, 0).astype(np.float32)                  # model as [x, y, z]
     corr = fftconvolve(bxyz, tmpl[::-1, ::-1, ::-1], mode='valid')
     at = np.array(np.unravel_index(int(np.argmax(corr)), corr.shape))
     on_bone = float(corr[tuple(at)] / tmpl.sum())

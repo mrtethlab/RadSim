@@ -2,74 +2,74 @@
   "_about": "Anatomical centring landmarks for the x-ray protocols, measured by tools/measure_landmarks.py. Volume-frame entries are cm from the volume centre (x, y, z; +z superior) and are mapped to the world through the same flips and rotation as the phantom. Entries marked frame:\"world\" are already in the x-ray world frame. Re-run the tool after rebuilding a model.",
   "lowerextremity": {
     "knee": {
-      "x": -1.1,
-      "y": 4.79,
-      "z": -2.3,
-      "how": "joint-space valley between the condyles and the plateau (prominence 2.1 cm2)",
+      "x": 1.3,
+      "y": 4.76,
+      "z": -5.2,
+      "how": "joint-space valley between the condyles and the plateau (prominence 14.1 cm2)",
       "confidence": "high"
     },
     "ankle": {
-      "x": -1.9,
-      "y": 3.48,
-      "z": -44.9,
+      "x": 4.5,
+      "y": 1.54,
+      "z": -43.0,
       "how": "peak of the malleolar bulge \u2014 the clinical centring point, midway between the malleoli; tibia and talus are fused in the segmentation, so there is no joint-space dip to find",
       "confidence": "medium"
     },
     "hip": {
-      "x": 0.95,
-      "y": 3.56,
-      "z": 38.8,
+      "x": -1.1,
+      "y": 1.04,
+      "z": 35.0,
       "how": "peak of the proximal bulge: femoral head and trochanters",
       "confidence": "medium"
     },
     "femur": {
-      "x": -2.05,
-      "y": 3.15,
-      "z": 18.2,
+      "x": 0.3,
+      "y": 1.65,
+      "z": 14.9,
       "how": "midway between the knee and hip landmarks",
       "confidence": "medium"
     },
     "foot": {
-      "x": -0.6,
-      "y": -5.93,
-      "z": -50.1,
+      "x": 1.3,
+      "y": -6.2,
+      "z": -46.9,
       "how": "tarsals, 3 cm above the inferior end (the sole of the foot at 90 degrees)",
       "confidence": "low"
     }
   },
   "upperextremity": {
     "elbow": {
-      "x": -0.52,
-      "y": 4.28,
-      "z": 1.88,
-      "how": "widest bone in the 8 cm below the humeral shaft (which ends at 37.5 cm): the epicondyles",
+      "x": -0.5,
+      "y": 4.09,
+      "z": 1.95,
+      "how": "widest bone in the 8 cm below the humeral shaft (which ends at 37.6 cm): the epicondyles",
       "confidence": "high"
     },
     "forearm": {
-      "x": -3.45,
-      "y": 3.02,
-      "z": -9.07,
+      "x": -3.35,
+      "y": 2.89,
+      "z": -8.95,
       "how": "midway between the radiocarpal joint and the epicondyles",
       "confidence": "high"
     },
     "wrist": {
-      "x": -6.98,
-      "y": 0.14,
-      "z": -21.38,
-      "how": "1.5 cm past the radiocarpal joint (the thinnest bone 18-28 cm below the elbow, at 14.7 cm): the carpals",
+      "x": -7.05,
+      "y": 0.29,
+      "z": -21.35,
+      "how": "1.5 cm past the radiocarpal joint (the thinnest bone 18-28 cm below the elbow, at 14.6 cm): the carpals",
       "confidence": "medium"
     },
     "shoulder": {
-      "x": 2.7,
-      "y": 2.5,
-      "z": 28.28,
+      "x": 2.75,
+      "y": 2.38,
+      "z": 28.25,
       "how": "biggest bone section in the 12 cm above the humeral shaft: the humeral head",
       "confidence": "medium"
     },
     "humerus": {
-      "x": -0.9,
-      "y": 1.57,
-      "z": 15.08,
+      "x": -0.85,
+      "y": 1.45,
+      "z": 15.05,
       "how": "midway between the elbow and shoulder landmarks",
       "confidence": "medium"
     }
@@ -77,14 +77,14 @@
   "hand": {
     "wrist": {
       "x": -0.28,
-      "y": -0.3,
+      "y": -0.29,
       "z": -3.08,
       "how": "2 cm proximal of the first slice that cuts all five metacarpals: the carpals",
       "confidence": "high"
     },
     "hand": {
       "x": -0.7,
-      "y": 0.52,
+      "y": 0.5,
       "z": 3.72,
       "how": "distal end of the five-metacarpal zone: the MCP joints, the PA hand centring point",
       "confidence": "high"

@@ -165,6 +165,80 @@ def neck_field(name='headneck'):
     return {'file': f'{name}.neckw.bin', 'dims': dims.tolist(), 'sp': FIELD_SP, 'origin': o.round(4).tolist()}
 
 
+# THE JAW, a second field joint on the head: the mandible hinged at its condyles, so the open-mouth
+# view (C1-C2) can open the mouth and take the lower teeth off the dens. The head CT labels the skull
+# and mandible as one ('skull'), and with the teeth together no shape rule parts them (a watershed on
+# the distance map cut inside the thin body of the mandible), so it is parted by this head's own
+# measure, cm on the rest frame: below the bite (the dense crowns of both arches meet at z 0.0, read
+# on the profile of cortical bone in the face), and above it the rami: lateral of the upper teeth
+# (|x| over 4.0), in front of the mastoids (y 1-6), to the condyles under the skull base (z 3.4).
+JAW = dict(bite=0.1, ramus_top=3.4, ramus_x=4.0, ramus_y=(1.0, 6.0))
+JAW_REACH = (2.0, 6.0)  # cm from the mandible: its share whole inside, none past (the throat stretches over it)
+JAW_AIRWAY = 1.5        # cm: air this far from the mandible is the airway's, held still (nearer, the mouth's)
+JAW_GLIDE = [0, 1.2, -0.4]   # cm at full opening: the condyles forward and down the articular eminences
+JAW_SIGMA = 1.2         # cm: the jaw's weights smoothed wider than the neck's (a shorter blend sheared the throat)
+
+
+def jaw_field(name='headneck'):
+    """The jaw's weight grid (255 = the whole turn) and its centre, distal direction and grid header;
+    None without the labels."""
+    import measure_landmarks as ML
+    h, vol, bone, sp = ML.load(name)
+    S = ML.label_points('skull', bone, sp)
+    if S is None or not len(S):
+        return None
+    x, y, z = S[:, 0], S[:, 1], S[:, 2]
+    mand = (z < JAW['bite']) | ((z < JAW['ramus_top']) & (np.abs(x) > JAW['ramus_x'])
+                                 & (y > JAW['ramus_y'][0]) & (y < JAW['ramus_y'][1]))
+    nz, ny, nx = bone.shape
+    o = -(np.array([nx, ny, nz]) - 1) / 2 * sp
+    dims = (np.ceil((np.array([nx, ny, nz]) - 1) * sp / FIELD_SP) + 1).astype(int)
+    def mask(P):
+        g = np.round((P - o) / FIELD_SP).astype(int)
+        g = g[(g >= 0).all(1) & (g < dims).all(1)]
+        m = np.zeros(dims[::-1], bool); m[g[:, 2], g[:, 1], g[:, 0]] = True
+        return m
+    # everything else stays: with only C1-C3 held, the front of the neck and the chest lay nearer
+    # the mandible than any still bone and opened with the mouth (the skin tore at the shoulders);
+    # the airway and the thyroid hold the front of the neck
+    still = mask(S[~mand])
+    for k in [k for k in NECK_W if k != 'skull'] + NECK_STILL + ['trachea', 'thyroid_gland', 'esophagus']:
+        P = ML.label_points(k, bone, sp)
+        if P is not None and len(P):
+            still |= mask(P)
+    dm = ndi.distance_transform_edt(~mask(S[mand]), sampling=FIELD_SP)
+    # and the airway: the labels stop at the trachea, and the larynx and pharynx above it took a
+    # share of the turn and closed (the air inside the neck, slice by slice, below the bite and
+    # clear of the mouth inside the mandible's arch; its HU made most of it 'lung')
+    body = np.zeros(vol.shape, bool)
+    for k in range(vol.shape[0]):
+        body[k] = ndi.binary_fill_holes(vol[k] != 0)
+    A = np.argwhere(body & np.isin(vol, [0, 1]))[:, ::-1]
+    A = (A - (np.array([nx, ny, nz]) - 1) / 2) * sp
+    A = A[A[:, 2] < JAW['bite'] - 1.0]
+    air = mask(A) & (dm > JAW_AIRWAY)
+    still |= air
+    e1 = np.exp(-dm / FIELD_LAMBDA)
+    e0 = np.exp(-ndi.distance_transform_edt(~still, sampling=FIELD_SP) / FIELD_LAMBDA)
+    W = ndi.gaussian_filter(e1 / np.maximum(e1 + e0, 1e-300), JAW_SIGMA / FIELD_SP)
+    # the airway takes none of it, nor the centimetre round it (a share there sheared tissue into
+    # the lumen and the larynx closed on the film)
+    W *= np.clip(ndi.distance_transform_edt(~air, sampling=FIELD_SP) / 1.0, 0, 1)
+    # and nothing past the jaw's own soft tissue moves: the share fades out 2.5-4 cm from the bone
+    W *= np.clip((JAW_REACH[1] - ndi.gaussian_filter(dm, 1)) / (JAW_REACH[1] - JAW_REACH[0]), 0, 1)
+    W = np.where(W < 0.02, 0, np.where(W > 0.98, 1, W))
+    (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f'{name}.jaww.bin').write_bytes(np.round(W * 255).astype(np.uint8).tobytes())
+    M = S[mand]
+    # the hinge: the tops of the two condyles (the highest mandible each side), half a centimetre down
+    cond = [M[np.sign(M[:, 0]) == sg] for sg in (1, -1)]
+    cond = [c[c[:, 2] > c[:, 2].max() - 0.4].mean(0) for c in cond]
+    c = (cond[0] + cond[1]) / 2 - np.array([0, 0, 0.5])
+    menton = M[np.argmin(M[:, 2] - 0.3 * M[:, 1])]
+    d = (menton - c) / np.linalg.norm(menton - c)
+    print(f'  jaw: {int(mand.sum())} label points of mandible; condyles {np.round(cond, 2).tolist()}; menton {np.round(menton, 2).tolist()}')
+    return c, d, {'file': f'{name}.jaww.bin', 'dims': dims.tolist(), 'sp': FIELD_SP, 'origin': o.round(4).tolist()}
+
+
 def main():
     out = {'_about': __doc__.strip().splitlines()[0]}
     # ---- the hand: the wrist
@@ -283,6 +357,14 @@ def main():
                         {'key': 'neck.tilt', 'label': 'Lateral flexion', 'neg': 'left lateral flexion', 'pos': 'right lateral flexion', 'toward': [1, 0, 0], 'range': [-40, 40]},
                         {'key': 'neck.rot', 'label': 'Rotation', 'neg': 'left rotation', 'pos': 'right rotation', 'roll': True,
                          'from': perp([0, 1, 0], ax).round(3).tolist(), 'toward': perp([1, 0, 0], ax).round(3).tolist(), 'range': [-70, 70]}]}}
+        jaw = jaw_field()
+        if jaw:
+            jc, jd, jf = jaw
+            out['headneck']['jaw'] = {
+                'label': 'Jaw', 'c': jc.round(2).tolist(), 'distal': jd.round(3).tolist(), 'blend': 0, 'field': jf,
+                'how': 'the mandible, a field joint hinged through its condyles that glide forward as it opens: the mouth opens for the C1-C2 view',
+                'motions': [{'key': 'jaw.open', 'label': 'Mandible', 'neg': 'elevation', 'pos': 'depression', 'toward': [0, -1, 0], 'range': [0, 35],
+                             'glide': JAW_GLIDE}]}
     else:
         print('  no head CT labels (or nibabel): the neck keeps its old joints.json entry')
         old = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else {}

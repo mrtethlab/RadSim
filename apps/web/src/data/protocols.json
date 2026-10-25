@@ -225,10 +225,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -9,
+                "roll": -4,
                 "cc": 0,
                 "centre": "forearm",
-                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 9 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
@@ -239,20 +239,20 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                13,
-                40
+                43,
+                16
               ],
               "det": [
                 35,
                 43
               ],
-              "orient": "portrait",
+              "orient": "landscape",
               "subject": "upperextremity",
               "pose": {
-                "roll": 81,
+                "roll": 86,
                 "cc": 0,
                 "centre": "forearm",
-                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 9 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
                 "joints": {
                   "elbow.flex": 90,
                   "elbow.roll": -90
@@ -282,10 +282,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -9,
+                "roll": -4,
                 "cc": 0,
                 "centre": "elbowJoint",
-                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 9 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
@@ -306,10 +306,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 81,
+                "roll": 86,
                 "cc": 0,
                 "centre": "elbowJoint",
-                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 9 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
                 "joints": {
                   "elbow.flex": 90,
                   "elbow.roll": -90
@@ -339,10 +339,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -9,
+                "roll": -4,
                 "cc": 0,
                 "centre": "humerus",
-                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 9 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
             {
@@ -363,10 +363,10 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 81,
+                "roll": 86,
                 "cc": 0,
                 "centre": "humerus",
-                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 9 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             }
           ]
@@ -499,8 +499,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                14,
-                22
+                22,
+                14
               ],
               "det": [
                 25,
@@ -566,7 +566,7 @@
               "orient": "portrait",
               "subject": "lowerextremity",
               "pose": {
-                "roll": 15,
+                "roll": 18,
                 "cc": 0,
                 "centre": "intermalleolar",
                 "joints": {
@@ -624,7 +624,8 @@
               "orient": "portrait",
               "subject": "lowerextremity",
               "pose": {
-                "roll": 0,
+                "roll": -23,
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose.",
                 "cc": 0,
                 "centre": "knee"
               }
@@ -648,7 +649,8 @@
               "orient": "portrait",
               "subject": "lowerextremity",
               "pose": {
-                "roll": -90,
+                "roll": -117,
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose.",
                 "cc": 0,
                 "centre": "knee",
                 "joints": {
@@ -680,7 +682,8 @@
               "orient": "portrait",
               "subject": "lowerextremity",
               "pose": {
-                "roll": 0,
+                "roll": -23,
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose.",
                 "cc": 0,
                 "centre": "femur"
               }
@@ -704,7 +707,8 @@
               "orient": "portrait",
               "subject": "lowerextremity",
               "pose": {
-                "roll": -90,
+                "roll": -117,
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose.",
                 "cc": 0,
                 "centre": "femur"
               }
@@ -966,8 +970,10 @@
                 "roll": 0,
                 "cc": 0,
                 "centre": "C1C2",
-                "fidelity": "approx",
-                "note": "This model cannot open its mouth: the lower teeth and the mandible lie over the dens. On a patient the mouth is opened as wide as possible, with the line from the lower edge of the upper incisors to the mastoid tips perpendicular to the receptor."
+                "joints": {
+                  "neck.flex": -10,
+                  "jaw.open": 30
+                }
               }
             },
             {

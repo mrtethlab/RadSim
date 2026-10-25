@@ -82,7 +82,12 @@ function mul3(a, b) {
    joint's one rotation, read from the field. The neck is one: the skull and mandible take all of
    it, each cervical vertebra less, C7 and the shoulders none, the soft tissue between them a smooth
    blend — no plane through the neck can tell the jaw (in front of C1-C3) from the spine. Its rolls
-   are plain rotations (no exactness to keep: the inverse is solved, fieldInverse). */
+   are plain rotations (no exactness to keep: the inverse is solved, fieldInverse).
+   A field joint's motion may also GLIDE (m.glide: cm, rest frame, at the end of its range): a
+   translation carried with the same share as the turn, growing as the square of the motion's
+   fraction of its range. The jaw is one: past the first part of opening, a pure hinge at the
+   condyles, the condyles slide forward onto the articular eminences, so the chin drops rather
+   than swinging back into the throat. */
 export function compileJoint(j, angles) {
   let R = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   let any = false, tw = 0;
@@ -110,7 +115,13 @@ export function compileJoint(j, angles) {
   }
   if (field) {
     if (!T) return null;
-    return { c: j.c, d: j.distal, b: j.blend, n, T, tw: 0, sp: 0, R2: Infinity, wf: field,
+    const g = [0, 0, 0];
+    for (const m of j.motions) {
+      if (!m.glide) continue;
+      const f = Math.max(0, Math.min(1, (motionAngle(angles, m) - (m.rest || 0)) / (m.range[1] - (m.rest || 0))));
+      for (let i = 0; i < 3; i++) g[i] += m.glide[i] * f * f;
+    }
+    return { c: j.c, d: j.distal, b: j.blend, n, T, tw: 0, sp: 0, R2: Infinity, wf: field, g,
       ins: [0, 0, 0], bis: [0, 0, 1], bisL: 1 };                  // (no crook: the field decides)
   }
   const f = rotate(j.distal, n, T);
@@ -163,8 +174,8 @@ export function fieldWeight(F, p) {
   const c01 = D[o + sl] * (1 - fx) + D[o + sl + 1] * fx, c11 = D[o + sl + row] * (1 - fx) + D[o + sl + row + 1] * fx;
   return ((c00 * (1 - fy) + c10 * fy) * (1 - fz) + (c01 * (1 - fy) + c11 * fy) * fz) / 255;
 }
-/* Which rest points a field joint carries to q. A rest point p goes to q when p = c + R(-w T)(q - c)
-   with w = W(p): along that one arc of candidates, parametrised by w, it is a root of
+/* Which rest points a field joint carries to q. A rest point p goes to q when p = c + R(-w T)(q - w g - c)
+   with w = W(p) (g its glide): along that one arc of candidates, parametrised by w, it is a root of
    g(w) = W(p(w)) - w, and as g(0) >= 0 and g(1) <= 0 there is always one. (Iterating p = c +
    R(-W(p) T)(q - c) instead diverged in front of the face: 20 cm from c, a weight that falls over
    3 cm and half a radian of turn make the step longer than the error.) Several roots are a fold:
@@ -172,8 +183,11 @@ export function fieldWeight(F, p) {
    head, the shoulders: g flat at 1 or 0) cost the two ends. */
 const FIELD_SCAN = 8;
 function fieldInverse(q, J) {
-  const dq = [q[0] - J.c[0], q[1] - J.c[1], q[2] - J.c[2]];
-  const at = (w) => { const r = rotate(dq, J.n, -w * J.T); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
+  const g = J.g || [0, 0, 0];
+  const at = (w) => {
+    const r = rotate([q[0] - w * g[0] - J.c[0], q[1] - w * g[1] - J.c[1], q[2] - w * g[2] - J.c[2]], J.n, -w * J.T);
+    return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
+  };
   const W = (w) => fieldWeight(J.wf, at(w));
   const g0 = W(0), g1 = W(1) - 1;
   const out = g0 === 0 ? [q] : [];                             // unmoved, where nothing turns
@@ -194,8 +208,8 @@ function forwardOne(p, J) {
   if (J.wf) {
     const w = fieldWeight(J.wf, p);
     if (!w) return p;
-    const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, w * J.T);
-    return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
+    const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, w * J.T), g = J.g || [0, 0, 0];
+    return [J.c[0] + r[0] + w * g[0], J.c[1] + r[1] + w * g[1], J.c[2] + r[2] + w * g[2]];
   }
   let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
   const s = dot(d, J.d);
@@ -393,6 +407,10 @@ export function poseVolume(vm, flips, chain, angles) {
   return { data: out, dims: plan.dims, pad: plan.pad };
 }
 // the output slices of chunk c of m: [k0, k1)
+// what moves rigidly with its side of a joint (posePlan): the bone materials (trabecular, cortical, the
+// graded bone, as core/limbPose.js), the cartilage of a joint space, and the bake's joint-sheet mark
+// (services/compute/app/joint_space.py)
+const RIGID = new Set([16, 17, 18, 54, 55, 56, 57, 58, 59, 60, 61, 250]);
 export function poseChunk(n2, c, m) { return [Math.floor((c * n2) / m), Math.floor(((c + 1) * n2) / m)]; }
 export function posePlan(vm, flips, chain, angles) {
   const [nx, ny, nz] = vm.dims, data = vm.data;
@@ -492,6 +510,19 @@ export function posePlan(vm, flips, chain, angles) {
     if (rs >= one.b && (one.R2 === Infinity || rx * rx + ry * ry + rz * rz - rs * rs < one.R2) && inCrook(one, [dx, dy, dz], one.T)) {
       const u = roll([rx, ry, rz], one, -1);
       v = sampleRest(one.c[0] + u[0], one.c[1] + u[1], one.c[2] + u[2]);
+    }
+    /* BONE IS RIGID. The crease's blend is for the soft tissue; a bone inside it took part of the
+       turn and bent, so a flexed elbow's or knee's joint surfaces (and the joint space cut between
+       them) smeared across the bend. Within the crease the distal bone turns whole and the proximal
+       bone stays where it is; only what is not bone blends. */
+    if (!v && rs >= 0 && rs < one.b && (one.R2 === Infinity || rx * rx + ry * ry + rz * rz - rs * rs < one.R2)) {
+      const u = roll([rx, ry, rz], one, -1);
+      const b = sampleRest(one.c[0] + u[0], one.c[1] + u[1], one.c[2] + u[2]);
+      if (RIGID.has(b)) return b;
+    }
+    if (!v) {
+      const sd = dx * one.d[0] + dy * one.d[1] + dz * one.d[2];
+      if (sd < 0 && sd > -one.b) { const b = sampleRest(x, y, z); if (RIGID.has(b)) return b; }
     }
     if (!v) v = still;
     if (!v && dx * dx + dy * dy + dz * dz < reach2[0]) {

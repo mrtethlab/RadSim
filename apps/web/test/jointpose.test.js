@@ -203,6 +203,25 @@ test('a field joint finds the rest point of every posed point, through the blend
   }
 });
 
+// a jaw: the same field, its motion gliding 2 cm toward +y at the end of a 40 degree range
+const jaw = { ...neck, motions: [{ key: 'open', axis: axisToward([0, 0, 1], [0, -1, 0]), range: [0, 40], glide: [0, 2, 0] }] };
+
+test('a field joint glides with its turn: by its share, as the square of the opening', () => {
+  const p = [0, 0, 8];                                                        // weight 1
+  const r = forwardChain(p, [jaw], { open: 40 });
+  const turned = forwardChain(p, [{ ...jaw, motions: [{ ...jaw.motions[0], glide: undefined }] }], { open: 40 });
+  assert.ok(near(r[1] - turned[1], 2, 1e-6) && near(r[2], turned[2], 1e-6), `full glide: ${r} vs ${turned}`);
+  const half = forwardChain(p, [jaw], { open: 20 });
+  const halfTurned = forwardChain(p, [{ ...jaw, motions: [{ ...jaw.motions[0], glide: undefined }] }], { open: 20 });
+  assert.ok(near(half[1] - halfTurned[1], 0.5, 1e-6), `a quarter of it half way: ${half}`);
+  assert.deepEqual(forwardChain([0, 0, -8], [jaw], { open: 40 }), [0, 0, -8], 'weight 0: no glide');
+  for (const q0 of [[0, 0, 8], [2, 3, 2], [0, -4, 0], [1, 5, -2]]) {
+    const q = forwardChain(q0, [jaw], { open: 30 });
+    const back = preimagesChain(q, [jaw], { open: 30 });
+    assert.ok(back.some((b) => Math.hypot(b[0] - q0[0], b[1] - q0[1], b[2] - q0[2]) < 0.02), `rest point of ${q0}: ${JSON.stringify(back)}`);
+  }
+});
+
 test('a field-posed volume has the head turned and the trunk where it was', () => {
   const nx = 9, ny = 9, nz = 25, data = new Uint8Array(nx * ny * nz);
   // a column of tissue along z, its front (+y) face bone
