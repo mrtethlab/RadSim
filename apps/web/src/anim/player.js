@@ -3,6 +3,11 @@
    what is smaller, the camera moving between the two scales. It plays on a loop, chapter by
    chapter, step by step; the learner can pause, step, jump to a chapter, mute.
 
+   By default a step HOLDS when it ends: its time runs on (frame(t) is called with t past dur), the
+   camera stays on its last key, its last caption stays up, until the viewer presses next. With
+   AUTOPLAY on (the toggle under play), the film runs on from step to step and loops. So a frame
+   must stay sensible for t well past dur (streams that keep flowing, not ones that run dry).
+
    A film is a module under ./films exporting build(api) -> { title, chapters }:
      chapters: [{ title, steps: [step] }]
      step: {
@@ -71,14 +76,18 @@ function buildDom() {
   const bar = el('div', 'anim-bar', root);
   const ctl = el('div', 'anim-ctl', bar);
   const prev = el('button', '', ctl, '&#9198;'); prev.title = 'Previous step (←)';
-  const play = el('button', 'anim-play', ctl, '&#10074;&#10074;'); play.title = 'Play / pause (Space)';
+  // play, and under it the autoplay toggle: off, a step holds its shot when it ends until next
+  // is pressed; on, the film runs on from step to step and loops
+  const stack = el('div', 'anim-playstack', ctl);
+  const play = el('button', 'anim-play', stack, '&#10074;&#10074;'); play.title = 'Play / pause (Space)';
+  const auto = el('button', 'anim-auto', stack, 'AUTO'); auto.title = 'Autoplay: run on to the next step by itself (A)';
   const next = el('button', '', ctl, '&#9197;'); next.title = 'Next step (→)';
   const steps = el('div', 'anim-steps', bar);
   const right = el('div', 'anim-ctl', bar);
   const speed = el('button', 'anim-speed', right, '1&times;'); speed.title = 'Speed';
   const mute = el('button', '', right, '&#128264;'); mute.title = 'Sound on / off';
   const stepName = el('div', 'anim-stepname', root);
-  return { root, stage, c3, cp, fade, load, cap, scale, title, chaps, close, prev, play, next, steps, speed, mute, stepName };
+  return { root, stage, c3, cp, fade, load, cap, scale, title, chaps, close, prev, play, auto, next, steps, speed, mute, stepName };
 }
 
 export async function openAnimation(mode) {
@@ -104,7 +113,9 @@ export async function openAnimation(mode) {
   const quadScene = new THREE.Scene(); quadScene.add(quad);
   const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
 
-  P = { mode, dom, renderer, scene, cam, px, film: null, T: 0, playing: true, speed: 1, idx: -1,
+  let autoplay = false;
+  try { autoplay = localStorage.getItem('radsim.anim.autoplay') === '1'; } catch (_) { /* a per-viewer convenience */ }
+  P = { mode, dom, renderer, scene, cam, px, film: null, tl: 0, pending: null, autoplay, playing: true, speed: 1, idx: -1,
         markCache: new Map(), marks: [], keep: [], capPos: null,
         mosaic: 0, raf: 0, last: 0, total: 0, flat: [], mosaicRT, quad, quadScene, quadCam, disposers: [] };
 
@@ -203,6 +214,8 @@ function wire(p) {
   d.play.addEventListener('click', () => setPlaying(!p.playing));
   d.prev.addEventListener('click', () => jumpStep(-1));
   d.next.addEventListener('click', () => jumpStep(1));
+  d.auto.addEventListener('click', () => setAutoplay(!p.autoplay));
+  paintAuto();
   d.mute.addEventListener('click', () => { sfx.setMuted(!sfx.muted); paintMute(); if (sfx.muted) sfx.stopAll(); });
   d.speed.addEventListener('click', () => {
     const s = [0.5, 1, 1.5, 2], i = (s.indexOf(p.speed) + 1) % s.length;
@@ -216,16 +229,21 @@ function setPlaying(on) {
   P.dom.play.innerHTML = on ? '&#10074;&#10074;' : '&#9654;';
   if (!on) sfx.stopAll();
 }
+function setAutoplay(on) {
+  P.autoplay = on;
+  try { localStorage.setItem('radsim.anim.autoplay', on ? '1' : '0'); } catch (_) { /* fine without it */ }
+  paintAuto();
+}
+function paintAuto() { if (!P) return; P.dom.auto.classList.toggle('on', P.autoplay); P.dom.auto.setAttribute('aria-pressed', String(P.autoplay)); }
 function jumpStep(d) {
   if (!P?.flat.length) return;
   const cur = P.idx < 0 ? 0 : P.idx;
   // back within the first second of a step goes to the one before; later, to this one's start
-  const into = P.T - P.flat[cur].t0;
-  const i = d < 0 && into > 1 ? cur : (cur + d + P.flat.length) % P.flat.length;
-  P.T = P.flat[i].t0 + 0.001;
+  const i = d < 0 && P.tl > 1 ? cur : (cur + d + P.flat.length) % P.flat.length;
+  P.pending = i;
   sfx.stopAll();
 }
-function jumpTo(i) { if (!P?.flat[i]) return; P.T = P.flat[i].t0 + 0.001; sfx.stopAll(); }
+function jumpTo(i) { if (!P?.flat[i]) return; P.pending = i; sfx.stopAll(); }
 
 function paintChapters() {
   const d = P.dom;
@@ -259,6 +277,7 @@ function onKey(e) {
   else if (e.key === ' ') { setPlaying(!P.playing); e.preventDefault(); }
   else if (e.key === 'ArrowRight') { jumpStep(1); e.preventDefault(); }
   else if (e.key === 'ArrowLeft') { jumpStep(-1); e.preventDefault(); }
+  else if (e.key === 'a' || e.key === 'A') setAutoplay(!P.autoplay);
 }
 function onVis() { if (P && document.hidden) sfx.stopAll(); }
 
@@ -294,16 +313,19 @@ function loopFrame() {
     }
     return;
   }
-  const prevT = p.T;
-  if (p.playing && !document.hidden) p.T += dt * p.speed;
-  if (p.T >= p.total) { p.T %= p.total; }                    // the film loops
-  let i = p.flat.findIndex((s) => p.T < s.t0 + s.dur);
-  if (i < 0) i = p.flat.length - 1;
-  const st = p.flat[i], t = p.T - st.t0;
-  if (i !== p.idx) {
-    const wasPlaying = p.idx >= 0 && p.playing;
+  /* The clock is the step's own. At a step's end: with autoplay, on to the next (the film loops
+     after its last); without, the step holds: its time runs on in the last camera shot, its last
+     caption stays, until next is pressed. */
+  const prevTl = p.tl;
+  if (p.playing && !document.hidden) p.tl += dt * p.speed;
+  let enter = false;
+  if (p.idx < 0) { p.idx = 0; p.tl = 0; enter = true; }
+  if (p.pending != null) { p.idx = p.pending; p.pending = null; p.tl = 0.001; enter = true; }
+  else if (p.autoplay && p.tl >= p.flat[p.idx].dur) { p.tl -= p.flat[p.idx].dur; p.idx = (p.idx + 1) % p.flat.length; enter = true; }
+  const i = p.idx, st = p.flat[i], t = p.tl;
+  if (enter) {
+    const wasPlaying = p.playing;
     if (!st.keepSound) sfx.stopAll();
-    p.idx = i;
     p.mosaic = 0;
     p.markCache.clear();
     p.scene.background = new THREE.Color(st.bg ?? 0x0a0c0f);
@@ -313,8 +335,7 @@ function loopFrame() {
     d.stepName.classList.remove('show'); void d.stepName.offsetWidth; d.stepName.classList.add('show');
     if (wasPlaying) for (const [ct, fn] of st.cues || []) if (ct <= t && ct >= 0 && t - ct < 0.05) fn();
   } else if (p.playing) {
-    const t0 = prevT - st.t0;
-    for (const [ct, fn] of st.cues || []) if (t0 < ct && ct <= t) fn();
+    for (const [ct, fn] of st.cues || []) if (prevTl < ct && ct <= t) fn();
   }
   const c = camAt(st, t);
   if (c) {
@@ -344,10 +365,13 @@ function loopFrame() {
   // fades
   let f = 0;
   if (st.fadeIn && t < st.fadeIn) f = 1 - t / st.fadeIn;
-  if (st.fadeOut && t > st.dur - st.fadeOut) f = Math.max(f, (t - (st.dur - st.fadeOut)) / st.fadeOut);
+  // (a held step does not fade out: it is waiting on the viewer)
+  if (st.fadeOut && p.autoplay && t > st.dur - st.fadeOut) f = Math.max(f, (t - (st.dur - st.fadeOut)) / st.fadeOut);
   d.fade.style.opacity = String(clamp01(f));
   // the caption: one at a time, next to what it is about
-  const cap = (st.caption || []).find((k) => t >= k.from && t < k.to);
+  const held = t >= st.dur;
+  let cap = (st.caption || []).find((k) => t >= k.from && t < k.to);
+  if (held) cap = [...(st.caption || [])].reverse().find((k) => k.from < st.dur);   // held: its last caption stays
   if (cap) {
     if (d.cap.dataset.text !== cap.text) {
       d.cap.dataset.text = cap.text;
@@ -355,7 +379,7 @@ function loopFrame() {
       p.capPos = null;                                        // a new caption: placed afresh
     }
     d.cap.classList.add('show');
-    const k = clamp01(Math.min(t - cap.from, cap.to - t) / 0.35);
+    const k = held ? 1 : clamp01(Math.min(t - cap.from, cap.to - t) / 0.35);
     d.cap.style.opacity = String(k);
     placeCaption(p, cap, t);
   } else {

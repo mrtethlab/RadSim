@@ -74,7 +74,7 @@ export async function detector(api, S) {
     px.rect(x0, pdY + pdH + 2, nw * n, 3, 'slate');           // the glass
     // x-rays arrive; each is absorbed at some depth in a needle and makes a burst of light
     const rate = 2.6, N = Math.floor(t * rate);
-    for (let i = 0; i <= N; i++) {
+    for (let i = Math.max(0, N - 40); i <= N; i++) {            // (the recent ones: a held step runs on)
       const r = rng(900 + i), k = Math.floor(r() * n), x = x0 + k * nw + 4 + r() * (nw - 8), depth = top + 10 + r() * (csiH - 26);
       const age = t - i / rate, E = 40 + r() * 40;
       if (age < 0) continue;

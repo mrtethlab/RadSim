@@ -136,7 +136,8 @@ export function generation(api, S) {
     const N = Math.floor(t * rate) + 1;
     const fi = hi ? Math.floor(hiAt * rate) : -1;           // the focus electron's index
     const emitted = [], events = [];
-    for (let i = 0; i <= N; i++) {
+    // (only the last 8 s of electrons can still be seen or still warm an atom: a held step runs on)
+    for (let i = Math.max(0, N - Math.ceil(rate * 8)); i <= N; i++) {
       const r = rng(1000 + i);
       const roll = r();
       const kind = i === fi ? hi : (roll < 0.86 ? 'heat' : roll < 0.975 ? 'brems' : 'char');
@@ -467,7 +468,7 @@ export function generation(api, S) {
         api.mosaic(1 - span(t, 0, 2.2));
         T.spin.rotation.x = spinAt(t + 30, 0, 0.01);
         sfx.hold('rotor', 880, 0.04, 'square');
-        drawParticles(api, out, t * 1.0, (p, s) => ({ kind: 'photon', color: keVColor(p.E), flashColor: p.fate === 'lead' ? 'grey' : 'orange' }), { tail: 4 });
+        drawParticles(api, out, t * 1.0, (p, s) => ({ kind: 'photon', color: keVColor(p.E), flashColor: p.fate === 'lead' ? 'grey' : 'orange' }), { tail: 4, period: 12 });
         if (t > 6.5) {
           api.mark(T.anode, 'orange', t);
           // the beam's intensity across its width: lower on the anode side (the heel)
@@ -497,7 +498,7 @@ export function generation(api, S) {
         T.spin.rotation.x = spinAt(t + 30, 0, 0.01);
         sfx.hold('rotor', 880, 0.04, 'square');
         drawParticles(api, out.map((p) => photonFate(p, { filter: true })), t, (p) => (p.fate === 'lead' || p.fate === 'heel' ? null
-          : { kind: 'photon', color: keVColor(p.E), flashColor: 'red' }), { tail: 4 });
+          : { kind: 'photon', color: keVColor(p.E), flashColor: 'red' }), { tail: 4, period: 12 });
         if (t > 1) api.mark(T.filter, 'cyan', t);
         const k = span(t, 4, 7);
         const before = tungstenSpectrum(80, 0), after = tungstenSpectrum(80, 0.25 * k + 0.0001);
@@ -527,7 +528,7 @@ export function generation(api, S) {
         // the half-angles the blades now pass (tan, at the upper blades' height)
         const d = -bladeY[0];
         drawParticles(api, out.map((p) => photonFate(p, { filter: true, coll: [hx, hz] })), t, (p) => (p.fate === 'lead' || p.fate === 'heel' || p.fate === 'filter' ? null
-          : { kind: 'photon', color: keVColor(p.E), flashColor: p.fate === 'blade' ? 'grey' : 'orange' }), { tail: 4 });
+          : { kind: 'photon', color: keVColor(p.E), flashColor: p.fate === 'blade' ? 'grey' : 'orange' }), { tail: 4, period: 12 });
         if (t > 1 && t < 6) api.mark(T.blades.xa, 'cyan', t);
         if (t > 6.5) api.mark(T.mirror, 'yellow', t);
         void d;

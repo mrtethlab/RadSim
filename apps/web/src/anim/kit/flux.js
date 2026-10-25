@@ -40,7 +40,16 @@ export function at(p, t, linger = 0.15) {
 /* Draw a set of particles on the 8-bit layer. style(p, state) -> { kind: 'photon'|'electron'|'dot',
    color, a } or null to skip. A photon is drawn as a squiggle along its projected direction; an
    ending particle as a small flash. */
-export function drawParticles(api, list, t, style, { linger = 0.15, tail = 5 } = {}) {
+export function drawParticles(api, list, t, style, { linger = 0.15, tail = 5, period = 0 } = {}) {
+  /* period: a stream that never runs dry (a held step's time runs on): the list's births repeat
+     every `period` seconds, drawn at t mod period and once more a period on, so the particles
+     still in flight from the last cycle carry on across the seam */
+  if (period && t > period) {
+    const tm = t % period;
+    drawParticles(api, list, tm, style, { linger, tail });
+    drawParticles(api, list.filter((p) => p.t0 >= period - 3 && p.t0 < period), tm + period, style, { linger, tail });   // (born just before the seam)
+    return;
+  }
   const px = api.px;
   for (const p of list) {
     const s = at(p, t, linger);

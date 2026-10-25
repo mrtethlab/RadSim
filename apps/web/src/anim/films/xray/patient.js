@@ -176,7 +176,8 @@ export async function patient(api, S) {
     const N = Math.floor(t * rate);
     const fi = hi ? Math.floor(hiAt * rate) : -1;
     let focusEv = null;
-    for (let i = 0; i <= N; i++) {
+    // the last 10 s of photons: enough for the counts' proportions, and a held step stays cheap
+    for (let i = Math.max(0, N - Math.ceil(rate * 10)); i <= N; i++) {
       const r = rng(5000 + i);
       const focus = i === fi;
       const ci = focus && hiCol != null ? hiCol : Math.floor(r() * colsDef.length), col = colsDef[ci];
