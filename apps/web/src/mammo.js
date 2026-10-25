@@ -24,6 +24,8 @@
 
 import { VoxelPhantom } from './core/voxelPhantom.js';
 import { agdMGy, relativeOutput } from './core/mammoDose.js';
+import { patientFor, POS_DEFAULT, ROLL_DEG, edgeLossCm, imfGapCm, nippleTiltDeg, mloMuscleDepthCm,
+  mloPecLossCm, mloPecDrapeCm, ccMuscleDepthCm, measureView, judgeView, GRADE_NAME, TH } from './core/mammoPosition.js';
 
 let ctx = null, M = null;
 const $ = (id) => document.getElementById(id);
@@ -268,6 +270,8 @@ function applyCompression() {
     const s = breastBase.s;
     breastMesh.scale.set(s * lat, s * lat, s * c);
     breastMesh.position.y = base + (h * c) / 2;
+    // tissue not pulled forward stays on the patient's side of the plate's front edge
+    breastMesh.position.z = breastBase.z + lossNow() * lat;
   }
   if (acrSlab) {
     acrSlab.visible = acr && ctx.S.mode === 'mammo';
@@ -286,17 +290,110 @@ function thicknessMM() {
   return Math.round(subjectH() * (acr ? 1 : compCur) * 10);
 }
 
-/* ---- the exposure --------------------------------------------------------- */
-function expose() {
-  const S = ctx.S, vm = S.voxelModel;
-  if (!vm || !MAMMO_SUBJECTS.includes(S.subject) || !vm.data) { setStatus('Loading the subject…'); return; }
-  const t0 = performance.now();
-  const { E, w } = beamBins(M.tf, M.kv);
-  // per-bin mu for every material in the phantoms: the low-energy table where it
-  // matters, zero for air; nothing else appears in these volumes
+/* ---- positioning: the tissue each view brings onto the receptor ------------
+   core/mammoPosition.js holds the model and the judge; this is where it becomes anatomy.
+   Two things in the phantom depend on how the breast was placed, and the mode builds them
+   into a PRIVATE copy of the volume — the shipped phantom, and every other room's view of
+   it, stay untouched:
+     - the pectoral muscle: the baked chest-wall slab gives way to the muscle THIS view
+       brings in (the MLO's wedge, oriented with the patient's own muscle; the CC's sheet);
+     - the nipple: re-stamped where the patient's tilt and the roll leave it, under its own
+       label (soft tissue, id 10 — never otherwise in a breast volume) so the image can find
+       it, which is how "in profile" is read off the film rather than off the slider.
+   The third, the posterior tissue left behind the receptor's edge, is a per-ray shift in
+   the projector, not a stamp. One 15 MB copy, rebuilt only when the subject changes; the
+   muscle when the view or the patient does; the nipple's few hundred voxels every shot. */
+const FAT = 2, GLAND = 53, SKIN = 23, MUSCLE = 7, AIR = 0, NIP = 10;
+const D2R = Math.PI / 180;
+let posVol = null;
+// the mound's geometry from the volume, as caseFindings derives it (mm)
+function moundOf(vm) {
+  const ex = vm.extentMM[0], ey = vm.extentMM[1], ez = vm.extentMM[2];
+  return { cx: ex / 2, cz: ez / 2, ax: ex * 0.425, ay: ey * 0.907, az: ez * 0.458 };
+}
+export function positionedData(vm, view, pat, tiltDeg, angleDeg, pos) {
+  const [nx, ny, nz] = vm.dims;
+  const s = vm.extentMM[0] / nx;                     // mm per voxel (build: index x spacing)
+  const g = moundOf(vm);
+  const r2 = (x, y, z) => ((x * s - g.cx) / g.ax) ** 2 + (y * s / g.ay) ** 2 + ((z * s - g.cz) / g.az) ** 2;
+  if (!posVol || posVol.src !== vm.data) {
+    const base = new Uint8Array(vm.data);
+    // the baked slab out: each muscle voxel takes the tissue mirrored in front of the slab's
+    // face (build_breast.py: y < 9 - 0.06 (z - cz) mm), so the parenchyma runs on to the wall
+    const yMax = Math.min(ny, Math.ceil(13 / s));
+    for (let z = 0; z < nz; z++) {
+      const slab = (9 - 0.06 * (z * s - g.cz)) / s;
+      for (let y = 0; y < yMax; y++) {
+        const row = nx * (y + ny * z), row2 = nx * (Math.min(ny - 1, Math.round(2 * slab - y)) + ny * z);
+        for (let x = 0; x < nx; x++) if (base[row + x] === MUSCLE) {
+          const m = vm.data[row2 + x];
+          base[row + x] = m === FAT || m === GLAND ? m : FAT;
+        }
+      }
+    }
+    // the baked nipple off — it is re-stamped per view — and the apex's skin closed over it
+    // (the bump was part of the body the skin was eroded from, so the apex under it is fat)
+    const bx = Math.ceil(6 / s);
+    for (let z = Math.round(g.cz / s) - bx; z <= Math.round(g.cz / s) + bx; z++)
+      for (let y = Math.round(g.ay / s) - 2 * bx; y < ny; y++)
+        for (let x = Math.round(g.cx / s) - bx; x <= Math.round(g.cx / s) + bx; x++) {
+          if (((x * s - g.cx) ** 2 + ((y * s - g.ay) / 1.4) ** 2 + (z * s - g.cz) ** 2) > 16.5) continue;
+          const q = r2(x, y, z), k = x + nx * (y + ny * z);
+          if (q > 1) base[k] = AIR; else if (q >= 0.961) base[k] = SKIN;
+        }
+    posVol = { src: vm.data, base, data: new Uint8Array(base.length), key: '', nip: [] };
+  }
+  // the MLO's muscle is stamped with its drape laid along the run that clears the edge
+  const L0 = view === 'mlo' ? mloPecLossCm({ ...pos, angle: angleDeg }, pat) : 0;
+  const B = view === 'mlo' ? mloPecDrapeCm(angleDeg - pat.pecDeg, L0) : 0;
+  const P = posVol, key = view === 'mlo' ? ['mlo', pat.pecDeg, L0.toFixed(3), B.toFixed(3)].join('|') : 'cc';
+  if (P.key !== key) {
+    P.data.set(P.base); P.nip = []; P.key = key;
+    const ca = Math.cos(pat.pecDeg * D2R), sa = Math.sin(pat.pecDeg * D2R);
+    const yMax = Math.min(ny, Math.ceil((view === 'mlo' ? 32 : 9) / s));
+    for (let z = 0; z < nz; z++) for (let y = 0; y < yMax; y++) {
+      const row = nx * (y + ny * z), Yc = y * s / 10, Zc = (z * s - g.cz) / 10;
+      for (let x = 0; x < nx; x++) {
+        const m = P.data[row + x];
+        if (m !== FAT && m !== GLAND) continue;
+        const Xc = (x * s - g.cx) / 10;
+        const d = view === 'mlo' ? mloMuscleDepthCm(Xc * ca + Zc * sa, L0, B) : ccMuscleDepthCm(Xc);
+        if (Yc < d) P.data[row + x] = MUSCLE;
+      }
+    }
+  }
+  // the nipple: on the skin surface, tilted by tiltDeg toward the source (+) or the receptor
+  // (-) in the plane of the AP axis and the beam — out of the image plane, which is the only
+  // tilt that takes a nipple out of profile
+  for (const k of P.nip) P.data[k] = AIR;
+  P.nip = [];
+  const bAx = view === 'mlo' ? [-Math.sin(angleDeg * D2R), Math.cos(angleDeg * D2R)] : [0, 1];   // (X, Z)
+  const Rb = 1 / Math.hypot(bAx[0] / g.ax, bAx[1] / g.az);
+  const ph = tiltDeg * D2R;
+  const p = [Rb * Math.sin(ph) * bAx[0], g.ay * Math.cos(ph), Rb * Math.sin(ph) * bAx[1]];
+  const n = [p[0] / g.ax ** 2, p[1] / g.ay ** 2, p[2] / g.az ** 2], nl = Math.hypot(...n);
+  const q = [g.cx + p[0] + 1.2 * n[0] / nl, p[1] + 1.2 * n[1] / nl, g.cz + p[2] + 1.2 * n[2] / nl];
+  const R = 3.6, lo = (v) => Math.max(0, Math.floor((v - R) / s)), hi = (v, N) => Math.min(N - 1, Math.ceil((v + R) / s));
+  for (let z = lo(q[2]); z <= hi(q[2], nz); z++) for (let y = lo(q[1]); y <= hi(q[1], ny); y++)
+    for (let x = lo(q[0]); x <= hi(q[0], nx); x++) {
+      const k = x + nx * (y + ny * z);
+      if (P.data[k] !== AIR || (x * s - q[0]) ** 2 + (y * s - q[1]) ** 2 + (z * s - q[2]) ** 2 > R * R) continue;
+      P.data[k] = NIP; P.nip.push(k);
+    }
+  return P.data;
+}
+
+/* ---- the projector -----------------------------------------------------------
+   Pure: everything it needs comes in `o`, so the node tests cast the real phantom through
+   the same code the console does. Returns the detected image, the AEC cell's tally, and —
+   when the subject is a positioned breast — the per-pixel maps the judge reads. */
+export function castMammo(o) {
+  const { vm, data, view, c, E, w, photons0, finds, pos, pat } = o;
+  const NX = o.NX || 940, NY = o.NY || 600;
   const ids = [0, 2, 3, 7, 10, 21, 23, 28, 53];
   const mu = {};
   for (const id of ids) mu[id] = E.map((e) => muAt(id, e));
+  const muF = mu[2], muS = mu[23];
 
   // MACHINE frame: x lateral, y AP (chest wall at y=0, nipple +y), z vertical (the
   // beam and compression axis; receptor at z=0). Anatomy -> machine is the affine
@@ -306,22 +403,24 @@ function expose() {
   // placing the compressed breast on the receptor. Rays are cast in machine space
   // and pulled back through the inverse; ONE chord-ratio per ray converts the
   // traced anatomy path lengths into real centimetres of compressed tissue.
-  // the QC slab is rigid: the paddle parks against it and compression does nothing
-  const rigid = S.subject === 'acrphantom';
-  const c = rigid ? 1 : compCur, lat = 1 / Math.sqrt(c);
-  const rot = M.view === 'mlo' ? Math.PI / 4 : 0;
+  const lat = 1 / Math.sqrt(c);
+  // The MLO's C-arm angle turns the anatomy so the image plane holds the superolateral ->
+  // inferomedial axis (the axilla at +x) and the beam runs superomedial -> inferolateral,
+  // as a mediolateral oblique's does. It used to turn the other way, which is the LMO.
+  const rot = view === 'mlo' ? -o.angleDeg * D2R : 0;
   const cosR = Math.cos(rot), sinR = Math.sin(rot);
   const ex = vm.extentMM[0] / 10, ey = vm.extentMM[1] / 10, ez = vm.extentMM[2] / 10;
   const Ca = [ex / 2, ey / 2, ez / 2];
   // the MAG STAND raises the subject off the receptor: the cone geometry magnifies the
   // projection onto the same fixed detector, and the spot view overfills it — both fall
   // out of the raised base plane with no special cases
-  const magLift = M.mag ? SID * (1 - 1 / 1.8) : 0;
+  const magLift = o.magLift || 0;
   const Cm = [0, (ey / 2) * lat, magLift + (ez * c) / 2];
+  const hM = ez * c;                                    // the paddle gap, machine cm
 
   // centre at Ca puts the volume's min corner at the anatomy origin, which is the
   // frame toAnat() produces
-  const ph = new VoxelPhantom({ dims: vm.dims, vs: vm.vs, data: vm.data }, Ca);
+  const ph = new VoxelPhantom({ dims: vm.dims, vs: vm.vs, data }, Ca);
 
   // machine point -> anatomy point: subtract Cm, unscale, unrotate, add Ca
   const toAnat = (pm) => {
@@ -332,37 +431,52 @@ function expose() {
 
   // detector grid: chest wall along the top row, nipple toward the bottom. The field is
   // the RECEPTOR's, fixed — compression visibly spreads the breast across it, which is
-  // half of what the image has to show
+  // half of what the image has to show. Row 0 IS the receptor's chest-wall edge: the rows
+  // that used to sit behind it imaged tissue no detector could have seen.
   // 0.245 mm pixels. Mammography's defining feature is RESOLUTION — real detectors run
   // 50-100 µm — and at the 0.49 mm this started with, a 0.4 mm microcalcification was
   // smaller than the pixel that had to show it, which is a detector no unit would ship.
   // 564 k rays costs about a second for a single shot; the modality takes longer.
-  const NX = 940, NY = 600;
   const fovX = 23.0, fovY = 14.6;
   const img = new Float32Array(NX * NY);
   const src = [0, 0.5, SID];                            // over the chest-wall edge, as built
-  let seed = (M.fixedSeed || (Math.random() * 1e9)) | 0;
+  let seed = (o.seed || (Math.random() * 1e9)) | 0;
   const rand = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
-  // Detected photons per pixel per mAs behind no tissue. 900 puts the detected count
-  // behind tissue in the thousands — mammography is a HIGH-SNR modality (that is what
-  // lets a wax mass at 2 % subject contrast be scored on the QC slab); the AEC target
-  // scales with it, so the mAs and AGD calibrations are untouched. The tube's output per mAs
-  // (target/filter and kV) multiplies it, exactly as it multiplies the dose.
-  const out = relativeOutput(M.tf, M.kv);
-  const photons0 = 900 * M.mas * out;
+
+  // ---- positioning: per column, the posterior tissue left behind the receptor's edge ----
+  // Each column's anatomy is shifted by that much along the AP axis, so it never reaches the
+  // detector: a shift per ray, not a clip, because the rays run all but parallel to the edge.
+  const loss = new Float32Array(NX);
+  if (pos) for (let i = 0; i < NX; i++) loss[i] = edgeLossCm(view, pos, pat, ((i + 0.5) / NX - 0.5) * fovX / lat);
+  // the upper abdomen below the fold (MLO): a block of fat, skin-edged, filling the paddle gap
+  // beyond the line x = xApex - k·y. xApex is the breast's inferior contour at the chest-wall
+  // edge less the fold's gap: lifted, the abdomen stands clear; sagging, it overlaps.
+  let xApex = -Infinity;
+  const kAb = 0.9;
+  if (pos && view === 'mlo' && !magLift) {
+    const g = moundOf(vm), al = o.angleDeg * D2R;
+    const Rw = Math.hypot(g.ax * Math.cos(al), g.az * Math.sin(al)) / 10, ay = g.ay / 10;
+    let u = -Rw;
+    for (let it = 0; it < 3; it++) {
+      const y0 = Math.min(ay * 0.99, edgeLossCm(view, pos, pat, u));
+      u = -Rw * Math.sqrt(1 - (y0 / ay) ** 2);
+    }
+    xApex = u * lat * SID / (SID - hM / 2) - imfGapCm(pos);
+  }
+  const maps = pos ? { breast: new Float32Array(NX * NY), muscle: new Float32Array(NX * NY),
+    nipple: new Float32Array(NX * NY), abdomen: view === 'mlo' ? new Float32Array(NX * NY) : null } : null;
 
   // ---- the case's findings, flattened for the march --------------------------
-  const cs = caseFindings();
-  const nf = cs.finds.length;
+  const nf = finds.length;
   const fx = new Float64Array(nf), fy = new Float64Array(nf), fz = new Float64Array(nf);
   const fr2 = new Float64Array(nf), fw = new Float64Array(nf);
   const fd = [new Float64Array(nf), new Float64Array(nf), new Float64Array(nf)];
   const pxCm = fovX / NX;                       // detector pixel, cm (object plane ~ same)
   let bx = 0, by = 0, bz = 0, br = 0;
   if (nf) {
-    for (const f of cs.finds) { bx += f.x; by += f.y; bz += f.z; }
+    for (const f of finds) { bx += f.x; by += f.y; bz += f.z; }
     bx /= nf; by /= nf; bz /= nf;
-    cs.finds.forEach((f, i) => {
+    finds.forEach((f, i) => {
       const rEff = Math.max(f.r, 0.6 * pxCm);
       fx[i] = f.x; fy[i] = f.y; fz[i] = f.z;
       fr2[i] = rEff * rEff;
@@ -373,14 +487,16 @@ function expose() {
   }
   const fA = [0, 0, 0];
   let aecSum = 0, aecCnt = 0;
-  const a0 = toAnat(src);
+  const s0 = toAnat(src);
+  const a0 = [0, 0, 0];
   for (let j = 0; j < NY; j++) {
-    const py = (j + 0.5) / NY * fovY - fovY * 0.02;
+    const py = (j + 0.5) / NY * fovY;
     for (let i = 0; i < NX; i++) {
       const px = ((i + 0.5) / NX - 0.5) * fovX;
       const pix = [px, py, 0];
       const a1 = toAnat(pix);
-      let dx = a1[0] - a0[0], dy = a1[1] - a0[1], dz = a1[2] - a0[2];
+      a0[0] = s0[0]; a0[1] = s0[1] + loss[i]; a0[2] = s0[2];
+      let dx = a1[0] - s0[0], dy = a1[1] - s0[1], dz = a1[2] - s0[2];
       const alen = Math.hypot(dx, dy, dz);
       dx /= alen; dy /= alen; dz /= alen;
       const mlen = Math.hypot(pix[0] - src[0], pix[1] - src[1], pix[2] - src[2]);
@@ -405,9 +521,24 @@ function expose() {
           }
         }
       }
+      let tis = 0;
+      if (maps) {
+        for (const id of ids) if (id && id !== NIP && L[id] > 0) tis += L[id];
+        tis *= scaleL;
+        const k = j * NX + i;
+        maps.breast[k] = tis; maps.muscle[k] = L[MUSCLE] * scaleL; maps.nipple[k] = L[NIP] * scaleL;
+      }
+      // the abdomen: fat through the paddle gap where the ray misses the breast, a fold of it
+      // (taking part of the gap) where the two overlap, and a skin edge along its contour
+      let abF = 0, abS = 0;
+      if (px < xApex - kAb * py) {
+        abF = tis > TH.tissue ? 0.4 * hM : hM;
+        if ((xApex - kAb * py - px) / Math.hypot(1, kAb) < 0.12) abS = 0.5 * hM;
+        maps.abdomen[j * NX + i] = abF + abS;
+      }
       let T = 0;
       for (let b = 0; b < 3; b++) {
-        let A = fA[b];
+        let A = fA[b] + abF * muF[b] + abS * muS[b];
         for (const id of ids) { const l = L[id]; if (l > 0) A += l * scaleL * mu[id][b]; }
         T += w[b] * Math.exp(-A);
       }
@@ -415,17 +546,44 @@ function expose() {
       const det = lam > 30 ? Math.max(0, lam + Math.sqrt(lam) * (Math.sqrt(-2 * Math.log(rand() + 1e-12)) * Math.cos(6.283 * rand())))
                            : lam;
       img[j * NX + i] = det;
-      // AEC cell: a band over the fibroglandular disc, forward of the chest wall
-      if (j > NY * 0.25 && j < NY * 0.55 && i > NX * 0.35 && i < NX * 0.65 && T < 0.55) {
+      // AEC cell: a band over the fibroglandular disc, forward of the chest wall. It rides with
+      // the tissue — the technologist sets the sensor under the gland, wherever the placement
+      // left it — or a breast pulled short would be metered on its thin anterior third
+      const jA = j + loss[i] * lat / fovY * NY + 0.02 * NY;   // + where row 0 used to sit
+      if (jA > NY * 0.25 && jA < NY * 0.55 && i > NX * 0.35 && i < NX * 0.65 && T < 0.55) {
         aecSum += T; aecCnt++;
       }
     }
   }
-  if (typeof window !== 'undefined') window.__mammoImg = { img, NX, NY, c, lat };
+  return { img, NX, NY, fovX, fovY, aecSum, aecCnt, maps, lat };
+}
+
+/* ---- the exposure --------------------------------------------------------- */
+function expose() {
+  const S = ctx.S, vm = S.voxelModel;
+  if (!vm || !MAMMO_SUBJECTS.includes(S.subject) || !vm.data) { setStatus('Loading the subject…'); return; }
+  const t0 = performance.now();
+  const { E, w } = beamBins(M.tf, M.kv);
+  // the QC slab is rigid: the paddle parks against it and compression does nothing
+  const rigid = S.subject === 'acrphantom';
+  const c = rigid ? 1 : compCur;
+  // Detected photons per pixel per mAs behind no tissue. 900 puts the detected count
+  // behind tissue in the thousands — mammography is a HIGH-SNR modality (that is what
+  // lets a wax mass at 2 % subject contrast be scored on the QC slab); the AEC target
+  // scales with it, so the mAs and AGD calibrations are untouched. The tube's output per mAs
+  // (target/filter and kV) multiplies it, exactly as it multiplies the dose.
+  const out = relativeOutput(M.tf, M.kv);
+  const pos = rigid ? null : M.pos[M.view], pat = patientFor(M.caseId);
+  const angleDeg = M.pos.mlo.angle;
+  const data = pos ? positionedData(vm, M.view, pat, nippleTiltDeg(M.view, pos, pat), angleDeg, pos) : vm.data;
+  const r = castMammo({ vm, data, view: M.view, angleDeg, c, E, w, photons0: 900 * M.mas * out,
+    magLift: M.mag ? SID * (1 - 1 / 1.8) : 0, finds: caseFindings().finds, pos, pat, seed: M.fixedSeed });
+  const { img, NX, NY } = r;
+  if (typeof window !== 'undefined') window.__mammoImg = { img, NX, NY, c, lat: r.lat, maps: r.maps };
   // AEC: one-shot re-scale of mAs so the metered cell lands on target — the real AEC
   // integrates during the exposure; the arithmetic is the same
-  if (M.aec && aecCnt > 50) {
-    const tMean = aecSum / aecCnt;
+  if (M.aec && r.aecCnt > 50) {
+    const tMean = r.aecSum / r.aecCnt;
     const want = 4000;  // target detected photons/px behind the gland — SNR ~60, and the
                         // mAs it implies lands the AGD where a screening view really sits
     const newMas = Math.min(400, Math.max(4, want / (900 * out * tMean)));
@@ -434,6 +592,7 @@ function expose() {
     M.mas = Math.round(newMas * 10) / 10;
   }
   dose();                // before the film is annotated, or its corner shows the last exposure's dose
+  evaluate(r);
   drawMammo(img, NX, NY);
   renderReadouts();
   setStatus(`Exposed — ${(performance.now() - t0).toFixed(0)} ms · ${M.view.toUpperCase()} · `
@@ -493,15 +652,23 @@ function drawMammo(img, nx, ny) {
   }
   cv.getContext('2d').putImageData(id, 0, 0);
   lastCv = cv;
-  const g2 = film.getContext('2d');
-  g2.fillStyle = '#000'; g2.fillRect(0, 0, film.width, film.height);
-  const s = Math.min(film.width / nx, film.height / ny);
-  g2.imageSmoothingEnabled = true;
-  g2.drawImage(cv, (film.width - nx * s) / 2, (film.height - ny * s) / 2, nx * s, ny * s);
-  if (ctx.S.bayContent === 'image') mammoImageToBay();
+  blitFilm();
   $('noexp')?.style.setProperty('display', 'none');
   const tl = $('fnTL'); if (tl) tl.textContent = `MAMMO ${M.view.toUpperCase()}`;
   const br = $('fnBR'); if (br) br.textContent = `${M.kv} kV · ${M.mas} mAs · HVL ${(M.hvlMm || 0).toFixed(2)} mm Al · AGD ${M.agdMGy.toFixed(2)} mGy`;
+}
+
+// the console's monitor: the last film, its overlay on top
+function blitFilm() {
+  const film = $('film'); if (!film || !lastCv) return;
+  const g2 = film.getContext('2d');
+  g2.fillStyle = '#000'; g2.fillRect(0, 0, film.width, film.height);
+  const s = Math.min(film.width / lastCv.width, film.height / lastCv.height);
+  const ox = (film.width - lastCv.width * s) / 2, oy = (film.height - lastCv.height * s) / 2;
+  g2.imageSmoothingEnabled = true;
+  g2.drawImage(lastCv, ox, oy, lastCv.width * s, lastCv.height * s);
+  drawOverlay(g2, ox, oy, s);
+  if (ctx.S.bayContent === 'image') mammoImageToBay();
 }
 
 /* The bay's Image view is the READING surface: the monitor is 330 px wide and a
@@ -517,10 +684,113 @@ export function mammoImageToBay() {
   const g = bf.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, w, h);
   const s = Math.min(w / lastCv.width, h / lastCv.height);
+  const ox = (w - lastCv.width * s) / 2, oy = (h - lastCv.height * s) / 2;
   g.imageSmoothingEnabled = true;
-  g.drawImage(lastCv, (w - lastCv.width * s) / 2, (h - lastCv.height * s) / 2,
-    lastCv.width * s, lastCv.height * s);
+  g.drawImage(lastCv, ox, oy, lastCv.width * s, lastCv.height * s);
+  drawOverlay(g, ox, oy, s);
   return true;
+}
+
+/* ---- judging the film -------------------------------------------------------
+   The exposure's own maps go to the judge (core/mammoPosition.js); each view keeps its last
+   reading, and the CC's PNL criterion is read against the MLO's, so a screening pair is
+   judged as a pair. A spot view and the QC slab are not screening views, and say so instead
+   of grading. */
+let lastEval = null;          // the film on screen's landmarks, for the overlay
+function evaluate(r) {
+  lastEval = null;
+  if (!r.maps) { renderEval('The QC slab is scored on its inserts, not on positioning.'); return; }
+  if (M.mag) { renderEval('A magnified spot view is not judged on screening positioning.'); return; }
+  const meas = measureView({ view: M.view, nx: r.NX, ny: r.NY, fovX: r.fovX, fovY: r.fovY, ...r.maps });
+  M.evals[M.view] = { meas };
+  lastEval = { meas, NX: r.NX, NY: r.NY, fovX: r.fovX, fovY: r.fovY };
+  renderEval();
+}
+const SEV_UI = (sev) => sev == null ? ['warn', '…'] : sev < 0 ? ['pass', 'i'] : sev === 0 ? ['pass', '✓']
+  : sev === 1 ? ['warn', '!'] : ['fail', '✗'];
+function renderEval(note) {
+  const el = $('mmEval'); if (!el) return;
+  const E = M.evals || {};
+  const block = (v) => {
+    const e = E[v];
+    if (!e) return `<div class="note" style="margin:6px 0">${v.toUpperCase()} — not exposed yet.</div>`;
+    const j = judgeView(e.meas, E[v === 'cc' ? 'mlo' : 'cc']?.meas);
+    const li = j.items.map((it) => {
+      const [cls, ic] = SEV_UI(it.sev);
+      return `<li class="${cls}"><span class="ic">${ic}</span>${it.label}<div>${it.value}${it.tip ? ' — ' + it.tip : ''}</div></li>`;
+    }).join('');
+    return `<div class="tr-verdict ${j.grade === 'P' || j.grade === 'G' ? 'ok' : 'bad'}">${v.toUpperCase()} · ${j.grade} — ${GRADE_NAME[j.grade]}${j.provisional ? ' *' : ''}</div>`
+      + `<ul class="tr-crit">${li}</ul>`
+      + (j.provisional ? '<div class="note">* provisional until the MLO is exposed: the CC’s posterior tissue is judged against it.</div>' : '');
+  };
+  el.innerHTML = (note ? `<div class="note" style="margin-bottom:6px">${note}</div>` : '') + block('cc') + block('mlo');
+}
+
+/* The overlay: what the judge measured, drawn where it measured it — the PNL (nipple to the
+   muscle, or to the chest-wall edge), the pectoral border's fitted line, the fold. Detector
+   (u, y) cm -> canvas through the same placement the film was drawn with. */
+function drawOverlay(g, ox, oy, s) {
+  const L = lastEval;
+  if (!L || !M.overlay) return;
+  const { meas: m, NX, NY, fovX, fovY } = L;
+  const X = (u) => ox + (u / fovX + 0.5) * NX * s, Y = (y) => oy + (y / fovY) * NY * s;
+  const fs = Math.max(10, Math.round(11 * Math.max(1, s * 2.4)));
+  g.save();
+  g.lineWidth = Math.max(1.5, s * 3);
+  if (m.muscle && m.view === 'mlo') {
+    const mu = m.muscle, u0 = Math.min(mu.uTip, m.pnl.to[0]) - 0.3, u1 = mu.uTop;
+    g.strokeStyle = 'rgba(90,200,255,.9)'; g.setLineDash([6, 4]);
+    g.beginPath(); g.moveTo(X(u0), Y(Math.max(0, mu.a + mu.b * u0))); g.lineTo(X(u1), Y(mu.a + mu.b * u1)); g.stroke();
+    g.setLineDash([]);
+  }
+  const p = m.pnl;
+  g.strokeStyle = '#ffd84a'; g.fillStyle = '#ffd84a';
+  g.beginPath(); g.moveTo(X(p.from[0]), Y(p.from[1])); g.lineTo(X(p.to[0]), Y(p.to[1])); g.stroke();
+  g.beginPath(); g.arc(X(p.from[0]), Y(p.from[1]), Math.max(3, s * 6), 0, 2 * Math.PI); g.stroke();
+  g.font = `${fs}px sans-serif`; g.textBaseline = 'middle';
+  g.fillText(`PNL ${p.cm.toFixed(1)} cm`, X((p.from[0] + p.to[0]) / 2) + 8, Y((p.from[1] + p.to[1]) / 2));
+  if (m.imf && m.imf.uBreast != null && m.imf.uAbd != null) {
+    g.strokeStyle = g.fillStyle = m.imf.gapCm >= 0.1 ? '#8fe3a8' : '#ff9c9c';
+    g.beginPath(); g.moveTo(X(m.imf.uAbd), Y(0.15)); g.lineTo(X(m.imf.uBreast), Y(0.15)); g.stroke();
+    g.textBaseline = 'top'; g.fillText(m.imf.gapCm >= 0.1 ? 'IMF open' : 'IMF closed', X(m.imf.uAbd), Y(0.4));
+  }
+  if (m.cutoff.length) {
+    g.strokeStyle = '#ff6060';
+    const W = NX * s, H = NY * s;
+    for (const c of m.cutoff) {
+      g.beginPath();
+      if (/anterior/.test(c)) { g.moveTo(ox, oy + H); g.lineTo(ox + W, oy + H); }
+      else if (/inferior|medial/.test(c)) { g.moveTo(ox, oy); g.lineTo(ox, oy + H); }
+      else { g.moveTo(ox + W, oy); g.lineTo(ox + W, oy + H); }
+      g.stroke();
+    }
+  }
+  g.restore();
+}
+
+/* ---- the positioning console ----------------------------------------------- */
+function renderPos() {
+  const p = M.pos[M.view], mlo = M.view === 'mlo';
+  const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+  const val = (id, v) => { const el = $(id); if (el && +el.value !== v) el.value = v; };
+  val('mmPull', Math.round(p.pull * 100)); set('mmPullV', Math.round(p.pull * 100) + ' %');
+  val('mmLift', Math.round(p.lift * 100)); set('mmLiftV', Math.round(p.lift * 100) + ' %');
+  val('mmAngle', M.pos.mlo.angle); set('mmAngleV', M.pos.mlo.angle + '°');
+  val('mmRot', Math.round((M.pos.cc.rot || 0) * 100));
+  const rt = Math.round((M.pos.cc.rot || 0) * 100);
+  set('mmRotV', rt === 0 ? 'square' : rt > 0 ? `medial ${rt}` : `lateral ${-rt}`);
+  val('mmRoll', Math.round(p.roll * 100));
+  const rl = Math.round(p.roll * ROLL_DEG);
+  set('mmRollV', rl === 0 ? '0°' : (rl > 0 ? 'up ' : 'down ') + Math.abs(rl) + '°');
+  const ar = $('mmAngleRow'); if (ar) ar.style.display = mlo ? '' : 'none';
+  const rr = $('mmRotRow'); if (rr) rr.style.display = mlo ? 'none' : '';
+  const pat = patientFor(M.caseId);
+  set('mmPatient', `Case ${(M.caseId || 'demo').toUpperCase()} — ${pat.build}.`);
+}
+// how much posterior tissue the current placement leaves behind at the breast's centre line
+function lossNow() {
+  if (!M || !M.pos || (ctx && ctx.S.subject === 'acrphantom')) return 0;
+  return edgeLossCm(M.view, M.pos[M.view], patientFor(M.caseId), 0);
 }
 
 /* ---- readouts + status ---------------------------------------------------- */
@@ -557,7 +827,7 @@ export function mammoSyncScene() {
     const shared = three.voxelMeshes && three.voxelMeshes.breast;
     if (shared) shared.visible = false;
     if (three.chestGroup) three.chestGroup.visible = false;
-    gantry.rotation.z = M.view === 'mlo' ? -Math.PI / 4 : 0;
+    gantry.rotation.z = M.view === 'mlo' ? -M.pos.mlo.angle * D2R : 0;
     applyCompression();
   }
 }
@@ -580,6 +850,11 @@ export function mammoApplyMode(on) {
 export function initMammo(context) {
   ctx = context;
   M = ctx.S.mammo;
+  // positioning lives with each view (a CC and an MLO are placed separately), the judged
+  // films with the screening pair they belong to
+  if (!M.pos) M.pos = JSON.parse(JSON.stringify(POS_DEFAULT));
+  if (!M.evals) M.evals = {};
+  if (M.overlay == null) M.overlay = true;
   buildRig();
   if (typeof window !== 'undefined') window.__mammoProbe = () => ({ mesh: breastMesh, compCur });
   document.querySelectorAll('#mmTfSeg button').forEach((b) => {
@@ -610,6 +885,7 @@ export function initMammo(context) {
     b.addEventListener('click', () => {
       M.view = b.dataset.view;
       document.querySelectorAll('#mmViewSeg button').forEach((x) => x.classList.toggle('on', x === b));
+      renderPos();
       mammoSyncScene();
     });
   });
@@ -618,6 +894,7 @@ export function initMammo(context) {
       M.phantom = b.dataset.ph;
       document.querySelectorAll('#mmPhSeg button').forEach((x) => x.classList.toggle('on', x === b));
       ctx.setSubject?.(M.phantom);
+      M.evals = {}; lastEval = null; renderEval(); blitFilm();
       renderReadouts();
     });
   });
@@ -626,6 +903,8 @@ export function initMammo(context) {
       M.caseId = b.dataset.case;
       document.querySelectorAll('#mmCaseSeg button').forEach((x) => x.classList.toggle('on', x === b));
       const k = $('mmKey'); if (k) k.textContent = '—';    // a new case is unread again
+      M.evals = {}; lastEval = null; renderEval(); blitFilm();   // and a new patient to position
+      renderPos(); applyCompression();
       setStatus(`Case ${M.caseId.toUpperCase()} loaded — expose, read, then reveal.`);
     });
   });
@@ -640,7 +919,23 @@ export function initMammo(context) {
       renderReadouts();
     });
   });
+  // the positioning sliders: the CC and MLO keep their own placement; the C-arm angle is the
+  // MLO's and the rotation the CC's
+  for (const [id, k] of [['mmPull', 'pull'], ['mmLift', 'lift'], ['mmAngle', 'angle'], ['mmRot', 'rot'], ['mmRoll', 'roll']]) {
+    $(id)?.addEventListener('input', (e) => {
+      const v = +e.target.value;
+      if (k === 'angle') M.pos.mlo.angle = v;
+      else if (k === 'rot') M.pos.cc.rot = v / 100;
+      else M.pos[M.view][k] = v / 100;
+      renderPos();
+      mammoSyncScene();
+    });
+  }
+  $('mmOverlay')?.addEventListener('change', (e) => { M.overlay = e.target.checked; blitFilm(); });
   $('mmExpose')?.addEventListener('click', expose);
   const masEl = $('mmMas'); if (masEl) masEl.disabled = M.aec;
   renderReadouts();
+  renderPos();
+  renderEval();
+  if (typeof window !== 'undefined') window.__mammoEval = () => ({ evals: M.evals, last: lastEval });
 }

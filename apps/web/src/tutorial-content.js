@@ -1177,13 +1177,27 @@ export const MAMMO_STEPS = [
     sel: '.grp:has(#mmViewSeg)',
     title: 'CC, MLO, and the magnifier',
     text: 'Craniocaudal compresses top-down; the mediolateral oblique swings the gantry '
-      + '45° so the pectoral margin comes into the field — the two views that make '
+      + '40–60°, parallel to her pectoral muscle, so the muscle comes into the field — the two views that make '
       + 'a screening pair. The MAG stand raises the breast toward the tube for a '
       + '×1.8 spot view: bigger, sharper on small detail, and it pays for that '
       + 'magnification on the dose meter.',
     goal: {
       label: 'Turn the gantry to MLO',
       done: () => S().mammo.view === 'mlo',
+    },
+  },
+  {
+    sel: '.grp:has(#mmPull)',
+    title: 'Position, then let the film judge you',
+    text: 'A view is good by how much tissue it brought onto the receptor. Pull the breast '
+      + 'off the chest wall, lift the fold, match the C-arm to her pectoral muscle on the MLO, '
+      + 'keep the medial breast on the CC, roll the nipple into profile. Each film is then '
+      + 'graded the PGMI way on its OWN image: the posterior nipple line measured nipple to '
+      + 'muscle, the muscle reaching it, the fold open, and the CC’s PNL within 1 cm of the '
+      + 'MLO’s. The yellow line on the film is the PNL it measured.',
+    goal: {
+      label: 'Expose an MLO and read its grade',
+      done: () => !!(S().mammo.evals && S().mammo.evals.mlo),
     },
   },
   {
