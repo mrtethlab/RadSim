@@ -1988,7 +1988,7 @@ const WALL_Q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().se
 const B0={x:0,z:0};
 function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }
 const BUCKY_SPEED=30;
-const COLL_ROT_DETENT=3;
+const COLL_ROT_DETENT=5;
 const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider                    // deg: the collimator clicks into square within this of 0                       // cm/s, the motor's
 let buckyRaf=0, buckyLast=0;
 function buckyTarget(){ return { x:0, z:S.tubeZ }; }  // the rails run one way: along z (up the column at the wall)
