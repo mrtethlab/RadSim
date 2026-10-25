@@ -401,7 +401,8 @@ export function tissue(api, S) {
         [[2, 'lime'], [3.5, 'cyan'], [7.5, 'violet']].forEach(([f, c]) => {
           poly(px, 33, (i) => { const d = i / 2; const L = loss(f, d); return L > dbMax ? null : [gx + (L / dbMax) * gw, top + d * cmPx]; }, c);
           const dEnd = Math.min(16, dbMax / (0.5 * f));
-          px.text(f + ' MHz', gx + (loss(f, dEnd) / dbMax) * gw - 3, top + dEnd * cmPx - 9, c, 1, 1, 'right');
+          const xe = gx + (loss(f, dEnd) / dbMax) * gw;
+          if (f < 7) px.text(f + ' MHz', xe + 3, top + dEnd * cmPx - 9, c); else px.text(f + ' MHz', xe - 3, top + dEnd * cmPx - 9, c, 1, 1, 'right');
         });
         for (const db of [20, 40, 60]) px.text(String(db), gx + (db / dbMax) * gw - (db === 60 ? 2 : 0), top + 2, 'mid', 1, 1, db === 60 ? 'right' : 'center');
         px.text('dB', gx + gw - 2, top + 9, 'mid', 1, 1, 'right');
