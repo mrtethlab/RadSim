@@ -551,8 +551,10 @@ body.mode-ct .di{display:none}
 /* CT scout images — shown side by side over the positioning bay for scan planning.
    The two canvases are sized by layoutScouts() at one shared mm->px scale and
    top-aligned so a horizontal line hits the same table position on both. */
+/* (starts below the VIEW and SOUND OPTIONS buttons, which stand 80 px down the bay's right side:
+   the lateral scout's heading ran under them) */
 .ctscouts{display:none; position:absolute; inset:0; z-index:7; background:#050607;
-  padding:40px 16px 12px; flex-direction:column; gap:12px}
+  padding:88px 16px 12px; flex-direction:column; gap:12px}
 .ctscouts.show{display:flex}
 .scoutrow{display:flex; gap:16px; align-items:flex-start; justify-content:center; flex:1 1 auto; min-height:0}
 .scoutcol{display:flex; flex-direction:column; align-items:center; gap:6px; min-width:0}
@@ -787,6 +789,8 @@ body.subj-hand .hand-only{display:flex}
 .ivnote.t{top:12px} .ivnote.b{bottom:78px}
 .ivnote.l{left:14px} .ivnote.r{right:14px; text-align:right}
 .ivnote.t.r{color:var(--amber)}
+/* (below the VIEW OPTIONS button, which sits over the bay's top right: the technique ran under it) */
+.ivnote.t.r{top:48px}
 .imgstrip{position:absolute; left:0; right:0; bottom:8px; height:62px; display:flex; gap:6px;
   justify-content:center; align-items:center; pointer-events:auto; overflow-x:auto; padding:0 12px}
 .imgthumb{position:relative; padding:0; border:1px solid var(--edge2); border-radius:3px;
@@ -958,6 +962,9 @@ body.mode-us #ctrstPanel{display:none}
   border-right:1px solid var(--edge2); box-shadow:6px 0 26px rgba(0,0,0,.55);
   display:flex; flex-direction:column}
 .ctrst.open .ctrst-body{transform:translateX(0)}
+/* the pull-outs step aside on the image views (images, slices, reports): nothing to set there, and
+   they covered the film's left edge. Hidden, not closed: a contrast or barium study runs on */
+body.bay-flat .ctrst, body.mode-fluoro.bay-flat .ctrst.flkeep{display:none}   /* (fluoro keeps the barium drawer: not on its image view) */
 .ctrst-tab{pointer-events:auto; position:absolute; left:0; top:64px;
   transition:left .18s ease, color .15s, background .15s;
   writing-mode:vertical-rl; text-orientation:mixed;
@@ -1293,7 +1300,8 @@ body:not(.realistic) .real-only{display:none !important}
    the notes. It scrolls inside the bay. */
 .dxreport{position:absolute; inset:0; display:none; background:#20242a; overflow:hidden; z-index:3}
 .dxreport.show{display:block}
-.dxrep-scroll{position:absolute; inset:0; overflow:auto; padding:16px 16px 70px;
+/* (the page starts below the bay's top bar and the VIEW OPTIONS button: its letterhead ran under them) */
+.dxrep-scroll{position:absolute; inset:0; overflow:auto; padding:56px 16px 70px;
   display:flex; justify-content:center}
 .dxrep-page{width:760px; max-width:100%; background:#fff; color:#111; padding:18px 22px 22px;
   border-radius:3px; box-shadow:0 10px 40px rgba(0,0,0,.5);
