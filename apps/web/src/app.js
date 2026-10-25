@@ -4421,6 +4421,11 @@ function initExtras(){
    local checkout (where start-radsim.bat runs the backend) it is still polled, so the button
    lights up when the server comes up, but not while the tab is hidden, and backing off to a
    minute while it stays down. */
+// the process animations: a film of each mode's whole process, loaded only when asked for
+document.querySelectorAll('#homeScreen .hc-anim').forEach((b)=>b.addEventListener('click',(e)=>{
+  e.stopPropagation();
+  import('./anim/player.js').then((m)=>m.openAnimation(b.dataset.anim));
+}));
 const COMPUTE_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
   || !!import.meta.env.VITE_COMPUTE_URL;
 // The realistic modes need the Python backend, which only a local run has: online their cards
