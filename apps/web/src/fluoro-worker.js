@@ -22,6 +22,8 @@
 import { VoxelPhantom, muOverBins } from './core/voxelPhantom.js';
 import { BodyMaterials } from './core/materials.js';
 import { deriveMotion, motionState, brWall } from './core/anatomyMotion.js';
+import { boxSave, stampFragment } from './core/fracture.js';
+import { wireFactors } from './core/guidewire.js';
 
 let ph = null;
 let anim = null;
@@ -39,6 +41,13 @@ let muGas0 = 0, muGas1 = 0, muGas2 = 0;       // bowel gas, for the double-contr
 // sVol bins voxels along the vessel tree; the conc LUT snapshots the injector timeline.
 let sVol = null, iodLut = null, svNS = 256;
 let muIo0 = 0, muIo1 = 0, muIo2 = 0;          // mu per (mg I/mL)·cm, one per bin
+/* The ankle exercise's fracture (core/fracture.js): the fragment's voxels and the box it can
+   reach, saved as scanned when it arrives; each pulse that carries a new move puts the box back
+   and stamps the fragment where the learner has it. The volume is this worker's own copy. */
+let frag = null, fragSaved = null, fragV = -1;
+/* The guidewire (core/guidewire.js): steel less the blood it displaces, per bin. Not voxelised —
+   the worker adds its exact chord to each ray, averaged over the pixel's face. */
+let wireMu = [0, 0, 0];
 
 function setBins(kv) {
   const E = [0.45 * kv, 0.65 * kv, 0.88 * kv];
@@ -53,6 +62,8 @@ function setBins(kv) {
   muBa0 = mu0[BARC]; muBa1 = mu1[BARC]; muBa2 = mu2[BARC];
   muGas0 = mu0[GASI]; muGas1 = mu1[GASI]; muGas2 = mu2[GASI];
   muIo0 = mu0[IODC]; muIo1 = mu1[IODC]; muIo2 = mu2[IODC];
+  const STEEL = BodyMaterials.idByName['Stainless steel'], BLOOD = BodyMaterials.idByName['Blood'];
+  wireMu = [mu0[STEEL] - mu0[BLOOD], mu1[STEEL] - mu1[BLOOD], mu2[STEEL] - mu2[BLOOD]];
   binKv = kv;
 }
 
@@ -228,6 +239,36 @@ function traceMu(ox, oy, oz, dx, dy, dz) {
   return A3;
 }
 
+/* The wire's points (voxel indices of the volume as stored) into the room, as the marcher reads
+   it: through the breathing warp first — a cell at z shows the anatomy from z + s(z), so the
+   wire at z0 is drawn where z + s(z) = z0 (three fixed-point steps; s is smooth) — then the
+   flips, the volume's placement and its turn. The heart and gut warps do not reach a wire. */
+function wireWorld(w) {
+  const out = [], nx = ph.nx, ny = ph.ny, nz = ph.nz, vs = ph.vs, mn = ph.min;
+  const cx = (ph.min[0] + ph.max[0]) / 2, cy = (ph.min[1] + ph.max[1]) / 2, cz = (ph.min[2] + ph.max[2]) / 2;
+  const R = ph.rotated ? ph.rot : null;
+  for (let q = 0; q < w.length; q += 3) {
+    const x = w[q], y = w[q + 1];
+    let z = w[q + 2];
+    if (wOn && brShift) {
+      const z0 = z;
+      for (let it = 0; it < 3; it++) {
+        const zi = Math.round(z);
+        const s = zi >= brZ0 && zi <= brZ1 ? brShift[zi] * brWall(WST, x, y) : 0;
+        z = z0 - s;
+      }
+    }
+    const ix = ph.flip[0] ? nx - 1 - x : x, iy = ph.flip[1] ? ny - 1 - y : y, iz = ph.flip[2] ? nz - 1 - z : z;
+    let p = [mn[0] + (ix + 0.5) * vs[0], mn[1] + (iy + 0.5) * vs[1], mn[2] + (iz + 0.5) * vs[2]];
+    if (R) {
+      const d = [p[0] - cx, p[1] - cy, p[2] - cz];
+      p = [cx + R[0] * d[0] + R[1] * d[1] + R[2] * d[2], cy + R[3] * d[0] + R[4] * d[1] + R[5] * d[2], cz + R[6] * d[0] + R[7] * d[1] + R[8] * d[2]];
+    }
+    out.push(p);
+  }
+  return out;
+}
+
 onmessage = (e) => {
   const m = e.data;
   if (m.type === 'init') {
@@ -238,6 +279,7 @@ onmessage = (e) => {
     anim = null;
     giVol = null; baLut = null; gasLut = null; sVol = null; iodLut = null;
     anim = deriveMotion(ph.data, m.dims, vsMM);
+    frag = null; fragSaved = null; fragV = -1;      // a new volume carries no fracture until sent
     postMessage({ type: 'ready',
       anim: anim ? Object.keys(anim).filter((k) => k !== 'any' && anim[k]) : [] });
     return;
@@ -245,6 +287,14 @@ onmessage = (e) => {
   // the per-subject voxel -> arclength-bin maps, sent once when their study first goes live
   if (m.type === 'givol') { giVol = new Uint8Array(m.giVol); giNS = m.ns || giNS; return; }
   if (m.type === 'svol') { sVol = new Uint8Array(m.sVol); svNS = m.ns || svNS; return; }
+  // the fracture: a new one (or none) replaces the last, which is put back first
+  if (m.type === 'frag') {
+    if (frag && ph) stampFragment(ph.data, [ph.nx, ph.ny, ph.nz], frag, fragSaved, null);
+    frag = m.frag && ph ? m.frag : null;
+    fragSaved = frag ? boxSave(ph.data, [ph.nx, ph.ny, ph.nz], frag.box) : null;
+    fragV = -1;
+    return;
+  }
   if (m.type !== 'pulse' || !ph) return;
   const t0 = performance.now();
   if (m.rot !== undefined) ph.setRotation(m.rot);
@@ -257,6 +307,10 @@ onmessage = (e) => {
   iodLut = m.iod || null;
   if (m.svNS) svNS = m.svNS;
   iV = (iodLut && sVol) ? sVol : null;
+  if (frag) {
+    const v = m.fragMove ? m.fragMove.v : -2;
+    if (v !== fragV) { stampFragment(ph.data, [ph.nx, ph.ny, ph.nz], frag, fragSaved, m.fragMove || null); fragV = v; }
+  }
 
   const { src, detC, detU, detV, half, n, photons } = m;
   const iris = m.iris || half;
@@ -267,6 +321,8 @@ onmessage = (e) => {
   seed = m.seed || seed;
   const img = new Float32Array(n * n);
   const w0 = binW[0], w1 = binW[1], w2 = binW[2];
+  const gw = m.wire ? wireFactors(wireWorld(m.wire), m.wireR, wireMu, src, detC, detU, detV, half, n) : null;
+  const g0 = gw && gw[0], g1 = gw && gw[1], g2 = gw && gw[2];
   // ABC reads the mean transmission of the central disc BEFORE noise — the closed loop
   // wants the signal, not one pulse's mottle
   let roiSum = 0, roiCnt = 0;
@@ -292,7 +348,9 @@ onmessage = (e) => {
       let dx = px - src[0], dy = py - src[1], dz = pz - src[2];
       const dl = Math.hypot(dx, dy, dz); dx /= dl; dy /= dl; dz /= dl;
       const a = traceMu(src[0], src[1], src[2], dx, dy, dz);
-      const T = w0 * Math.exp(-a[0]) + w1 * Math.exp(-a[1]) + w2 * Math.exp(-a[2]);
+      const k = j * n + i;
+      const T = g0 ? w0 * Math.exp(-a[0]) * g0[k] + w1 * Math.exp(-a[1]) * g1[k] + w2 * Math.exp(-a[2]) * g2[k]
+        : w0 * Math.exp(-a[0]) + w1 * Math.exp(-a[1]) + w2 * Math.exp(-a[2]);
       if (r2 < roiR2) { roiSum += T; roiCnt++; }
       img[j * n + i] = photons > 0 ? poisson(photons * T) / photons : T;
     }
