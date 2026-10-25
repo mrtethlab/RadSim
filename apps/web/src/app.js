@@ -584,9 +584,12 @@ function jointChain(subject){
     motions: j.motions.map(m=>({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
   return chainCache[subject]=ch.length ? ch : null;
 }
+// the rooms that bend the patient: the x-ray room and fluoroscopy (which images the same
+// posed volume in its pulse workers: fluoro.js syncPose)
+const JOINT_MODES=new Set(['xray','fluoro']);
 function jointsActive(){
   const ch=jointChain(S.subject);
-  return S.mode==='xray' && ch && anyBent(ch, S.joints) ? ch : null;
+  return JOINT_MODES.has(S.mode) && ch && anyBent(ch, S.joints) ? ch : null;
 }
 // a rest-frame point (landmark, required anatomy, palpation) where the bent patient has it
 function poseLoc(p){ const ch=jointsActive(); return ch ? forwardChain(p, ch, S.joints) : p; }
@@ -672,7 +675,7 @@ function keepPose(vm, key, posed){
    the exposure finds the pose made. */
 async function ensureJointVolume(vm, angles=S.joints){
   const ch=jointChain(S.subject);
-  if(S.mode!=='xray' || !ch || !anyBent(ch, angles) || !vm?.data) return;
+  if(!JOINT_MODES.has(S.mode) || !ch || !anyBent(ch, angles) || !vm?.data) return;
   const key=poseKey(ch, angles);
   if(poseCache(vm).has(key)) return;
   const pool=posers(); if(!pool.length) return;       // jointPosedVolume poses it here instead
@@ -689,7 +692,9 @@ async function ensureJointVolume(vm, angles=S.joints){
 function jointPosedVolume(vm){
   const ch=jointsActive(); if(!ch || !vm.data) return null;
   const key=poseKey(ch, S.joints);
-  if(!poseCache(vm).has(key)) keepPose(vm, key, poseVolume(vm, voxelFlips(), ch, S.joints));
+  // (fluoroscopy never poses here: its dose traces build a phantom every pulse, and seconds of
+  // posing on the main thread would stall the screening; it takes the worker's pose when made)
+  if(!poseCache(vm).has(key)){ if(S.mode==='fluoro') return null; keepPose(vm, key, poseVolume(vm, voxelFlips(), ch, S.joints)); }
   return poseCache(vm).get(key);
 }
 /* REST ON THE TABLE. A patient lies on the receptor whichever way they are turned. The model
@@ -4176,6 +4181,14 @@ window.addEventListener('load',()=>{
     // where the central ray enters the patient (cm from the focus, or null): the same phantom
     // the worker images, traced on the main thread for the skin and staff doses
     skinEntry: (src, dir, maxLen) => entranceFsd(buildPhantom(), src, dir, maxLen),
+    // the patient's pose, for the pulse workers: its key ('' unbent) and its volume once the
+    // posing worker has made it (null until then: the workers keep imaging the last one)
+    posedVolume: () => {
+      const ch=jointsActive(), vm=S.voxelModel;
+      if(!ch || !vm?.data) return { key:'' };
+      const key=poseKey(ch, S.joints);
+      return { key, vol: poseCache(vm).get(key) || null };
+    },
     // Phase D: the LIVE barium study rides the pulses. bariumLUT() rebuilds only when the
     // study clock moved; null while the panel is off or the subject has no gut.
     bariumPulse: () => {

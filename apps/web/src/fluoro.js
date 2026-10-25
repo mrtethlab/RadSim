@@ -8,6 +8,8 @@
    readout Phase A exists to measure.
    ============================================================================ */
 import { dockConsole } from './core/paneDock.js';
+import { buildCarm, buildTower, CARM } from './carm.js';
+import { carmBeam } from './core/carmPose.js';
 import { ownsSpace } from './core/keys.js';
 import { irisShutterArea } from './core/fieldArea.js';
 import { NR_K, recursiveStep, displayMap, edgeEnhance } from './core/fluoroDisplay.js';
@@ -23,6 +25,7 @@ let F = null;            // ctx.S.fluoro
 // discarded, never drawn over a newer frame. Mobile keeps a pool of one: the second
 // volume copy costs more memory than 7.5 pps is worth.
 let workers = [], busy = [], readyCount = 0, workerSub = null;
+let workerPose = '';     // the patient's pose the pool holds ('' = as scanned): syncPose
 let giVolSent = false;   // whether this pool has the barium arclength map
 let sVolSent = false;    // whether this pool has the vessel arclength map
 /* ---- DSA state (docs/fluoroscopy.md Phase E) ------------------------------
@@ -116,13 +119,16 @@ function cineStop() {
   document.querySelectorAll('.cinerow.playing').forEach((r) => r.classList.remove('playing'));
 }
 let timer = null, pulseId = 0, pedalDownAt = 0, lastDrawn = 0;
-let rig = null, stretcher = null, oecBody = null, oecCarm = null, oecBoom = null, oecCol = null;
+let rig = null, stretcher = null, carm = null, tower = null;
 let pendShown = false;   // the orientation pad's triangle: pending rotation being dialled in
 let shutTouched = 0;     // when collimation was last moved — the leaf wires linger after
 
-// GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°.
-// LARM: boom pivot (the column axis) to the beam axis, cm — wig-wag's arc radius.
-const OEC = { SID: 99, SRC_ISO: 60, FIELD: 23, LARM: 94 };
+// GE OEC geometry, datasheet-rounded (cm): fixed SID, source under the patient at 0°. The
+// column's axis to the beam's (wig-wag's arc radius) is the C-arm model's (carm.js CARM.LARM).
+const OEC = { SID: 99, SRC_ISO: 60, FIELD: 23 };
+// the orbital travel: the C slides through its holder until the holder's shoe nears the C's end
+// (carm.js: a 220-degree C in a 28-degree shoe keeps hold to 96); both laterals are inside it
+const ORB_MAX = 95;
 // Circular-field sampling, adaptive: measured on the hand, one worker does 192 px in
 // ~54 ms (≈18 pps) and the pool of two sustains 15 pps clean but only ~23 of 30. The
 // last third comes from sampling: 160 px is 0.69x the rays, and both sizes upscale into
@@ -154,24 +160,14 @@ const norm = (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] 
    long axis (z), tilt angulates craniocaudally. At 0/0 the beam points straight up —
    tube UNDER the patient, the standard C-arm setup (scatter goes at the floor, not the
    operator's eyes). */
-// Beam direction before wig-wag: orbital about z, tilt about x, 0° = up.
-function beamDirC() {
-  const th = F.orbital * Math.PI / 180, ti = F.tilt * Math.PI / 180;
-  return [Math.sin(th) * Math.cos(ti), Math.cos(th) * Math.cos(ti), Math.sin(ti)];
-}
-/* TUBE OVER THE TABLE: the C turned half a turn about the horizontal axis through its holder
-   (the flip-flop axis, across the table). The image still works — upside down and mirrored,
-   which the orientation pad and the side marker show — but the backscatter that went at the
-   floor now comes up at the operator's eyes and thyroid (core/staffDose.js). */
-function beamDir0() {
-  const d = beamDirC();
-  return F.over ? [d[0], -d[1], -d[2]] : d;
-}
-// Wig-wag yaws the whole boom+C about the column's vertical axis.
-function beamDir() {
-  const d = beamDir0(), w = F.wig * Math.PI / 180, c = Math.cos(w), s = Math.sin(w);
-  return [d[0] * c + d[2] * s, d[1], -d[0] * s + d[2] * c];
-}
+/* The beam from the C-arm's joints (core/carmPose.js): the C slides through its holder
+   (orbital), the holder turns on the cross-arm (tilt; flip-flop, half a turn, puts the tube OVER
+   THE TABLE: the image still works, upside down and mirrored, which the orientation pad and the
+   side marker show, but the backscatter that went at the floor comes up at the operator's eyes
+   and thyroid, core/staffDose.js), and wig-wag yaws the cross-arm about the column. Tilt sits
+   outside orbital, as on the machine (the first version composed them the other way round; the
+   two agree whenever either angle is zero). */
+function beamDir() { return carmBeam(F); }
 /* The C-arm's isocentre is a point in the ROOM, not on the patient: it sits over the
    stretcher's centre at the subject's nominal mid-plane, and the offset sliders slide the
    PATIENT through the field. The first version tracked objOff here, which aimed the beam
@@ -187,8 +183,8 @@ function isoBase() {
    wig-wag arcs it about the column axis LARM behind the beam. All three feed straight
    into beamFrame(), so the image pans and magnifies for real, and ABC re-meters. */
 function isoPoint() {
-  const b = isoBase(), w = F.wig * Math.PI / 180, r = OEC.LARM + F.ext;
-  return [b[0] - OEC.LARM + Math.cos(w) * r, b[1] + F.lift, b[2] - Math.sin(w) * r];
+  const b = isoBase(), w = F.wig * Math.PI / 180, r = CARM.LARM + F.ext;
+  return [b[0] - CARM.LARM + Math.cos(w) * r, b[1] + F.lift, b[2] - Math.sin(w) * r];
 }
 function beamFrame() {
   const dir = beamDir(), iso = isoPoint();
@@ -218,6 +214,7 @@ function ensureWorker() {
   workers.forEach((w) => w.terminate());
   workers = []; busy = []; readyCount = 0; workerSub = S.subject; lastDrawn = 0;
   giVolSent = false; sVolSent = false;       // the fresh pool has no arclength maps yet
+  workerPose = '';                           // and holds the patient as scanned
   const pose = ctx.phantomPose();
   for (let i = 0; i < poolSize(); i++) {
     const w = new Worker(new URL('./fluoro-worker.js', import.meta.url), { type: 'module' });
@@ -254,6 +251,25 @@ function ensureWorker() {
   }
   setStatus('Loading the subject into the pulse workers…');
   return false;
+}
+
+/* THE PATIENT'S POSE. The pool holds one volume; when the joints are bent (app.js posedVolume)
+   and the posing worker has made that pose, every worker takes it in place of the one it holds
+   (same centre: a pose pads its grid symmetrically) before its next pulse; messages run in
+   order, so no pulse sees half of it. Until the pose is made the workers image the last one.
+   The arclength maps of a barium or vessel study belong to the scanned grid: with the patient
+   bent they are not sent (a contrast study on a bent limb has none to show). */
+function syncPose() {
+  const p = ctx.posedVolume?.() || { key: '' };
+  if (p.key === workerPose || (p.key && !p.vol) || !workers.length) return;
+  const vm = ctx.S.voxelModel, pose = ctx.phantomPose();
+  const v = p.vol || { data: vm.data, dims: vm.dims };
+  readyCount = 0;
+  workers.forEach((w) => w.postMessage({ type: 'init', dims: v.dims, vs: vm.vs, vsMM: vm.spacingMM,
+    data: v.data, center: pose.center, flip: pose.flip, rot: pose.rot }));
+  giVolSent = sVolSent = !!p.key;
+  workerPose = p.key;
+  entryKey = '';                             // the skin the beam enters has moved too
 }
 
 /* Per-pulse photon budget: fluoro runs ~5-10 ms pulses at a few mA — three orders of
@@ -365,7 +381,7 @@ let entryKey = '', entryVal = null;
 function entranceNow() {
   const g = beamFrame(), S = ctx.S, dir = beamDir();
   const key = [g.src.map((v) => v.toFixed(1)), dir.map((v) => v.toFixed(3)), S.objOff.x, S.objOff.y, S.objOff.z,
-    S.objRot.x, S.objRot.y, S.objRot.z, S.subject].join('|');
+    S.objRot.x, S.objRot.y, S.objRot.z, S.subject, workerPose].join('|');
   if (key !== entryKey) {
     entryKey = key;
     const fsd = ctx.skinEntry ? ctx.skinEntry(g.src, dir, OEC.SID) : null;
@@ -429,6 +445,7 @@ function animTick() {
    pulse went out. (Takes an options object: setInterval may pass a lateness number.) */
 function firePulse(opts) {
   const film = !!(opts && opts.film);
+  syncPose();                                // a newly made pose goes to the pool first
   if (readyCount !== workers.length || !workers.length) { ensureWorker(); return false; }
   const slot = busy.indexOf(false);
   if (slot < 0) { F.dropped++; tierTick(true); renderReadouts(); return false; }
@@ -793,6 +810,33 @@ function syncScreens() {
   if (lab) lab.textContent = liveOnMain ? (F.ws2 === 'live' ? 'LIVE (COPY)' : 'REFERENCE') : 'LIVE';
   film.parentElement?.classList.toggle('refonmain', !liveOnMain);
   syncMonitor(haveLive);
+  syncTower(liveOnMain, haveLive);
+}
+/* The monitor cart's two screens in the room: the big one shows what the console's main screen
+   does (live, or the reference when WORKSTATION swaps them), the other the second screen. A
+   status bar under each, as on the cart: what the screen holds, the technique, the beam. */
+function syncTower(liveOnMain, haveLive) {
+  if (!tower || !ctx || ctx.S.mode !== 'fluoro') return;
+  const paint = (scr, live, label) => {
+    const cv = scr.canvas, g = cv.getContext('2d'), W = cv.width, H = cv.height, bar = 34;
+    g.fillStyle = '#000'; g.fillRect(0, 0, W, H);
+    const img = { width: W, height: H - bar };
+    const tmp = paint.tmp || (paint.tmp = document.createElement('canvas'));
+    tmp.width = img.width; tmp.height = img.height;
+    const shown = live ? (haveLive && (renderTo(tmp), true)) : drawRefInto(tmp);
+    if (shown) g.drawImage(tmp, 0, 0);
+    g.fillStyle = '#0d1a26'; g.fillRect(0, H - bar, W, bar);
+    g.font = 'bold 20px monospace'; g.textBaseline = 'middle';
+    g.fillStyle = live && F.pedal ? '#ffcf3a' : '#7fd1ff';
+    g.fillText(label, 12, H - bar / 2);
+    g.fillStyle = '#cfe3f3'; g.textAlign = 'right';
+    g.fillText(`${Math.round(F.kv)} kV  ${(+F.ma).toFixed(1)} mA`, W - 12, H - bar / 2);
+    g.textAlign = 'left';
+    if (live && F.pedal) { g.fillStyle = '#ffcf3a'; g.beginPath(); g.arc(W - 22, 22, 9, 0, 2 * Math.PI); g.fill(); }
+    scr.texture.needsUpdate = true;
+  };
+  paint(tower.live, liveOnMain, liveOnMain ? 'LIVE' : 'REFERENCE');
+  paint(tower.ref, !liveOnMain || F.ws2 === 'live', !liveOnMain ? 'LIVE' : (F.ws2 === 'live' ? 'LIVE (COPY)' : 'REFERENCE'));
 }
 
 /* ---- the floating monitors -------------------------------------------------
@@ -913,7 +957,7 @@ function wireMonitor() {
     e.preventDefault();
     const d = (e.deltaY > 0 ? 1 : -1) * 2;
     if (e.shiftKey) nudgeCarm('tilt', d, 'flTilt', -45, 45);
-    else nudgeCarm('orbital', d, 'flOrb', -115, 115);
+    else nudgeCarm('orbital', d, 'flOrb', -ORB_MAX, ORB_MAX);
   }, { passive: false });
 }
 /* Arrow keys while in fluoro: the table (as the drag), or with Shift the C-arm. One step is
@@ -924,7 +968,7 @@ function arrowKeys(e) {
   if (!dir) return;
   e.preventDefault();
   if (e.shiftKey) {
-    if (dir[0]) nudgeCarm('orbital', 2 * dir[0], 'flOrb', -115, 115);
+    if (dir[0]) nudgeCarm('orbital', 2 * dir[0], 'flOrb', -ORB_MAX, ORB_MAX);
     else nudgeCarm('tilt', -2 * dir[1], 'flTilt', -45, 45);
     return;
   }
@@ -1052,6 +1096,23 @@ function renderReadouts() {
 function setStatus(msg) { const el = $('flStatus'); if (el) el.textContent = msg; }
 
 /* ---- the rig ------------------------------------------------------------- */
+function buildStretcher(THREE) {
+  const g = new THREE.Group();
+  const top = new THREE.MeshStandardMaterial({ color: 0x23272c, roughness: 0.55, metalness: 0.2 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xe9ecee, roughness: 0.45, emissive: 0x3a3e43 });
+  const grey = new THREE.MeshStandardMaterial({ color: 0x9aa1a8, roughness: 0.5, metalness: 0.2 });
+  const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); g.add(o); return o; };
+  box(55, 2.4, 210, top, 0, -1.6, 0);                                   // the radiolucent top
+  for (const s of [-1, 1]) box(2.2, 3.4, 210, white, s * 28.6, -1.9, 0); // its side rails
+  box(55, 3.4, 4, white, 0, -1.9, 104);                                  // the head end
+  // the pedestal at the foot: a column on a broad base, a frame under the top's last half metre
+  box(48, 6, 60, white, 0, -6.4, -78);
+  box(26, 70, 22, white, 0, FLOOR_Y + 41, -80);
+  box(40, 3, 50, grey, 0, FLOOR_Y + 6, -80);
+  box(60, 3, 64, white, 0, FLOOR_Y + 1.5, -80);
+  return g;
+}
+
 function buildRig() {
   const { THREE, three } = ctx;
   rig = new THREE.Group();
@@ -1064,21 +1125,23 @@ function buildRig() {
   rig.add(beam);
   rig.visible = false;
   three.handGroup.parent.add(rig);
-  // The real machine: ML's photogrammetry OEC, segmented in two (public/models/rigs/
-  // oec_rig.glb). The scan's 821 fused fragments were classified geometrically — the II
-  // and tube anchor the beam axis, the C's shell plates fall on an annulus about the
-  // throat centre (r 0.30–0.78 m), and the workstation box and cart column fail those
-  // fences — so the 'carm' node (13k faces: C + tube + II, pivot pre-shifted to the
-  // throat centre) rotates with the orbital/tilt sliders while the 'body' node (37k
-  // faces: cart, column, workstation) stands still. Loaded async; the beam line alone
-  // is the fallback if the fetch fails.
-  // the scanned machine itself is fetched on first entry to the room: see loadOecRig()
-  // the stretcher the subject lies on (the x-ray placement already lies flat at y≈0)
-  stretcher = new THREE.Mesh(new THREE.BoxGeometry(55, 2.4, 210),
-    new THREE.MeshStandardMaterial({ color: 0x3c4650, roughness: 0.85 }));
-  stretcher.position.set(0, -1.6, 0);
+  // The machine (carm.js): base, column, cross-arm, holder and C, each posed below
+  carm = buildCarm(OEC.SID, OEC.SRC_ISO);
+  for (const g of Object.values(carm)) { g.visible = false; rig.parent.add(g); }
+  // the table the subject lies on: a carbon-fibre top on a white frame, cantilevered from a
+  // pedestal at the foot so the C can reach under it (the x-ray placement lies flat at y≈0)
+  stretcher = buildStretcher(THREE);
   stretcher.visible = false;
   rig.parent.add(stretcher);
+  // the monitor cart past the foot of the table, turned up the table toward the room's usual
+  // view (the camera orbits on the patient's right, toward the head), its two screens the
+  // console's two (syncScreens)
+  tower = buildTower();
+  tower.group.name = 'fluoroTower'; carm.base.name = 'carmBase';
+  tower.group.visible = false;
+  tower.group.position.set(55, FLOOR_Y, -165);
+  tower.group.rotation.y = -Math.PI / 2 + 0.4;
+  rig.parent.add(tower.group);
   // the operator: a plain figure where the staff dose is worked out, so "step back" and
   // "the other side of the table" can be seen as well as read. Grey-blue body = apron on.
   operator = new THREE.Group();
@@ -1102,68 +1165,14 @@ function syncOperator(on) {
   if (body) body.material.color.setHex(F.prot.apron ? 0x4f7fa0 : 0x7fa86a);
 }
 
-/* 0.54 MB of photogrammetry that only the fluoroscopy room ever shows. It used to be
-   fetched while the page booted, for every visitor, whether or not they opened this mode.
-   Now it is fetched the first time the room is entered; until it lands the beam line and
-   the stretcher stand in, exactly as they already did when the fetch failed. */
-let oecRequested = false;
-function loadOecRig() {
-  if (oecRequested) return;
-  oecRequested = true;
-  const { THREE, three } = ctx;
-  ctx.loadModelUrl?.(ctx.baseUrl + 'models/rigs/oec_rig.glb').then((g) => {
-    g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
-    let carmNode = null, boomNode = null, colNode = null;
-    g.traverse((o) => {
-      const n = (o.name || '').toLowerCase();
-      if (!carmNode && n.includes('carm')) carmNode = o;
-      else if (!boomNode && n.includes('boom')) boomNode = o;
-      else if (!colNode && n.includes('column')) colNode = o;
-    });
-    // scale from the BODY alone — the movable nodes' pivot shifts would skew a combined box
-    if (carmNode) carmNode.removeFromParent();
-    if (boomNode) boomNode.removeFromParent();
-    if (colNode) colNode.removeFromParent();
-    const size = new THREE.Box3().setFromObject(g).getSize(new THREE.Vector3());
-    const sc = 180 / Math.max(size.x, size.y, size.z);   // tallest dimension -> ~1.8 m
-    g.scale.setScalar(sc);
-    g.visible = false;
-    three.handGroup.parent.add(g);
-    oecBody = g;
-    const wrap = (node) => {
-      const grp = new THREE.Group();
-      node.scale.setScalar(sc);
-      grp.add(node);
-      grp.visible = false;
-      three.handGroup.parent.add(grp);
-      return grp;
-    };
-    if (carmNode) oecCarm = wrap(carmNode);
-    if (boomNode) oecBoom = wrap(boomNode);
-    if (colNode) oecCol = wrap(colNode);
-    fluoroSyncScene();
-  }).catch(() => { /* the beam line remains */ });
-}
-
 export function fluoroSyncScene() {
   if (!ctx || !rig) return;
   const { THREE, S, three } = ctx;
   const on = S.mode === 'fluoro';
   rig.visible = on; stretcher.visible = on;
   syncOperator(on);
-  if (oecBody) {
-    oecBody.visible = on;
-    // Stand the machine so its own C wraps the isocentre. From orthographic projections
-    // of the mesh: the beam axis is VERTICAL at local x ~ 0.72 — tube housing centred at
-    // y ~ -0.45, II at y ~ +0.6, i.e. ~96 cm apart at this scale, which is the OEC's real
-    // SID to within 3 cm. The throat midpoint (0.72, 0.07, 0) goes to the isocentre; no
-    // rotation needed, the scanned machine already holds its beam upright.
-    const b = isoBase(), sc = oecBody.scale.x;
-    oecBody.position.set(b[0] - 0.72 * sc, b[1] - 0.07 * sc, b[2]);
-  }
-  if (oecCarm) oecCarm.visible = on;
-  if (oecBoom) oecBoom.visible = on;
-  if (oecCol) oecCol.visible = on;
+  for (const g of Object.values(carm)) g.visible = on;
+  tower.group.visible = on;
   // The x-ray rig belongs to the other room. Hiding is enough: ctSyncScene restores the
   // tube on every sync once the mode is no longer fluoro, so there is nothing to undo.
   if (on) {
@@ -1178,39 +1187,27 @@ export function fluoroSyncScene() {
     if (three.aecGroup) three.aecGroup.visible = false;
     const iso = isoPoint(), b = isoBase();
     rig.position.set(iso[0], iso[1], iso[2]);
-    // Compose the joint chain explicitly so the C keeps its roll: wig-wag yaw about the
-    // room's vertical axis, times the orbital/tilt rotation. (setFromUnitVectors on the
-    // final beam direction would pick an arbitrary twist once yaw is involved.)
+    // The machine's chain, as built (carm.js): wig-wag yaws the cross-arm about the column; the
+    // holder turns on the arm's end by flip-flop and tilt, both about the arm's own axis (x);
+    // the C slides through the holder by the orbital angle, about the holder's z. Its product
+    // takes up to the beam exactly as beamDir() does.
+    const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
     const w = F.wig * Math.PI / 180;
-    const qw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), w);
-    const q0 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0),
-      new THREE.Vector3(...beamDirC()));
-    // over the table: the half turn about the flip-flop axis comes between the yaw and the C
-    const qf = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), F.over ? Math.PI : 0);
-    const q = qw.clone().multiply(qf).multiply(q0);
-    rig.quaternion.copy(q);
-    // The segmented C rotates about the (moving) isocentre — its local origin was
-    // pre-shifted to the throat centre at export, so position + rotate is the whole
-    // articulation. (The real OEC slides its C through the holder; rigid rotation
-    // about the iso is the same motion for the C itself, at the cost of the C
-    // visually leaving its holder at large orbital angles.)
-    if (oecCarm) { oecCarm.position.set(iso[0], iso[1], iso[2]); oecCarm.quaternion.copy(q); }
-    // The boom pivots at the column axis (its local origin, LARM behind the beam):
-    // wig-wag yaws it, lift raises it, extend slides it along its own yawed axis. It
-    // does NOT tilt: the flip-flop pivot at its far end lets the C roll while the arm
-    // holds still — the tilt axis (the horizontal line through hub and arc centre) is
-    // exactly the line the C already rotates about.
-    if (oecBoom) {
-      oecBoom.position.set(b[0] - OEC.LARM + Math.cos(w) * F.ext, b[1] + F.lift,
-        b[2] - Math.sin(w) * F.ext);
-      oecBoom.quaternion.copy(qw);
-    }
-    // The column telescopes out of its base collar: it rises with lift and nothing else —
-    // extend and wig-wag happen above it, at the boom.
-    if (oecCol && oecBody) {
-      const sc = oecBody.scale.x;
-      oecCol.position.set(b[0] - 0.72 * sc, b[1] - 0.07 * sc + F.lift, b[2]);
-    }
+    const qw = new THREE.Quaternion().setFromAxisAngle(Y, w);
+    const qh = qw.clone()
+      .multiply(new THREE.Quaternion().setFromAxisAngle(X, F.over ? Math.PI : 0))
+      .multiply(new THREE.Quaternion().setFromAxisAngle(X, F.tilt * Math.PI / 180));
+    const qc = qh.clone().multiply(new THREE.Quaternion().setFromAxisAngle(Z, -F.orbital * Math.PI / 180));
+    rig.quaternion.copy(qc);
+    carm.c.position.set(iso[0], iso[1], iso[2]); carm.c.quaternion.copy(qc);
+    carm.holder.position.set(iso[0], iso[1], iso[2]); carm.holder.quaternion.copy(qh);
+    // the cross-arm: its origin on the column's axis (slid out by extend), at the isocentre's
+    // height (lift raises it); the column rises with it out of the cart's sleeve
+    const colX = b[0] - CARM.LARM, colZ = b[2];
+    carm.boom.position.set(colX + Math.cos(w) * F.ext, b[1] + F.lift, colZ - Math.sin(w) * F.ext);
+    carm.boom.quaternion.copy(qw);
+    carm.column.position.set(colX, b[1] + F.lift, colZ);
+    carm.base.position.set(colX, FLOOR_Y, colZ);
   }
 }
 
@@ -1221,7 +1218,6 @@ export function fluoroApplyMode(on) {
   // core/paneDock.js, which ultrasound shares.
   dockConsole(on, $('flPedalRow'));
   if (on) {
-    loadOecRig();
     ensureWorker();
     renderReadouts();
     setStatus(readyCount === workers.length && workers.length
