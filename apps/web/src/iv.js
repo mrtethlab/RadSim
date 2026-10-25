@@ -281,6 +281,21 @@ function makeRoom() {
     syringe, plunger, saline, sBlood, luer, swab, leak, band, thumb, gauze, finger, patch: null, rings: [], blood: null };
   R3.prep = buildPrep(THREE, mat, clear, group);
 }
+/* The room's models built into another scene (the IV process animation, anim/films/iv.js): made
+   exactly as makeRoom makes them, with the setters that shape the supplies bound to them. The
+   room's own state (its context, its models, the chosen gauge) is left as it was. */
+export function buildIVModels(THREE, scene, gauge = '20') {
+  const keep = { ctx, R3, gauge: setup.gauge };
+  ctx = { THREE, three: { scene } }; setup.gauge = gauge;
+  try {
+    makeRoom();
+    const out = R3;
+    const bound = (f) => (...a) => { const k = R3; R3 = out; try { return f(...a); } finally { R3 = k; } };
+    Object.assign(out, { setLid: bound(setLid), paintLid: bound(paintLid), setStrip: bound(setStrip), setSleeve: bound(setSleeve) });
+    out.paintLid(); out.setLid(0);
+    return out;
+  } finally { ctx = keep.ctx; R3 = keep.R3; setup.gauge = keep.gauge; }
+}
 function disposeRoom() {
   if (!R3) return;
   ctx.three.scene.remove(R3.group);
