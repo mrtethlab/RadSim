@@ -41,6 +41,7 @@ BONE_RGBA = (236, 228, 205, 255)          # an ivory, as the plain mesh's bone
 # so it keeps within a fraction of a voxel of the bone at any of these.
 EDGE_MM = {'hand': 1.0, 'foot': 1.0, 'headneck': 3.0, 'chestabdopelvis': 4.0, 'wholebody': 4.0, 'totalhipreplacement': 3.0}
 METAL_RGBA = (154, 165, 176, 255)
+SOLID = 0.3                               # the share of a bone's voxels inside its surface (masks)
 CLOSE_MM = 2.0                            # the widest cortical gap bridged, each bone by itself
 
 
@@ -83,21 +84,21 @@ def close_pieces(mask, allowed, it, s):
     return out
 
 
-def build(name):
-    import trimesh
-    hdr_path = MODELS / name / f'{name}.model.json'
-    h = json.loads(hdr_path.read_text(encoding='utf-8'))
+def load(name):
+    h = json.loads((MODELS / name / f'{name}.model.json').read_text(encoding='utf-8'))
     nx, ny, nz = h['dims']
-    s = float(h['spacing'][0])
     mat = np.fromfile(MODELS / name / f'{name}.mat.bin', dtype=np.uint8).reshape(nz, ny, nx)
-    centre = np.array([nx, ny, nz]) * s / 2.0
+    return h, mat, float(h['spacing'][0])
+
+
+def masks(name, mat, s):
+    """The voxels each surface is cut from: [(label, rgba, mask)]."""
     # a model made from a segmented CT keeps only its labelled bones (bone_labels.py): a contrast
     # CT's enhanced vessels and calcified walls are bone-dense but not bone
     keep = labelled_bone(name, mat)
     if keep is not None:
         print(f'{name}: labelled bone only ({int((np.isin(mat, BONE) & ~keep).sum())} bone-dense voxels off the bones left out)')
-    scene = trimesh.Scene()
-    faces = 0
+    out = []
     for ids, rgba, label in ((BONE, BONE_RGBA, 'bone'), (METAL, METAL_RGBA, 'metal')):
         mask = np.isin(mat, ids)
         if label == 'bone' and keep is not None:
@@ -113,8 +114,29 @@ def build(name):
         lab, n = ndi.label(mask)
         if n > 1:
             sizes = ndi.sum(mask, lab, range(1, n + 1))
-            keep = np.zeros(n + 1, bool); keep[1:] = sizes * s ** 3 >= 100.0      # 0.1 cm^3
-            mask = keep[lab]
+            big = np.zeros(n + 1, bool); big[1:] = sizes * s ** 3 >= 100.0      # 0.1 cm^3
+            if label == 'bone' and keep is None:
+                # without a segmentation, what is bone-dense but not bone is told by its shape: a
+                # body bag's fold, a tube or a calcified vessel is a sheet or a strand a voxel or two
+                # thick, a bone (a sesamoid, a patella) is solid. Under SOLID of a piece's voxels
+                # survive a one-voxel erosion: not bone (bones measured 0.33 and up, the strips 0.21
+                # and under)
+                inner = ndi.sum(ndi.binary_erosion(mask), lab, range(1, n + 1))
+                big[1:] &= inner >= SOLID * sizes
+            mask = big[lab]
+        out.append((label, rgba, mask))
+    return out
+
+
+def build(name):
+    import trimesh
+    hdr_path = MODELS / name / f'{name}.model.json'
+    h, mat, s = load(name)
+    nx, ny, nz = h['dims']
+    centre = np.array([nx, ny, nz]) * s / 2.0
+    scene = trimesh.Scene()
+    faces = 0
+    for label, rgba, mask in masks(name, mat, s):
         m = surface(mask, s, step=max(1, round(EDGE_MM.get(name, 2.0) / s)))
         # and the crumbs the coarser triangles leave, specks of a few mm^3 (a 1 mm voxel is 1)
         parts = m.split(only_watertight=False)
