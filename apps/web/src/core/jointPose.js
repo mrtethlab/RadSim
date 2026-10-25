@@ -95,7 +95,18 @@ function mul3(a, b) {
    translation carried with the same share as the turn, growing as the square of the motion's
    fraction of its range. The jaw is one: past the first part of opening, a pure hinge at the
    condyles, the condyles slide forward onto the articular eminences, so the chin drops rather
-   than swinging back into the throat. */
+   than swinging back into the throat.
+   A DIGIT's joints (j.digit: which digit, 1 the thumb to 5 the little finger) are field joints too,
+   listed last in their chain, each digit's proximal first (a finger's MCP, PIP, DIP; the thumb's
+   CMC, MCP, IP), with one motion each, driven together by the digit's curl (motionAngle). Their
+   share is read at the point's REST position, not where the joints beyond had already carried it:
+   a curled fingertip lies in the air under the finger, which no grid can say is the finger's. So a
+   digit is skinned as a chain: a fingertip turns by its DIP share about the DIP, then by its PIP
+   share about the PIP, then by its MCP share about the MCP. The grids (tools/measure_joints.py)
+   give each digit's bones its joints' whole turn or none, and its soft tissue a crease, within the
+   digit's own territory: the shares are nested (what a joint turns at all, the joints above it turn
+   whole), and no point is two digits'. The inverse (digitLeaves) stands on both. A field's `band`
+   picks the joint's share out of its digit's one grid. */
 export function compileJoint(j, angles) {
   let R = [1, 0, 0, 0, 1, 0, 0, 0, 1];
   let any = false, tw = 0;
@@ -129,8 +140,21 @@ export function compileJoint(j, angles) {
       const f = Math.max(0, Math.min(1, (motionAngle(angles, m) - (m.rest || 0)) / (m.range[1] - (m.rest || 0))));
       for (let i = 0; i < 3; i++) g[i] += m.glide[i] * f * f;
     }
-    return { c: j.c, d: j.distal, b: j.blend, n, T, tw: 0, sp: 0, R2: Infinity, wf: field, g,
+    const J = { c: j.c, d: j.distal, b: j.blend, n, T, tw: 0, sp: 0, R2: Infinity, wf: field, g,
       ins: [0, 0, 0], bis: [0, 0, 1], bisL: 1 };                  // (no crook: the field decides)
+    if (j.digit) {
+      // its slab (along the motion's axis) and reach: where a point it turns can be (digitLeaves)
+      const sl = j.slab || [-Infinity, Infinity], up = dot(n, j.motions[0].axis) >= 0;
+      // and the turns back along its arc the search steps through, as matrices (no trig a voxel)
+      const Ms = [];
+      for (let s = 0; s <= FIELD_SCAN; s++) {
+        const cols = [[1, 0, 0], [0, 1, 0], [0, 0, 1]].map((e) => rotate(e, n, -s / FIELD_SCAN * T));
+        Ms.push([cols[0][0], cols[1][0], cols[2][0], cols[0][1], cols[1][1], cols[2][1], cols[0][2], cols[1][2], cols[2][2]]);
+      }
+      Object.assign(J, { dg: j.digit, sl: up ? sl : [-sl[1], -sl[0]], rc2: j.reach ? j.reach * j.reach : Infinity, Ms,
+        cr2: j.crease !== undefined ? j.crease * j.crease : Infinity });
+    }
+    return J;
   }
   const f = rotate(j.distal, n, T);
   const J = { c: j.c, d: j.distal, b: j.blend, n, T, tw, sp: j.spread || 0, R2: j.radius ? j.radius * j.radius : Infinity,
@@ -195,8 +219,13 @@ export function compileChain(chain, angles) {
 
 // within the limb's cylinder (rest frame)
 function inLimb(d, J, s) { return J.R2 === Infinity || dot(d, d) - s * s < J.R2; }
-// a field joint's share at a rest-frame point: trilinear in the field, 0 outside it
+// a field joint's share at a rest-frame point: trilinear in the field, 0 outside it; a digit's joint
+// takes its band of its digit's grid (85 a joint: the band's share is 3 w - band, clamped)
 export function fieldWeight(F, p) {
+  const w = fieldValue(F, p);
+  return F.band === undefined ? w : Math.max(0, Math.min(1, 3 * w - F.band));
+}
+function fieldValue(F, p) {
   const gx = (p[0] - F.origin[0]) / F.sp, gy = (p[1] - F.origin[1]) / F.sp, gz = (p[2] - F.origin[2]) / F.sp;
   const [nx, ny, nz] = F.dims;
   if (!(gx >= 0 && gy >= 0 && gz >= 0 && gx <= nx - 1 && gy <= ny - 1 && gz <= nz - 1)) return 0;
@@ -237,9 +266,10 @@ function fieldInverse(q, J) {
   }
   return out;
 }
-function forwardOne(p, J) {
+// rest: the point before the chain moved it (a digit's joint reads its share there)
+function forwardOne(p, J, rest = p) {
   if (J.wf) {
-    const w = fieldWeight(J.wf, p);
+    const w = fieldWeight(J.wf, J.dg ? rest : p);
     if (!w) return p;
     const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, w * J.T), g = J.g || [0, 0, 0];
     return [J.c[0] + r[0] + w * g[0], J.c[1] + r[1] + w * g[1], J.c[2] + r[2] + w * g[2]];
@@ -268,7 +298,7 @@ function plainOne(p, J) {
 // a compiled chain, most proximal first: the most distal joint applies first
 export function forwardCompiled(p, cc) {
   let q = p;
-  for (let i = cc.length - 1; i >= 0; i--) q = forwardOne(q, cc[i]);
+  for (let i = cc.length - 1; i >= 0; i--) q = forwardOne(q, cc[i], p);
   return q;
 }
 /* THE SKIN in the room. Turned by its share of the bend, a point in the crease sweeps an arc at its
@@ -285,8 +315,8 @@ export function forwardCompiled(p, cc) {
    The volume the film is traced through is posed by the map above; this only shapes the outline
    the room shows. */
 const SKIN_CORE = 1;
-function skinOne(p, J) {
-  if (J.wf) return forwardOne(p, J);                 // (a field bends smoothly already)
+function skinOne(p, J, rest) {
+  if (J.wf) return forwardOne(p, J, rest);           // (a field bends smoothly already)
   if (J.rd && J.T) { const w = fieldWeight(J.rd, p); if (w > 0) return riderBlend(p, J, w, skinPlain(p, J)); }
   return skinPlain(p, J);
 }
@@ -317,7 +347,7 @@ function skinPlain(p, J) {
 }
 export function forwardSkin(p, cc) {
   let q = p;
-  for (let i = cc.length - 1; i >= 0; i--) q = skinOne(q, cc[i]);
+  for (let i = cc.length - 1; i >= 0; i--) q = skinOne(q, cc[i], p);
   return q;
 }
 /* THE BONE in the room, by the volume's own rule for it (posePlan: BONE IS RIGID). A bone point past a
@@ -333,22 +363,32 @@ function bonePlain(p, J) {
   if (J.T) r = rotate(r, J.n, J.T);
   return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]];
 }
-function boneOne(p, J) {
+// a digit's bone: its share read at the rest point, as the volume reads it, and snapped whole or none
+// at BONE_SNAP (the resampler's own rule), so a phalanx turns as one piece
+function boneDigit(p, J, rest) {
+  if (fieldWeight(J.wf, rest) < BONE_SNAP) return p;
+  const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, J.T), g = J.g || [0, 0, 0];
+  return [J.c[0] + r[0] + g[0], J.c[1] + r[1] + g[1], J.c[2] + r[2] + g[2]];
+}
+function boneOne(p, J, rest) {
+  if (J.dg) return boneDigit(p, J, rest);
   if (J.wf) return forwardOne(p, J);
   if (J.rd && J.T) { const w = fieldWeight(J.rd, p); if (w > 0) return riderBlend(p, J, w, bonePlain(p, J)); }
   return bonePlain(p, J);
 }
 export function forwardBone(p, cc) {
   let q = p;
-  for (let i = cc.length - 1; i >= 0; i--) q = boneOne(q, cc[i]);
+  for (let i = cc.length - 1; i >= 0; i--) q = boneOne(q, cc[i], p);
   return q;
 }
-// which rigid piece a rest point is on: one bit per plain joint (past its plane, within its limb).
-// A triangle of the bone mesh with corners on two pieces would stretch across the bent joint.
+// which rigid piece a rest point is on: one bit per plain joint (past its plane, within its limb)
+// and per digit joint (its snapped share). A triangle of the bone mesh with corners on two pieces
+// would stretch across the bent joint.
 export function boneSide(p, cc) {
   let k = 0;
   for (let i = 0; i < cc.length; i++) {
     const J = cc[i];
+    if (J.dg) { if (fieldWeight(J.wf, p) >= BONE_SNAP) k |= 1 << i; continue; }
     if (J.wf) continue;
     const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], s = dot(d, J.d);
     if (s >= 0 && inLimb(d, J, s)) k |= 1 << i;
@@ -399,17 +439,130 @@ function preimagesOne(q, J, reach2 = Infinity) {
   if ((A <= -J.b || !inLimb(dq, J, A)) && inCrook(J, dq, 0)) out.push(q);
   return J.tw ? out.map(unroll) : out;
 }
+/* THE DIGITS' INVERSE. A digit's share is read at the rest point, which is not known until all of
+   its joints are undone; the search stands on the grids' two promises instead. Nested: at each of a
+   digit's joints, proximal first, a point was turned by it whole (and the joints beyond may turn it
+   too), by part of it (and by none beyond: it lies in this joint's crease, on its arc, found as a
+   field's root is), or not at all (nor by any beyond). Disjoint: what one digit turned, no other
+   did. So each digit is searched on its own, depth first, its most turned rest point first, and a
+   rest point found is kept only if it has the shares the path to it assumed (whole on the joints
+   it was turned back through, its own in the crease, none past). A point outside a joint's slab or
+   reach (where any point it turns can be, the joints beyond it having turned it: measure_joints) is
+   not the joint's; most of the hand is no finger's, and is spared the search. The digits are the
+   chain's last joints: the joints above them are undone first (preimagesOne). */
+const DIGIT_TOL = 0.02, BONE_SNAP = 0.5, DIGIT_NEAR = 1.2;   // (cm: a finger's half-thickness and its pad)
+// the chain's digits, each its joints proximal first
+function digitRuns(cc) {
+  const runs = [];
+  for (const J of cc) if (J.dg) { const r = runs.find((d) => d[0].dg === J.dg); if (r) r.push(J); else runs.push([J]); }
+  return runs;
+}
+// p turned whole by joints 0..m-1 of a digit (its share of each, at rest, 1; to within tol)
+function wholeTo(p, D, m, tol = DIGIT_TOL) {
+  for (let j = 0; j < m; j++) if (fieldWeight(D[j].wf, p) < 1 - tol) return false;
+  return true;
+}
+/* q's rest points in digit D, from its joint i on (q already turned back whole through the ones
+   before), the most turned first. Without `keep`, all of them, onto out. With it (the volume's
+   resampler, which judges a rest point by what lies there: 0 air, 1 soft tissue, 2 bone), the
+   first it keeps, its kind returned: a fingertip's grid reaches past its skin, and the air there,
+   turned whole, hid the bone a point also had in the joint above.
+   BONE IS RIGID: its share is whole or none, a half the line between (BONE_SNAP; the grid's cells
+   blend its surface with the soft tissue's share beside it, and a metacarpal head's surface,
+   turned by a fifth of the MCP's turn, filled the joint space). So a bone rest point counts as bone
+   only by the whole turns or none; met by the crease's partial turns it is drawn only where nothing
+   else is, as soft tissue would be (rejected outright, it left holes beside the bone, its snapped
+   image being elsewhere).
+   Near a joint (DIGIT_NEAR) the search goes on past soft tissue for bone: inside a flexed PIP the
+   middle phalanx's palmar pad swings onto the proximal phalanx's palmar cortex, and, the most
+   turned, it cut a notch in the bone (soft tissue gives way, bone does not; a plain joint's crook,
+   tried here, also carved off the head of the proximal phalanx, which reaches past the bisector). */
+function digitLeaves(q, D, i, keep, out) {
+  const J = D[i], dq = [q[0] - J.c[0], q[1] - J.c[1], q[2] - J.c[2]], a = dot(dq, J.n), r2 = dot(dq, dq);
+  const near = r2 < DIGIT_NEAR * DIGIT_NEAR;
+  let held = null;
+  // a rest point found, if it has the shares its path assumed (has(tol): to within tol): what the
+  // search does next (2 done with bone, 1 done with soft tissue, 0 go on)
+  const leaf = (p, has, part = false) => {
+    if (!keep) { if (has(DIGIT_TOL)) out.push(p); return 0; }
+    const kind = part ? Math.min(1, keep(p)) : keep(p);
+    if (!kind || !has(kind === 2 ? BONE_SNAP : DIGIT_TOL)) return 0;
+    if (kind === 2 || !near) { out.push(p); return kind; }
+    if (!held) held = p;
+    return 0;
+  };
+  const done = () => (held ? (out.push(held), 1) : 0);
+  // not turned by this joint (nor any beyond); at the first, only the bone it snaps back (the rest
+  // of what it did not turn is the resampler's own, unmoved)
+  const none = (t) => fieldWeight(J.wf, q) <= t && wholeTo(q, D, i, t);
+  if (a < J.sl[0] || a > J.sl[1] || r2 > J.rc2) return (i > 0 && leaf(q, none)) || done();
+  const at = (w) => { const r = rotate(dq, J.n, -w * J.T); return [J.c[0] + r[0], J.c[1] + r[1], J.c[2] + r[2]]; };
+  const step = (s) => { const M = J.Ms[s]; return [J.c[0] + M[0] * dq[0] + M[1] * dq[1] + M[2] * dq[2], J.c[1] + M[3] * dq[0] + M[4] * dq[1] + M[5] * dq[2], J.c[2] + M[6] * dq[0] + M[7] * dq[1] + M[8] * dq[2]]; };
+  // turned whole by this joint
+  const q1 = step(FIELD_SCAN);
+  if (i + 1 < D.length) {
+    const k = digitLeaves(q1, D, i + 1, keep, out);
+    if (k && (k === 2 || !near)) return k;
+    if (k) held = held || out.pop();
+  } else { const k = leaf(q1, (t) => wholeTo(q1, D, i + 1, t)); if (k) return k; }
+  // in its crease: on its arc where the share is the turn's fraction (bracketed by the steps, then
+  // the Illinois method, a secant kept in the bracket, as the plain joint's crease); the arc keeps
+  // its distance from the joint, so one beyond the crease's (j.crease) passes through none of it
+  const g = (w) => fieldWeight(J.wf, at(w)) - w;
+  let ga = r2 > J.cr2 ? 0 : fieldWeight(J.wf, q);
+  for (let s = 1; s <= FIELD_SCAN && r2 <= J.cr2; s++) {
+    const gb = fieldWeight(J.wf, s < FIELD_SCAN ? step(s) : q1) - s / FIELD_SCAN;
+    if (ga > 0 && gb <= 0) {
+      let a = (s - 1) / FIELD_SCAN, b = s / FIELD_SCAN, fa = ga, fb = gb, side = 0, m = b;
+      for (let n = 0; n < 10 && b - a > 1e-4; n++) {
+        m = fb === fa ? (a + b) / 2 : (a * fb - b * fa) / (fb - fa);
+        const fm = g(m);
+        if (fm > 0) { a = m; fa = fm; if (side === 1) fb /= 2; side = 1; }
+        else if (fm < 0) { b = m; fb = fm; if (side === -1) fa /= 2; side = -1; }
+        else break;
+      }
+      const p = at(m);
+      if (m < 1 - 1e-3) {
+        const k = leaf(p, (t) => Math.abs(fieldWeight(J.wf, p) - m) <= t && wholeTo(p, D, i, t), true);
+        if (k) return k;
+      }
+    }
+    ga = gb;
+  }
+  const k = (i || (keep && keep(q) === 2)) && leaf(q, i ? none : (t) => t === BONE_SNAP && none(t));
+  return k || done();
+}// q is no digit's at rest
+function noDigit(q, runs) {
+  for (const D of runs) if (fieldWeight(D[0].wf, q) > DIGIT_TOL) return false;
+  return true;
+}
 export function preimagesCompiled(q, cc) {
   let cands = [q];
-  for (let i = 0; i < cc.length; i++) cands = cands.flatMap((p) => preimagesOne(p, cc[i]));
-  return cands;
+  for (const J of cc) if (!J.dg) cands = cands.flatMap((p) => preimagesOne(p, J));
+  const runs = digitRuns(cc);
+  if (!runs.length) return cands;
+  const out = [];
+  for (const p of cands) {
+    for (const D of runs) digitLeaves(p, D, 0, null, out);
+    if (noDigit(p, runs)) out.push(p);
+  }
+  return out;
 }
 export function preimagesChain(q, chain, angles) {
   return preimagesCompiled(q, compileChain(chain, angles));
 }
 
-// an angle as set, or the model's own when unset
-export function motionAngle(angles, m) { return angles[m.key] ?? m.rest ?? 0; }
+/* an angle as set, or the model's own when unset. A digit's joints are set by its CURL, 0 (as
+   scanned) to 100 % (a fist), each its own way (m.curl: degrees at a full curl, and the power the
+   fraction is raised to: a fist closes from the PIP, so the PIP leads, the DIP and MCP follow);
+   below 0, to the range's end (-20 %), EXTENSION, in proportion to its degrees there (m.curl[2]) */
+export function motionAngle(angles, m) {
+  if (m.curl) {
+    const v = angles[m.key] ?? 0;
+    return v >= 0 ? m.curl[0] * Math.pow(Math.min(1, v / 100), m.curl[1]) : -(m.curl[2] || 0) * Math.min(1, v / (m.range?.[0] || -20));
+  }
+  return angles[m.key] ?? m.rest ?? 0;
+}
 export function anyBent(chain, angles) {
   return chain.some((j) => j.motions.some((m) => Math.abs(motionAngle(angles, m) - (m.rest || 0)) > 0.01));
 }
@@ -582,11 +735,12 @@ function planCtx(vm, flips, chain, angles) {
   const sg = flips.map((f) => (f ? -1 : 1));
   const cc = compileChain(chain, angles);
   // vacated: distal of a bent joint at rest (the moved part has left), or past the crook's
-  // bisector (the part below folds against it there); a field joint vacates whatever it moves
+  // bisector (the part below folds against it there); a field joint vacates whatever it moves (a
+  // digit's, what it moves by more than the search's tolerance: digitLeaves takes the rest as still)
   const vacAt = (x, y, z) => {
     for (let n = 0; n < cc.length; n++) {
       const J = cc[n], ex = x - J.c[0], ey = y - J.c[1], ez = z - J.c[2];
-      if (J.wf) { if (fieldWeight(J.wf, [x, y, z]) > 0) return true; continue; }
+      if (J.wf) { if (fieldWeight(J.wf, [x, y, z]) > (J.dg ? DIGIT_TOL : 0)) return true; continue; }
       const sd = ex * J.d[0] + ey * J.d[1] + ez * J.d[2];
       if (sd > -J.b && (J.R2 === Infinity || ex * ex + ey * ey + ez * ez - sd * sd < J.R2)) return true;
       if (ex * J.ins[0] + ey * J.ins[1] + ez * J.ins[2] > 0 && ex * J.bis[0] + ey * J.bis[1] + ez * J.bis[2] < 0) return true;
@@ -648,11 +802,16 @@ function occGrid(sp, blo, bhi) {
   const on = [0, 1, 2].map((a) => (bhi[a] >= blo[a] ? Math.ceil((bhi[a] - blo[a]) / oh) + 1 : 0));
   return { oh, on, cell: (v, a) => Math.floor((v - blo[a]) / oh) };
 }
+/* A cell's mark is bits: 1 where anything moved landed, and 1 << d where digit d's tissue did (the
+   resampler searches only the digits whose tissue can be there: posedAt) */
 export function planOcc(vm, flips, chain, angles, S, k0 = 0, k1 = vm.dims[2]) {
-  const X = planCtx(vm, flips, chain, angles), { on, cell } = occGrid(X.sp, S.blo, S.bhi);
+  const X = planCtx(vm, flips, chain, angles), { on, cell } = occGrid(X.sp, S.blo, S.bhi), runs = digitRuns(X.cc);
   const occ = new Uint8Array(on[0] * on[1] * on[2]);
   eachSample(X, vm.data, k0, k1, (p, q, moved) => {
-    if (moved) occ[(cell(q[2], 2) * on[1] + cell(q[1], 1)) * on[0] + cell(q[0], 0)] = 1;
+    if (!moved) return;
+    let b = 1;
+    for (const D of runs) if (fieldWeight(D[0].wf, p) > 0) b |= 1 << D[0].dg;
+    occ[(cell(q[2], 2) * on[1] + cell(q[1], 1)) * on[0] + cell(q[0], 0)] |= b;
   });
   return occ;
 }
@@ -667,7 +826,7 @@ export function growOcc(vm, S, parts) {
       const o = (k * on[1] + j) * on[0] + i;
       if (!occ[o]) continue;
       const p0 = [i, j, k][a];
-      for (let d = -OCC_GROW; d <= OCC_GROW; d++) if (p0 + d >= 0 && p0 + d < on[a]) grown[o + d * stA] = 1;
+      for (let d = -OCC_GROW; d <= OCC_GROW; d++) if (p0 + d >= 0 && p0 + d < on[a]) grown[o + d * stA] |= occ[o];
     }
     occ = grown;
   }
@@ -702,7 +861,10 @@ export function posePlan(vm, flips, chain, angles, pre = null) {
   });
   const at = (i, j, k) => (i < 0 || j < 0 || k < 0 || i >= nx || j >= ny || k >= nz ? 0 : data[(k * ny + j) * nx + i]);
   const sampleRest = (x, y, z) => at(Math.round(sg[0] * x / sp[0] + cx), Math.round(sg[1] * y / sp[1] + cy), Math.round(sg[2] * z / sp[2] + cz));
-  const one = cc.length === 1 && !cc[0].wf ? cc[0] : null;
+  const one = cc.length === 1 && !cc[0].wf ? cc[0] : null, runs = digitRuns(cc), leaf = [], plainBent = cc.some((J) => !J.dg);
+  // a digit's rest point, by what lies there (digitLeaves): bone (and the cartilage of a joint space,
+  // which goes with its bone), or not
+  const keep = (p) => { const v = sampleRest(p[0], p[1], p[2]); return !v ? 0 : RIGID.has(v) ? 2 : 1; };
   // the full inverse turn of the one joint, as a matrix
   let M = null;
   if (one) {
@@ -711,12 +873,38 @@ export function posePlan(vm, flips, chain, angles, pre = null) {
   }
   const Cx = (N[0] - 1) / 2, Cy = (N[1] - 1) / 2, Cz = (N[2] - 1) / 2;
   // where the turned parts are drawn from (the slow path, inside the box they went into)
-  const posedAt = (x, y, z, still) => {
+  // (bits: the cell's occupancy mark, planOcc)
+  const posedAt = (x, y, z, still, bits) => {
     if (!one) {
       let cands = [[x, y, z]];
-      for (let n = 0; n < cc.length; n++) cands = cands.flatMap((p) => preimagesOne(p, cc[n], reach2[n]));
-      for (const p of cands) { const v = sampleRest(p[0], p[1], p[2]); if (v) return v; }
-      return 0;
+      for (let n = 0; n < cc.length; n++) if (!cc[n].dg) cands = cands.flatMap((p) => preimagesOne(p, cc[n], reach2[n]));
+      if (!runs.length) {
+        for (const p of cands) { const v = sampleRest(p[0], p[1], p[2]); if (v) return v; }
+        return 0;
+      }
+      /* each digit's most turned rest point, then the point no digit turned. Where curled digits
+         press on each other (the ring and little fingers side by side, the thumb over the index)
+         or on the palm, soft tissue gives way and bone does not: a bone among them wins */
+      let soft = 0, v = 0;
+      for (const p of cands) {
+        for (const D of runs) {
+          if (!(bits & (1 << D[0].dg))) continue;
+          leaf.length = 0;
+          const k = digitLeaves(p, D, 0, keep, leaf);
+          if (!k) continue;
+          v = sampleRest(leaf[0][0], leaf[0][1], leaf[0][2]);
+          if (k === 2) return v;
+          if (!soft) soft = v;
+        }
+        // (with no joint above the digits bent, the point is the voxel itself, and `still` already
+        // says whether any joint vacated it)
+        if (plainBent ? noDigit(p, runs) : still) {
+          v = plainBent ? sampleRest(p[0], p[1], p[2]) : still;
+          if (RIGID.has(v)) return v;
+          if (!soft) soft = v;
+        }
+      }
+      return soft;
     }
     let v = 0;
     const dx = x - one.c[0], dy = y - one.c[1], dz = z - one.c[2];
@@ -748,9 +936,12 @@ export function posePlan(vm, flips, chain, angles, pre = null) {
   /* A ROW AT A TIME. Along a row only x changes, and every test that vacates a voxel of a plain
      joint is linear in x: the row is the input row copied in, with the vacated stretches zeroed,
      found exactly (lin). Only the voxels inside the box the moved parts went into pay per voxel.
-     A field joint's vacated set is not linear; its rows go voxel by voxel. (Before, every voxel of
-     a 100 M voxel leg paid the joint tests: most of a pose's time.) */
-  const rowWise = cc.every((J) => !J.wf && J.R2 === Infinity);
+     A field joint's vacated set is not linear: it is looked up voxel by voxel, but only along the
+     stretch of the row its grid covers (a digit's grid is a finger's box; the hand's rows went
+     voxel by voxel through all fifteen of them, and the plan's rows took seconds). (Before, every
+     voxel of a 100 M voxel leg paid the joint tests: most of a pose's time.) */
+  const rowWise = cc.every((J) => J.R2 === Infinity);
+  const fbox = cc.map((J) => J.wf && { lo: J.wf.origin, hi: J.wf.origin.map((o, a) => o + (J.wf.dims[a] - 1) * J.wf.sp) });
   const ax = sg[0] * sp[0], bx = -sg[0] * Cx * sp[0];            // x = bx + ax i
   const N0 = N[0];
   // the i in [0, N0) where A + B i > 0, as [lo, hi)
@@ -773,7 +964,21 @@ export function posePlan(vm, flips, chain, angles, pre = null) {
         const row = ((k - k0) * N[1] + j) * N0, js = j - pad[1];
         if (rowWise) {
           if (ks >= 0 && ks < nz && js >= 0 && js < ny) out.set(data.subarray((ks * ny + js) * nx, (ks * ny + js + 1) * nx), row + pad[0]);
-          for (const J of cc) {
+          for (let n = 0; n < cc.length; n++) {
+            const J = cc[n];
+            if (J.wf) {
+              // a field joint vacates what it moves: where its share is not 0, within its grid (a
+              // digit's first joint's: the ones beyond it move only what it moves)
+              const F = fbox[n], tol = J.dg ? DIGIT_TOL : 0;
+              if (J.dg && J !== runs.find((D) => D[0].dg === J.dg)[0]) continue;
+              if (y < F.lo[1] || y > F.hi[1] || z < F.lo[2] || z > F.hi[2]) continue;
+              const f0 = (F.lo[0] - bx) / ax, f1 = (F.hi[0] - bx) / ax;
+              const i1 = Math.min(N0 - 1, Math.floor(Math.max(f0, f1)));
+              for (let i = Math.max(0, Math.ceil(Math.min(f0, f1))); i <= i1; i++) {
+                if (out[row + i] && fieldWeight(J.wf, [bx + ax * i, y, z]) > tol) out[row + i] = 0;
+              }
+              continue;
+            }
             const ey = y - J.c[1], ez = z - J.c[2], ex0 = bx - J.c[0];
             const sd = lin(ex0 * J.d[0] + ey * J.d[1] + ez * J.d[2] + J.b, ax * J.d[0]);
             out.fill(0, row + sd[0], row + sd[1]);
@@ -788,13 +993,14 @@ export function posePlan(vm, flips, chain, angles, pre = null) {
           const ia = Math.max(0, Math.ceil(Math.min(i0, i1))), ib = Math.min(N0 - 1, Math.floor(Math.max(i0, i1)));
           // (the occupancy cell's y and z are the row's: only x is looked up per voxel)
           const oRow = (cell(z, 2) * on[1] + cell(y, 1)) * on[0];
-          for (let i = ia; i <= ib; i++) { const x = bx + ax * i; if (occ[oRow + cell(x, 0)]) out[row + i] = posedAt(x, y, z, out[row + i]); }
+          for (let i = ia; i <= ib; i++) { const x = bx + ax * i, b = occ[oRow + cell(x, 0)]; if (b) out[row + i] = posedAt(x, y, z, out[row + i], b); }
           continue;
         }
         for (let i = 0; i < N0; i++) {
           const x = bx + ax * i;
           const still = vacAt(x, y, z) ? 0 : at(i - pad[0], js, ks);
-          out[row + i] = jin && x >= blo[0] && x <= bhi[0] && occAt(x, y, z) ? posedAt(x, y, z, still) : still;
+          const b = jin && x >= blo[0] && x <= bhi[0] ? occAt(x, y, z) : 0;
+          out[row + i] = b ? posedAt(x, y, z, still, b) : still;
         }
       }
     }
