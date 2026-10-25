@@ -11,7 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
-import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent, motionAngle } from './core/jointPose.js';
+import { axisToward, forwardChain, forwardCompiled, forwardSkin, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
@@ -634,25 +634,65 @@ function posers(){
 function askPoser(w, msg, transfer=[]){
   return new Promise(res=>{ const id=++poseSeq; poseWaits.set(id, { res, w }); w.postMessage({ ...msg, id }, transfer); });
 }
-// a pose from the pool: { data, dims, pad } or { error }
-async function posePooled(pool, base){
+/* A pose from the pool: { data, dims, pad, box } or { error }. In stages, each over the pool side
+   by side (core/poseWorker.js):
+     the plan's pass: each worker samples its range of input slices; the extents are merged here;
+       each marks the cells its moved samples land in; one worker ORs and grows them. Every worker
+       then builds its plan from that (it used to make the whole plan itself: ~0.15 s each);
+     the rows: chunks of output slices, handed out as workers come free;
+     the fold: in slabs of the crooks' slices, with their halo (one worker did it all: ~0.15 s);
+     the riders (the patella), set down by one worker.
+   The volume is the same, voxel for voxel, as one worker posing it whole. */
+async function posePooled(pool, base, vm){
   if(pool.length===1) return askPoser(pool[0], { ...base, type:'pose' });
-  const m=pool.length*POSE_CHUNKS;
+  const n=pool.length, nz=vm.dims[2], { chain, ...rest }=base;
+  const ranges=pool.map((_, i)=>[Math.floor(i*nz/n), Math.floor((i+1)*nz/n)]);
+  const err=(rs)=>rs.find(r=>r.error);
+  const samples=await Promise.all(pool.map((w, i)=>askPoser(w, { ...base, type:'sample', k0:ranges[i][0], k1:ranges[i][1] })));
+  if(err(samples)) return err(samples);
+  const S=mergeSample(samples.map(r=>r.sample));
+  const occs=await Promise.all(pool.map((w, i)=>askPoser(w, { ...rest, chain, type:'occ', S, k0:ranges[i][0], k1:ranges[i][1] })));
+  if(err(occs)) return err(occs);
+  const parts=occs.map(r=>r.occ);
+  const g=await askPoser(pool[0], { key:base.key, type:'grow', S, parts }, parts.map(o=>o.buffer));
+  if(g.error) return g;
+  const pre={ ...S, occ:g.occ };
+  // a worker's first message of the pose carries the chain and the shared pass; later ones not
+  const planKey=JSON.stringify([base.key, base.flips, base.angles]);   // (a new model resets a worker's plan)
+  const ask=(w, msg, tr=[])=>{
+    const first=w._planFor!==planKey; w._planFor=planKey;
+    return askPoser(w, { ...rest, ...(first ? { chain, pre } : {}), ...msg }, tr);
+  };
+  const m=n*POSE_CHUNKS;
   let next=0, out=null, dims=null, pad=null, box=null, failed=null;
   await Promise.all(pool.map(async (w)=>{
-    let first=true;
     while(next<m && !failed){
       const c=next++;
-      const { chain, ...rest }=base;
-      const r=await askPoser(w, { ...rest, ...(first ? { chain } : {}), type:'chunk', c, m });
-      first=false;
-      if(r.error){ failed=r; return; }
+      const r=await ask(w, { type:'chunk', c, m });
+      if(r.error){ failed=r; w._planFor=null; return; }
       if(!out){ dims=r.dims; pad=r.pad; box=r.box; out=new Uint8Array(dims[0]*dims[1]*dims[2]); }
       out.set(r.data, r.k0*dims[0]*dims[1]);
     }
   }));
   if(failed) return failed;
-  const f=await askPoser(pool[0], { ...base, type:'fold', data:out }, [out.buffer]);
+  // the fold, in slabs: each reads its halo from the unfolded volume, writes only its own slices
+  const sp=vm.spacingMM.map(v=>v/10), span=foldSpan(dims, base.flips, sp, chain, base.angles), sl=dims[0]*dims[1];
+  if(span){
+    const k0s=pool.map((_, i)=>span[0]+Math.floor(i*(span[1]+1-span[0])/n));
+    const done=await Promise.all(pool.map((w, i)=>{
+      const k0=k0s[i], k1=i+1<n ? k0s[i+1] : span[1]+1;
+      const rr=k1>k0 ? foldRange(dims, base.flips, sp, chain, base.angles, k0, k1) : null;
+      if(!rr) return null;
+      const data=out.slice(rr[0]*sl, rr[1]*sl);
+      return ask(w, { type:'foldslab', data, base:rr[0], k0, k1 }, [data.buffer]).then(r=>({ r, k0, k1, base:rr[0] }));
+    }));
+    for(const d of done){
+      if(!d) continue;
+      if(d.r.error) return d.r;
+      out.set(d.r.data.subarray((d.k0-d.base)*sl, (d.k1-d.base)*sl), d.k0*sl);
+    }
+  }
+  const f=await ask(pool[0], { type:'ride', data:out }, [out.buffer]);
   return f.error ? f : { data:f.data, dims, pad, box };
 }
 function poseCache(vm){ return vm._jcache || (vm._jcache=new Map()); }
@@ -685,8 +725,8 @@ async function ensureJointVolume(vm, angles=S.joints){
   if(!vm._jpending.has(key)){
     const mk=vm.url||S.subject;
     // each worker holds one model: send this one where another (or none) is held
-    for(const w of pool) if(w._modelKey!==mk){ w.postMessage({ type:'model', key:mk, dims:vm.dims, spacingMM:vm.spacingMM, data:vm.data }); w._modelKey=mk; }
-    vm._jpending.set(key, posePooled(pool, { key:mk, flips:voxelFlips(), chain:ch, angles:{ ...angles } })
+    for(const w of pool) if(w._modelKey!==mk){ w.postMessage({ type:'model', key:mk, dims:vm.dims, spacingMM:vm.spacingMM, data:vm.data }); w._modelKey=mk; w._planFor=null; }
+    vm._jpending.set(key, posePooled(pool, { key:mk, flips:voxelFlips(), chain:ch, angles:{ ...angles } }, vm)
       .then(r=>{ vm._jpending.delete(key); if(r.data) keepPose(vm, key, { data:r.data, dims:r.dims, pad:r.pad, box:r.box }); }));
   }
   await vm._jpending.get(key);

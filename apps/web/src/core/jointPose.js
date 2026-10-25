@@ -387,7 +387,29 @@ export function anyBent(chain, angles) {
    joint, on the inside of the bend and within FOLD of the bisector, the outline is smoothed by a
    majority of its neighbourhood, 2 FOLD_W + 1 voxels a side. A voxel it adds is fat; one it takes away is air. */
 const FOLD = 2, FOLD_R = 9, FOLD_W = 4, FAT = 2;
-function smoothFold(out, N, sg, sp, cc) {
+/* The fold reads its box sums before it writes anything, so it splits into slabs of output slices:
+   slices [k0, k1) are written, read with FOLD_W slices either side (foldRange), from `out` holding
+   the slices from `base` on. A pool folds its slabs side by side (app.js posePooled); one slab of
+   all the slices is the fold made whole. (The fold spheres of two joints never meet: FOLD_R is 9 cm.) */
+export function foldRange(N, flips, sp, chain, angles, k0, k1) {
+  const sg = flips.map((f) => (f ? -1 : 1)), C2 = (N[2] - 1) / 2, cc = compileChain(chain, angles);
+  let r0 = Infinity, r1 = -Infinity;
+  for (const J of cc) {
+    if (J.wf) continue;
+    const lo = Math.max(0, Math.floor(C2 + (sg[2] * J.c[2] - FOLD_R) / sp[2]) - 2), hi = Math.min(N[2] - 1, Math.ceil(C2 + (sg[2] * J.c[2] + FOLD_R) / sp[2]) + 2);
+    const w0 = Math.max(lo, k0), w1 = Math.min(hi, k1 - 1);
+    if (w0 > w1) continue;
+    r0 = Math.min(r0, Math.max(lo, w0 - FOLD_W)); r1 = Math.max(r1, Math.min(hi, w1 + FOLD_W) + 1);
+  }
+  return r0 < r1 ? [r0, r1] : null;
+}
+// the slices [lo, hi] (inclusive) each fold reaches, per joint (for splitting the work)
+export function foldSpan(N, flips, sp, chain, angles) {
+  const sg = flips.map((f) => (f ? -1 : 1)), C2 = (N[2] - 1) / 2;
+  const sl = compileChain(chain, angles).filter((J) => !J.wf).map((J) => [Math.max(0, Math.floor(C2 + (sg[2] * J.c[2] - FOLD_R) / sp[2]) - 2), Math.min(N[2] - 1, Math.ceil(C2 + (sg[2] * J.c[2] + FOLD_R) / sp[2]) + 2)]);
+  return sl.length ? [Math.min(...sl.map((s) => s[0])), Math.max(...sl.map((s) => s[1]))] : null;
+}
+function smoothFold(out, N, sg, sp, cc, k0 = 0, k1 = N[2], base = 0) {
   const C = [(N[0] - 1) / 2, (N[1] - 1) / 2, (N[2] - 1) / 2];
   for (const J of cc) {
     if (J.wf) continue;                               // (a field joint has no crook to fold)
@@ -395,12 +417,17 @@ function smoothFold(out, N, sg, sp, cc) {
     // the subvolume around the joint
     const lo = [0, 1, 2].map((a) => Math.max(0, Math.floor(C[a] + (sg[a] * J.c[a] - FOLD_R) / sp[a]) - 2));
     const hi = [0, 1, 2].map((a) => Math.min(N[a] - 1, Math.ceil(C[a] + (sg[a] * J.c[a] + FOLD_R) / sp[a]) + 2));
+    if ([0, 1, 2].some((a) => hi[a] - lo[a] + 1 < 2 * FOLD_W + 1)) continue;
+    // the slices this slab writes, and the ones it reads for their sums
+    const w0 = Math.max(lo[2], k0), w1 = Math.min(hi[2], k1 - 1);
+    if (w0 > w1) continue;
+    lo[2] = Math.max(lo[2], w0 - FOLD_W); hi[2] = Math.min(hi[2], w1 + FOLD_W);
     const n = [0, 1, 2].map((a) => hi[a] - lo[a] + 1);
-    if (n.some((v) => v < 2 * FOLD_W + 1)) continue;
+    const at = (k, j, i) => ((k + lo[2] - base) * N[1] + j + lo[1]) * N[0] + i + lo[0];
     // tissue, then its box sums along x, y and z in turn
     let a = new Uint16Array(n[0] * n[1] * n[2]);
     for (let k = 0; k < n[2]; k++) for (let j = 0; j < n[1]; j++) for (let i = 0; i < n[0]; i++)
-      a[(k * n[1] + j) * n[0] + i] = out[((k + lo[2]) * N[1] + j + lo[1]) * N[0] + i + lo[0]] ? 1 : 0;
+      a[(k * n[1] + j) * n[0] + i] = out[at(k, j, i)] ? 1 : 0;
     // (a running sum along each line: the window's new end in, its old start out)
     const strides = [1, n[0], n[0] * n[1]];
     for (let ax = 0; ax < 3; ax++) {
@@ -418,7 +445,7 @@ function smoothFold(out, N, sg, sp, cc) {
       }
       a = b;
     }
-    for (let k = 0; k < n[2]; k++) {
+    for (let k = w0 - lo[2]; k <= w1 - lo[2]; k++) {
       const z = sg[2] * (k + lo[2] - C[2]) * sp[2] - J.c[2];
       for (let j = 0; j < n[1]; j++) {
         const y = sg[1] * (j + lo[1] - C[1]) * sp[1] - J.c[1];
@@ -426,7 +453,7 @@ function smoothFold(out, N, sg, sp, cc) {
           const x = sg[0] * (i + lo[0] - C[0]) * sp[0] - J.c[0];
           if (x * x + y * y + z * z > FOLD_R * FOLD_R || x * J.ins[0] + y * J.ins[1] + z * J.ins[2] <= 0) continue;
           if (Math.abs(x * m[0] + y * m[1] + z * m[2]) > FOLD) continue;
-          const o = ((k + lo[2]) * N[1] + j + lo[1]) * N[0] + i + lo[0];
+          const o = at(k, j, i);
           const keep = 2 * a[(k * n[1] + j) * n[0] + i] > (2 * FOLD_W + 1) ** 3;
           if (keep && !out[o]) out[o] = FAT;
           else if (!keep && out[o]) out[o] = 0;
@@ -506,17 +533,19 @@ export function poseVolume(vm, flips, chain, angles) {
 // (services/compute/app/joint_space.py)
 const RIGID = new Set([16, 17, 18, 54, 55, 56, 57, 58, 59, 60, 61, 250]);
 export function poseChunk(n2, c, m) { return [Math.floor((c * n2) / m), Math.floor(((c + 1) * n2) / m)]; }
-export function posePlan(vm, flips, chain, angles) {
-  const [nx, ny, nz] = vm.dims, data = vm.data;
+/* THE PLAN'S PASS over a coarse sample of the input (every 2nd voxel each way): where the bent
+   parts go, how far the patient reaches, how far from each joint its crease tissue lies, and which
+   cells of the box the moved parts went into is where tissue landed. In stages, over any range of
+   input slices, so a pool of workers shares it (app.js posePooled): planSample gives each range's
+   extents, merged by mergeSample; planOcc marks the cells its moved samples land in, in the merged
+   box; the cells are ORed and grown once (growOcc), and every worker builds its plan from that
+   (posePlan's `pre`). A plan made whole (no `pre`) is the same plan. */
+const PLAN_ST = 2;
+function planCtx(vm, flips, chain, angles) {
+  const [nx, ny, nz] = vm.dims;
   const sp = vm.spacingMM.map((v) => v / 10);
   const sg = flips.map((f) => (f ? -1 : 1));
   const cc = compileChain(chain, angles);
-  if (!cc.length) return null;
-  const cx = (nx - 1) / 2, cy = (ny - 1) / 2, cz = (nz - 1) / 2;
-  // one pass over a coarse sample: where the bent parts go, how far the patient reaches, and how
-  // far from each joint its crease tissue lies
-  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-  const blo = [Infinity, Infinity, Infinity], bhi = [-Infinity, -Infinity, -Infinity];
   // vacated: distal of a bent joint at rest (the moved part has left), or past the crook's
   // bisector (the part below folds against it there); a field joint vacates whatever it moves
   const vacAt = (x, y, z) => {
@@ -529,38 +558,75 @@ export function posePlan(vm, flips, chain, angles) {
     }
     return false;
   };
-  const creaseR2 = cc.map(() => 0);
-  const st = 2;
-  const mq = [];                                                  // where the sampled moved tissue went
-  for (let k = 0; k < nz; k += st) for (let j = 0; j < ny; j += st) for (let i = 0; i < nx; i += st) {
+  return { nx, ny, nz, sp, sg, cc, vacAt, cx: (nx - 1) / 2, cy: (ny - 1) / 2, cz: (nz - 1) / 2 };
+}
+// every sampled tissue voxel of input slices [k0, k1): its rest point, where it goes, and if it moved
+function eachSample(X, data, k0, k1, fn) {
+  const { nx, ny, sp, sg, cc, cx, cy, cz } = X, st = PLAN_ST;
+  for (let k = Math.ceil(k0 / st) * st; k < k1; k += st) for (let j = 0; j < ny; j += st) for (let i = 0; i < nx; i += st) {
     if (!data[(k * ny + j) * nx + i]) continue;
     const p = [sg[0] * (i - cx) * sp[0], sg[1] * (j - cy) * sp[1], sg[2] * (k - cz) * sp[2]];
+    const q = forwardCompiled(p, cc);
+    // (and what is vacated without moving — the start of a roll's crease — is refilled there too)
+    fn(p, q, q[0] !== p[0] || q[1] !== p[1] || q[2] !== p[2] || X.vacAt(p[0], p[1], p[2]));
+  }
+}
+export function planSample(vm, flips, chain, angles, k0 = 0, k1 = vm.dims[2]) {
+  const X = planCtx(vm, flips, chain, angles), { sp, cc } = X;
+  const lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+  const blo = [Infinity, Infinity, Infinity], bhi = [-Infinity, -Infinity, -Infinity];
+  const creaseR2 = cc.map(() => 0);
+  eachSample(X, vm.data, k0, k1, (p, q, moved) => {
     for (let n = 0; n < cc.length; n++) {
       const J = cc[n], d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], sd = dot(d, J.d);
       if (J.wf) continue;
-      if (Math.abs(sd) < J.b + 2 * st * sp[2] && inLimb(d, J, sd)) creaseR2[n] = Math.max(creaseR2[n], dot(d, d));
+      if (Math.abs(sd) < J.b + 2 * PLAN_ST * sp[2] && inLimb(d, J, sd)) creaseR2[n] = Math.max(creaseR2[n], dot(d, d));
     }
-    const q = forwardCompiled(p, cc);
-    // (and what is vacated without moving — the start of a roll's crease — is refilled there too)
-    const moved = q[0] !== p[0] || q[1] !== p[1] || q[2] !== p[2] || vacAt(p[0], p[1], p[2]);
     for (let a = 0; a < 3; a++) {
       lo[a] = Math.min(lo[a], q[a]); hi[a] = Math.max(hi[a], q[a]);
       if (moved) { blo[a] = Math.min(blo[a], q[a] - 3 * sp[a]); bhi[a] = Math.max(bhi[a], q[a] + 3 * sp[a]); }
     }
-    if (moved) mq.push(q[0], q[1], q[2]);
+  });
+  return { lo, hi, blo, bhi, creaseR2 };
+}
+export function mergeSample(parts) {
+  const m = { lo: [Infinity, Infinity, Infinity], hi: [-Infinity, -Infinity, -Infinity],
+    blo: [Infinity, Infinity, Infinity], bhi: [-Infinity, -Infinity, -Infinity], creaseR2: parts[0].creaseR2.map(() => 0) };
+  for (const s of parts) {
+    for (let a = 0; a < 3; a++) {
+      m.lo[a] = Math.min(m.lo[a], s.lo[a]); m.hi[a] = Math.max(m.hi[a], s.hi[a]);
+      m.blo[a] = Math.min(m.blo[a], s.blo[a]); m.bhi[a] = Math.max(m.bhi[a], s.bhi[a]);
+    }
+    s.creaseR2.forEach((r, n) => { m.creaseR2[n] = Math.max(m.creaseR2[n], r); });
   }
-  /* THE BOX'S OCCUPANCY. Most of the box a bent limb went into is air (a knee flexed 45 degrees
-     sweeps the leg through a box of 35 M voxels, three quarters of it empty), and every voxel of it
-     used to search its pre-images to find none. Cells of OCC voxels where sampled moved tissue
-     landed, grown by OCC_GROW cells (the samples are 2 voxels apart at rest, and the outside of a
-     bend stretches them up to 4 times: 8 voxels apart), say where tissue can be; the rest of the
-     box keeps what never moved. */
-  const OCC = 3, OCC_GROW = 2, oh = OCC * Math.min(sp[0], sp[1], sp[2]);
+  return m;
+}
+/* THE BOX'S OCCUPANCY. Most of the box a bent limb went into is air (a knee flexed 45 degrees
+   sweeps the leg through a box of 35 M voxels, three quarters of it empty), and every voxel of it
+   used to search its pre-images to find none. Cells of OCC voxels where sampled moved tissue
+   landed, grown by OCC_GROW cells (the samples are 2 voxels apart at rest, and the outside of a
+   bend stretches them up to 4 times: 8 voxels apart), say where tissue can be; the rest of the
+   box keeps what never moved. */
+const OCC = 3, OCC_GROW = 2;
+function occGrid(sp, blo, bhi) {
+  const oh = OCC * Math.min(sp[0], sp[1], sp[2]);
   const on = [0, 1, 2].map((a) => (bhi[a] >= blo[a] ? Math.ceil((bhi[a] - blo[a]) / oh) + 1 : 0));
-  let occ = new Uint8Array(on[0] * on[1] * on[2]);
-  const cell = (v, a) => Math.floor((v - blo[a]) / oh);
-  for (let m = 0; m < mq.length; m += 3) occ[(cell(mq[m + 2], 2) * on[1] + cell(mq[m + 1], 1)) * on[0] + cell(mq[m], 0)] = 1;
-  for (let a = 0; a < 3 && occ.length; a++) {                       // grown, one axis at a time
+  return { oh, on, cell: (v, a) => Math.floor((v - blo[a]) / oh) };
+}
+export function planOcc(vm, flips, chain, angles, S, k0 = 0, k1 = vm.dims[2]) {
+  const X = planCtx(vm, flips, chain, angles), { on, cell } = occGrid(X.sp, S.blo, S.bhi);
+  const occ = new Uint8Array(on[0] * on[1] * on[2]);
+  eachSample(X, vm.data, k0, k1, (p, q, moved) => {
+    if (moved) occ[(cell(q[2], 2) * on[1] + cell(q[1], 1)) * on[0] + cell(q[0], 0)] = 1;
+  });
+  return occ;
+}
+// the cells, ORed from the parts and grown one axis at a time
+export function growOcc(vm, S, parts) {
+  const { on } = occGrid(vm.spacingMM.map((v) => v / 10), S.blo, S.bhi);
+  let occ = parts[0].length === on[0] * on[1] * on[2] ? parts[0].slice() : new Uint8Array(on[0] * on[1] * on[2]);
+  for (const o of parts.slice(1)) for (let i = 0; i < o.length; i++) occ[i] |= o[i];
+  for (let a = 0; a < 3 && occ.length; a++) {
     const grown = new Uint8Array(occ.length), stA = [1, on[0], on[0] * on[1]][a];
     for (let k = 0; k < on[2]; k++) for (let j = 0; j < on[1]; j++) for (let i = 0; i < on[0]; i++) {
       const o = (k * on[1] + j) * on[0] + i;
@@ -570,8 +636,18 @@ export function posePlan(vm, flips, chain, angles) {
     }
     occ = grown;
   }
+  return occ;
+}
+// pre: { ...mergeSample, occ: growOcc } when the pass was shared; made here when not
+export function posePlan(vm, flips, chain, angles, pre = null) {
+  const [nx, ny, nz] = vm.dims, data = vm.data;
+  const X = planCtx(vm, flips, chain, angles), { sp, sg, cc, vacAt, cx, cy, cz } = X;
+  if (!cc.length) return null;
+  let P = pre;
+  if (!P) { const S = planSample(vm, flips, chain, angles); P = { ...S, occ: growOcc(vm, S, [planOcc(vm, flips, chain, angles, S)]) }; }
+  const { lo, hi, blo, bhi, creaseR2, occ } = P;
+  const { on, cell } = occGrid(sp, blo, bhi);
   const occAt = (x, y, z) => occ[(cell(z, 2) * on[1] + cell(y, 1)) * on[0] + cell(x, 0)];
-  mq.length = 0;                                                  // (a worker keeps the plan between chunks)
   const reach2 = creaseR2.map((r) => (Math.sqrt(r) + 1) ** 2);
   const pad = [0, 1, 2].map((a) => {
     const half = ([nx, ny, nz][a] - 1) / 2 * sp[a];
@@ -688,5 +764,8 @@ export function posePlan(vm, flips, chain, angles) {
       }
     }
   };
-  return { dims: N, pad, box, rows, fold: (out) => { smoothFold(out, N, sg, sp, cc); rideAlong(out, N, sg, sp, cc, sampleRest); } };
+  return { dims: N, pad, box, rows,
+    fold: (out) => { smoothFold(out, N, sg, sp, cc); rideAlong(out, N, sg, sp, cc, sampleRest); },
+    foldSlab: (out, k0, k1, base) => smoothFold(out, N, sg, sp, cc, k0, k1, base),
+    ride: (out) => rideAlong(out, N, sg, sp, cc, sampleRest) };
 }

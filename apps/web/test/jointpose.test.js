@@ -1,7 +1,7 @@
 // Joint posing: bending a rigid CT at a joint, for the volume, the mesh and the landmarks alike.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, posePlan, poseChunk, compileChain, forwardCompiled, forwardSkin } from '../src/core/jointPose.js';
+import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, posePlan, poseChunk, compileChain, forwardCompiled, forwardSkin, planSample, mergeSample, planOcc, growOcc, foldSpan, foldRange } from '../src/core/jointPose.js';
 
 const near = (a, b, t = 1e-9) => Math.abs(a - b) <= t;
 // a wrist at the origin, the hand along +z; ulnar deviation turns the hand toward -x
@@ -310,5 +310,52 @@ test("a pose's box holds all of the posed patient (the rooms that copy it take o
     }
     assert.equal(outside, 0, `flexed ${a}: ${outside} voxels outside the box`);
     assert.ok(inside > 0 && (i1 - i0 + 1) * (j1 - j0 + 1) * (k1 - k0 + 1) <= N0 * N1 * N2);
+  }
+});
+
+/* the pool's way (app.js posePooled): the plan's pass shared out by input range, the rows by chunk,
+   the fold by slab with its halo, the riders after; it must be the volume posed whole */
+function posePooledHere(vm, flips, chain, angles, n) {
+  const nz = vm.dims[2], ranges = [...Array(n)].map((_, i) => [Math.floor(i * nz / n), Math.floor((i + 1) * nz / n)]);
+  const S = mergeSample(ranges.map(([a, b]) => planSample(vm, flips, chain, angles, a, b)));
+  const pre = { ...S, occ: growOcc(vm, S, ranges.map(([a, b]) => planOcc(vm, flips, chain, angles, S, a, b))) };
+  const P = posePlan(vm, flips, chain, angles, pre);
+  const [N0, N1, N2] = P.dims, sl = N0 * N1, out = new Uint8Array(sl * N2);
+  for (let c = 0; c < 3 * n; c++) {
+    const [k0, k1] = poseChunk(N2, c, 3 * n), part = new Uint8Array(sl * (k1 - k0));
+    posePlan(vm, flips, chain, angles, pre).rows(k0, k1, part);
+    out.set(part, k0 * sl);
+  }
+  const sp = vm.spacingMM.map((v) => v / 10), span = foldSpan(P.dims, flips, sp, chain, angles);
+  if (span) {
+    const k0s = [...Array(n)].map((_, i) => span[0] + Math.floor(i * (span[1] + 1 - span[0]) / n));
+    const slabs = k0s.map((k0, i) => {
+      const k1 = i + 1 < n ? k0s[i + 1] : span[1] + 1, rr = k1 > k0 ? foldRange(P.dims, flips, sp, chain, angles, k0, k1) : null;
+      if (!rr) return null;
+      const data = out.slice(rr[0] * sl, rr[1] * sl);
+      posePlan(vm, flips, chain, angles, pre).foldSlab(data, k0, k1, rr[0]);
+      return { data, k0, k1, base: rr[0] };
+    });
+    for (const d of slabs) if (d) out.set(d.data.subarray((d.k0 - d.base) * sl, (d.k1 - d.base) * sl), d.k0 * sl);
+  }
+  P.ride(out);
+  return { data: out, dims: P.dims };
+}
+
+test('the pose pool, in stages, makes the very volume one worker poses whole', () => {
+  const nx = 13, ny = 13, nz = 61, data = new Uint8Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 3; j <= 9; j++) for (let i = 3; i <= 9; i++) data[(k * ny + j) * nx + i] = (i === 6 && j === 6) || k % 9 === 0 ? 18 : 7;
+  const vm = { dims: [nx, ny, nz], spacingMM: [5, 5, 5], data };
+  const knee = { c: [0, 0, 0.5], distal: [0, 0, -1], blend: 1, motions: [{ key: 'flex', axis: axisToward([0, 0, -1], [0, -1, 0]), range: [0, 120] }] };
+  const ankle = { c: [0, 0, -9], distal: [0, 0, -1], blend: 1, motions: [{ key: 'df', axis: axisToward([0, 0, -1], [0, 1, 0]), range: [-40, 40] }] };
+  for (const [chain, angles] of [[[knee], { flex: 60 }], [[knee, ankle], { flex: 90, df: -30 }]]) {
+    const whole = poseVolume(vm, [true, true, false], chain, angles);
+    for (const n of [2, 5]) {
+      const pooled = posePooledHere(vm, [true, true, false], chain, angles, n);
+      assert.deepEqual(pooled.dims, whole.dims);
+      let diff = 0;
+      for (let i = 0; i < whole.data.length; i++) if (pooled.data[i] !== whole.data[i]) diff++;
+      assert.equal(diff, 0, `${JSON.stringify(angles)} in ${n}: ${diff} voxels differ`);
+    }
   }
 });
