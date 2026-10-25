@@ -158,9 +158,10 @@ export function protectChapter(api, S) {
     const g = U.staff.g, out = [];
     for (const k of keys) {
       const w = [g.position.x + 26, FLOOR_Y + BODY_H[k], g.position.z];            // beside the figure, away from the table
-      const [x, y] = api.toPx(w);
+      const [x1, y1] = api.toPx(w);
       const s = fmt(dose[k]);
       const bw = s.length * 4 + 4;
+      const x = Math.max(bw + 4, Math.min(px.W - 8, x1)), y = Math.max(6, Math.min(px.H - 8, y1));   // never cut off at an edge
       px.rect(x - bw - 2, y - 4, bw + 2, 9, 'ink', 0.85);
       px.text(s, x - 2, y - 2, colors[k] || 'white', 1, 1, 'right');
       px.line(x, y, x + 6, y, colors[k] || 'white', 0.8);
@@ -169,7 +170,7 @@ export function protectChapter(api, S) {
     }
     return out;
   }
-  const unitTag = () => { const w = 54, x = px.W - w - 4; panel(api, x, px.H - 18, w, 13); px.text('µGy/min', x + w / 2, px.H - 14, 'mid', 1, 1, 'center'); };
+  const unitTag = () => { const w = 54, x = px.W - w - 4; panel(api, x, px.H - 30, w, 13); px.text('µGy/min', x + w / 2, px.H - 26, 'mid', 1, 1, 'center'); api.keepOut([x, px.H - 30, w, 13]); };   // (above the scale bar)
 
   const room = (staff = true) => {
     S.reset();
@@ -245,7 +246,8 @@ export function protectChapter(api, S) {
     {
       title: 'Distance', dur: 14, scale: '1 m',
       enter() { room(); U.staff.apron.visible = U.staff.collar.visible = true; },
-      cam: [[0, [270, 200, 300], [95, -15, -45], 40], [14, [285, 205, 305], [110, -15, -50], 40]],
+      // (the camera eases back as the figure steps to 2 m, so it stays in shot)
+      cam: [[0, [270, 200, 300], [95, -15, -45], 40], [7, [280, 204, 304], [105, -15, -48], 40], [9, [360, 250, 380], [140, -15, -60], 40], [14, [368, 254, 384], [145, -15, -62], 40]],
       cues: [[2, () => sfx.thud()], [2.5, () => sfx.thud()], [7, () => sfx.thud()], [7.5, () => sfx.thud()], [8, () => sfx.thud()]],
       frame(t) {
         U.setBeam({ a: 0.8 });
@@ -259,8 +261,10 @@ export function protectChapter(api, S) {
         U.staff.body.position.y = Math.abs(Math.sin(t * 9)) * (t > 2 && t < 3 || t > 7 && t < 8.5 ? 2 : 0);
         const op = { x: dir[0] * dist, z: dir[1] * dist }, dose = staffDose(op, false, {});
         // the figure's waist dose (no lead), and its distance
-        const gp = U.staff.g.position, [x, y] = api.toPx([gp.x + 45, FLOOR_Y + 150, gp.z]);       // beside the head, away from the table
+        const gp = U.staff.g.position, [x0, y0] = api.toPx([gp.x + 45, FLOOR_Y + 150, gp.z]);       // beside the head, away from the table
         const s = fmt(dose.trunk), w = s.length * 8 + 8;
+        // kept whole inside the frame, whatever the distance
+        const x = Math.max(w / 2 + 3, Math.min(px.W - w / 2 - 3, x0)), y = Math.max(26, Math.min(px.H - 30, y0));
         panel(api, x - w / 2, y - 22, w, 22);
         px.text(s, x, y - 19, 'orange', 1, 2, 'center');
         px.text((dist / 100).toFixed(1) + ' m', x, y - 7, 'mid', 1, 1, 'center');

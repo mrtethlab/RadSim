@@ -87,7 +87,15 @@ export async function buildSuite(api) {
     gi[part] = o;
   });
   // the patient's skin opacity, the film's one dial on the patient
-  const skinAlpha = (a) => { if (skinG) setOpacity(skinG, a); };
+  // (under an opaque skin the bones and gut are hidden: a rib a millimetre under the skin fought it
+  // for the same pixels and flickered through as white flecks)
+  const skinAlpha = (a) => {
+    if (skinG) setOpacity(skinG, a);
+    const inside = !skinG || a < 0.99;
+    if (boneG) boneG.visible = inside;
+    if (gutG) gutG.visible = inside;
+  };
+  skinAlpha(1);
 
   // ---- the C-arm and its cart
   const carm = buildCarm(OEC.SID, OEC.SRC_ISO);

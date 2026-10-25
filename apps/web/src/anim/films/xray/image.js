@@ -72,7 +72,7 @@ export async function imaging(api, S) {
       const v = Math.round(process(r * img.w + c, { voi: 1, s: 0.6, level: 0.5, width: 1 }) * 255);
       g.fillStyle = `rgb(${v},${v},${v})`; g.fillRect(ox + c * cell, oy + r * cell, cell, cell);
     }
-    g.fillStyle = '#7fe3a4'; g.font = '14px monospace'; g.fillText('L HAND PA', 16, 24);
+    g.fillStyle = '#7fe3a4'; g.font = '14px monospace'; g.fillText('R HAND PA', 16, 24);     // (the hand model is a right hand)
     screen.userData.tex.needsUpdate = true;
   };
   paintScreen();

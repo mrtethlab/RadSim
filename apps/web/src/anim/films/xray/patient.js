@@ -31,12 +31,17 @@ export async function patient(api, S) {
   shGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((MAXH + 2) * 3 * 3), 3));
   const shadow = new THREE.Mesh(shGeo, new THREE.MeshBasicMaterial({ color: 0xd6e2ec, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false }));
   shadow.frustumCulled = false; geo.add(shadow);
+  // a second shadow, for two objects at once (a part over another, cleared by angling)
+  const shGeo2 = new THREE.BufferGeometry();
+  shGeo2.setAttribute('position', new THREE.BufferAttribute(new Float32Array((MAXH + 2) * 3 * 3), 3));
+  const shadow2 = new THREE.Mesh(shGeo2, new THREE.MeshBasicMaterial({ color: 0x9fd8a8, transparent: true, opacity: 0.8, side: THREE.DoubleSide, depthWrite: false }));
+  shadow2.frustumCulled = false; shadow2.visible = false; geo.add(shadow2);
   const trueOutline = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ color: 0x46d17f, transparent: true, opacity: 0.0, side: THREE.DoubleSide, depthWrite: false }));
   const rays = rayLines(0xffd166, 0.55, 40); geo.add(rays);
   const cone = beamCone(0x9d7bff, 0.08); geo.add(cone);
   void trueOutline;
   // project points of a convex object from the focal spot onto y = 0.05; return the hull (x, z)
-  function castShadow(obj, src) {
+  function castShadow(obj, src, G = shGeo, yy = 0.06) {
     obj.updateMatrixWorld(true);
     const pos = obj.geometry.attributes.position, v = new THREE.Vector3(), pts = [];
     const step = Math.max(1, Math.floor(pos.count / 600));
@@ -56,17 +61,23 @@ export async function patient(api, S) {
     const out = [];
     const st = Math.max(1, Math.ceil(hull.length / MAXH));
     for (let i = 0; i < hull.length; i += st) out.push(hull[i]);
-    const a = shGeo.attributes.position.array;
+    const a = G.attributes.position.array;
     let cx = 0, cz = 0; out.forEach((p) => { cx += p[0]; cz += p[1]; }); cx /= out.length; cz /= out.length;
     let n = 0;
     for (let i = 0; i < out.length; i++) {
       const p = out[i], q = out[(i + 1) % out.length];
-      a.set([cx, 0.06, cz, p[0], 0.06, p[1], q[0], 0.06, q[1]], n * 9); n++;
+      a.set([cx, yy, cz, p[0], yy, p[1], q[0], yy, q[1]], n * 9); n++;
     }
-    shGeo.setDrawRange(0, n * 3);
-    shGeo.attributes.position.needsUpdate = true;
+    G.setDrawRange(0, n * 3);
+    G.attributes.position.needsUpdate = true;
     return out;
   }
+  // a shadow's box on screen (8-bit pixels), so the caption keeps off it
+  const hullBox = (hull, pad = 4) => {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of hull) { const [x, y] = api.toPx([q[0], 0.06, q[1]]); x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); }
+    return [x0 - pad, y0 - pad, x1 - x0 + 2 * pad, y1 - y0 + 2 * pad];
+  };
   // rays from the focal spot past a few hull points to the plate
   function drawRays(hull, src, every = 8) {
     const pairs = [];
@@ -339,7 +350,7 @@ export async function patient(api, S) {
   const steps = [
     {
       title: 'Divergence', dur: 11, fadeIn: 0.6, scale: '10 cm',
-      enter() { S.only('geo'); ball.visible = disc.visible = rod.visible = false; shadow.visible = false; rays.visible = false; cone.visible = true; },
+      enter() { S.only('geo'); shadow2.visible = false; ball.scale.setScalar(1); disc.position.set(0, 0, 0); focal.position.set(0, SID, 0); ball.visible = disc.visible = rod.visible = false; shadow.visible = false; rays.visible = false; cone.visible = true; },
       cam: [[0, [70, 150, 95], [0, 45, 0], 40], [11, [55, 140, 80], [0, 40, 0], 40]],
       frame(t) {
         const src = [0, SID, 0];
@@ -423,7 +434,7 @@ export async function patient(api, S) {
     },
     {
       title: 'Magnification', dur: 12, scale: '10 cm',
-      enter() { S.only('geo'); ball.visible = rod.visible = false; disc.visible = true; disc.rotation.set(0, 0, 0); shadow.visible = rays.visible = true; cone.visible = false; },
+      enter() { S.only('geo'); shadow2.visible = false; ball.scale.setScalar(1); disc.position.set(0, 0, 0); focal.position.set(0, SID, 0); ball.visible = rod.visible = false; disc.visible = true; disc.rotation.set(0, 0, 0); shadow.visible = rays.visible = true; cone.visible = false; },
       cam: [[0, [70, 40, 95], [0, 30, 0], 40], [12, [60, 50, 85], [0, 32, 0], 40]],
       frame(t) {
         const h = t < 2 ? 5 : t < 8 ? lerp(5, 60, span(t, 2, 8)) : 60;
@@ -441,7 +452,7 @@ export async function patient(api, S) {
     },
     {
       title: 'Elongation', dur: 11, scale: '10 cm',
-      enter() { S.only('geo'); disc.visible = rod.visible = false; ball.visible = true; ball.position.set(0, 18, 0); shadow.visible = rays.visible = true; cone.visible = false; },
+      enter() { S.only('geo'); shadow2.visible = false; ball.scale.setScalar(1); disc.position.set(0, 0, 0); focal.position.set(0, SID, 0); disc.visible = rod.visible = false; ball.visible = true; ball.position.set(0, 18, 0); shadow.visible = rays.visible = true; cone.visible = false; },
       cam: [[0, [10, 60, 120], [0, 20, 0], 40], [11, [-20, 55, 115], [0, 18, 0], 40]],
       frame(t) {
         // the tube angled along x, still aimed at the part
@@ -458,7 +469,7 @@ export async function patient(api, S) {
     },
     {
       title: 'Foreshortening', dur: 11, scale: '10 cm',
-      enter() { S.only('geo'); disc.visible = ball.visible = false; rod.visible = true; rod.position.set(0, 14, 0); focal.position.set(0, SID, 0); shadow.visible = rays.visible = true; cone.visible = false; },
+      enter() { S.only('geo'); shadow2.visible = false; ball.scale.setScalar(1); disc.position.set(0, 0, 0); focal.position.set(0, SID, 0); disc.visible = ball.visible = false; rod.visible = true; rod.position.set(0, 14, 0); focal.position.set(0, SID, 0); shadow.visible = rays.visible = true; cone.visible = false; },
       cam: [[0, [80, 45, 80], [0, 15, 0], 40], [11, [70, 55, 90], [0, 15, 0], 40]],
       frame(t) {
         // a long bone tilted away from the detector's plane under a straight beam
@@ -471,6 +482,71 @@ export async function patient(api, S) {
         px.text(Math.round(90 - tilt * 180 / Math.PI) + '°', px.W - 8, 20, 'mid', 1, 1, 'right');
       },
       caption: [{ from: 1, to: 11, text: 'Tilt the part out of the detector’s plane and its shadow is shorter than it is: <b>foreshortening</b>. Keep the long axis parallel to the detector.' }],
+    },
+    {
+      title: 'Angling for true length', dur: 16, scale: '10 cm',
+      enter() { S.only('geo'); disc.visible = ball.visible = false; rod.visible = true; rod.position.set(0, 14, 0); rod.rotation.set(0, 0, 50 * Math.PI / 180); shadow.visible = rays.visible = true; shadow2.visible = false; cone.visible = false; },
+      cam: [[0, [30, 55, 120], [8, 15, 0], 40], [16, [45, 60, 115], [10, 15, 0], 40]],
+      cues: [[3, () => sfx.click()], [9, () => sfx.click()]],
+      frame(t) {
+        /* A part that cannot lie flat (here 40 degrees off the detector, as a scaphoid in its wrist):
+           a straight beam foreshortens it. Angling the CR along the part elongates its image back:
+           at half the part's tilt (the CR square to the bisector of part and detector) the image is
+           its true length; at the full tilt, longer than true. */
+        const phi = (t < 3 ? 0 : t < 9 ? lerp(0, 20, span(t, 3, 5.5)) : lerp(20, 40, span(t, 9, 11.5))) * Math.PI / 180;
+        const D = SID - 14, src = [Math.sin(phi) * D, 14 + Math.cos(phi) * D, 0];
+        focal.position.set(...src);
+        const hull = castShadow(rod, src);
+        drawRays(hull, src, 12);
+        api.keepOut(hullBox(hull));
+        // the shadow's length against the part's own: its axis's two ends projected, the CR's
+        // magnification taken out
+        const ax = [-Math.sin(rod.rotation.z), Math.cos(rod.rotation.z)], ends = [-13, 13].map((k) => [ax[0] * k, 14 + ax[1] * k]);
+        const proj = ends.map(([x, y]) => src[0] + (x - src[0]) * src[1] / (src[1] - y));
+        const M = src[1] / (src[1] - 14);
+        const pct = Math.round(Math.abs(proj[1] - proj[0]) / (26 * M) * 100);
+        px.text(pct + '%', px.W - 8, 10, pct >= 97 && pct <= 103 ? 'lime' : 'yellow', 1, 1, 'right');
+        px.text('CR ' + Math.round(phi * 180 / Math.PI) + '°', px.W - 8, 20, 'mid', 1, 1, 'right');
+        api.keepOut([px.W - 50, 4, 46, 24]);
+        api.mark(rod, 'yellow', t);
+      },
+      caption: [
+        { from: 0.5, to: 3, text: 'A part that cannot lie parallel to the detector: under a straight beam it is <b>foreshortened</b>.' },
+        { from: 3, to: 9, text: 'Angle the CR along it and the image lengthens. At <b>half the part’s tilt</b>, square to the bisector of the part and the detector, it is its true length: the scaphoid view, the AP axial sacrum and coccyx.' },
+        { from: 9, to: 16, text: 'Angle by the full tilt and it is <b>elongated</b> past its true length: distortion is a tool, set by the angle.' },
+      ],
+    },
+    {
+      title: 'Angling to clear overlap', dur: 14, scale: '10 cm',
+      enter() {
+        S.only('geo'); rod.visible = false; ball.visible = disc.visible = true;
+        disc.rotation.set(0, 0, 0); disc.position.set(0, 3, 0); ball.position.set(0, 22, 0); ball.scale.setScalar(0.7);
+        shadow.visible = shadow2.visible = rays.visible = true; cone.visible = false;
+      },
+      cam: [[0, [90, 60, 40], [0, 12, 8], 40], [14, [95, 65, 50], [0, 12, 10], 40]],
+      cues: [[3, () => sfx.click()]],
+      frame(t) {
+        /* Two structures one above the other (a clavicle over the scapula and ribs, the occipital
+           bone under the face): a straight beam lays one shadow on the other. An angled beam shifts
+           each shadow by its height times tan(angle), the higher one more, and they come apart. */
+        const phi = lerp(0, 25, span(t, 3, 7)) * Math.PI / 180;
+        const D = SID - 12, src = [0, 12 + Math.cos(phi) * D, -Math.sin(phi) * D];
+        focal.position.set(...src);
+        const h1 = castShadow(disc, src, shGeo, 0.06), h2 = castShadow(ball, src, shGeo2, 0.09);
+        drawRays(h2, src, 10);
+        api.keepOut(hullBox(h1)); api.keepOut(hullBox(h2));
+        const db = api.boxPx(disc); if (db) api.keepOut(db);
+        const c = (h) => h.reduce((a, q) => [a[0] + q[0] / h.length, a[1] + q[1] / h.length], [0, 0]);
+        const a1 = c(h1), a2 = c(h2);
+        px.text(Math.round(Math.hypot(a2[0] - a1[0], a2[1] - a1[1])) + ' cm', px.W - 8, 10, 'yellow', 1, 1, 'right');
+        px.text('CR ' + Math.round(phi * 180 / Math.PI) + '°', px.W - 8, 20, 'mid', 1, 1, 'right');
+        api.keepOut([px.W - 50, 4, 46, 24]);
+        api.mark(ball, 'yellow', t);
+      },
+      caption: [
+        { from: 0.5, to: 3, text: 'A structure lying over another: under a straight beam their shadows land on top of each other.' },
+        { from: 3, to: 14, text: 'Angle the CR and each shadow shifts by its height above the detector: the higher one moves farther, and they <b>separate</b>. The AP axial clavicle (cephalic) and Towne’s (caudal) use this.' },
+      ],
     },
     {
       title: 'Scatter', dur: 12, view: 'pixel', scale: '1 cm',
