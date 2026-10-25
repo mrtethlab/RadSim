@@ -346,6 +346,8 @@ function loopFrame() {
     p.cam.lookAt(...c.look);
     if (c.fov && c.fov !== p.cam.fov) { p.cam.fov = c.fov; p.cam.updateProjectionMatrix(); }
   }
+  // now, not at render: the frame projects with api.toPx, which must see this frame's camera
+  p.cam.updateMatrixWorld(true);
   p.px.clear();
   p.marks.length = 0; p.keep.length = 0;
   st.frame?.(t, p.playing ? dt * p.speed : 0);
