@@ -33,6 +33,31 @@ const snapSink = () => ({
 export default defineConfig({
   base: './',
   server: { port: 5173, open: false },
-  build: { target: 'es2020', outDir: 'dist', sourcemap: true },
+  build: {
+    target: 'es2020', outDir: 'dist', sourcemap: true,
+    // the one chunk above Vite's 500 kB is three.js itself (730 kB: the library and its loaders,
+    // imported whole as THREE across the app); the warning stays on for anything of ours past it
+    chunkSizeWarningLimit: 800,
+    // One 1.5 MB chunk held three.js and every room, so any change re-downloaded all of it. Split:
+    // three.js on its own (it changes only with the npm version, so a visitor keeps it cached
+    // across deploys), and each room's module with its helpers. Still loaded at start (app.js
+    // imports them; the rooms' assets are what load on entry), but cached and fetched apart.
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            { name: 'three', test: /[\\/]node_modules[\\/]three[\\/]/ },
+            { name: 'ct', test: /[\\/]src[\\/]ct\.js$/ },
+            { name: 'iv', test: /[\\/]src[\\/](iv\.js|core[\\/]ivSim\.js)$/ },
+            { name: 'fluoro', test: /[\\/]src[\\/](fluoro|carm)\.js$/ },
+            { name: 'dxa', test: /[\\/]src[\\/]dxa(Exam|Intake|Report)?\.js$/ },
+            { name: 'us', test: /[\\/]src[\\/](ultrasound\.js|core[\\/]acoustics\.js)$/ },
+            { name: 'mammo', test: /[\\/]src[\\/](mammo\.js|core[\\/]mammoDose\.js)$/ },
+            { name: 'tutorials', test: /[\\/]src[\\/]tutorial(-content)?\.js$/ },
+          ],
+        },
+      },
+    },
+  },
   plugins: [snapSink()],
 });
