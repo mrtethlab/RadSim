@@ -9,15 +9,30 @@
        medicine study in the last 7 days        -> contrast or tracer still in the body
      - a calcium supplement in the last 24 hours -> an undissolved tablet in the gut can lie
                                                    over L1-L4 and read as bone
-     - over the table's weight limit (159 kg)   -> refer to a scanner that can take them
    A previous scan within the year is not a reason to send them home (it is an insurance
    question, not a clinical one), and nor is any risk factor: those are why the scan is done.
+
+   A few answers change WHICH SITES are scanned rather than whether. ISCD measures the forearm
+   (the 33 % radius of the non-dominant arm) when:
+     - the hip and/or spine cannot be measured or interpreted: both hips replaced, or a spinal
+       fusion with its rods and screws — the forearm stands in for the site that is lost;
+     - hyperparathyroidism: it takes cortical bone first, and the one-third radius is nearly all
+       cortex — so the forearm is ADDED to the spine and hip;
+     - the patient is over the table's weight limit (159 kg): the spine and hip cannot be scanned
+       here, but the forearm can, seated beside the table. That used to send them away; it is a
+       forearm-only study instead.
+   Non-dominant is the hand they do not write with — unless that wrist was the one broken, when
+   the other is measured (a healed fracture is not the bone being assessed).
 
    Pure: a seed makes one patient, the same every time (the report re-derives from it).
    ============================================================================ */
 
 export const TABLE_LIMIT_KG = 159;        // 350 lb
 export const DELAY_DAYS = { barium: 14, contrast: 7, nuclear: 7, calcium: 1 };
+/* Extra mineral the one-third radius has lost in primary hyperparathyroidism, beyond the rest of
+   the skeleton: the disease takes cortical bone first and spares trabecular bone, which is the
+   whole reason ISCD adds the forearm for it. Applied to forearm scans only. */
+export const HPT_FOREARM_LOSS = 0.08;
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -30,18 +45,24 @@ const SURNAMES = ['Okonkwo', 'Lindqvist', 'Ferreira', 'Nakamura', 'Vasquez', 'Be
 const FIRST_F = ['Miriam', 'Aiko', 'Rosalind', 'Femi', 'Ingrid', 'Carmen', 'Priya', 'Noor', 'Helen', 'Grace'];
 const FIRST_M = ['Emeka', 'Anders', 'Rafael', 'Kenji', 'Marcus', 'Tobias', 'Idris', 'Levi', 'Walter', 'Omar'];
 
-/* One patient. `force` (tests) sets a field's case: { delay: 'pregnant' | 'barium' | ... | null }. */
+/* One patient. `force` (tests) sets a field's case: { delay: 'pregnant' | 'barium' | ... | null,
+   forearm: 'weight' | 'hpt' | 'hips' | 'fusion' | null, hand: 'R' | 'L', wrist: 'L' | 'R' }
+   (wrist: a broken wrist on that side). */
 export function makeIntake(seed, force = {}) {
   const r = rng(seed);
   const sex = force.sex || (r() < 0.82 ? 'f' : 'm');           // most DXA patients are women
   const age = force.age ?? Math.round(sex === 'f' ? 44 + r() * 42 : 52 + r() * 34);
   const height = Math.round((sex === 'm' ? 175 : 162) + (r() - 0.5) * 16 - Math.max(0, age - 65) * 0.12);
   let bmi = 19 + r() * 13;
-  // which reason (if any) this patient should be sent home for: about one in three
+  // which reason (if any) this patient should be sent home for: about one in three. The heavy
+  // patient is still drawn here, so a seed is the same person it always was — but over the limit
+  // is no longer a reason to send them away: it is a forearm-only study (verdict, below).
   const delayKinds = ['pregnant', 'barium', 'contrast', 'nuclear', 'calcium', 'weight'];
   let delay = 'delay' in force ? force.delay : (r() < 0.34 ? pick(r, delayKinds) : null);
   if (delay === 'pregnant' && (sex === 'm' || age > 50)) delay = sex === 'm' ? 'contrast' : 'calcium';
-  if (delay === 'weight') bmi = TABLE_LIMIT_KG / (height / 100) ** 2 + 1 + r() * 4;
+  const heavy = 'forearm' in force ? force.forearm === 'weight' : delay === 'weight';
+  if (delay === 'weight') delay = null;
+  if (heavy) bmi = TABLE_LIMIT_KG / (height / 100) ** 2 + 1 + r() * 4;
   const weight = Math.round(bmi * (height / 100) ** 2);
 
   // ---- the answers
@@ -121,11 +142,39 @@ export function makeIntake(seed, force = {}) {
   loss += (r() - 0.5) * 0.06;
   loss = Math.max(0, Math.min(0.4, loss));
 
+  const name = `${pick(r, SURNAMES)}, ${pick(r, sex === 'm' ? FIRST_M : FIRST_F)}`;
+  const id = String(Math.floor(100000 + r() * 899999));
+
+  // ---- the forearm's questions (drawn last, so the answers above are unchanged for a seed)
+  const fr = r();
+  const fk = heavy ? 'weight' : 'forearm' in force ? force.forearm
+    : fr < 0.15 ? pick(r, ['hpt', 'hips', 'fusion']) : null;
+  const hand = force.hand || (r() < 0.11 ? 'L' : 'R');            // about one in ten is left-handed
+  const f = (k) => fields.find((q) => q.key === k);
+  // a broken wrist says which: it decides the forearm when it is the non-dominant one
+  const wrist = force.wrist || (/^Wrist/.test(fracture) ? (r() < 0.5 ? 'L' : 'R') : null);
+  if (force.wrist) f('fracture').a = `Wrist, falling from standing, at ${Math.max(45, age - 6)}`;
+  if (wrist) f('fracture').a = `${wrist === 'L' ? 'Left' : 'Right'} ${f('fracture').a.replace(/^Wrist/, 'wrist')}`;
+  const yr = new Date().getFullYear();
+  const surgery = fk === 'hips' ? `Both hips replaced (${yr - 9 - Math.floor(r() * 6)} and ${yr - 2 - Math.floor(r() * 5)})`
+    : fk === 'fusion' ? 'Spinal fusion, L2 to L5, with rods and screws'
+    : r() < 0.12 ? pick(r, ['Knee replacement (right)', 'Gallbladder removed', 'Carpal tunnel release']) : 'None';
+  const conditions = fk === 'hpt' ? 'Primary hyperparathyroidism (high calcium on blood tests)'
+    : pick(r, ['None', 'None', 'None', 'High blood pressure', 'Type 2 diabetes', 'Asthma', 'Coeliac disease']);
+  fields.splice(fields.findIndex((q) => q.key === 'weight') + 1, 0,
+    { key: 'hand', q: 'Which hand do you write with?', a: hand === 'L' ? 'Left' : 'Right' });
+  fields.splice(fields.findIndex((q) => q.key === 'fracture') + 1, 0,
+    { key: 'surgery', q: 'Any surgery or metal in your spine or hips?', a: surgery });
+  fields.splice(fields.findIndex((q) => q.key === 'cancer') + 1, 0,
+    { key: 'conditions', q: 'Other conditions (parathyroid, kidney, bowel, diabetes)?', a: conditions });
+  let faLoss = 0;
+  if (fk === 'hpt') { loss = Math.min(0.4, loss + 0.03); faLoss = HPT_FOREARM_LOSS; risks.push('Primary hyperparathyroidism'); }
+  if (/Coeliac/.test(conditions)) { loss = Math.min(0.4, loss + 0.03); risks.push('Coeliac disease (malabsorption)'); }
+
   const P = {
     seed, sex, age, height, weight, bmi: +bmiNow.toFixed(1),
-    name: `${pick(r, SURNAMES)}, ${pick(r, sex === 'm' ? FIRST_M : FIRST_F)}`,
-    id: String(Math.floor(100000 + r() * 899999)),
-    fields, risks, loss: +loss.toFixed(3),
+    name, id,
+    fields, risks, loss: +loss.toFixed(3), faLoss,
     indication: risks.length ? 'Osteoporosis screening; risk factors below'
       : sex === 'f' ? (age >= 65 ? 'Routine screening, woman 65 or older' : 'Postmenopausal screening')
       : 'Screening, man with risk of bone loss',
@@ -150,7 +199,38 @@ export function intakeVerdict(P) {
     reasons.push('Calcium taken today: an undissolved tablet can lie over the lumbar spine and read as bone. Rebook in 24 hours, no calcium beforehand.');
   if (/could be pregnant/i.test(a.menses || ''))
     reasons.push('Possibly pregnant: postpone until pregnancy is excluded.');
-  if (P.weight > TABLE_LIMIT_KG)
-    reasons.push(`${P.weight} kg is over the table limit (${TABLE_LIMIT_KG} kg): refer to a scanner rated for it.`);
-  return { delay: reasons.length > 0, reasons };
+  /* WHICH SITES. The spine and the hip by default; the forearm added, or standing in, per ISCD. */
+  const sites = new Set(['spine', 'hip']), why = [];
+  const sx = a.surgery || '', cond = a.conditions || '';
+  if (P.weight > TABLE_LIMIT_KG) {
+    sites.clear(); sites.add('forearm');
+    why.push(`${P.weight} kg is over the table limit (${TABLE_LIMIT_KG} kg): the spine and hip cannot be scanned here. `
+      + 'ISCD: measure the forearm instead, the patient seated beside the table with the arm on it.');
+  } else {
+    if (/both hips replaced/i.test(sx)) {
+      sites.delete('hip'); sites.add('forearm');
+      why.push('Both hips replaced: neither hip can be measured. ISCD: add the forearm when a hip cannot be measured.');
+    }
+    if (/spinal fusion|rods|screws/i.test(sx)) {
+      sites.delete('spine'); sites.add('forearm');
+      why.push('Spinal fusion with hardware: the lumbar spine cannot be interpreted. ISCD: add the forearm when the spine cannot be measured.');
+    }
+    if (/hyperparathyroidism/i.test(cond)) {
+      sites.add('forearm');
+      why.push('Hyperparathyroidism takes cortical bone first, and the one-third radius is nearly all cortex. ISCD: add the forearm.');
+    }
+  }
+  const plan = ['spine', 'hip', 'forearm'].filter((s) => sites.has(s));
+  // the non-dominant forearm, unless that is the wrist that was broken
+  const writes = /^left/i.test(a.hand || '') ? 'L' : 'R';
+  let forearmSide = writes === 'R' ? 'L' : 'R';
+  const broke = /^(left|right) wrist/i.exec(a.fracture || '');
+  const sideName = (s) => (s === 'L' ? 'left' : 'right');
+  if (sites.has('forearm')) {
+    if (broke && broke[1][0].toUpperCase() === forearmSide) {
+      forearmSide = writes;
+      why.push(`The ${sideName(writes === 'R' ? 'L' : 'R')} (non-dominant) wrist was broken: measure the ${sideName(writes)} forearm instead.`);
+    } else why.push(`Writes with the ${sideName(writes)} hand: the ${sideName(forearmSide)} forearm is the non-dominant one.`);
+  }
+  return { delay: reasons.length > 0, reasons, plan, why, forearmSide };
 }

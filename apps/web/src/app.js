@@ -43,7 +43,7 @@ import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './ma
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
 import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
 import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR } from './room.js';
-import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay } from './dxa.js';
+import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay, dxaMirror } from './dxa.js';
 import { initDxaExam, dxaExamMode } from './dxaExam.js';
 // models cut from another (the foot from the lower extremity) take its measured points
 applyCrops(cropData, { joints: jointData, landmarks: landmarkData, centring: centringData, palpation: palpationData });
@@ -1284,6 +1284,7 @@ const ROLLED_180 = new Set(['chestabdopelvis','headneck']);
 function voxelFlips(){
   const f = S.mode==='ct' ? [false,true,true] : [true,true,false];
   if(ROLLED_180.has(S.subject)){ f[0]=!f[0]; f[1]=!f[1]; }
+  if(S.mode==='dxa' && dxaMirror()) f[0]=!f[0];   // DXA's left forearm: the right arm, mirrored (dxa.js)
   return f;
 }
 /* LEG ROTATION. Turning the legs is not a roll of the patient: the pelvis stays where it is and
