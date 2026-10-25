@@ -33,3 +33,6 @@ services/compute/data/
 # scratch space for probing remote endpoints
 .tmp/
 apps/web/.snap.jpg
+
+# agent worktrees (Claude Code)
+.claude/worktrees/

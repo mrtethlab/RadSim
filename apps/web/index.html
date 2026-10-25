@@ -267,6 +267,8 @@
     <!-- THE DXA EXAM (dxaExam.js): the checklist over the room, and the intro / intake form -->
     <div class="dxexam" id="dxExam"></div>
     <div class="dxmodal" id="dxModal"></div>
+    <!-- a model that did not arrive (the server down, the connection gone): said over the room, with a retry -->
+    <div class="loaderr" id="loadErr" role="alert" hidden><span id="loadErrMsg"></span><button id="loadErrRetry" type="button">Retry</button><button id="loadErrClose" type="button" aria-label="Dismiss">✕</button></div>
     <div class="roomsel" id="roomSel" role="group" aria-label="Room set-up">
       <div class="roomsel-g">
         <button type="button" data-room="wall" title="Wall stand: the patient standing" aria-label="Wall stand">

@@ -60,33 +60,33 @@
  },
  "lowerextremity": {
   "intermalleolar": {
-   "x": -5.1,
-   "y": -5.7,
-   "z": -44.3,
+   "x": -4.8,
+   "y": -5.25,
+   "z": -44.25,
    "how": "midway between the measured medial and lateral malleoli",
    "guide": "AP, AP mortise and AP oblique ankle: CR perpendicular to a point midway between the malleoli (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "medialMalleolus": {
    "x": -7.55,
-   "y": -6.7,
-   "z": -44.45,
+   "y": -6.75,
+   "z": -44.85,
    "how": "the medial malleolus (palpation landmark)",
    "guide": "Lateral (mediolateral) ankle: CR perpendicular to the medial malleolus (Bontrager)",
    "confidence": "medium"
   },
   "mt3Base": {
-   "x": -2.03,
-   "y": 4.97,
-   "z": -45.49,
-   "how": "the middle third of the foot bone 43-51 % of the way from the ankle to the tip of the toes (14.6 cm): the base of the 3rd metatarsal",
+   "x": -3.9,
+   "y": 5.34,
+   "z": -45.16,
+   "how": "the middle third of the foot bone 43-51 % of the way from the ankle to the tip of the toes (14.8 cm): the base of the 3rd metatarsal",
    "guide": "AP foot: CR 10 degrees toward the heel to the base of the 3rd metatarsal; AP medial oblique foot: CR perpendicular to the base of the 3rd metatarsal (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "medialCuneiform": {
-   "x": -1.97,
-   "y": 3.11,
-   "z": -44.77,
+   "x": -3.59,
+   "y": 3.5,
+   "z": -44.44,
    "how": "the base of the 3rd metatarsal less 2 cm along the foot (toward the heel): the cuneiforms",
    "guide": "Lateral (mediolateral) foot: CR perpendicular to the medial cuneiform, at the level of the base of the 3rd metatarsal (Bontrager)",
    "confidence": "medium"

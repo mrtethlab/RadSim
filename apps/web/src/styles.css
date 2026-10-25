@@ -1382,6 +1382,15 @@ body.mode-home .roomsel, body.bay-flat .roomsel{display:none}
 .roomsel button.on svg .cut{stroke:#2f80dc}
 body.mobile .roomsel{top:52px; bottom:auto; right:8px; padding:4px}
 body.mobile .roomsel button{width:32px; height:32px; padding:4px}
+/* a model that failed to load: over the room view, where the learner is looking (the hint line
+   under the model list was missed) */
+.loaderr{position:absolute; top:58px; left:50%; transform:translateX(-50%); z-index:20; max-width:min(520px, calc(100% - 32px));
+  display:flex; align-items:center; gap:10px; padding:9px 10px 9px 14px; border-radius:9px;
+  background:rgba(40,14,12,.92); border:1px solid var(--red); color:#ffd9d4; font-size:13px; line-height:1.35}
+.loaderr[hidden]{display:none}
+.loaderr button{flex:none; border:0; border-radius:6px; padding:5px 10px; cursor:pointer; background:#5d656e; color:#fff; font:inherit}
+.loaderr button:hover{background:#6e7781}
+#loadErrClose{padding:5px 8px; background:transparent; color:#ffd9d4}
 .rotscale{display:flex; justify-content:space-between; font-size:10px; color:var(--muted); margin-top:2px; font-family:var(--seg); letter-spacing:1px}
 .modebar-cur{font-family:var(--seg); font-size:11px; letter-spacing:3px; color:var(--muted);
   padding:0 14px 0 12px; align-self:center; border-left:1px solid var(--edge2); line-height:1}

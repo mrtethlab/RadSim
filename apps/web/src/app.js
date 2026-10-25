@@ -379,8 +379,20 @@ function prepVoxelMesh(grp, translucent){
    different patients. Every call takes a ticket; a load that finishes behind a newer ticket
    is still cached, but it does not become the subject. */
 let subjectReq=0;
+/* Say a model did not load, over the room, with a retry: a fetch that fails outright is the server
+   or the connection (the dev server stopped, a dropped network), not the model. */
+function loadFailed(title, err, retry){
+  const box=$('loadErr'); if(!box) return;
+  const net=(err instanceof TypeError) || /failed to fetch|networkerror|load failed/i.test(err?.message||'');
+  $('loadErrMsg').textContent=`${title} did not load: `
+    +(net ? 'the server did not answer. Check the connection (or that the app is still running), then retry.' : (err?.message||'unknown error')+'.');
+  box.hidden=false;
+  $('loadErrRetry').onclick=()=>{ box.hidden=true; retry(); };
+  $('loadErrClose').onclick=()=>{ box.hidden=true; };
+}
 async function setSubject(sub){
   const req=++subjectReq;
+  const le=$('loadErr'); if(le) le.hidden=true;
   const sel=$('subjectSel'); const hint=$('subjectHint');
   S.voxelCache=S.voxelCache||{}; three.voxelMeshes=three.voxelMeshes||{};
   const showActive=(id)=>{ for(const k in three.voxelMeshes) three.voxelMeshes[k].visible=(k===id);
@@ -393,7 +405,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:43};
+      const MB={chest:40, wholebody:30, headneck:16, totalhipreplacement:17, lowerextremity:43, upperextremity:38};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -426,7 +438,8 @@ async function setSubject(sub){
         applyPhotoSkin();
       }
     }catch(err){ console.error(sub+' load failed',err); if(hint) hint.textContent='Load failed: '+err.message;
-      if(sel) sel.value=S.subject; return; }
+      if(sel) sel.value=S.subject; if(req===subjectReq) loadFailed(cfg.title, err, ()=>{ if(sel) sel.value=sub; setSubject(sub); });
+      return; }
     finally{ if(req===subjectReq) S.subjectLoading=false; }
   }
   if(req!==subjectReq) return;          // a newer request has been made: this one is only cached
@@ -1865,7 +1878,7 @@ function syncScene(){
   three.key.intensity = on ? 0.5 : 0.9;
   three.cr.visible = !on;                       // crosshair now comes from the lamp
   three.lf.visible=false; three.lfFill.visible=false; three.lfCross.visible=false; three.beam.visible=false;
-  updateDetector();                             // receptor size (25x30 / 35x43)
+  updateDetector();                             // receptor size (25x30 / 43x43)
   // AEC chamber overlay: x-ray mode + AEC on; selected cells fill, others outline only
   if(three.aecGroup){
     three.aecGroup.visible = S.mode!=='ct' && S.aecOn;
@@ -1961,7 +1974,8 @@ function updateCookie(){
 function updateCollimatorLCD(){
   const L=three.collLCD; if(!L) return;
   const fx=(S.collX||0).toFixed(1), fz=(S.collZ||0).toFixed(1), sid=Math.round(S.sid||100);
-  const k=fx+'x'+fz+'@'+sid; if(k===L.last) return; L.last=k;
+  const r=S.collRot||0, rot=r===0 ? '0°' : Math.abs(r)+'° '+(r>0?'CW':'CCW');   // as the panel's readout
+  const k=fx+'x'+fz+'@'+sid+'/'+r; if(k===L.last) return; L.last=k;
   const g=L.cv.getContext('2d'), W=L.cv.width, H=L.cv.height;
   const grad=g.createLinearGradient(0,0,0,H); grad.addColorStop(0,'#0e2236'); grad.addColorStop(1,'#08131f');
   g.fillStyle=grad; g.fillRect(0,0,W,H);
@@ -1970,7 +1984,7 @@ function updateCollimatorLCD(){
   g.textAlign='right'; g.fillStyle='#5fe08a'; g.fillText('Ready',W-20,35);
   g.textAlign='center'; g.fillStyle='#ffffff'; g.font='bold 58px Arial';
   g.fillText(fx+' × '+fz,W/2,138);
-  g.fillStyle='#8fb3cc'; g.font='24px Arial'; g.fillText('cm field',W/2,172);
+  g.fillStyle='#8fb3cc'; g.font='24px Arial'; g.fillText('cm field  ·  rotation '+rot,W/2,172);
   g.fillStyle='#1d3b57'; g.fillRect(16,200,W/2-24,84); g.fillRect(W/2+8,200,W/2-24,84);
   g.fillStyle='#8fb3cc'; g.font='22px Arial'; g.fillText('SID',W/4+4,232); g.fillText('Filter',W*3/4-4,232);
   g.fillStyle='#ffffff'; g.font='bold 32px Arial'; g.fillText(sid+' cm',W/4+4,270); g.fillText('0 mm Cu',W*3/4-4,270);
@@ -1993,9 +2007,9 @@ const WALL_Q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().se
    them. A free plate, and every other mode, has no bucky: BK is zero. */
 const B0={x:0,z:0};
 function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }
-const BUCKY_SPEED=30;
-const COLL_ROT_DETENT=5;
-const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider                    // deg: the collimator clicks into square within this of 0                       // cm/s, the motor's
+const BUCKY_SPEED=30;                       // cm/s, the motor's
+const COLL_ROT_DETENT=5;                    // deg: the collimator clicks into square within this of 0
+const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider
 let buckyRaf=0, buckyLast=0;
 function buckyTarget(){ return { x:0, z:S.tubeZ }; }  // the rails run one way: along z (up the column at the wall)
 function buckyFollow(){
@@ -3274,8 +3288,8 @@ function landmarkLocal(subject, name){
   const f = voxelFlips();                                          // the same flips the phantom uses
   return [f[0] ? -lm.x : lm.x, f[1] ? -(lm.y || 0) : (lm.y || 0), f[2] ? -lm.z : lm.z];
 }
-const OFF_LIMIT = 55;
-const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
+const OFF_LIMIT = 55;                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
+const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm
 // dev server only: try a protocol pose from the console (roll, joints, centring), as applyProtocol would
 if (import.meta.env?.DEV) window.__applyPose = (pose) => { applyPose(pose); syncScene(); };
 function applyPose(pose){
@@ -3663,6 +3677,7 @@ function wireBackendToggles(){
           if(h) h.textContent='Python backend not found at '+compute.base+' — run start-radsim.bat, then click again.';
           return;
         }
+        if(!computePolling) startComputePoll();      // found after the poll gave up: watch it again
       }
       setBackend(mode,b.dataset.be);
     });
@@ -4296,15 +4311,21 @@ function greyRealisticCards(){
     }
   });
 }
+// (each miss is a failed request the browser logs, a line a minute for as long as the page was
+// open: three misses in a row and the backend is taken as not running; the Python button's click
+// still probes for one started later, and a found backend is watched again)
+const COMPUTE_GIVE_UP=3;
 function startComputePoll(){
   if(!COMPUTE_LOCAL) return;
   let fails=0;
   const tick=async()=>{
     if(!document.hidden){ const ok=await refreshComputeStatus(); fails=ok?0:fails+1; }
-    setTimeout(tick, fails ? Math.min(60000, 5000*2**Math.min(fails,4)) : 5000);
+    if(fails>=COMPUTE_GIVE_UP){ computePolling=false; return; }
+    setTimeout(tick, fails ? 5000*2**fails : 5000);
   };
-  tick();
+  computePolling=true; tick();
 }
+let computePolling=false;
 
 /* ---- boot ---- */
 window.addEventListener('load',()=>{
