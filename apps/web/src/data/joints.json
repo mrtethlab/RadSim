@@ -174,7 +174,7 @@
     -0.995
    ],
    "blend": 2.0,
-   "how": "the measured joint space between the femoral condyles and the tibial plateau",
+   "how": "the measured joint space between the femoral condyles and the tibial plateau; the patella rides it",
    "motions": [
     {
      "key": "knee.flex",
@@ -212,7 +212,38 @@
       40
      ]
     }
-   ]
+   ],
+   "rider": {
+    "file": "lowerextremity.patella.bin",
+    "dims": [
+     70,
+     51,
+     68
+    ],
+    "sp": 0.1,
+    "origin": [
+     -6.85,
+     -3.1,
+     -5.55
+    ],
+    "c": [
+     -3.49,
+     -5.03,
+     -2.43
+    ],
+    "share": 0.7,
+    "apex": [
+     -3.36,
+     -0.46,
+     -4.1
+    ],
+    "tub": [
+     -1.45,
+     -1.8,
+     -9.05
+    ],
+    "len": 5.47
+   }
   },
   "ankle": {
    "label": "Ankle",

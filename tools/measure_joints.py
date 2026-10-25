@@ -239,6 +239,97 @@ def jaw_field(name='headneck'):
     return c, d, {'file': f'{name}.jaww.bin', 'dims': dims.tolist(), 'sp': FIELD_SP, 'origin': o.round(4).tolist()}
 
 
+# THE PATELLA rides the knee: the patellar tendon draws it down the trochlear groove as the knee
+# flexes, turning it some 0.7 of the knee's angle, until in deep flexion its apex lies at the
+# intercondylar notch. How far it turns is set by the patellar tendon, which does not stretch: as far
+# as keeps its apex the tendon's rest length from the tibial tuberosity (the share is the fallback
+# where there is no tuberosity to measure). On the model it is its own piece of bone (the patellofemoral joint space
+# parts it from the femur), turned about the centre of the femoral condyle it glides round: a
+# circle fitted to the femur's whole outline below the patella, in the patella's own sagittal
+# plane. (A sphere fitted to the groove alone put the centre 1.7 cm behind the patella, a saddle's
+# centre, and it turned in place; a circle fitted to the front and lower quarter only sat near the
+# front of the joint line, and the patella swung off the femur; the knee's own centre is on the
+# joint line, and turned about that the patella swung out in front of the tibia.)
+# Its weight grid (core/jointPose.js, a joint's rider) is whole inside the patella and fades out
+# over RIDE_FADE cm round it, so a palpation mark on the skin over it goes with it too.
+PATELLA_SHARE, RIDE_SLAB, RIDE_FADE = 0.7, 0.6, 1.2
+
+
+def patella_rider(knee_c, name='lowerextremity'):
+    V = Vol(name)
+    pp = PALP[name]['patella']
+    p = np.array([pp['x'], pp['y'], pp['z']])
+    # a box round the palpated patella reaching back past the femoral condyles (they lie behind it;
+    # a box 6 cm round it cut them in half, and the circle fitted to half a condyle sat on the joint
+    # line), at the volume's own spacing
+    lo, hi = p - np.array([6, 12, 9]), p + np.array([6, 4, 6])
+    i0 = [max(0, V.idx(a, lo[a])) for a in range(3)]
+    i1 = [min(V.n[a], V.idx(a, hi[a]) + 1) for a in range(3)]
+    sub = V.v[i0[2]:i1[2], i0[1]:i1[1], i0[0]:i1[0]]
+    bone = np.isin(sub, [17, 18] + list(range(54, 62)))           # bone alone: no joint cartilage
+    lab, n = ndi.label(bone)
+    if not n:
+        return None
+    sp = V.sp
+    org = np.array([(i0[a] - (V.n[a] - 1) / 2) * sp[a] for a in range(3)])
+    cvox = float(np.prod(sp))
+    best, bd = None, 1e9
+    for k in range(1, n + 1):
+        m = lab == k
+        vol = m.sum() * cvox
+        if not 5 < vol < 60:                                         # cm3: a patella, not the femur
+            continue
+        kk, jj, ii = np.nonzero(m)
+        pts = np.c_[ii, jj, kk] * sp + org
+        d = np.linalg.norm(pts - p, axis=1).min()
+        if d < bd:
+            best, bd = k, d
+    if best is None or bd > 3:
+        return None
+    pat = lab == best
+    # the femur: the piece that runs out of the box's top; its outline in the patella's slab
+    top = lab[-1][lab[-1] > 0]
+    fem = lab == np.bincount(top).argmax()
+    kp, jp, ipx = np.nonzero(pat)
+    pc = np.array([ipx.mean(), jp.mean(), kp.mean()]) * sp + org         # the patella's centre
+    ix, w = int(round(ipx.mean())), int(round(RIDE_SLAB / sp[0]))
+    prof = ndi.binary_fill_holes(fem[:, :, max(0, ix - w):ix + w + 1].any(2))   # (z, y); its outline only
+    # (the femur's piece can run on into the tibia where the joint space did not close the gap: the
+    # profile is cut at the joint line, its thinnest row within 2 cm of the knee's centre)
+    zr = np.arange(prof.shape[0]) * sp[2] + org[2]
+    band = np.nonzero(np.abs(zr - knee_c[2]) < 2)[0]
+    gap = band[np.argmin(prof[band].sum(1))]
+    prof[:gap + 1] = False
+    kk, jj = np.nonzero(prof & ~ndi.binary_erosion(prof))
+    Y, Z = jj * sp[1] + org[1], kk * sp[2] + org[2]
+    q = Z < pc[2] + 1                                                    # the condyle: below it, all round
+    A = np.c_[2 * Y[q], 2 * Z[q], np.ones(q.sum())]
+    sol = np.linalg.lstsq(A, Y[q] ** 2 + Z[q] ** 2, rcond=None)[0]
+    centre = np.array([pc[0], sol[0], sol[1]])
+    # the grid: the patella's box and its fade
+    g0 = [max(0, int(np.nonzero(pat.any(axis=tuple(b for b in range(3) if b != ax)))[0].min()) - int(np.ceil(RIDE_FADE / sp[2 - ax])) - 1) for ax in range(3)]
+    g1 = [min(pat.shape[ax], int(np.nonzero(pat.any(axis=tuple(b for b in range(3) if b != ax)))[0].max()) + int(np.ceil(RIDE_FADE / sp[2 - ax])) + 2) for ax in range(3)]
+    box = pat[g0[0]:g1[0], g0[1]:g1[1], g0[2]:g1[2]]
+    W = np.clip(1 - ndi.distance_transform_edt(~box, sampling=sp[::-1]) / RIDE_FADE, 0, 1)
+    W[box] = 1
+    (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f'{name}.patella.bin').write_bytes(np.round(W * 255).astype(np.uint8).tobytes())
+    origin = org + np.array([g0[2], g0[1], g0[0]]) * sp
+    # the patellar tendon: from the patella's apex (its distal pole: the mean of its lowest 3 mm)
+    # to the tibial tuberosity; it does not stretch, so the patella turns as far as keeps its length
+    pts = np.c_[ipx, jp, kp] * sp + org
+    apex = pts[pts[:, 2] < pts[:, 2].min() + 0.3].mean(0)
+    tt = PALP[name].get('tibialTuberosity')
+    tend = {}
+    if tt:
+        tub = np.array([tt['x'], tt['y'], tt['z']])
+        tend = {'apex': apex.round(2).tolist(), 'tub': tub.round(2).tolist(), 'len': round(float(np.linalg.norm(apex - tub)), 2)}
+    print(f'  patella: {int(pat.sum() * cvox)} cm3, {bd:.1f} cm from the palpated point; it turns about '
+          f'{np.round(centre, 2).tolist()}; its tendon {tend.get("len")} cm')
+    return {'file': f'{name}.patella.bin', 'dims': [int(box.shape[2]), int(box.shape[1]), int(box.shape[0])],
+            'sp': round(float(sp[0]), 4), 'origin': origin.round(4).tolist(), 'c': centre.round(2).tolist(),
+            'share': PATELLA_SHARE, **tend}
+
+
 def main():
     out = {'_about': __doc__.strip().splitlines()[0]}
     # ---- the hand: the wrist
@@ -320,14 +411,16 @@ def main():
     inv = round(foot_inversion(np.array(v3(im)), lg, toes), 1)
     up, latf = perp([0, 0, 1], toes), perp([1, 0, 0], toes)
     toes = toes.round(3).tolist()
+    rider = patella_rider(kn)
     out['lowerextremity'] = {
         'knee': {'label': 'Knee', 'c': [round(float(kn[0]), 2), round(float(kn[1]), 2), round(float(kn[2]), 2)],
                  'distal': leg, 'blend': 2.0,
-                 'how': 'the measured joint space between the femoral condyles and the tibial plateau',
+                 'how': 'the measured joint space between the femoral condyles and the tibial plateau; the patella rides it',
                  'motions': [{'key': 'knee.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': [0, -1, 0], 'range': [0, 120]},
                              # internal rotation turns the front of the leg toward the midline (-x: a right leg)
                              {'key': 'knee.roll', 'label': 'Rotation', 'neg': 'external', 'pos': 'internal', 'roll': True,
-                              'from': [0, 1, 0], 'toward': [-1, 0, 0], 'range': [-40, 40]}]},
+                              'from': [0, 1, 0], 'toward': [-1, 0, 0], 'range': [-40, 40]}],
+                 **({'rider': rider} if rider else {})},
         # the foot is the part past a plane through the ankle tilted toward it (down the leg, and 0.4
         # of the way along the foot): a plane square to the leg did for a foot hanging down it, but a
         # foot at 90 degrees reaches forward at the ankle's own height, half of it inside the crease,

@@ -275,3 +275,22 @@ test('a pose made in chunks, as the worker pool makes it, is the pose made whole
     assert.ok(out.every((v, i) => v === whole.data[i]), `${m} chunks`);
   }
 });
+
+// a knee with a rider: a patella in front of the joint, its tendon to a tuberosity on the leg
+const patGrid = (() => {
+  const dims = [5, 5, 5], data = new Uint8Array(125).fill(255);       // 2 cm cube at x -1..1, y 3..5, z 1..3
+  return { dims, sp: 0.5, origin: [-1, 3, 1], data };
+})();
+const kneeRider = { c: [0, 0, 0], distal: [0, 0, -1], blend: 1,
+  rider: { ...patGrid, c: [0, 0, 2], share: 0.7, apex: [0, 4, 1], tub: [0, 3, -4], len: Math.hypot(1, 5) },
+  motions: [{ key: 'flex', axis: axisToward([0, 0, -1], [0, -1, 0]), range: [0, 120] }] };
+
+test('a rider turns as far as keeps its tendon at length, and not at all when straight', () => {
+  assert.deepEqual(forwardChain([0, 4, 2], [kneeRider], { flex: 0 }), [0, 4, 2]);
+  for (const a of [30, 60, 90]) {
+    const cc = compileChain([kneeRider], { flex: a });
+    const apex = forwardCompiled([0, 4, 1], cc), tub = forwardCompiled([0, 3, -4], cc);
+    assert.ok(near(Math.hypot(apex[0] - tub[0], apex[1] - tub[1], apex[2] - tub[2]), Math.hypot(1, 5), 1e-3), `tendon at ${a}`);
+    assert.ok(cc[0].ra > 0 && cc[0].ra < cc[0].T, `the patella turns less than the knee at ${a}: ${cc[0].ra} of ${cc[0].T}`);
+  }
+});

@@ -561,17 +561,18 @@ function applyVoxelMeshTransform(grp){
    straightens there. */
 const chainCache={};
 /* A FIELD joint (the neck) carries its weights in a grid beside the model (fieldData, loaded with
-   the subject by loadJointFields); until the grid is in, the joint is not offered. */
+   the subject by loadJointFields); until the grid is in, the joint is not offered. A joint's RIDER
+   (the knee's patella) has a grid too; until it is in, the joint bends without it. */
 const fieldData={};
 async function loadJointFields(subject){
   const js=jointData[subject]; if(!js) return;
-  for(const j of Object.values(js)){
-    const f=j.field?.file, k=subject+'/'+f;
+  for(const f of Object.values(js).flatMap(j=>[j.field?.file, j.rider?.file])){
+    const k=subject+'/'+f;
     if(!f || fieldData[k]) continue;
     try {
       const r=await fetch(import.meta.env.BASE_URL+'models/'+k);
       if(r.ok){ fieldData[k]=new Uint8Array(await r.arrayBuffer()); delete chainCache[subject]; }
-    } catch { /* the joint stays unoffered */ }
+    } catch { /* the joint stays unoffered (a rider: the joint bends without it) */ }
   }
 }
 function jointChain(subject){
@@ -581,6 +582,7 @@ function jointChain(subject){
   // proximal first, as joints.json lists them
   const ch=Object.values(js).filter(j=>!j.field || fieldData[subject+'/'+j.field.file]).map(j=>({ ...j,
     ...(j.field ? { field: { ...j.field, data: fieldData[subject+'/'+j.field.file] } } : {}),
+    ...(j.rider ? { rider: { ...j.rider, data: fieldData[subject+'/'+j.rider.file] || null } } : {}),
     motions: j.motions.map(m=>({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
   return chainCache[subject]=ch.length ? ch : null;
 }

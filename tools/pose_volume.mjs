@@ -18,6 +18,8 @@ const js = JSON.parse(fs.readFileSync(path.join(WEB, 'src', 'data', 'joints.json
 const chain = Object.values(js).map((j) => ({ ...j,
   // a field joint's weights, from the grid beside the model (app.js loadJointFields)
   ...(j.field ? { field: { ...j.field, data: new Uint8Array(fs.readFileSync(path.join(dir, j.field.file))) } } : {}),
+  // a joint's rider (the knee's patella), from its grid beside the model too
+  ...(j.rider ? { rider: { ...j.rider, data: new Uint8Array(fs.readFileSync(path.join(dir, j.rider.file))) } } : {}),
   motions: j.motions.map((m) => ({ ...m, axis: JP.axisToward(m.from || j.distal, m.toward) })) }));
 const sp = (h.spacing || h.spacingMM || [1.5, 1.5, 1.5]).map(Number);
 // the x-ray room's frame flips (app.js voxelFlips; a subject rolled 180 degrees has x and y unflipped)

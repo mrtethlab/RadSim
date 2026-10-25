@@ -83,6 +83,14 @@ function mul3(a, b) {
    it, each cervical vertebra less, C7 and the shoulders none, the soft tissue between them a smooth
    blend — no plane through the neck can tell the jaw (in front of C1-C3) from the spine. Its rolls
    are plain rotations (no exactness to keep: the inverse is solved, fieldInverse).
+   A plain joint may carry a RIDER (j.rider: a weight grid as a field's, a centre c and a share):
+   a piece of the patient that turns with the joint, about its own centre. The patella is one:
+   drawn down the femur's groove by the patellar tendon, it turns about the centre of the femoral
+   condyle it glides round, as far as keeps the tendon at its length (rider.apex to rider.tub, the
+   tibial tuberosity, which goes with the leg: riderAngle); without a tendon, by rider.share of the
+   bend. A point turns by its weight times that (forwardOne: landmarks, a palpation mark over it);
+   in the volume the rider's bone (weight 1) is lifted out of its place and set down where it went
+   (rideAlong).
    A field joint's motion may also GLIDE (m.glide: cm, rest frame, at the end of its range): a
    translation carried with the same share as the turn, growing as the square of the motion's
    fraction of its range. The jaw is one: past the first part of opening, a pure hinge at the
@@ -125,10 +133,35 @@ export function compileJoint(j, angles) {
       ins: [0, 0, 0], bis: [0, 0, 1], bisL: 1 };                  // (no crook: the field decides)
   }
   const f = rotate(j.distal, n, T);
-  return { c: j.c, d: j.distal, b: j.blend, n, T, tw, sp: j.spread || 0, R2: j.radius ? j.radius * j.radius : Infinity,
+  const J = { c: j.c, d: j.distal, b: j.blend, n, T, tw, sp: j.spread || 0, R2: j.radius ? j.radius * j.radius : Infinity,
+    rd: null,
     ins: [f[0] - j.distal[0], f[1] - j.distal[1], f[2] - j.distal[2]],
     bis: [-f[0] - j.distal[0], -f[1] - j.distal[1], -f[2] - j.distal[2]],
     bisL: Math.hypot(f[0] + j.distal[0], f[1] + j.distal[1], f[2] + j.distal[2]) };
+  if (j.rider && j.rider.data && T) { J.ra = riderAngle(J, j.rider); J.rd = j.rider; }
+  return J;
+}
+/* How far the rider turns: the angle about its centre (in the joint's own sense) at which its apex
+   is the tendon's length from the tuberosity, once the tuberosity has gone with the joint; the
+   first such angle from 0 (the tendon slackens as the knee bends, and the patella takes it up). */
+function riderAngle(J, R) {
+  if (!R.apex || !R.tub || !R.len) return R.share * J.T;
+  const t = forwardOne(R.tub, J), c = R.c;
+  const gap = (phi) => {
+    const r = rotate([R.apex[0] - c[0], R.apex[1] - c[1], R.apex[2] - c[2]], J.n, phi);
+    return Math.hypot(c[0] + r[0] - t[0], c[1] + r[1] - t[1], c[2] + r[2] - t[2]) - R.len;
+  };
+  const N = 60, end = 1.4 * J.T;
+  let a = 0, ga = gap(0);
+  for (let i = 1; i <= N; i++) {
+    let b = end * i / N; const gb = gap(b);
+    if ((ga > 0) !== (gb > 0)) {
+      for (let k = 0; k < 30; k++) { const m = (a + b) / 2, gm = gap(m); if ((ga > 0) === (gm > 0)) { a = m; ga = gm; } else b = m; }
+      return (a + b) / 2;
+    }
+    a = b; ga = gb;
+  }
+  return R.share * J.T;
 }
 /* THE CROOK. On the inside of a bend the turned part swings into the space the part above it
    still holds: a flexed forearm's flexor mass rises beside the biceps, the two cut faces are
@@ -211,6 +244,16 @@ function forwardOne(p, J) {
     const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, w * J.T), g = J.g || [0, 0, 0];
     return [J.c[0] + r[0] + w * g[0], J.c[1] + r[1] + w * g[1], J.c[2] + r[2] + w * g[2]];
   }
+  if (J.rd && J.T) { const w = fieldWeight(J.rd, p); if (w > 0) return riderBlend(p, J, w, plainOne(p, J)); }
+  return plainOne(p, J);
+}
+/* The rider's own turn, blended into the joint's by its weight: whole on the patella, fading over
+   the tissue round it into wherever the joint itself carries that tissue (no seam at its edge). */
+function riderBlend(p, J, w, q) {
+  const c = J.rd.c, r = rotate([p[0] - c[0], p[1] - c[1], p[2] - c[2]], J.n, J.ra);
+  return [q[0] + w * (c[0] + r[0] - q[0]), q[1] + w * (c[1] + r[1] - q[1]), q[2] + w * (c[2] + r[2] - q[2])];
+}
+function plainOne(p, J) {
   let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
   const s = dot(d, J.d);
   if (!inLimb(d, J, s)) return p;
@@ -244,6 +287,10 @@ export function forwardCompiled(p, cc) {
 const SKIN_CORE = 1;
 function skinOne(p, J) {
   if (J.wf) return forwardOne(p, J);                 // (a field bends smoothly already)
+  if (J.rd && J.T) { const w = fieldWeight(J.rd, p); if (w > 0) return riderBlend(p, J, w, skinPlain(p, J)); }
+  return skinPlain(p, J);
+}
+function skinPlain(p, J) {
   let d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]];
   const s = dot(d, J.d);
   if (!inLimb(d, J, s)) return p;
@@ -374,6 +421,43 @@ function smoothFold(out, N, sg, sp, cc) {
           if (keep && !out[o]) out[o] = FAT;
           else if (!keep && out[o]) out[o] = 0;
         }
+      }
+    }
+  }
+}
+
+/* THE RIDER in the volume. The resampler leaves a rider where it was (it lies on the joint's
+   unmoved side); after it, the rider's bone (weight 1 in its grid, and bone or cartilage at rest)
+   is lifted out of its place, which becomes soft tissue (behind the patella, the quadriceps tendon
+   follows it down), and set down where its turn takes it, each cell as 8 points so the turned grid
+   leaves no holes. */
+const SOFT = 10;
+function rideAlong(out, N, sg, sp, cc, sampleRest) {
+  const C = [(N[0] - 1) / 2, (N[1] - 1) / 2, (N[2] - 1) / 2];
+  const idx = (x, y, z) => {
+    const i = Math.round(sg[0] * x / sp[0] + C[0]), j = Math.round(sg[1] * y / sp[1] + C[1]), k = Math.round(sg[2] * z / sp[2] + C[2]);
+    return i < 0 || j < 0 || k < 0 || i >= N[0] || j >= N[1] || k >= N[2] ? -1 : (k * N[1] + j) * N[0] + i;
+  };
+  for (const J of cc) {
+    if (!J.rd || !J.T) continue;
+    const F = J.rd, [fx, fy, fz] = F.dims, h = F.sp / 4, c = F.c, ang = J.ra;
+    const body = [];
+    for (let k = 0; k < fz; k++) for (let j = 0; j < fy; j++) for (let i = 0; i < fx; i++) {
+      if (F.data[(k * fy + j) * fx + i] < 250) continue;
+      const p = [F.origin[0] + i * F.sp, F.origin[1] + j * F.sp, F.origin[2] + k * F.sp];
+      const v = sampleRest(p[0], p[1], p[2]);
+      if (RIGID.has(v)) body.push(p, v);
+    }
+    for (let b = 0; b < body.length; b += 2) {
+      const p = body[b], o = idx(p[0], p[1], p[2]);
+      if (o >= 0 && RIGID.has(out[o])) out[o] = SOFT;
+    }
+    for (let b = 0; b < body.length; b += 2) {
+      const p = body[b], v = body[b + 1];
+      for (const ox of [-h, h]) for (const oy of [-h, h]) for (const oz of [-h, h]) {
+        const r = rotate([p[0] + ox - c[0], p[1] + oy - c[1], p[2] + oz - c[2]], J.n, ang);
+        const o = idx(c[0] + r[0], c[1] + r[1], c[2] + r[2]);
+        if (o >= 0) out[o] = v;
       }
     }
   }
@@ -582,5 +666,5 @@ export function posePlan(vm, flips, chain, angles) {
       }
     }
   };
-  return { dims: N, pad, rows, fold: (out) => smoothFold(out, N, sg, sp, cc) };
+  return { dims: N, pad, rows, fold: (out) => { smoothFold(out, N, sg, sp, cc); rideAlong(out, N, sg, sp, cc, sampleRest); } };
 }
