@@ -1579,7 +1579,7 @@ function buildRig() {
 /* The centring laser: a thin cross projected on the patient, which is the only thing the
    operator actually aims with. Drawn slightly above the couch so it reads ON the body
    rather than through it, and left depth-testing off so it stays visible over the skin. */
-const LASER_Y = 22;                   // just above a supine torso
+const LASER_Y = 33;                   // on the front of a supine torso
 const LASER_IN = 2;                   // the cross is 2 in across, as on the machine
 function buildLaser() {
   const { THREE, three } = ctx;

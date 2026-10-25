@@ -18,7 +18,9 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-export const LUNAR = { LEN: 263, W: 76, PAD_W: 64, FLOOR: -72, CAP: 34, ARM_D: 30, HEAD_UNDER: 31 };
+// HEAD_UNDER: the head's underside above the pad, clear of the deepest patient this room carries
+// (the chest-abdomen-pelvis volume is 33 cm front to back; at 31 the arm cut through the belly)
+export const LUNAR = { LEN: 263, W: 76, PAD_W: 64, FLOOR: -72, CAP: 34, ARM_D: 30, HEAD_UNDER: 40 };
 // the scanning field marked on the pad: two long lines either side of the centre line
 export const PAD_LINES = { halfW: 22, z0: -96, z1: 96 };
 

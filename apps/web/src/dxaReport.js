@@ -159,9 +159,9 @@ export function reportHTML(entry, history, charts) {
   return `
 <div class="dxrep-page">
   <div class="dxrep-hd">
-    <div class="dxrep-org">GE Healthcare</div>
-    <div class="dxrep-addr">3030 Ohmeda Drive, Madison, WI 53718</div>
-    <div class="dxrep-addr">Phone: 608 221-1551</div>
+    <div class="dxrep-org">RadSim Bone Densitometry</div>
+    <div class="dxrep-addr">Simulated imaging department</div>
+    <div class="dxrep-addr">Training report &middot; not a clinical document</div>
   </div>
   <table class="dxrep-pt">
     <tr><td class="k">Patient:</td><td>${esc(p.name)}</td><td class="k">Referring Physician:</td><td>${esc(p.referrer)}</td></tr>
@@ -184,7 +184,7 @@ export function reportHTML(entry, history, charts) {
       <div class="dxrep-note">Image not for diagnosis</div>
     </div>
     <div class="dxrep-col">
-      <div class="dxrep-cap">USA (Combined NHANES/Lunar) ${esc(label)}: ${span} (BMD)</div>
+      <div class="dxrep-cap">Reference: young adult and age-matched (simulated) ${esc(label)}: ${span} (BMD)</div>
       <img class="dxrep-chart" src="${charts.age}" alt="">
       <table class="dxrep-tab">
         <tr><th>Region</th><th>Area<br><small>(cm&sup2;)</small></th><th>BMC<br><small>(g)</small></th>
@@ -208,8 +208,7 @@ export function reportHTML(entry, history, charts) {
     + 'Store another scan to build a series.</div>'}
   <div class="dxrep-fine">
     (*) Indicates significant change based on the 95 % confidence interval (LSC = ${LSC_PCT.toFixed(1)} %
-    for ${esc(label)} ${span}). USA (Combined NHANES / Lunar) Reference Population; matched for Age,
-    Weight, Ethnic. World Health Organization definition of Osteoporosis and Osteopenia: Normal =
+    for ${esc(label)} ${span}). Simulated reference population, matched for age and sex. World Health Organization definition of Osteoporosis and Osteopenia: Normal =
     T-score at or above &minus;1.0 SD; Osteopenia = T-score between &minus;1.0 and &minus;2.5 SD;
     Osteoporosis = T-score at or below &minus;2.5 SD. ${entry.sex === 'm'
       ? 'T-scores for this patient are against a young healthy male reference, the console default for '
