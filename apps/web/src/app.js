@@ -28,6 +28,9 @@ import lutData from './data/luts.json';
 import protocolData from './data/protocols.json';
 import landmarkData from './data/landmarks.json';
 import centringData from './data/centring.json';
+import palpationData from './data/palpation.json';
+import cropData from './data/crops.json';
+import { applyCrops } from './core/crops.js';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
@@ -41,6 +44,8 @@ import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
 import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR } from './room.js';
 import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay } from './dxa.js';
 import { initDxaExam, dxaExamMode } from './dxaExam.js';
+// models cut from another (the foot from the lower extremity) take its measured points
+applyCrops(cropData, { joints: jointData, landmarks: landmarkData, centring: centringData, palpation: palpationData });
 
 /* ============================================================================
    MODULE 6 — SCENE3D  (Three.js POSITIONING view only; not the image)
@@ -331,6 +336,7 @@ const VOXEL_MODELS = {
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
   upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
   lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
+  foot:            { title:'Foot',                  scoutKv:80,  scoutMa:50,  xrayKv:60  },
   totalhipreplacement: { title:'Total Hip Replacement', scoutKv:120, scoutMa:250, xrayKv:90 },
   wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
   metalphantom:    { title:'Metal Test Phantom',    scoutKv:120, scoutMa:200, xrayKv:120 },

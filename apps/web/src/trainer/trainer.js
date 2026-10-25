@@ -472,7 +472,7 @@ if (typeof window !== 'undefined') window.radsimTrainer = {
 // the marker a perfect film carries: on a limb, its side (every limb model is a right one); on the
 // trunk or head, the side down on a lateral or posterior oblique (+ roll lifts the right), the
 // patient's right otherwise
-const LIMBS = new Set(['hand', 'upperextremity', 'lowerextremity']);
+const LIMBS = new Set(['hand', 'upperextremity', 'lowerextremity', 'foot']);
 function idealMarker(view) {
   if (LIMBS.has(H.S.subject)) return 'R';
   const roll = ((((view.pose.roll + 180) % 360) + 360) % 360) - 180;
