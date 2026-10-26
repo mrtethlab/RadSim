@@ -15,10 +15,10 @@ const palpation = load('../src/data/palpation.json');
 applyCrops(load('../src/data/crops.json'), { joints: load('../src/data/joints.json'), landmarks, centring, palpation });
 const all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections.map((p) => ({ ...p, part: g.part }))));
 const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity', 'foot',
-  'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
+  'wholebody', 'pediatric', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
-  assert.equal(all.length, 47);
+  assert.equal(all.length, 53);
   for (const p of all) assert.ok(BROWSER_SUBJECTS.has(p.subject), `${p.proj}: subject ${p.subject}`);
 });
 
@@ -111,6 +111,18 @@ test('the joints come in anatomical order along each limb', () => {
   assert.ok(H.wrist.z < H.hand.z && H.hand.z < H.fingers.z, 'hand: carpals < MCP < PIP');
   const C = landmarks.chestabdopelvis;
   assert.ok(C.pelvis.z < C.kub.z && C.kub.z < C.lumbar.z && C.lumbar.z < C.thoracic.z, 'trunk: pelvis < crest < L3 < T7');
+});
+
+test('the pediatric child: its points lie in anatomical order, skull to feet, each limb on its own side', () => {
+  // a composite (services/compute/app/build_pediatric.py): a grafted part placed upside down or on
+  // the wrong side would show here first. Volume frame: +z superior, +x the patient's LEFT
+  const P = landmarks.pediatric;
+  const up = ['ankleR', 'kneeR', 'pelvis', 'kub', 'lumbar', 'thoracic', 'cspine', 'skull'];
+  for (let i = 1; i < up.length; i++) assert.ok(P[up[i - 1]].z < P[up[i]].z, `${up[i - 1]} below ${up[i]}`);
+  assert.ok(P.wristR.z < P.elbowR.z && P.elbowR.z < P.thoracic.z, 'the hand below the elbow, the elbow below T7');
+  for (const j of ['knee', 'ankle', 'elbow', 'wrist']) assert.ok(P[j + 'R'].x < -5 && P[j + 'L'].x > 5, `${j}: right at -x, left at +x`);
+  // the child's pediatric protocols centre on its own points, and no adult protocol loads it
+  for (const p of all.filter((x) => x.subject === 'pediatric')) assert.match(p.proj, /\(child\)$/, p.proj);
 });
 
 test('every landmark records how it was found and how sure that is', () => {

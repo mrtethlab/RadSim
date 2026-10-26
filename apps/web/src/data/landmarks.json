@@ -177,5 +177,127 @@
       "how": "centre of the 2.2 cm sphere through the most cortical bone (head and acetabular shells)",
       "confidence": "high"
     }
+  },
+  "pediatric": {
+    "thoracic": {
+      "x": -0.38,
+      "y": 1.79,
+      "z": 34.05,
+      "frame": "volume",
+      "how": "T7: the vertebral body (anterior 40 % of its label), from the pediatric model's own labels (build_pediatric.py)",
+      "confidence": "high"
+    },
+    "lumbar": {
+      "x": -0.38,
+      "y": -1.06,
+      "z": 16.94,
+      "frame": "volume",
+      "how": "L3: the vertebral body, from the pediatric model's own labels (build_pediatric.py)",
+      "confidence": "high"
+    },
+    "kub": {
+      "x": -0.38,
+      "y": -1.1,
+      "z": 12.3,
+      "frame": "volume",
+      "how": "the level of the iliac crests (the tops of the hip-bone labels, 12.1 / 12.5), = L4-L5, on the midline at the depth of L4",
+      "confidence": "high"
+    },
+    "abdomenErect": {
+      "x": -0.38,
+      "y": -1.1,
+      "z": 16.55,
+      "frame": "volume",
+      "how": "4 cm above the crest (a child's 5): the diaphragm in the field",
+      "confidence": "medium"
+    },
+    "pelvis": {
+      "x": -0.38,
+      "y": -1.1,
+      "z": 1.35,
+      "frame": "volume",
+      "how": "midway between the ASIS (5.3 / 5.6) and the pubic symphysis (-2.8)",
+      "confidence": "high"
+    },
+    "skull": {
+      "x": -0.82,
+      "y": -0.41,
+      "z": 65.53,
+      "frame": "volume",
+      "how": "bone-weighted centre of the upper half of the skull label (the cranium)",
+      "confidence": "medium"
+    },
+    "cspine": {
+      "x": 0.09,
+      "y": 0.27,
+      "z": 50.64,
+      "frame": "volume",
+      "how": "C4: the vertebral body, from the pediatric model's own labels (build_pediatric.py) (the head donor's ground truth)",
+      "confidence": "high"
+    },
+    "kneeR": {
+      "x": -10.2,
+      "y": 5.78,
+      "z": -33.35,
+      "frame": "volume",
+      "how": "the knee joint space, the lower extremity's measured landmark carried through the leg's graft",
+      "confidence": "medium"
+    },
+    "ankleR": {
+      "x": -10.18,
+      "y": 6.78,
+      "z": -61.04,
+      "frame": "volume",
+      "how": "the tibiotalar joint, the lower extremity's measured landmark carried through the leg's graft",
+      "confidence": "medium"
+    },
+    "kneeL": {
+      "x": 9.92,
+      "y": 5.8,
+      "z": -32.99,
+      "frame": "volume",
+      "how": "the knee joint space, the lower extremity's measured landmark carried through the leg's graft",
+      "confidence": "medium"
+    },
+    "ankleL": {
+      "x": 9.9,
+      "y": 6.78,
+      "z": -60.69,
+      "frame": "volume",
+      "how": "the tibiotalar joint, the lower extremity's measured landmark carried through the leg's graft",
+      "confidence": "medium"
+    },
+    "elbowR": {
+      "x": -15.17,
+      "y": 4.36,
+      "z": 18.7,
+      "frame": "volume",
+      "how": "the centre of the arm's bone at the elbow joint (z053, build_limbs.ARMS), carried through the arm's graft",
+      "confidence": "medium"
+    },
+    "wristR": {
+      "x": -23.06,
+      "y": 1.84,
+      "z": -2.8,
+      "frame": "volume",
+      "how": "the centre of the carpus (z053, 1.2 cm below the radiocarpal joint), carried through the arm's graft",
+      "confidence": "medium"
+    },
+    "elbowL": {
+      "x": 15.38,
+      "y": 3.59,
+      "z": 18.74,
+      "frame": "volume",
+      "how": "the centre of the arm's bone at the elbow joint (z053, build_limbs.ARMS), carried through the arm's graft",
+      "confidence": "medium"
+    },
+    "wristL": {
+      "x": 23.02,
+      "y": 0.83,
+      "z": -2.82,
+      "frame": "volume",
+      "how": "the centre of the carpus (z053, 1.2 cm below the radiocarpal joint), carried through the arm's graft",
+      "confidence": "medium"
+    }
   }
 }

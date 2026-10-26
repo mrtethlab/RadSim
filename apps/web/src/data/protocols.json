@@ -907,6 +907,63 @@
               }
             }
           ]
+        },
+        {
+          "region": "Child (11 y)",
+          "projections": [
+            {
+              "proj": "AP chest (child)",
+              "kv": 85,
+              "mas": 6.4,
+              "cm": 18,
+              "grid": true,
+              "aec": "lr",
+              "lut": "chest",
+              "sid": 150,
+              "coll": [
+                30,
+                33
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "T7"
+              }
+            },
+            {
+              "proj": "Lateral chest (child)",
+              "kv": 90,
+              "mas": 12.5,
+              "cm": 35,
+              "grid": true,
+              "aec": "c",
+              "lut": "chest",
+              "sid": 150,
+              "coll": [
+                26,
+                33
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "T7mc",
+                "fidelity": "approx",
+                "note": "This child lies with the arms at the sides; for a lateral chest the arms are raised above the head, or they cross the upper lung fields."
+              }
+            }
+          ]
         }
       ]
     },
@@ -995,6 +1052,61 @@
                 "cc": 0,
                 "centre": "pelvis",
                 "legs": 15
+              }
+            }
+          ]
+        },
+        {
+          "region": "Child (11 y)",
+          "projections": [
+            {
+              "proj": "AP abdomen (child)",
+              "kv": 80,
+              "mas": 32,
+              "cm": 19,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "abdomen",
+              "sid": 100,
+              "coll": [
+                30,
+                35
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "kub"
+              }
+            },
+            {
+              "proj": "AP pelvis (child)",
+              "kv": 80,
+              "mas": 25,
+              "cm": 18,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                35,
+                26
+              ],
+              "det": [
+                43,
+                35
+              ],
+              "orient": "landscape",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "pelvis"
               }
             }
           ]
@@ -1299,6 +1411,61 @@
               ],
               "orient": "portrait",
               "subject": "headneck",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "skull"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Child (11 y)",
+          "projections": [
+            {
+              "proj": "AP skull (child)",
+              "kv": 75,
+              "mas": 20,
+              "cm": 16,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                24
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "skull"
+              }
+            },
+            {
+              "proj": "Lateral skull (child)",
+              "kv": 73,
+              "mas": 12.5,
+              "cm": 13,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                22,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
               "pose": {
                 "roll": 90,
                 "cc": 0,

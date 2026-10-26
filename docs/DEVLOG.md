@@ -8,6 +8,24 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### A pediatric whole-body model: an 11-year-old, skull to feet
+A new **Pediatric (child, 11 y)** subject (`pediatric`), 348 × 188 × 946 at 1.5 mm (62 MB), skull to feet, arms at the sides.
+
+**Where it comes from.** No open whole-body CT of a child exists: the VSD Full Body subjects are 17-95 (ages read from the folder names in each zip's central directory, by HTTP range requests, nothing downloaded), the TotalSegmentator dataset's youngest is 15. So it is a composite (`build_pediatric.py`):
+- *the child's own trunk:* TCIA Pediatric-CT-SEG 2197048C (11 M, 140 cm, 48 kg, CC BY 4.0), C7 to below the lesser trochanters, picked from 160 series of 5-12 year-olds for no oral contrast, thin slices and a field that does not cut the hips. Kept: thorax, abdomen, pelvis, spine, ribs, proximal femurs, with their open physes and apophyses (bone is what the HU says, not forced over its label); its portal-phase contrast is re-assigned to blood;
+- *head and neck* (s1082) from the C7/T1 disc: the neck at the child's vertebral scale, the cranium at a child's 53.5 cm head circumference, easing between up a neck lengthened 15 %;
+- *girdles and arms* (z053, mirrored for the left): placed on the child's ribs rib by rib, let down to hang at rest, the arms turned to the side at the child's arm length. Only the side of the chest is replaced (the raised arms' shoulders and axillae); the child keeps its chest wall and back, and the donor's scapulae and clavicles are set into them as bone;
+- *legs* (the shipped lower extremity, mirrored): hung from the child's femoral heads, the thighs drawn out to the child's outline at the seam, the femurs blended across it;
+- *growth plates* cut into the grafted long bones (proximal humerus, distal radius and ulna, distal femur, proximal and distal tibia, proximal fibula).
+
+**Seams.** In soft tissue or at a joint, except the femur (blended over 3.5 cm). The skin is blended across them (over the shoulders as signed distances), the thighs' soft tissue dithered, a new skin laid; donors' HU resampled with an anti-aliased box (a nearest pull of materials striped a lateral skull).
+
+**In the app.** Subject lists, CT dose (trunk), a longer table travel along the body (75 cm: the head is 65 cm from the middle), landmarks, centring and palpation from the model's own labels (`tools/measure_pediatric.py`); six child protocols in the Chest, Abdomen / Pelvis and Head groups (AP and lateral chest, AP abdomen, AP pelvis, AP and lateral skull), each exposing at DI within ±1.
+
+**Approximate:** an adult's face, teeth and hands scaled down; no physes in the hands, feet, elbow or distal fibula; the lateral chest has the arms down.
+
+**Checked:** chest, abdomen, pelvis, skull, knee and wrist films and a CT slice in the app; skin and bone meshes in the room; `npm test` and the build.
+
 ### Process animations for every mode — [#88](https://github.com/mrtethlab/RadSim/pull/88)
 An **Animation** button on each mode's card opens a film of that mode's whole process, start to finish.
 
