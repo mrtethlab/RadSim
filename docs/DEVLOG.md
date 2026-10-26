@@ -8,6 +8,28 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### October uplifts — [#89](https://github.com/mrtethlab/RadSim/pull/89)
+This PR carries the five sections below (ultrasound, pasting, skull, pediatric) and these:
+- **CT colours:** the generic scheme is the default; the vendor scheme applies only when chosen.
+- **CT film (44 → 64 steps):**
+  - the detector's rows (64 × 0.625 mm) and how collimation picks them;
+  - rows combined into slices;
+  - helical z-interpolation;
+  - slice thickness against interval, and their effect on noise, partial volume and reformats;
+  - a chapter of twelve artefacts, each a simulated scan of the model reconstructed beside its clean twin.
+- **X-ray film:**
+  - **Angling for true length:** a CR at half a tilted part's angle restores its true length (101 % at 20° for a 40° tilt); the full tilt elongates it.
+  - **Angling to clear overlap:** the higher structure's shadow moves farther.
+  - The monitor reads R HAND PA (the model is a right hand).
+- **All films:**
+  - captions stay where they are placed while that spot still works;
+  - a reading delay slows the step over a caption whose window is shorter than its reading time;
+  - a logarithmic depth buffer stops the z-fighting;
+  - `scale: null` hides the scale bar.
+- **Fluoroscopy film:**
+  - the bones and gut are hidden under an opaque skin (ribs flickered through);
+  - the staff dose boxes stay inside the frame, and the camera follows the figure to 2 m.
+
 ### Ultrasound: the beam has width, and Doppler you can hear
 Shadows were knife edges because each scanline was a single ray. Each line is now a beam (`core/beam.js`, docs/ultrasound.md §4.5–4.6).
 - **Beam width.** Three rays across the slice through a fixed elevation lens, and lateral sub-rays that converge on the transmit focus and diverge past it. Each pays its neighbours' losses, so a shadow has a penumbra as wide as the beam, widening with depth and sharpest with the focus on the obstacle. A rib's 10–90 % edge is 0.4 / 0.9 / 1.1 cm at 5 / 8 / 12 cm (focus 8), and 0.4 / 0.5 / 0.8 with the focus on the rib.
