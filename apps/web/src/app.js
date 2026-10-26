@@ -335,6 +335,7 @@ function initScene(){
 const VOXEL_MODELS = {
   hand:            { title:'Hand',                  scoutKv:80,  scoutMa:40,  xrayKv:55  },
   chest:           { title:'Chest',                 scoutKv:120, scoutMa:120, xrayKv:120 },
+  skull:           { title:'Skull',                 scoutKv:120, scoutMa:150, xrayKv:80  },
   headneck:        { title:'Head & neck',           scoutKv:120, scoutMa:150, xrayKv:110 },
   chestabdopelvis: { title:'Chest / abdo / pelvis', scoutKv:120, scoutMa:200, xrayKv:120 },
   upperextremity:  { title:'Upper extremity',       scoutKv:70,  scoutMa:50,  xrayKv:60  },
@@ -407,7 +408,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:16, lowerextremity:43, upperextremity:38};
+      const MB={chest:40, wholebody:30, headneck:16, skull:42, lowerextremity:43, upperextremity:38};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -3610,7 +3611,7 @@ const fmtMGy=(v)=> v==null ? '—' : (v<0.1 ? v.toFixed(3) : v<10 ? v.toFixed(2)
 const fmtDap=(v)=> (v<10 ? v.toFixed(2) : v<100 ? v.toFixed(1) : v.toFixed(0))+'<small>µGy·m²</small>';
 /* Subjects with a midline, where the marker's letter can be checked against the side it lies on.
    A single limb cannot be told left from right here, so only its placement is judged. */
-const BILATERAL=new Set(['chest','headneck','chestabdopelvis','wholebody']);
+const BILATERAL=new Set(['chest','skull','headneck','chestabdopelvis','wholebody']);
 function updateDoseReadout(){
   const d=S.lastDose, set=(id,h)=>{ const el=$(id); if(el) el.innerHTML=h; };
   if(!d){ set('esdV','—'); set('dapV','—'); set('dapSumV','—'); return; }

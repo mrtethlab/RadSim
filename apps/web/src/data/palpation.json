@@ -268,6 +268,112 @@
    "confidence": "high"
   }
  },
+ "skull": {
+  "nasion": {
+   "label": "Nasion",
+   "x": 0.36,
+   "y": 9.06,
+   "z": -0.24,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "on the midline front profile 12 mm above the orbits' openings (the canthi)",
+   "confidence": "medium"
+  },
+  "glabella": {
+   "label": "Glabella",
+   "x": 0.36,
+   "y": 9.6,
+   "z": 1.26,
+   "dir": [
+    0.0,
+    0.981,
+    0.196
+   ],
+   "how": "on the midline front profile 15 mm above the nasion",
+   "confidence": "medium"
+  },
+  "acanthion": {
+   "label": "Acanthion",
+   "x": 0.36,
+   "y": 7.44,
+   "z": -3.9,
+   "dir": [
+    0.0,
+    0.958,
+    -0.287
+   ],
+   "how": "the midline's most anterior bone 3.5-6.5 cm below the nasion: the anterior nasal spine",
+   "confidence": "medium"
+  },
+  "inion": {
+   "label": "External occipital protuberance",
+   "x": 0.36,
+   "y": -8.1,
+   "z": 3.06,
+   "dir": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "how": "the most posterior midline bone at or above the ear canals",
+   "confidence": "high"
+  },
+  "eamR": {
+   "label": "External acoustic meatus (R)",
+   "x": 5.3,
+   "y": -1.2,
+   "z": -0.98,
+   "dir": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the bony ear canal: non-bone walled by bone, open to the side (the pair level either side of the midline)",
+   "confidence": "high"
+  },
+  "mastoidR": {
+   "label": "Mastoid tip (R)",
+   "x": 4.94,
+   "y": -1.56,
+   "z": -4.5,
+   "dir": [
+    0.921,
+    -0.276,
+    -0.276
+   ],
+   "how": "the lowest bone behind the ear canal on this side, within 3.5 cm",
+   "confidence": "high"
+  },
+  "eamL": {
+   "label": "External acoustic meatus (L)",
+   "x": -3.87,
+   "y": -1.12,
+   "z": -1.03,
+   "dir": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the bony ear canal: non-bone walled by bone, open to the side (the pair level either side of the midline)",
+   "confidence": "high"
+  },
+  "mastoidL": {
+   "label": "Mastoid tip (L)",
+   "x": -4.06,
+   "y": -1.42,
+   "z": -4.56,
+   "dir": [
+    -0.921,
+    -0.276,
+    -0.276
+   ],
+   "how": "the lowest bone behind the ear canal on this side, within 3.5 cm",
+   "confidence": "high"
+  }
+ },
  "chest": {
   "jugularNotch": {
    "label": "Jugular notch",

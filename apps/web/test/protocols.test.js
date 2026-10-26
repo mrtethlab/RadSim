@@ -14,11 +14,11 @@ const palpation = load('../src/data/palpation.json');
 // the crops (the foot) take their points from their source, as app.js does at load
 applyCrops(load('../src/data/crops.json'), { joints: load('../src/data/joints.json'), landmarks, centring, palpation });
 const all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections.map((p) => ({ ...p, part: g.part }))));
-const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity', 'foot',
+const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'skull', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity', 'foot',
   'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
-  assert.equal(all.length, 50);
+  assert.equal(all.length, 58);           // (47, the 3 pasting studies, the 8 skull views)
   for (const p of all) assert.ok(BROWSER_SUBJECTS.has(p.subject), `${p.proj}: subject ${p.subject}`);
 });
 
@@ -184,4 +184,31 @@ test('the hand films show their soft tissue: the hand LUT, no detail processing,
   // the dark end keeps all but 1 % of the anatomy, so the finger envelope stays in the window
   assert.equal(luts.hand.detail, false);
   assert.ok(luts.hand.clipLo <= 0.02 && luts.hand.width >= 0.9, JSON.stringify(luts.hand));
+});
+
+test('the skull, sinus and facial views load the Skull, angled to the OML and centred where the textbooks say', () => {
+  // the Skull lies with its OML square to the long axis (services/compute/app/build_skull.py), so each
+  // view's angle to the OML is its own: Caldwell 15 degrees caudad, Towne 30 caudad (+cc is caudal),
+  // Waters with the head extended until the OML is 37 degrees to the receptor (53 from square), the
+  // laterals 7 degrees up to lay the IOML across the receptor
+  const head = all.filter((p) => p.part === 'Head');
+  assert.ok(head.length >= 10, `${head.length} head views`);
+  for (const p of head) {
+    assert.equal(p.subject, 'skull', p.proj);
+    const pt = centring.skull[p.pose.centre];
+    assert.ok(pt && /Bontrager|Radiopaedia/.test(pt.guide), `${p.proj}: centre ${p.pose.centre} has a sourced guideline`);
+  }
+  const pose = (proj) => all.find((p) => p.proj === proj).pose;
+  assert.equal(pose('PA axial skull (Caldwell)').cc, 15);
+  assert.equal(pose('AP axial skull (Towne)').cc, 30);
+  assert.equal(pose('Parietoacanthial sinuses (Waters)').tilt, 53);
+  for (const p of head.filter((x) => /^Lateral/.test(x.proj))) assert.equal(p.pose.tilt, 7, p.proj);
+  // the points in anatomical order: the acanthion below the nasion, the ear canals behind both, the
+  // lateral skull's point 5 cm above them
+  const c = centring.skull;
+  assert.ok(c.acanthion.z < c.nasion.z - 3, `acanthion ${c.acanthion.z} vs nasion ${c.nasion.z}`);
+  assert.ok(c.eam.y < c.nasion.y - 7 && c.eam.y < c.zygoma.y && c.zygoma.y < c.nasion.y, 'front to back: nasion, zygoma, ear canals');
+  assert.ok(Math.abs(c.latSkull.z - c.eam.z - 5) < 0.01);
+  // the cervical spine stays on the head and neck model
+  for (const p of all.filter((x) => /cervical|open mouth|Swimmers/i.test(x.proj))) assert.equal(p.subject, 'headneck', p.proj);
 });

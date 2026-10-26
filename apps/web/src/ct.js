@@ -57,7 +57,8 @@ const CT_PROTOCOLS = [
   { id: 'abdomen',   name: 'Abdomen',                  land: 'XY', start: -20,  len: 300 },
   { id: 'abdpelvis', name: 'Abdomen / Pelvis',         land: 'XY', start: -20,  len: 440 },
   { id: 'lspine',    name: 'Lumbar Spine',             land: 'IC', start: -180, len: 300 },
-  { id: 'head',      name: 'Head',                     land: 'OM', start: -20,  len: 180 },
+  // the head on the Skull (0.6 mm, its OML square to the long axis, as a head is laid for CT)
+  { id: 'head',      name: 'Head',                     land: 'OM', start: -20,  len: 180, subject: 'skull' },
   { id: 'neck',      name: 'Neck',                     land: 'SN', start: -230, len: 260 },
   // the ankle and foot on the Foot (the foot and the distal third of the leg, a tenth of the leg's
   // volume): zeroed at the medial malleolus. The ankle from 10 cm above the joint (the distal tibia
