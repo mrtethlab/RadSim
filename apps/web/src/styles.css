@@ -1409,6 +1409,49 @@ body.mode-home .roomsel, body.bay-flat .roomsel{display:none}
 .roomsel svg .cut{fill:none; stroke:#5d656e; stroke-width:1.6}
 .roomsel button:hover svg .cut{stroke:#6e7781}
 .roomsel button.on svg .cut{stroke:#2f80dc}
+.roomsel button:disabled{opacity:.35; cursor:not-allowed; background:#5d656e}
+/* ---- pasting: the long-length study's console, stacked on the room set-up (src/pasting.js) ---- */
+.pastepanel{display:none; position:absolute; bottom:66px; right:14px; z-index:10; width:236px; padding:8px 9px 7px;
+  background:rgba(10,14,18,.82); border:1px solid var(--edge2); border-radius:9px; color:var(--txt);
+  -webkit-backdrop-filter:blur(4px); backdrop-filter:blur(4px)}
+body.mode-xray .pastepanel:not([hidden]){display:block}
+body.mode-home .pastepanel, body.bay-flat .pastepanel{display:none !important}
+.ppdefs{position:absolute; width:0; height:0; overflow:hidden}
+.pp-head{font-family:var(--seg); font-size:10px; letter-spacing:2.5px; color:var(--muted); margin:0 0 7px 1px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.pp-head small{letter-spacing:.5px; color:var(--txt); margin-left:4px}
+.pp-l{font-size:12px; letter-spacing:.5px; text-transform:uppercase; color:var(--txt)}
+.pp-coi{display:flex; align-items:center; gap:5px; margin-bottom:7px}
+.pp-coi .pp-l{flex:0 0 auto; margin-right:2px}
+.pp-coif{flex:1 1 auto; display:flex; align-items:center; gap:3px; height:30px; padding:0 6px 0 4px;
+  background:#0a0d10; border:1px solid var(--edge2); border-radius:5px}
+.pp-ruler{flex:none; width:9px; height:20px; color:var(--muted)}
+.pp-coif input{flex:1 1 auto; min-width:0; width:40px; background:none; border:0; outline:none; color:var(--amber);
+  font-family:var(--seg); font-size:16px; text-align:right; -moz-appearance:textfield; appearance:textfield}
+.pp-coif input::-webkit-outer-spin-button, .pp-coif input::-webkit-inner-spin-button{-webkit-appearance:none; margin:0}
+.pp-coif span{font-family:var(--seg); font-size:10px; color:var(--muted)}
+.pp-coif:focus-within{border-color:var(--cyan)}
+.pastepanel button{border:0; border-radius:7px; cursor:pointer; background:#5d656e; color:#fff;
+  box-shadow:inset 0 -2px 0 rgba(0,0,0,.18); transition:background .15s}
+.pastepanel button:hover:not(:disabled){background:#6e7781}
+.pastepanel button:disabled{opacity:.4; cursor:not-allowed}
+.pastepanel button.on{background:#2f80dc; box-shadow:0 0 0 2px rgba(47,128,220,.35)}
+.pp-pm{flex:none; width:30px; height:30px; font-family:var(--seg); font-size:18px; line-height:1; padding:0}
+.pp-btns{display:flex; gap:5px; margin-bottom:6px}
+.pp-b{flex:1 1 0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px;
+  height:50px; padding:3px 2px}
+.pp-b.pp-sq{flex:0 0 40px}
+.pp-b svg{display:block; width:24px; height:24px}
+.pp-b .pp-fig{width:44px; height:31px}
+.pp-b small{font-family:var(--seg); font-size:9px; letter-spacing:.3px; color:#dfe7ee; white-space:nowrap}
+.pp-status{font-family:var(--seg); font-size:11.5px; letter-spacing:.5px; color:var(--txt); margin:0 0 6px 1px}
+.pp-status b{color:var(--amber); font-weight:normal; font-size:13px}
+.pp-status small{color:var(--muted); margin-left:3px}
+.pp-status.done b{color:var(--green)}
+.pp-status.inc b, .pp-status.inc small, .pp-status.bad small{color:var(--red)}
+.pp-ccrow{display:flex; align-items:center; justify-content:space-between; margin:2px 0 7px}
+.pastepanel input[type=range]{display:block}
+body.mobile .pastepanel{top:100px; bottom:auto; right:8px; width:220px}
 body.mobile .roomsel{top:52px; bottom:auto; right:8px; padding:4px}
 body.mobile .roomsel button{width:32px; height:32px; padding:4px}
 /* a model that failed to load: over the room view, where the learner is looking (the hint line
@@ -1948,6 +1991,8 @@ body.mode-fluoro .scr2{display:block}
 .uscal-k{color:#6f8ea2}
 .uscal-v{flex:1; color:#ffe25a}
 body.mode-us #film, body.mode-us #bigFilm{cursor:crosshair}
+/* the ultrasound console's toggles (colour box, invert, audio, breath hold, motion off) say when they are on */
+body.mode-us .us-only .mini button.on{background:var(--cyan-dim); color:#eafcff; border-color:var(--cyan)}
 #usPwAngleV.warn{color:#ffb45a}                 /* angle correction past 60 degrees */
 /* ---- fluoro: floating monitors over the room ---------------------------------------- */
 .flmon{position:absolute; right:12px; bottom:12px; width:min(58%,760px); height:min(46%,420px);
@@ -2340,6 +2385,7 @@ body:not(.mode-dxa) .dxmodal{display:none}
 .anim-cap b{color:#ffe08a; font-weight:600}
 .anim-scale{position:absolute; right:16px; bottom:16px; display:flex; align-items:center; gap:7px;
   font-family:var(--seg); font-size:11px; letter-spacing:1px; color:#c9d4dd; pointer-events:none}
+.anim-scale[hidden]{display:none}
 .anim-scale i{display:block; width:46px; height:6px; border:1px solid #c9d4dd; border-top:none}
 .anim-stepname{position:absolute; left:50%; top:58px; transform:translateX(-50%); font-family:var(--disp);
   font-weight:600; font-size:16px; letter-spacing:1px; color:#eef3f8; text-shadow:0 2px 8px #000;

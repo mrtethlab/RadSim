@@ -5,7 +5,7 @@ IMAGE is made of physics artifacts. Shadowing, enhancement, speckle and reverber
 not defects to simulate reluctantly: they are how sonographers read tissue, and the mode
 succeeds only if the artifacts are honest enough to diagnose with.
 
-Status: **complete — phases A–G built, measured and shipped.**
+Status: **complete — phases A–H built, measured and shipped.**
 
 Decisions taken while building (the plan's own defaults, confirmed by measurement):
 RUQ abdomen is the exam tuned for; Doppler, a stretch in the plan, is built — colour (E,
@@ -71,6 +71,7 @@ The novel UI: no tube, no pedal — a **probe held against the skin**.
 | **E — Doppler** ✅ | colour box over the vessel tree, direction from the arclength gradient, pulsatile velocity from the HR clock, aliasing at low PRF, and an acoustically-limited frame rate | **passed on all four counts.** Direction is derived, not authored: the aorta's flow gradient runs caudally down its whole length (z = −0.88 to −0.95) and the IVC's runs cranially (**z = +0.90**), so a vessel and its companion take opposite colours because the anatomy opposes, not because anything says so. The dot product is the model and it measures as one — on the central beams, measured **−32.4 / −34.5 / −38.1 / −40.0** cm/s against predicted **−31.8 / −35.0 / −37.8 / −40.8**. The aorta pulses with the waveform (mean −2.1 → −10.7 → −2.1 cm/s as the systolic term runs 0.25 → 0.96 → 0.25). Aliasing arrives on schedule: at v_nyq 99 cm/s **0 %** of the aorta reads the wrong colour, at 28 cm/s **25 %**, at 10 cm/s **35 %**. And colour costs what it costs: 20.1 fps in B-mode at 20 cm becomes **7.3 / 4.5 / 2.8 fps** for a 25 / 50 / 90 % box. **Superseded in part (Phase G):** the velocities, the colour cost and the sign convention. The aliasing and frame-rate figures above came from a constant-per-vessel speed and a box charged ENS round trips of the image depth; re-measured with flow from waveforms and continuity, and colour paid at the PRF, they are in §4.4 (half-width box at 16 cm: 6 fps, not 4.5). Stored colour velocity is now positive TOWARD the probe |
 | **F — polish** ✅ | a ten-step tutorial, the home card graduated to B/M/colour, the mobile pass (tab bar, freeze docked under the thumb), and the console header stops calling an ultrasound machine a GENERATOR | **passed**: all eight goals in the walkthrough were driven through the real controls and every one registered — plane to sagittal, frequency past 8 MHz, depth past 18 cm, mis-set the TGC and centre it, seat the probe on the heart and switch to M-mode, move the heart rate, colour box on, scale below 2.5 kHz. Mobile: 25 fps at 375 px wide, no horizontal overflow, freeze in the dock. Every mode re-checked after the shared refactors — fluoro still lights 55.9 % of its monitor, ultrasound 23.3 %, and the console throws nothing |
 | **G — Doppler, properly** ✅ | flow for every labelled vessel (waveform by vascular bed, renal level from the kidneys, continuity against measured calibre, laminar parabola); colour as an 8-pulse ensemble through a wall filter into a Kasai autocorrelator, with colour gain, wall filter, baseline, invert, write priority, steering (linear) and a colour bar; PW spectral Doppler — gate, angle cursor, PRF, baseline, wall filter, gain, sweep, PSV/EDV/RI; PRF capped by depth; a surveyed aorta seat | **passed** (§4.4): the aorta seat reads **PSV 54, EDV 12 cm/s, RI 0.78** — biphasic above the renals — against a model peak of 52 in the gate; the spectral band widens **18 → 40 cm/s** from a 1 to a 20 mm gate; colour aliasing **0 / 31 / 50 %** of the aorta at v_nyq 32 / 19 / 13 cm/s, wrapping bright-to-bright; the PRF is **capped at 4.2 kHz** by a box reaching 18 cm; the heart's flash falls **23 → 0.2 %** of the tissue from a 25 to a 400 Hz wall filter. Eleven unit tests on the relations, **11 of 11 re-introduced bugs caught**. Found on the way: **the subject has a ~6 cm juxtarenal aortic aneurysm** |
+| **H — the beam has width** ✅ | each scanline marched as a BEAM: three elevation rays through a fixed lens, carried laterally by sub-rays that converge on the transmit focus and diverge past it (`core/beam.js`); complex echo (Rayleigh speckle) and a two-way lateral PSF (transmit focus × dynamic receive); reverberation off strong reflectors with a coherence per material (dirty vs clean shadows, A-lines); Fresnel/Snell at fluid walls (edge shadows) and an angle-dependent specular echo; side lobes; bilinear scan conversion; colour autocorrelation averaged over neighbouring gates; Doppler audio | **passed** (§4.5, §4.6): a rib shadow's 10–90 % edge is **0.4 / 0.9 / 1.1 cm** at 5 / 8 / 12 cm with the focus at 8 cm, **0.4 / 0.5 / 0.8** with it at 4 cm on the rib, **0.7 / 1.3 / 1.8** at 12 cm — where the ray model's was a knife edge blurred only by the PSF; gas leaves a dirty shadow, bone a clean one; the gallbladder reads **11** grey (was 31) with liver 60 (was 66) and the enhancement beneath it 125 (was 147), the same 2.1x; penetration **21 / 17 / 12.5 / 8.3 / 5.4 cm** at 2.5 / 3.5 / 5 / 7.5 / 12 MHz; aorta PW still **PSV 54–55, EDV 12, RI 0.78–0.79**; colour aliasing **0 / 3 / 25 / 49 %** at v_nyq 54 / 26 / 19 / 13 cm/s; heart flash **19 → 0.4 %** from a 25 to a 400 Hz wall filter. Live frame rate at 16 cm **15 → 21 fps** (the loop now counts the display in its budget); 12 MHz at 4 cm **27 → 22 fps**. New unit tests for the beam, reverberation, oblique boundaries and audio, **10 of 10 re-introduced bugs caught** |
 
 ## 4.1 What Phase A changed about the plan
 
@@ -308,6 +309,98 @@ clips, beats without their neighbours, EDV read at the minimum, and the Kasai la
   suprarenal (biphasic) waveform.
 - The heart's chambers are labelled tissue, not blood, so there is no intracardiac flow; the cardiac
   seat's colour comes from the great vessels and the flash from the myocardium.
+
+## 4.5 Phase H — the beam has width
+
+The complaint was exact: shadows were too sharp. They were knife edges because a scanline was a
+RAY — one march, one amplitude — so a line either passed a rib or it did not, and the only
+softening was the display PSF's millimetre or two. A real scanline is a beam several millimetres
+to a centimetre across, and most of what is soft about a real image comes from that.
+
+**The beam (`core/beam.js`).** Widths per depth, FWHM:
+- *transmit*: focused once, at the focus knob, through an aperture F/F# (F# 3, capped by the
+  face): geometric convergence `KG·D·|1 − r/F|` (KG 0.4, the apodised cone) in quadrature with
+  diffraction `KA·λr/D` (KA 1.5, apodisation's main-lobe broadening), `KA·λF/D` at the focus;
+- *receive*: focused dynamically at every depth, `KA·λ·max(F#rx, r/Dmax)` — so the two-way PSF
+  stays sharp far from the transmit focus while the TRANSMIT beam, which is what shadows, does not;
+- *elevation*: a fixed lens (curvilinear 1.3 cm focused at 7 cm, linear 0.5 cm at 2 cm) that the
+  focus knob does not move.
+
+**Carrying it through the scan.** Each line is marched as three rays across the slice (the
+Gauss–Hermite nodes of the two-way elevation profile, following the lens's width with depth).
+Each records, per step, its local reflectivity and the amplitude the step costs. The lateral beam
+is then carried through those tables by 7 (centre) or 5 (slice-edge) sub-rays at fixed fractions
+of the local transmit width: each crosses the neighbouring lines as the beam converges and
+diverges, and pays THEIR losses. The beam's amplitude is the profile-weighted sum, and each
+elevation ray's echo is its reflectivity times that amplitude squared. A rib half in the beam
+leaves half a beam. That one change gives:
+- shadows with a penumbra as wide as the transmit beam, widening with depth and sharpest when the
+  focus sits on the obstacle: a rib's 10–90 % edge is 0.4 / 0.9 / 1.1 cm at 5 / 8 / 12 cm with
+  the focus at 8 cm, 0.4 / 0.5 / 0.8 with it at 4 cm on the rib, 0.7 / 1.3 / 1.8 at 12 cm;
+- small gas bubbles and stones that shadow only in part when the beam is wider than they are;
+- soft-edged posterior enhancement, and partial-volume fill of small fluid spaces from the slice.
+
+**Speckle is Rayleigh.** Scatterers carry a hashed PHASE (a complex echo, I and Q), so the PSF
+sums a random walk and the envelope is a magnitude — fully developed speckle — instead of the
+half-normal a real-valued sum gives. The power matches the old scatterer's, so the calibration
+holds (liver 60 grey against 66 before, at the RUQ seat).
+
+**Reverberation.** Every strong reflector re-launches the line's own echo train, delayed by its
+round trip, at `R_face (0.3) × coherence × its echo`, to three orders. Coherence is a per-material
+choice (`reverbCoherence` in `core/acoustics.js`): a gas surface or the pleura is a broad mirror
+(1.0, 0.9); a rib or a stone is curved, rough and absorbing (0.12, 0.08); fascia 0.5. So gas leaves
+a DIRTY shadow (copies of the layers above it, A-lines at multiples of its depth), bone a CLEAN
+one, and aerated lung shows A-lines below the pleura. The copies are phase-decorrelated, because a
+gas surface is not a perfect mirror. A line that only meets skin far out, skimming a flank
+edge-on, launches nothing.
+
+**Oblique boundaries.** Between soft tissues and fluids, the surface normal is measured from the
+segmentation (an 18-neighbour gradient over ~5 mm; a layer thinner than that has no normal and
+stays at normal incidence). The echo follows the oblique Fresnel coefficient times a specular lobe
+(floor 0.35, half-width 0.25 rad): bright where the beam meets a wall square, dimmer along its
+curve. At a FLUID wall the transmitted amplitude follows Fresnel and Snell too, and is zero past
+the critical angle (75.5° leaving bile into liver): the EDGE SHADOWS beside the gallbladder,
+softened by the beam. Applied at every boundary, the voxel normals of thin fascia scattered
+shadows across the field, so it is limited to fluid walls.
+
+**Smaller things that were clearly wrong.**
+- *Gel fills the skin's folds* (`GEL_FILL`, 4 mm): the 2 mm staircase put an air voxel just under
+  the skin on some lines, a perfect mirror that killed them and, once reverberation existed,
+  stacked A-lines down the fan's edge.
+- *Side lobes*: a −34 dB pedestal ~6 mm either side, the faint haze inside anechoic spaces beside
+  bright walls.
+- *Bilinear scan conversion*: nearest-neighbour drew each sample as a horizontal dash wherever a
+  line is wider than a pixel. The map is now cached (it was an atan2 and a hypot per pixel per
+  frame), which pays for much of the new physics.
+- *The live loop's clock* waited out (acoustic − scan) and ignored the display's own cost, so a
+  16 cm abdomen ran at 15 fps while the status line said 25.
+- *Toggle buttons* in the ultrasound panels now show their on state.
+
+**Cost.** Scan 3 → ~21 ms and display 20 → ~11 ms per frame. Live: the 16 cm abdomen 15 → 21 fps,
+12 MHz at 4 cm 27 → 22 fps.
+
+**Not done.** The process-animation film (`anim/films/us/bmode.js`) keeps its own copy of the old
+ray march. Speed-of-sound errors (displacement, mis-registration) are still out of scope. The voxel
+staircase still shows on some oblique fascia. Colour and PW lines still pay their losses along a
+single ray (their sample volumes already have the beam's width).
+
+## 4.6 Doppler: what was there, and what was added
+
+Phase G had already built and measured everything a machine has, except two things. Colour had
+the ensemble, wall filter, Kasai estimator, gain, priority, baseline, invert, steering, box, a PRF
+capped by depth, and aliasing. PW had the gate, angle correction, PRF, baseline, wall filter,
+gain, sweep and PSV/EDV/RI. Added:
+
+- **Doppler audio** (`core/dopplerAudio.js`): the spectral column the trace draws, played as it is
+  swept. One oscillator per bin at its shift, continuous in phase and ramped in amplitude; toward
+  the probe in the left channel, away in the right. It aliases with the trace (a shift past the
+  top is heard at the wrapped pitch, in the other ear), and the wall filter, baseline and spectral
+  gain change it as they change the picture. *Audio* and *Volume* in the PW panel.
+- **Colour spatial averaging**: the autocorrelation (R0 and R1) is summed over ±2 range gates and
+  the neighbouring colour lines before the phase is taken, as colour processors do. One 8-pulse
+  estimate per sample had painted the aorta as red salt and pepper. It is a solid lumen now (66 %
+  filled at the aorta seat, 4.5 % of the tissue in the box), and the aliasing and flash figures
+  stand (Phase H row).
 
 ## 5. Open questions for ML
 

@@ -907,6 +907,63 @@
               }
             }
           ]
+        },
+        {
+          "region": "Child (11 y)",
+          "projections": [
+            {
+              "proj": "AP chest (child)",
+              "kv": 85,
+              "mas": 6.4,
+              "cm": 18,
+              "grid": true,
+              "aec": "lr",
+              "lut": "chest",
+              "sid": 150,
+              "coll": [
+                30,
+                33
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "T7"
+              }
+            },
+            {
+              "proj": "Lateral chest (child)",
+              "kv": 90,
+              "mas": 12.5,
+              "cm": 35,
+              "grid": true,
+              "aec": "c",
+              "lut": "chest",
+              "sid": 150,
+              "coll": [
+                26,
+                33
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "T7mc",
+                "fidelity": "approx",
+                "note": "This child lies with the arms at the sides; for a lateral chest the arms are raised above the head, or they cross the upper lung fields."
+              }
+            }
+          ]
         }
       ]
     },
@@ -995,6 +1052,61 @@
                 "cc": 0,
                 "centre": "pelvis",
                 "legs": 15
+              }
+            }
+          ]
+        },
+        {
+          "region": "Child (11 y)",
+          "projections": [
+            {
+              "proj": "AP abdomen (child)",
+              "kv": 80,
+              "mas": 32,
+              "cm": 19,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "abdomen",
+              "sid": 100,
+              "coll": [
+                30,
+                35
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "kub"
+              }
+            },
+            {
+              "proj": "AP pelvis (child)",
+              "kv": 80,
+              "mas": 25,
+              "cm": 18,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                35,
+                26
+              ],
+              "det": [
+                43,
+                35
+              ],
+              "orient": "landscape",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "pelvis"
               }
             }
           ]
@@ -1273,17 +1385,92 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "headneck",
+              "subject": "skull",
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "skull"
+                "centre": "nasion"
+              }
+            },
+            {
+              "proj": "PA skull",
+              "kv": 80,
+              "mas": 20,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "centre": "nasion"
+              }
+            },
+            {
+              "proj": "PA axial skull (Caldwell)",
+              "kv": 80,
+              "mas": 20,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 15,
+                "centre": "nasion"
+              }
+            },
+            {
+              "proj": "AP axial skull (Towne)",
+              "kv": 80,
+              "mas": 25,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 0,
+                "cc": 30,
+                "centre": "eam"
               }
             },
             {
               "proj": "Lateral skull",
               "kv": 78,
-              "mas": 10,
+              "mas": 12.5,
               "cm": 15,
               "grid": true,
               "aec": "c",
@@ -1298,7 +1485,202 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "headneck",
+              "subject": "skull",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "tilt": 7,
+                "centre": "latSkull"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Sinuses",
+          "projections": [
+            {
+              "proj": "PA axial sinuses (Caldwell)",
+              "kv": 75,
+              "mas": 32,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 15,
+                "centre": "nasion"
+              }
+            },
+            {
+              "proj": "Parietoacanthial sinuses (Waters)",
+              "kv": 80,
+              "mas": 32,
+              "cm": 18,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "tilt": 53,
+                "centre": "acanthion"
+              }
+            },
+            {
+              "proj": "Lateral sinuses",
+              "kv": 75,
+              "mas": 20,
+              "cm": 13,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "tilt": 7,
+                "centre": "zygoma"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Facial bones",
+          "projections": [
+            {
+              "proj": "Parietoacanthial facial bones (Waters)",
+              "kv": 80,
+              "mas": 25,
+              "cm": 18,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                24
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "tilt": 53,
+                "centre": "acanthion"
+              }
+            },
+            {
+              "proj": "Lateral facial bones",
+              "kv": 75,
+              "mas": 16,
+              "cm": 13,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                24
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "tilt": 7,
+                "centre": "zygoma"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Child (11 y)",
+          "projections": [
+            {
+              "proj": "AP skull (child)",
+              "kv": 75,
+              "mas": 20,
+              "cm": 16,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                24
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "skull"
+              }
+            },
+            {
+              "proj": "Lateral skull (child)",
+              "kv": 73,
+              "mas": 12.5,
+              "cm": 13,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                22,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "pediatric",
               "pose": {
                 "roll": 90,
                 "cc": 0,
@@ -1308,7 +1690,111 @@
           ]
         }
       ]
+    },
+    {
+      "part": "Long length",
+      "regions": [
+        {
+          "region": "Pasting",
+          "projections": [
+            {
+              "proj": "Leg length study",
+              "kv": 80,
+              "mas": 16,
+              "grid": true,
+              "aec": "c",
+              "lut": "pasteLimb",
+              "sid": 180,
+              "coll": [
+                20,
+                43
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -23,
+                "cc": 0,
+                "centre": "knee"
+              },
+              "paste": {
+                "coi": 8,
+                "limits": [
+                  "ASIS",
+                  "lateral malleolus"
+                ]
+              }
+            },
+            {
+              "proj": "Scoliosis study",
+              "kv": 100,
+              "mas": 100,
+              "grid": true,
+              "aec": "c",
+              "lut": "pasteSpine",
+              "sid": 180,
+              "coll": [
+                30,
+                43
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "centre": "lumbar"
+              },
+              "paste": {
+                "coi": 16,
+                "limits": [
+                  "EAM / C1",
+                  "iliac crests"
+                ]
+              }
+            },
+            {
+              "proj": "Femur pasting",
+              "kv": 75,
+              "mas": 32,
+              "grid": true,
+              "aec": "c",
+              "lut": "pasteLimb",
+              "sid": 180,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -23,
+                "cc": 0,
+                "centre": "femur"
+              },
+              "paste": {
+                "coi": 8,
+                "limits": [
+                  "hip joint",
+                  "knee joint"
+                ]
+              }
+            }
+          ]
+        }
+      ]
     }
   ],
-  "_pose": "pose.roll: degrees about the long axis from the subject's rest pose (body subjects rest supine/AP; the hand rests PA); +roll lifts world +x. pose.cc: central-ray angle, negative = cephalic. pose.centre: a landmark in landmarks.json (measured by tools/measure_landmarks.py) that the patient is moved to put under the central ray. pose.fidelity \"approx\" marks a view a rigid model cannot truly achieve; pose.note says why."
+  "_pose": "pose.roll: degrees about the long axis from the subject's rest pose (body subjects rest supine/AP; the hand rests PA); +roll lifts world +x. pose.cc: central-ray angle, negative = cephalic. pose.centre: a landmark in landmarks.json (measured by tools/measure_landmarks.py) that the patient is moved to put under the central ray. pose.fidelity \"approx\" marks a view a rigid model cannot truly achieve; pose.note says why.",
+  "_paste": "paste: a long-length study stitched from several images (src/pasting.js, src/core/pasting.js), taken at the wall stand or the table with the tube tilted about its focal spot over a tracking bucky. paste.coi: the default centre of interest, cm of the anatomy above the cover or tabletop (the plane the stitched image's ruler is calibrated at); paste.limits: the landmarks the superior and inferior limits are set just beyond. mAs is written for 180 cm and follows the room's pasting distance by the inverse square."
 }

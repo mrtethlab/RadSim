@@ -57,7 +57,8 @@ const CT_PROTOCOLS = [
   { id: 'abdomen',   name: 'Abdomen',                  land: 'XY', start: -20,  len: 300 },
   { id: 'abdpelvis', name: 'Abdomen / Pelvis',         land: 'XY', start: -20,  len: 440 },
   { id: 'lspine',    name: 'Lumbar Spine',             land: 'IC', start: -180, len: 300 },
-  { id: 'head',      name: 'Head',                     land: 'OM', start: -20,  len: 180 },
+  // the head on the Skull (0.6 mm, its OML square to the long axis, as a head is laid for CT)
+  { id: 'head',      name: 'Head',                     land: 'OM', start: -20,  len: 180, subject: 'skull' },
   { id: 'neck',      name: 'Neck',                     land: 'SN', start: -230, len: 260 },
   // the ankle and foot on the Foot (the foot and the distal third of the leg, a tenth of the leg's
   // volume): zeroed at the medial malleolus. The ankle from 10 cm above the joint (the distal tibia
@@ -2703,11 +2704,11 @@ export function ctApplyAcqMode() {
 
 const isGE = () => (ctx && ctx.S.ct.vendor) === 'ge';
 // Apply the colour scheme to the whole app. In CT mode with the vendor scheme, the interface adopts
-// the selected vendor's console palette (GE light-blue / Canon dark-grey); otherwise (generic scheme
-// OR x-ray mode) the default palette is used — x-ray is never re-themed.
+// the selected vendor's console palette (GE light-blue / Canon dark-grey); otherwise (the generic
+// scheme, the default, OR x-ray mode) the default palette is used — x-ray is never re-themed.
 export function ctApplyColorTheme() {
   if (!ctx) return;
-  const c = ctx.S.ct, ct = ctx.S.mode === 'ct', vendorScheme = (c.colorSchema || 'vendor') !== 'generic';
+  const c = ctx.S.ct, ct = ctx.S.mode === 'ct', vendorScheme = (c.colorSchema || 'generic') === 'vendor';
   const theme = (ct && vendorScheme) ? ('theme-' + (c.vendor === 'ge' ? 'ge' : 'canon')) : null;
   const b = document.body.classList;
   b.remove('theme-ge', 'theme-canon');

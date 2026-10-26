@@ -268,6 +268,112 @@
    "confidence": "high"
   }
  },
+ "skull": {
+  "nasion": {
+   "label": "Nasion",
+   "x": 0.36,
+   "y": 9.06,
+   "z": -0.24,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "on the midline front profile 12 mm above the orbits' openings (the canthi)",
+   "confidence": "medium"
+  },
+  "glabella": {
+   "label": "Glabella",
+   "x": 0.36,
+   "y": 9.6,
+   "z": 1.26,
+   "dir": [
+    0.0,
+    0.981,
+    0.196
+   ],
+   "how": "on the midline front profile 15 mm above the nasion",
+   "confidence": "medium"
+  },
+  "acanthion": {
+   "label": "Acanthion",
+   "x": 0.36,
+   "y": 7.44,
+   "z": -3.9,
+   "dir": [
+    0.0,
+    0.958,
+    -0.287
+   ],
+   "how": "the midline's most anterior bone 3.5-6.5 cm below the nasion: the anterior nasal spine",
+   "confidence": "medium"
+  },
+  "inion": {
+   "label": "External occipital protuberance",
+   "x": 0.36,
+   "y": -8.1,
+   "z": 3.06,
+   "dir": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "how": "the most posterior midline bone at or above the ear canals",
+   "confidence": "high"
+  },
+  "eamR": {
+   "label": "External acoustic meatus (R)",
+   "x": 5.3,
+   "y": -1.2,
+   "z": -0.98,
+   "dir": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the bony ear canal: non-bone walled by bone, open to the side (the pair level either side of the midline)",
+   "confidence": "high"
+  },
+  "mastoidR": {
+   "label": "Mastoid tip (R)",
+   "x": 4.94,
+   "y": -1.56,
+   "z": -4.5,
+   "dir": [
+    0.921,
+    -0.276,
+    -0.276
+   ],
+   "how": "the lowest bone behind the ear canal on this side, within 3.5 cm",
+   "confidence": "high"
+  },
+  "eamL": {
+   "label": "External acoustic meatus (L)",
+   "x": -3.87,
+   "y": -1.12,
+   "z": -1.03,
+   "dir": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the bony ear canal: non-bone walled by bone, open to the side (the pair level either side of the midline)",
+   "confidence": "high"
+  },
+  "mastoidL": {
+   "label": "Mastoid tip (L)",
+   "x": -4.06,
+   "y": -1.42,
+   "z": -4.56,
+   "dir": [
+    -0.921,
+    -0.276,
+    -0.276
+   ],
+   "how": "the lowest bone behind the ear canal on this side, within 3.5 cm",
+   "confidence": "high"
+  }
+ },
  "chest": {
   "jugularNotch": {
    "label": "Jugular notch",
@@ -452,6 +558,216 @@
    ],
    "how": "the lowest rib 9-18 cm from the midline, above the iliac crest (about L2-L3)",
    "confidence": "low"
+  }
+ },
+ "pediatric": {
+  "jugularNotch": {
+   "label": "Jugular notch",
+   "x": 1.43,
+   "y": 5.17,
+   "z": 43.12,
+   "dir": [
+    0.0,
+    0.958,
+    0.287
+   ],
+   "how": "the top of the manubrium (the child's sternum label)",
+   "confidence": "high"
+  },
+  "xiphoid": {
+   "label": "Xiphoid process",
+   "x": 0.67,
+   "y": 10.12,
+   "z": 31.72,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the lowest point of the sternum label",
+   "confidence": "medium"
+  },
+  "sternalAngle": {
+   "label": "Sternal angle (T4-T5)",
+   "x": 0.82,
+   "y": 7.72,
+   "z": 39.52,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the front of the sternum 30 % of the way from the notch to the xiphoid (the manubriosternal joint)",
+   "confidence": "low"
+  },
+  "iliacCrestR": {
+   "label": "Iliac crest (R)",
+   "x": 8.17,
+   "y": -0.97,
+   "z": 12.07,
+   "dir": [
+    0.858,
+    0.0,
+    0.514
+   ],
+   "how": "the top of the hip-bone label on this side",
+   "confidence": "medium"
+  },
+  "asisR": {
+   "label": "ASIS (R)",
+   "x": 9.38,
+   "y": 4.88,
+   "z": 5.33,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the most anterior ilium 4-12 cm off the midline, below the crest",
+   "confidence": "medium"
+  },
+  "trochanterR": {
+   "label": "Greater trochanter (R)",
+   "x": 10.88,
+   "y": -2.48,
+   "z": -2.62,
+   "dir": [
+    1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most lateral point of the child's femur label",
+   "confidence": "medium"
+  },
+  "iliacCrestL": {
+   "label": "Iliac crest (L)",
+   "x": -7.27,
+   "y": -0.38,
+   "z": 12.53,
+   "dir": [
+    -0.858,
+    0.0,
+    0.514
+   ],
+   "how": "the top of the hip-bone label on this side",
+   "confidence": "medium"
+  },
+  "asisL": {
+   "label": "ASIS (L)",
+   "x": -8.78,
+   "y": 4.72,
+   "z": 5.62,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the most anterior ilium 4-12 cm off the midline, below the crest",
+   "confidence": "medium"
+  },
+  "trochanterL": {
+   "label": "Greater trochanter (L)",
+   "x": -10.88,
+   "y": -2.17,
+   "z": -2.17,
+   "dir": [
+    -1.0,
+    0.0,
+    0.0
+   ],
+   "how": "the most lateral point of the child's femur label",
+   "confidence": "medium"
+  },
+  "symphysis": {
+   "label": "Pubic symphysis",
+   "x": 1.12,
+   "y": 1.12,
+   "z": -2.77,
+   "dir": [
+    0.0,
+    1.0,
+    0.0
+   ],
+   "how": "the lowest midline anterior point of the hip bones",
+   "confidence": "medium"
+  },
+  "mastoidR": {
+   "label": "Mastoid tip (R)",
+   "x": 5.62,
+   "y": -0.67,
+   "z": 56.77,
+   "dir": [
+    0.921,
+    -0.276,
+    -0.276
+   ],
+   "how": "the lowest skull behind the atlas, 3.5 cm or more from the midline",
+   "confidence": "high"
+  },
+  "gonionR": {
+   "label": "Angle of the mandible (R)",
+   "x": 4.58,
+   "y": 2.02,
+   "z": 53.02,
+   "dir": [
+    0.894,
+    0.0,
+    -0.447
+   ],
+   "how": "the most posterior point of the lowest 1.3 cm of the jaw on this side",
+   "confidence": "medium"
+  },
+  "mastoidL": {
+   "label": "Mastoid tip (L)",
+   "x": -3.23,
+   "y": -0.22,
+   "z": 56.62,
+   "dir": [
+    -0.921,
+    -0.276,
+    -0.276
+   ],
+   "how": "the lowest skull behind the atlas, 3.5 cm or more from the midline",
+   "confidence": "high"
+  },
+  "gonionL": {
+   "label": "Angle of the mandible (L)",
+   "x": -3.52,
+   "y": 1.88,
+   "z": 53.32,
+   "dir": [
+    -0.894,
+    0.0,
+    -0.447
+   ],
+   "how": "the most posterior point of the lowest 1.3 cm of the jaw on this side",
+   "confidence": "medium"
+  },
+  "inion": {
+   "label": "External occipital protuberance",
+   "x": 0.38,
+   "y": -7.88,
+   "z": 61.57,
+   "dir": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "how": "the most posterior midline point of the skull",
+   "confidence": "medium"
+  },
+  "vertebraProminens": {
+   "label": "Vertebra prominens (C7)",
+   "x": 0.38,
+   "y": -4.27,
+   "z": 46.27,
+   "dir": [
+    0.0,
+    -1.0,
+    0.0
+   ],
+   "how": "the most posterior point of the C7 label",
+   "confidence": "high"
   }
  }
 }

@@ -31,15 +31,16 @@ from app.bone_labels import labelled_bone
 
 BONE = [TRABECULAR, CORTICAL] + [b[0] for b in BONE_GRADES]
 METAL = [TITANIUM, STEEL, ALUMINUM, LEAD]
-BODY = ['hand', 'foot', 'lowerextremity', 'upperextremity', 'headneck', 'chest', 'chestabdopelvis',
-        'wholebody']
+BODY = ['hand', 'foot', 'skull', 'lowerextremity', 'upperextremity', 'headneck', 'chest', 'chestabdopelvis',
+        'wholebody', 'pediatric']
 BONE_RGBA = (236, 228, 205, 255)          # an ivory, as the plain mesh's bone
-# the triangles' size, mm: a hand's and a foot's small bones at 1 mm, the limbs and the chest at 2
+# the triangles' size, mm: a hand's and a foot's small bones at 1 mm, the skull's (its sinus walls and foramina) at
+# three of its 0.6 mm voxels, the limbs and the chest at 2
 # (at the grid's own 1 mm a whole leg came to 1.2 M faces and 25 MB), the head and neck at 3 and the
 # trunks on their 2 mm grids at 4 (at 2 they were 15-19 MB: a skeleton's worth of ribs and
 # vertebrae, centimetres across). The surface is interpolated in the blurred field between samples,
 # so it keeps within a fraction of a voxel of the bone at any of these.
-EDGE_MM = {'hand': 1.0, 'foot': 1.0, 'headneck': 3.0, 'chestabdopelvis': 4.0, 'wholebody': 4.0}
+EDGE_MM = {'hand': 1.0, 'foot': 1.0, 'skull': 1.8, 'headneck': 3.0, 'chestabdopelvis': 4.0, 'wholebody': 4.0, 'pediatric': 3.0}
 METAL_RGBA = (154, 165, 176, 255)
 SOLID = 0.3                               # the share of a bone's voxels inside its surface (masks)
 CLOSE_MM = 2.0                            # the widest cortical gap bridged, each bone by itself

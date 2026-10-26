@@ -14,11 +14,11 @@ const palpation = load('../src/data/palpation.json');
 // the crops (the foot) take their points from their source, as app.js does at load
 applyCrops(load('../src/data/crops.json'), { joints: load('../src/data/joints.json'), landmarks, centring, palpation });
 const all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections.map((p) => ({ ...p, part: g.part }))));
-const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity', 'foot',
-  'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
+const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'skull', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity', 'foot',
+  'wholebody', 'pediatric', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
-  assert.equal(all.length, 47);
+  assert.equal(all.length, 64);           // (47, the 3 pasting studies, the 8 skull views, the 6 child views)
   for (const p of all) assert.ok(BROWSER_SUBJECTS.has(p.subject), `${p.proj}: subject ${p.subject}`);
 });
 
@@ -113,6 +113,18 @@ test('the joints come in anatomical order along each limb', () => {
   assert.ok(C.pelvis.z < C.kub.z && C.kub.z < C.lumbar.z && C.lumbar.z < C.thoracic.z, 'trunk: pelvis < crest < L3 < T7');
 });
 
+test('the pediatric child: its points lie in anatomical order, skull to feet, each limb on its own side', () => {
+  // a composite (services/compute/app/build_pediatric.py): a grafted part placed upside down or on
+  // the wrong side would show here first. Volume frame: +z superior, +x the patient's LEFT
+  const P = landmarks.pediatric;
+  const up = ['ankleR', 'kneeR', 'pelvis', 'kub', 'lumbar', 'thoracic', 'cspine', 'skull'];
+  for (let i = 1; i < up.length; i++) assert.ok(P[up[i - 1]].z < P[up[i]].z, `${up[i - 1]} below ${up[i]}`);
+  assert.ok(P.wristR.z < P.elbowR.z && P.elbowR.z < P.thoracic.z, 'the hand below the elbow, the elbow below T7');
+  for (const j of ['knee', 'ankle', 'elbow', 'wrist']) assert.ok(P[j + 'R'].x < -5 && P[j + 'L'].x > 5, `${j}: right at -x, left at +x`);
+  // the child's pediatric protocols centre on its own points, and no adult protocol loads it
+  for (const p of all.filter((x) => x.subject === 'pediatric')) assert.match(p.proj, /\(child\)$/, p.proj);
+});
+
 test('every landmark records how it was found and how sure that is', () => {
   for (const [m, set] of Object.entries(landmarks)) {
     if (m.startsWith('_')) continue;
@@ -184,4 +196,31 @@ test('the hand films show their soft tissue: the hand LUT, no detail processing,
   // the dark end keeps all but 1 % of the anatomy, so the finger envelope stays in the window
   assert.equal(luts.hand.detail, false);
   assert.ok(luts.hand.clipLo <= 0.02 && luts.hand.width >= 0.9, JSON.stringify(luts.hand));
+});
+
+test('the skull, sinus and facial views load the Skull, angled to the OML and centred where the textbooks say', () => {
+  // the Skull lies with its OML square to the long axis (services/compute/app/build_skull.py), so each
+  // view's angle to the OML is its own: Caldwell 15 degrees caudad, Towne 30 caudad (+cc is caudal),
+  // Waters with the head extended until the OML is 37 degrees to the receptor (53 from square), the
+  // laterals 7 degrees up to lay the IOML across the receptor
+  const head = all.filter((p) => p.part === 'Head' && p.subject !== 'pediatric');      // (the child's own head views are on the child)
+  assert.ok(head.length >= 10, `${head.length} head views`);
+  for (const p of head) {
+    assert.equal(p.subject, 'skull', p.proj);
+    const pt = centring.skull[p.pose.centre];
+    assert.ok(pt && /Bontrager|Radiopaedia/.test(pt.guide), `${p.proj}: centre ${p.pose.centre} has a sourced guideline`);
+  }
+  const pose = (proj) => all.find((p) => p.proj === proj).pose;
+  assert.equal(pose('PA axial skull (Caldwell)').cc, 15);
+  assert.equal(pose('AP axial skull (Towne)').cc, 30);
+  assert.equal(pose('Parietoacanthial sinuses (Waters)').tilt, 53);
+  for (const p of head.filter((x) => /^Lateral/.test(x.proj))) assert.equal(p.pose.tilt, 7, p.proj);
+  // the points in anatomical order: the acanthion below the nasion, the ear canals behind both, the
+  // lateral skull's point 5 cm above them
+  const c = centring.skull;
+  assert.ok(c.acanthion.z < c.nasion.z - 3, `acanthion ${c.acanthion.z} vs nasion ${c.nasion.z}`);
+  assert.ok(c.eam.y < c.nasion.y - 7 && c.eam.y < c.zygoma.y && c.zygoma.y < c.nasion.y, 'front to back: nasion, zygoma, ear canals');
+  assert.ok(Math.abs(c.latSkull.z - c.eam.z - 5) < 0.01);
+  // the cervical spine stays on the head and neck model
+  for (const p of all.filter((x) => /cervical|open mouth|Swimmers/i.test(x.proj))) assert.equal(p.subject, 'headneck', p.proj);
 });

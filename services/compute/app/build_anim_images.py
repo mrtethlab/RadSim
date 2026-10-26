@@ -53,12 +53,20 @@ left, anterior up), coronal from the front, sagittal from the patient's left (an
 head up.
   ct_ax_abd.png    axial, upper abdomen (liver, spleen, stomach, pancreas, kidneys, aorta, portal vein)
   ct_ax_chest.png  axial, the heart and lungs
-  ct_ax_head.png   axial, the head through the brain (head & neck model, cropped to the head)
+  ct_ax_head.png   axial, the head through the brain (head & neck model, cropped to the head;
+                   its voxels 1.5 mm)
+  ct_ax_metal.png  the app's metal test phantom, axial across its middle (1 mm voxels)
   ct_cor.png       coronal through the aorta;  ct_sag.png  sagittal through the spine
   ct_stack.png     24 axial slices, head to feet, at half resolution, in a 6 x 4 sheet
   ct_scout.png     the AP topogram: attenuation summed front to back, as hand_pa.png
+  ct_ax_pelvis.png axial through the femoral heads;  ct_ax_shoulder.png  through the shoulders
+  ct_slab.png      the lower chest's consecutive axial slices (every 2 mm voxel, z CT_SLAB, head
+                   first), in a 7 x 7 sheet: the film averages them into thick slices, interpolates
+                   between them along z (helical windmill) and samples them along tilted rays
+                   (cone beam)
 Volume axes: x toward the patient's right, y anterior, z toward the head."""
-CT_CUTS = {'abd': 166, 'chest': 236}
+CT_CUTS = {'abd': 166, 'chest': 236, 'pelvis': 24, 'shoulder': 340}
+CT_SLAB = (252, 204)                  # z from, z to (inclusive, head first): 49 slices
 
 
 def _save_ids(a, path):
@@ -91,6 +99,14 @@ def build_ct():
     for i, t in enumerate(tiles):
         sheet[(i // 6) * th:(i // 6 + 1) * th, (i % 6) * tw:(i % 6 + 1) * tw] = t
     _save_ids(sheet, OUT / 'ct_stack.png')
+    # the slab: every slice from CT_SLAB[0] down to CT_SLAB[1], full resolution, 7 to a row
+    zs = range(CT_SLAB[0], CT_SLAB[1] - 1, -1)
+    tiles = [ax(z) for z in zs]
+    th, tw = tiles[0].shape
+    sheet = np.zeros((th * 7, tw * 7), np.uint8)
+    for i, t in enumerate(tiles):
+        sheet[(i // 7) * th:(i // 7 + 1) * th, (i % 7) * tw:(i % 7 + 1) * tw] = t
+    _save_ids(sheet, OUT / 'ct_slab.png')
     # the topogram
     lut = np.full(256, 0.22, np.float32)
     for k, v in MU.items():
@@ -108,6 +124,12 @@ def build_ct():
     ys, xs = np.nonzero(s != 0)
     s = s[max(0, ys.min() - 6):ys.max() + 7, max(0, xs.min() - 6):xs.max() + 7]
     _save_ids(s[::-1, ::-1], OUT / 'ct_ax_head.png')
+    # the app's metal test phantom (acrylic box, water, three lead rods; 1 mm voxels) across its middle
+    name = 'metalphantom'
+    h = json.loads((MODELS / name / f'{name}.model.json').read_text(encoding='utf-8'))
+    nx, ny, nz = h['dims']
+    m3 = np.fromfile(MODELS / name / f'{name}.mat.bin', dtype=np.uint8).reshape(nz, ny, nx)
+    _save_ids(m3[nz // 2][::-1, ::-1], OUT / 'ct_ax_metal.png')
     print('ct images:', ', '.join(sorted(p.name for p in OUT.glob('ct_*.png'))), f'(coronal y {yc}, sagittal x {xc})')
 
 

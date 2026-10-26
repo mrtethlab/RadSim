@@ -8,6 +8,106 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### October uplifts — [#89](https://github.com/mrtethlab/RadSim/pull/89)
+This PR carries the five sections below (ultrasound, pasting, skull, pediatric) and these:
+- **CT colours:** the generic scheme is the default; the vendor scheme applies only when chosen.
+- **CT film (44 → 64 steps):**
+  - the detector's rows (64 × 0.625 mm) and how collimation picks them;
+  - rows combined into slices;
+  - helical z-interpolation;
+  - slice thickness against interval, and their effect on noise, partial volume and reformats;
+  - a chapter of twelve artefacts, each a simulated scan of the model reconstructed beside its clean twin.
+- **X-ray film:**
+  - **Angling for true length:** a CR at half a tilted part's angle restores its true length (101 % at 20° for a 40° tilt); the full tilt elongates it.
+  - **Angling to clear overlap:** the higher structure's shadow moves farther.
+  - The monitor reads R HAND PA (the model is a right hand).
+- **All films:**
+  - captions stay where they are placed while that spot still works;
+  - a reading delay slows the step over a caption whose window is shorter than its reading time;
+  - a logarithmic depth buffer stops the z-fighting;
+  - `scale: null` hides the scale bar.
+- **Fluoroscopy film:**
+  - the bones and gut are hidden under an opaque skin (ribs flickered through);
+  - the staff dose boxes stay inside the frame, and the camera follows the figure to 2 m.
+
+### Ultrasound: the beam has width, and Doppler you can hear
+Shadows were knife edges because each scanline was a single ray. Each line is now a beam (`core/beam.js`, docs/ultrasound.md §4.5–4.6).
+- **Beam width.** Three rays across the slice through a fixed elevation lens, and lateral sub-rays that converge on the transmit focus and diverge past it. Each pays its neighbours' losses, so a shadow has a penumbra as wide as the beam, widening with depth and sharpest with the focus on the obstacle. A rib's 10–90 % edge is 0.4 / 0.9 / 1.1 cm at 5 / 8 / 12 cm (focus 8), and 0.4 / 0.5 / 0.8 with the focus on the rib.
+- **Speckle** is complex, so its envelope is Rayleigh. The lateral PSF is two-way: transmit focus × dynamic receive.
+- **Reverberation** off strong reflectors, with a coherence per material: dirty shadows and A-lines behind gas and lung, clean shadows behind bone and stones.
+- **Fluid walls** follow Fresnel and Snell, giving edge shadows past the critical angle. Specular echoes fade as a wall turns away from the beam.
+- **Side lobes and scan conversion.** A −34 dB side-lobe pedestal, and bilinear scan conversion through a cached map.
+- **Gel and the frame clock.** Gel now fills the skin staircase's air slivers. The live loop counts the display in its frame budget: the 16 cm abdomen goes from 15 to 21 fps, and 12 MHz at 4 cm from 27 to 22 fps.
+- **Doppler.** Everything was already there except audio. PW now plays its own spectrum (`core/dopplerAudio.js`): toward the probe in the left channel, away in the right, aliasing with the trace (*Audio* and *Volume* in the PW panel). Colour averages its autocorrelation over neighbouring gates, so a lumen fills solidly instead of as salt and pepper. The ultrasound toggles now show their on state.
+
+**Checked:** in the app, before and after at six seats (RUQ liver/gallbladder, Morison's pouch, bowel gas, ribs, lung base, the aorta). Penetration is 21 / 17 / 12.5 / 8.3 / 5.4 cm at 2.5–12 MHz. The aorta PW still reads PSV 54–55, EDV 12, RI 0.78. Colour aliasing is 0 / 3 / 25 / 49 % at v_nyq 54 / 26 / 19 / 13 cm/s. `npm test` passes; the new beam and audio tests caught 10 of 10 re-introduced bugs.
+### Long-length (pasting) studies: leg length, scoliosis, femur
+Three protocols under **Long length**, at the wall stand or the table (the free detector has no tracking bucky: the protocols are off there, and the free-detector room is off while one is in). The field length is held at 43 cm on the 43×43.
+
+**The console** (`pasting.js`), over the room set-up while a pasting protocol is in, with the real console's icons in RadSim's styling: **COI** (ruler, cm field, + / −), **accept superior**, **accept inferior**, **confirm**, **reset**, and its own CR ceph/caud slider. After confirm: *Image status: 0/X*, counting up as each image is taken.
+
+**The geometry** (`core/pasting.js`): the angled-tube technique. The focal spot stays put and the tube only tilts, the bucky driving along under each field. A limit is where the central ray meets the receptor; confirm plans the images (43 cm each, at least 4 cm overlap, spread evenly from the upper limit to the lower, 2–3 for these studies, at most 5) and drives to the first. Holding the switch takes them all, re-tilting and stepping between; letting go leaves the study incomplete. Every image comes from one focal spot, so they join by receptor position with no parallax at any depth. The COI (height of the anatomy above the cover or tabletop) sets the magnification the stitched image's ruler and length are calibrated at.
+
+**The stitch**: each image is read out with its own exposure's noise, then gain-matched over the overlap (an AEC ending each image differently) and feathered across it, and the long image goes through the console's processing once (equalised LUTs `pasteLimb`, `pasteSpine`), with a ruler burned in down the right edge. The EI is of the unmatched receptor dose.
+
+**Checked:** in the app, all three studies at the wall and the table, manual and AEC, released early (incomplete), DI within ±1 at the chart technique; 12 new unit tests (geometry, image count, tile layout, stitch placement, gain matching, feathering, ruler); `npm test`, build.
+### A Skull model at 0.6 mm, and the skull, sinus and facial views on it
+A new **Skull** subject: the head down to C4 at 0.6 mm (307 × 357 × 387, 42 MB), from VSD 037's head
+CT (62 F, postmortem; CC BY-NC 3.0), built by `services/compute/app/build_skull.py`.
+
+**The source is not an ordinary CT.** It is an 8-bit secondary capture ("head masked"): HU ≈ value − 10
+(calibrated on the same patient's 16-bit thorax series, which overlaps it from C4 down), so everything
+under −10 HU is 0 and everything over ~245 HU is 255; only the bone (with a millimetre or two about it)
+and the inside of the cranium were kept; the brain is missing from some twenty slices; dental fillings streak the
+occlusal plane. So the model is part measured, part made:
+- *measured:* the skeleton's shape (skull, mandible, sinus walls, mastoid cells, C1–C4) at 0.6 mm, and
+  the brain (CSF where its own HU is low), its holes filled from the slices above and below;
+- *registered:* the scalp, face, orbits, tongue, neck and airway are TotalSegmentator s1082's (the head
+  and neck model's CT), registered onto this skeleton (affine, then a B-spline on the two skeletons);
+- *by rule:* bone density from depth (the source saturates): outer 1.2 mm cortex (1500 HU), the next
+  1.8 mm diploe (700), deeper cores (1150); the sinuses and mastoid cells are the source's zeros walled
+  by bone in 24 of 26 directions; in the streak band the jaws and teeth are TotalSegmentator's outline
+  (it read them through the streaks), the crowns enamel over dentin;
+- the headrest, a ring and a rod by the head, and speckle are left out (each label's largest piece, its
+  outline, thin shells outside it, nothing beyond the registered scalp behind the cranium).
+
+**Set square.** The patient lay with the head tipped 10° and turned 6°; the model is turned so the ear
+canals are level and the OML square to the long axis (45° of flexion from the scan: the orbits'
+openings then lie level with the ear canals, and the PA's petrous ridges about the upper orbits, the
+Caldwell's in the lower third). Every angle a textbook gives to the OML is the protocol's own.
+
+**Views.** Head now has Skull (AP, PA, PA axial Caldwell 15° caudad, AP axial Towne 30° caudad, lateral),
+Sinuses (Caldwell, Waters, lateral) and Facial bones (Waters, lateral), all on the Skull; Waters extends
+the head 53° (OML 37° to the receptor), the laterals 7° (IOML across the receptor). Centring points
+(`tools/skull_points.py`): nasion, acanthion, the ear canals' midpoint, 5 cm above it, the zygoma; palpation:
+nasion, glabella, acanthion, inion, ear canals, mastoid tips. CT Head loads the Skull; CT dose: head.
+The cervical spine views stay on the head and neck.
+
+**Checked:** all ten head views exposed in the app at their chart technique (DI −0.6 to +0.5, 0.65–0.86 s
+each); PA, Caldwell, Towne, Waters and lateral films looked at; a CT head scanned (scouts, 31 slices);
+the skin and bones-only views in the room. `npm test` 286 pass; `npm run build`.
+
+**Approximate:** the soft tissue is another man's, registered (Dice 0.71 on the skeletons); bone density
+is by depth, not measured; the teeth are an outline; the neck's cut end is oblique after the turn.
+
+### A pediatric whole-body model: an 11-year-old, skull to feet
+A new **Pediatric (child, 11 y)** subject (`pediatric`), 348 × 188 × 946 at 1.5 mm (62 MB), skull to feet, arms at the sides.
+
+**Where it comes from.** No open whole-body CT of a child exists: the VSD Full Body subjects are 17-95 (ages read from the folder names in each zip's central directory, by HTTP range requests, nothing downloaded), the TotalSegmentator dataset's youngest is 15. So it is a composite (`build_pediatric.py`):
+- *the child's own trunk:* TCIA Pediatric-CT-SEG 2197048C (11 M, 140 cm, 48 kg, CC BY 4.0), C7 to below the lesser trochanters, picked from 160 series of 5-12 year-olds for no oral contrast, thin slices and a field that does not cut the hips. Kept: thorax, abdomen, pelvis, spine, ribs, proximal femurs, with their open physes and apophyses (bone is what the HU says, not forced over its label); its portal-phase contrast is re-assigned to blood;
+- *head and neck* (s1082) from the C7/T1 disc: the neck at the child's vertebral scale, the cranium at a child's 53.5 cm head circumference, easing between up a neck lengthened 15 %;
+- *girdles and arms* (z053, mirrored for the left): placed on the child's ribs rib by rib, let down to hang at rest, the arms turned to the side at the child's arm length. Only the side of the chest is replaced (the raised arms' shoulders and axillae); the child keeps its chest wall and back, and the donor's scapulae and clavicles are set into them as bone;
+- *legs* (the shipped lower extremity, mirrored): hung from the child's femoral heads, the thighs drawn out to the child's outline at the seam, the femurs blended across it;
+- *growth plates* cut into the grafted long bones (proximal humerus, distal radius and ulna, distal femur, proximal and distal tibia, proximal fibula).
+
+**Seams.** In soft tissue or at a joint, except the femur (blended over 3.5 cm). The skin is blended across them (over the shoulders as signed distances), the thighs' soft tissue dithered, a new skin laid; donors' HU resampled with an anti-aliased box (a nearest pull of materials striped a lateral skull).
+
+**In the app.** Subject lists, CT dose (trunk), a longer table travel along the body (75 cm: the head is 65 cm from the middle), landmarks, centring and palpation from the model's own labels (`tools/measure_pediatric.py`); six child protocols in the Chest, Abdomen / Pelvis and Head groups (AP and lateral chest, AP abdomen, AP pelvis, AP and lateral skull), each exposing at DI within ±1.
+
+**Approximate:** an adult's face, teeth and hands scaled down; no physes in the hands, feet, elbow or distal fibula; the lateral chest has the arms down.
+
+**Checked:** chest, abdomen, pelvis, skull, knee and wrist films and a CT slice in the app; skin and bone meshes in the room; `npm test` and the build.
+
 ### Process animations for every mode — [#88](https://github.com/mrtethlab/RadSim/pull/88)
 An **Animation** button on each mode's card opens a film of that mode's whole process, start to finish.
 

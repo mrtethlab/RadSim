@@ -95,7 +95,9 @@ export async function openAnimation(mode) {
   if (!FILMS[mode]) return;
   sfx.unlock();
   const dom = buildDom();
-  const renderer = new THREE.WebGLRenderer({ canvas: dom.c3, antialias: true });
+  // a logarithmic depth buffer: the films' shots run from a focal spot millimetres away to a room
+  // metres deep, and a linear buffer over 0.05-6000 cm made nearby surfaces flicker (z-fighting)
+  const renderer = new THREE.WebGLRenderer({ canvas: dom.c3, antialias: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -319,7 +321,7 @@ function loopFrame() {
      after its last); without, the step holds: its time runs on in the last camera shot, its last
      caption stays, until next is pressed. */
   const prevTl = p.tl;
-  if (p.playing && !document.hidden) p.tl += dt * p.speed;
+  if (p.playing && !document.hidden) p.tl += dt * p.speed * readingRate(p.flat[p.idx], p.tl);
   let enter = false;
   if (p.idx < 0) { p.idx = 0; p.tl = 0; enter = true; }
   if (p.pending != null) { p.idx = p.pending; p.pending = null; p.tl = 0.001; enter = true; }
@@ -381,7 +383,7 @@ function loopFrame() {
     if (d.cap.dataset.text !== cap.text) {
       d.cap.dataset.text = cap.text;
       d.cap.innerHTML = cap.text;
-      p.capPos = null;                                        // a new caption: placed afresh
+      p.capPos = null; p.capHome = null;                      // a new caption: placed afresh
     }
     d.cap.classList.add('show');
     const k = held ? 1 : clamp01(Math.min(t - cap.from, cap.to - t) / 0.35);
@@ -390,7 +392,7 @@ function loopFrame() {
   } else {
     d.cap.classList.remove('show');
     d.cap.dataset.text = '';
-    p.capPos = null;
+    p.capPos = null; p.capHome = null;
   }
   // the scale bar
   if (st.scale) { d.scale.hidden = false; d.scale.querySelector('span').textContent = typeof st.scale === 'function' ? st.scale(t) : st.scale; }
@@ -403,6 +405,18 @@ function loopFrame() {
    drawn this frame), so the eye does not cross the screen to read it; above it, or beside it,
    when that would cover the highlight, a panel or an event's path (api.keepOut), or run off the
    frame. Eased, so it does not jitter with a moving camera. With nothing to sit by, bottom left. */
+/* The reading delay. A caption is up from `from` to `to` in step time; reading it takes about
+   1.2 s plus its words at 3 a second (a relaxed 180 a minute). Where its window is shorter, the
+   step's clock runs slower over that window, the animation with it, so the words and what they
+   describe stay together and there is time to read them. */
+const readTime = (html) => 1.2 + String(html).replace(/<[^>]+>/g, ' ').split(/\s+/).filter(Boolean).length / 3;
+function readingRate(st, t) {
+  if (!st?.caption || t >= st.dur) return 1;
+  const cap = st.caption.find((k) => t >= k.from && t < k.to);
+  if (!cap) return 1;
+  if (cap._rate == null) cap._rate = Math.min(1, (cap.to - cap.from) / readTime(cap.text));
+  return Math.max(0.25, cap._rate);
+}
 function placeCaption(p, cap, t) {
   const d = p.dom, sr = d.stage.getBoundingClientRect();
   const cw = d.cap.offsetWidth, ch = d.cap.offsetHeight;
@@ -434,8 +448,16 @@ function placeCaption(p, cap, t) {
     if (!best) best = [M, sr.height - ch - M];               // no room round it: the corner, not over it
     [x, y] = best;
   }
-  if (!p.capPos) p.capPos = [x, y];
-  else { p.capPos[0] += (x - p.capPos[0]) * 0.18; p.capPos[1] += (y - p.capPos[1]) * 0.18; }
+  /* Steady, so it can be read: once placed, the caption stays where it is while that spot still
+     fits, covers nothing it must not, and is still near its anchor (within REST px of where it
+     would go now). Only then does it move, quickly, to the new spot, and settle there. */
+  const REST = 90;
+  const obstAll = [...p.keep, ...p.marks].map((k) => ({ l: k[0] * sx, t: k[1] * sy, r: (k[0] + k[2]) * sx, b: (k[1] + k[3]) * sy }));
+  const okAt = (hx, hy) => hx >= M - 1 && hy >= M - 1 && hx + cw <= sr.width - M + 1 && hy + ch <= sr.height - M + 1
+    && obstAll.every((o) => hx + cw <= o.l || hx >= o.r || hy + ch <= o.t || hy >= o.b);
+  if (!p.capHome || !okAt(p.capHome[0], p.capHome[1]) || Math.hypot(p.capHome[0] - x, p.capHome[1] - y) > REST) p.capHome = [x, y];
+  if (!p.capPos) p.capPos = [...p.capHome];
+  else { p.capPos[0] += (p.capHome[0] - p.capPos[0]) * 0.3; p.capPos[1] += (p.capHome[1] - p.capPos[1]) * 0.3; }
   d.cap.style.left = Math.round(p.capPos[0]) + 'px';
   d.cap.style.top = Math.round(p.capPos[1]) + 'px';
   d.cap.style.bottom = 'auto';

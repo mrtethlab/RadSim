@@ -144,6 +144,48 @@
    "confidence": "high"
   }
  },
+ "skull": {
+  "nasion": {
+   "x": 0.36,
+   "y": 9.06,
+   "z": -0.24,
+   "how": "the nasion: on the midline front profile 12 mm above the orbits' openings",
+   "guide": "PA skull: CR perpendicular to the IR, OML perpendicular, exiting the nasion; PA axial (Caldwell): CR 15 degrees caudad to the OML, exiting the nasion; AP skull: CR perpendicular, entering the nasion (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "acanthion": {
+   "x": 0.36,
+   "y": 7.44,
+   "z": -3.9,
+   "how": "the acanthion: the midline's most anterior bone 3.5-6.5 cm below the nasion",
+   "guide": "Parietoacanthial (Waters): OML 37 degrees to the IR (the mentomeatal line perpendicular), CR perpendicular, exiting the acanthion (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "eam": {
+   "x": 0.36,
+   "y": -1.16,
+   "z": -1.0,
+   "how": "midway between the ear canals (tools/skull_points.py)",
+   "guide": "AP axial (Towne): CR 30 degrees caudad to the OML, through the level of the EAMs and the foramen magnum, entering about 6 cm above the glabella (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "latSkull": {
+   "x": 0.36,
+   "y": -1.16,
+   "z": 4.0,
+   "how": "5 cm superior to the midpoint of the ear canals",
+   "guide": "Lateral skull: CR perpendicular to a point 5 cm (2 in) superior to the EAM, IOML parallel to the transverse axis of the IR (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "zygoma": {
+   "x": 0.36,
+   "y": 2.84,
+   "z": -1.23,
+   "how": "midway between the orbits' openings (the outer canthi) and the ear canals",
+   "guide": "Lateral facial bones and sinuses: CR perpendicular to the zygoma, midway between the outer canthus and the EAM (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  }
+ },
  "chest": {
   "T7": {
    "x": 0.0,
@@ -210,6 +252,96 @@
    "how": "T7 (the centre of the lung fields), midsagittal, at the middle of the depth of the vertebral column from z 3.9 to 26.4: front of the bodies y -3.4, spinous tips y -13.2 (largest vertebra in a 6 cm slab, every 1 cm)",
    "guide": "Lateral thoracic spine: CR to T7, centred on the vertebral column; collimate long and narrow to the column (Bontrager; Radiopaedia)",
    "confidence": "medium"
+  }
+ },
+ "pediatric": {
+  "T7": {
+   "x": 0.38,
+   "y": -1.79,
+   "z": 37.12,
+   "how": "T7: the centre of the lung fields (lung labels z 29.6 to 44.6), on the midsagittal plane at the depth of the vertebral bodies; the jugular notch is 6.0 cm above it",
+   "guide": "PA/AP chest: CR to the midsagittal plane at T7, the centre of the lung fields; on a child the field is collimated to the lungs (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "T7mc": {
+   "x": 0.38,
+   "y": 1.43,
+   "z": 37.12,
+   "how": "T7 (as above) on the midcoronal plane: halfway between the front and back of the body at the midline",
+   "guide": "Lateral chest: CR to the midcoronal plane at T7 (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "crest": {
+   "x": 0.38,
+   "y": 1.1,
+   "z": 12.3,
+   "how": "the level of the iliac crests, midsagittal, at the depth of the vertebral bodies",
+   "guide": "AP abdomen / lumbar spine: CR to the level of the iliac crest, L4-L5 (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "crestMc": {
+   "x": 0.38,
+   "y": 0.38,
+   "z": 12.3,
+   "how": "the level of the iliac crests on the midcoronal plane",
+   "guide": "Lateral lumbar spine: CR to the level of the iliac crest (L4-L5), centred to the midcoronal plane (Bontrager)",
+   "confidence": "high"
+  },
+  "crestCol": {
+   "x": 0.38,
+   "y": -0.82,
+   "z": 12.3,
+   "how": "the level of the iliac crests on the middle of the lumbar column's depth (front of the bodies y -2.3, spinous tips 4.0, volume frame)",
+   "guide": "Lateral lumbar spine: CR to the level of the iliac crest (L4-L5), centred on the vertebral column (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "T7col": {
+   "x": 0.38,
+   "y": -2.32,
+   "z": 37.12,
+   "how": "T7 on the middle of the thoracic column's depth (T3-T12)",
+   "guide": "Lateral thoracic spine: CR to T7, centred on the vertebral column (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "C4": {
+   "x": -0.09,
+   "y": -0.27,
+   "z": 50.64,
+   "how": "the body of C4 (the head donor's labels, on the model)",
+   "guide": "AP axial cervical: CR 15-20 degrees cephalad to C4; lateral cervical: CR to C4 (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "C1C2": {
+   "x": 0.49,
+   "y": 0.4,
+   "z": 55.06,
+   "how": "midway between the bodies of C1 and C2",
+   "guide": "AP open mouth (C1-C2): CR through the centre of the open mouth, to C1-C2 (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "C7T1": {
+   "x": 0.03,
+   "y": -0.92,
+   "z": 45.33,
+   "how": "midway between the bodies of C7 and T1 (the seam of the graft: the head donor's C7 on the child's T1)",
+   "guide": "Swimmers lateral: CR to C7-T1 (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "skull": {
+   "x": 0.82,
+   "y": 0.41,
+   "z": 65.53,
+   "how": "the centre of the cranium (as the landmark)",
+   "guide": "AP / lateral skull: CR to the centre of the skull (the glabella / 2 cm above the EAM) (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "pelvis": {
+   "x": 0.38,
+   "y": 1.1,
+   "z": 1.35,
+   "how": "midway between the ASIS (5.3 / 5.6) and the pubic symphysis (-2.8)",
+   "guide": "AP pelvis: CR midway between the ASIS and the symphysis (Bontrager; Radiopaedia)",
+   "confidence": "high"
   }
  }
 }

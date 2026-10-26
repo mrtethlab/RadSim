@@ -229,6 +229,34 @@ def head_neck():
     }
 
 
+# ---------------------------------------------------------------- the skull
+def skull():
+    """The skull views' points (tools/skull_points.py), in the rest frame. The model lies with the OML
+    square to its long axis (services/compute/app/build_skull.py), so a view's angle to the OML is
+    its central ray's angle."""
+    import skull_points as K
+    p, _ = K.points()
+    eam = p['earMid']
+    lat = eam + np.array([0, 0, 5.0])
+    return {
+        'nasion': pt(p['nasion'], 'the nasion: on the midline front profile 12 mm above the orbits\' openings',
+            'PA skull: CR perpendicular to the IR, OML perpendicular, exiting the nasion; PA axial (Caldwell): CR 15 degrees caudad '
+            'to the OML, exiting the nasion; AP skull: CR perpendicular, entering the nasion (Bontrager; Radiopaedia)'),
+        'acanthion': pt(p['acanthion'], 'the acanthion: the midline\'s most anterior bone 3.5-6.5 cm below the nasion',
+            'Parietoacanthial (Waters): OML 37 degrees to the IR (the mentomeatal line perpendicular), CR perpendicular, exiting the '
+            'acanthion (Bontrager; Radiopaedia)'),
+        'eam': pt(eam, 'midway between the ear canals (tools/skull_points.py)',
+            'AP axial (Towne): CR 30 degrees caudad to the OML, through the level of the EAMs and the foramen magnum, entering about '
+            '6 cm above the glabella (Bontrager; Radiopaedia)', 'high'),
+        'latSkull': pt(lat, '5 cm superior to the midpoint of the ear canals',
+            'Lateral skull: CR perpendicular to a point 5 cm (2 in) superior to the EAM, IOML parallel to the transverse axis of the IR '
+            '(Bontrager; Radiopaedia)', 'high'),
+        'zygoma': pt(p['zygoma'], 'midway between the orbits\' openings (the outer canthi) and the ear canals',
+            'Lateral facial bones and sinuses: CR perpendicular to the zygoma, midway between the outer canthus and the EAM '
+            '(Bontrager; Radiopaedia)'),
+    }
+
+
 # ---------------------------------------------------------------- chest and spine
 def column_y(V, z):
     """the vertebral column's depth at level z: (front of the body, tip of the spinous process),
@@ -292,10 +320,15 @@ def trunk(name):
     return out
 
 
-def main():
+def main(only=None):
+    """Every model, or only those named; the others keep what the file already has."""
+    old = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else {}
     out = {'_about': __doc__.strip().splitlines()[0] + ' Rest-frame cm from the volume centre.'}
     for name, fn in (('hand', hand), ('lowerextremity', lower_extremity), ('upperextremity', upper_extremity), ('headneck', head_neck),
-                     ('chest', lambda: trunk('chest')), ('chestabdopelvis', lambda: trunk('chestabdopelvis'))):
+                     ('skull', skull), ('chest', lambda: trunk('chest')), ('chestabdopelvis', lambda: trunk('chestabdopelvis'))):
+        if only and name not in only:
+            out[name] = old.get(name, {})
+            continue
         out[name] = fn()
         for k, v in out[name].items():
             print(f'{name:16s} {k:16s} ({v["x"]:7.2f} {v["y"]:7.2f} {v["z"]:7.2f})  {v["how"][:80]}')
@@ -304,4 +337,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:] or None)
