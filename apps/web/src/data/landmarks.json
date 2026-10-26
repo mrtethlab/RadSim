@@ -116,6 +116,15 @@
       "z": 5.1
     }
   },
+  "skull": {
+    "skull": {
+      "x": -0.36,
+      "y": -0.47,
+      "z": 3.0,
+      "how": "the centre of the cranial cavity (the brain and CSF of the model)",
+      "confidence": "high"
+    }
+  },
   "chestabdopelvis": {
     "kub": {
       "x": 0.0,

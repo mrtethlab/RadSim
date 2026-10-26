@@ -512,11 +512,22 @@ def femoral_heads(vol, sp):
     return out
 
 
+def skull():
+    """The Skull (services/compute/app/build_skull.py): the cranium's centre, from its brain and CSF
+    (tools/skull_points.py; the textbook centring points are in centring.json)."""
+    import skull_points as K
+    p, _ = K.points()
+    c = p['cranium']                                      # rest frame -> volume frame: x and y mirrored
+    return {'skull': {'x': round(float(-c[0]), 2), 'y': round(float(-c[1]), 2), 'z': round(float(c[2]), 2),
+                      'how': 'the centre of the cranial cavity (the brain and CSF of the model)', 'confidence': 'high'}}
+
+
 MEASURE = {
     'lowerextremity': lambda: lower_extremity(),
     'upperextremity': lambda: upper_extremity(),
     'hand': lambda: hand(),
     'headneck': lambda: head_neck(),
+    'skull': lambda: skull(),
     'chestabdopelvis': lambda: {**chest_abdo_pelvis(), **femoral_heads(*load('chestabdopelvis')[1::2])},
 }
 

@@ -344,6 +344,31 @@ def head_neck():
     return out
 
 
+# ---------------------------------------------------------------- the skull
+def skull():
+    """The Skull's bony points (tools/skull_points.py: the ear canals, the orbits' openings, the
+    midline's front profile), already in the rest frame."""
+    import skull_points as K
+    p, _ = K.points()
+    out = {
+        'nasion': entry(p['nasion'], [0, 1, 0], 'Nasion',
+            'on the midline front profile 12 mm above the orbits\' openings (the canthi)', 'medium'),
+        'glabella': entry(p['glabella'], [0, 1, 0.2], 'Glabella',
+            'on the midline front profile 15 mm above the nasion', 'medium'),
+        'acanthion': entry(p['acanthion'], [0, 1, -0.3], 'Acanthion',
+            'the midline\'s most anterior bone 3.5-6.5 cm below the nasion: the anterior nasal spine', 'medium'),
+        'inion': entry(p['inion'], [0, -1, 0], 'External occipital protuberance',
+            'the most posterior midline bone at or above the ear canals', 'high'),
+    }
+    for side, sgn in (('R', 1), ('L', -1)):
+        out[f'eam{side}'] = entry(p[f'ear{side}'], [sgn, 0, 0], f'External acoustic meatus ({side})',
+            'the bony ear canal: non-bone walled by bone, open to the side (the pair level either side of the midline)', 'high')
+        if f'mastoid{side}' in p:
+            out[f'mastoid{side}'] = entry(p[f'mastoid{side}'], [sgn, -0.3, -0.3], f'Mastoid tip ({side})',
+                'the lowest bone behind the ear canal on this side, within 3.5 cm', 'high')
+    return out
+
+
 # ---------------------------------------------------------------- the trunk
 def sternum(V, x_half=1.5):
     """the sternum as a column: per slice, the most anterior midline bone, kept where it stands
@@ -435,11 +460,17 @@ def trunk(name):
     return out
 
 
-def main():
+def main(only=None):
+    """Every model, or only those named; the others keep what the file already has (the head and
+    neck's points come from its CT's own labels, which are not always on the machine)."""
+    old = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else {}
     out = {'_about': __doc__.strip().splitlines()[0] + ' Rest-frame (x right, y anterior, z superior) cm from the '
            'volume centre, with the direction the landmark is felt from. Re-run after rebuilding a model.'}
     for name, fn in (('hand', hand), ('lowerextremity', lower_extremity), ('upperextremity', upper_extremity), ('headneck', head_neck),
-                     ('chest', lambda: trunk('chest')), ('chestabdopelvis', lambda: trunk('chestabdopelvis'))):
+                     ('skull', skull), ('chest', lambda: trunk('chest')), ('chestabdopelvis', lambda: trunk('chestabdopelvis'))):
+        if only and name not in only:
+            out[name] = old.get(name, {})
+            continue
         out[name] = fn()
         for k, v in out[name].items():
             print(f'{name:16s} {k:18s} ({v["x"]:7.2f} {v["y"]:7.2f} {v["z"]:7.2f})  {v["how"][:70]}')
@@ -448,4 +479,5 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    main(sys.argv[1:] or None)

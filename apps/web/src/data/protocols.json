@@ -1273,17 +1273,92 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "headneck",
+              "subject": "skull",
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "skull"
+                "centre": "nasion"
+              }
+            },
+            {
+              "proj": "PA skull",
+              "kv": 80,
+              "mas": 20,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "centre": "nasion"
+              }
+            },
+            {
+              "proj": "PA axial skull (Caldwell)",
+              "kv": 80,
+              "mas": 20,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 15,
+                "centre": "nasion"
+              }
+            },
+            {
+              "proj": "AP axial skull (Towne)",
+              "kv": 80,
+              "mas": 25,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 0,
+                "cc": 30,
+                "centre": "eam"
               }
             },
             {
               "proj": "Lateral skull",
               "kv": 78,
-              "mas": 10,
+              "mas": 12.5,
               "cm": 15,
               "grid": true,
               "aec": "c",
@@ -1298,11 +1373,151 @@
                 30
               ],
               "orient": "portrait",
-              "subject": "headneck",
+              "subject": "skull",
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "skull"
+                "tilt": 7,
+                "centre": "latSkull"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Sinuses",
+          "projections": [
+            {
+              "proj": "PA axial sinuses (Caldwell)",
+              "kv": 75,
+              "mas": 32,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 15,
+                "centre": "nasion"
+              }
+            },
+            {
+              "proj": "Parietoacanthial sinuses (Waters)",
+              "kv": 80,
+              "mas": 32,
+              "cm": 18,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "tilt": 53,
+                "centre": "acanthion"
+              }
+            },
+            {
+              "proj": "Lateral sinuses",
+              "kv": 75,
+              "mas": 20,
+              "cm": 13,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "tilt": 7,
+                "centre": "zygoma"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Facial bones",
+          "projections": [
+            {
+              "proj": "Parietoacanthial facial bones (Waters)",
+              "kv": 80,
+              "mas": 25,
+              "cm": 18,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                24
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "tilt": 53,
+                "centre": "acanthion"
+              }
+            },
+            {
+              "proj": "Lateral facial bones",
+              "kv": 75,
+              "mas": 16,
+              "cm": 13,
+              "grid": true,
+              "aec": "c",
+              "lut": "skull",
+              "sid": 100,
+              "coll": [
+                20,
+                24
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "skull",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "tilt": 7,
+                "centre": "zygoma"
               }
             }
           ]

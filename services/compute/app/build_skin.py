@@ -21,7 +21,7 @@ from scipy import ndimage as ndi
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 MODELS = ROOT / 'apps' / 'web' / 'public' / 'models'
-BODY_MODELS = ['chest', 'chestabdopelvis', 'lumbopelvis', 'headneck', 'upperextremity',
+BODY_MODELS = ['chest', 'chestabdopelvis', 'lumbopelvis', 'headneck', 'skull', 'upperextremity',
                'lowerextremity', 'wholebody']
 NOT_BODY = {0, 24, 25, 26, 27, 28}          # air, metals, acrylic: not skin
 # the hand's photographic skin, averaged (its COLOR_0 is already LINEAR, as glTF requires; an sRGB

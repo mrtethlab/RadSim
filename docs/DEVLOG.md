@@ -8,6 +8,45 @@ handoff document and is not committed.)
 
 ## 2026-10-25
 
+### A Skull model at 0.6 mm, and the skull, sinus and facial views on it
+A new **Skull** subject: the head down to C4 at 0.6 mm (307 × 357 × 387, 42 MB), from VSD 037's head
+CT (62 F, postmortem; CC BY-NC 3.0), built by `services/compute/app/build_skull.py`.
+
+**The source is not an ordinary CT.** It is an 8-bit secondary capture ("head masked"): HU ≈ value − 10
+(calibrated on the same patient's 16-bit thorax series, which overlaps it from C4 down), so everything
+under −10 HU is 0 and everything over ~245 HU is 255; only the bone (with a millimetre or two about it)
+and the inside of the cranium were kept; the brain is missing from some twenty slices; dental fillings streak the
+occlusal plane. So the model is part measured, part made:
+- *measured:* the skeleton's shape (skull, mandible, sinus walls, mastoid cells, C1–C4) at 0.6 mm, and
+  the brain (CSF where its own HU is low), its holes filled from the slices above and below;
+- *registered:* the scalp, face, orbits, tongue, neck and airway are TotalSegmentator s1082's (the head
+  and neck model's CT), registered onto this skeleton (affine, then a B-spline on the two skeletons);
+- *by rule:* bone density from depth (the source saturates): outer 1.2 mm cortex (1500 HU), the next
+  1.8 mm diploe (700), deeper cores (1150); the sinuses and mastoid cells are the source's zeros walled
+  by bone in 24 of 26 directions; in the streak band the jaws and teeth are TotalSegmentator's outline
+  (it read them through the streaks), the crowns enamel over dentin;
+- the headrest, a ring and a rod by the head, and speckle are left out (each label's largest piece, its
+  outline, thin shells outside it, nothing beyond the registered scalp behind the cranium).
+
+**Set square.** The patient lay with the head tipped 10° and turned 6°; the model is turned so the ear
+canals are level and the OML square to the long axis (45° of flexion from the scan: the orbits'
+openings then lie level with the ear canals, and the PA's petrous ridges about the upper orbits, the
+Caldwell's in the lower third). Every angle a textbook gives to the OML is the protocol's own.
+
+**Views.** Head now has Skull (AP, PA, PA axial Caldwell 15° caudad, AP axial Towne 30° caudad, lateral),
+Sinuses (Caldwell, Waters, lateral) and Facial bones (Waters, lateral), all on the Skull; Waters extends
+the head 53° (OML 37° to the receptor), the laterals 7° (IOML across the receptor). Centring points
+(`tools/skull_points.py`): nasion, acanthion, the ear canals' midpoint, 5 cm above it, the zygoma; palpation:
+nasion, glabella, acanthion, inion, ear canals, mastoid tips. CT Head loads the Skull; CT dose: head.
+The cervical spine views stay on the head and neck.
+
+**Checked:** all ten head views exposed in the app at their chart technique (DI −0.6 to +0.5, 0.65–0.86 s
+each); PA, Caldwell, Towne, Waters and lateral films looked at; a CT head scanned (scouts, 31 slices);
+the skin and bones-only views in the room. `npm test` 286 pass; `npm run build`.
+
+**Approximate:** the soft tissue is another man's, registered (Dice 0.71 on the skeletons); bone density
+is by depth, not measured; the teeth are an outline; the neck's cut end is oblique after the turn.
+
 ### Process animations for every mode — [#88](https://github.com/mrtethlab/RadSim/pull/88)
 An **Animation** button on each mode's card opens a film of that mode's whole process, start to finish.
 
