@@ -37,6 +37,9 @@ export const SUBJECT_REGION = {
   hand: 'extremity', upperextremity: 'extremity', lowerextremity: 'extremity', foot: 'extremity',
   skull: 'head', headneck: 'headNeck', chest: 'chest',
   chestabdopelvis: 'chestAbdomenPelvis', wholebody: 'trunk',
+  // the child: the adult trunk factor; AAPM Report 96's age-specific factors are not modelled, so
+  // a child's effective dose reads as an adult's would for the same DLP (an estimate either way)
+  pediatric: 'trunk',
 };
 const REGION_LABEL = {
   head: 'head', headNeck: 'head & neck', neck: 'neck', chest: 'chest', abdomenPelvis: 'abdomen/pelvis',

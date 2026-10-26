@@ -342,6 +342,9 @@ const VOXEL_MODELS = {
   lowerextremity:  { title:'Lower extremity',       scoutKv:85,  scoutMa:90,  xrayKv:75  },
   foot:            { title:'Foot',                  scoutKv:80,  scoutMa:50,  xrayKv:60  },
   wholebody:       { title:'Whole body',            scoutKv:120, scoutMa:250, xrayKv:110 },
+  // an 11-year-old, skull to feet (services/compute/app/build_pediatric.py): a child's body needs
+  // less of everything — lower kV, a third of an adult trunk's scout mAs
+  pediatric:       { title:'Pediatric (child, 11 y)', scoutKv:100, scoutMa:80, xrayKv:75  },
   metalphantom:    { title:'Metal Test Phantom',    scoutKv:120, scoutMa:200, xrayKv:120 },
   // QC tools, not anatomy: a lead bar-pattern gauge for measuring limiting spatial
   // resolution in lp/mm. Shot at low kV / high mAs like real resolution QC, so the
@@ -408,7 +411,7 @@ async function setSubject(sub){
     // (MB) for everything over the ~20 MB default hand; only asked once per subject per
     // session, and only when the browser reports a constrained connection.
     if(document.body.classList.contains('mobile')){
-      const MB={chest:40, wholebody:30, headneck:16, skull:42, lowerextremity:43, upperextremity:38};
+      const MB={chest:40, wholebody:30, headneck:16, skull:42, lowerextremity:43, upperextremity:38, pediatric:62};
       const conn=navigator.connection;
       const slow=conn && (conn.saveData || /2g|3g/.test(conn.effectiveType||''));
       if(MB[sub] && slow && !(S.warnedSize=S.warnedSize||new Set()).has(sub)){
@@ -3486,6 +3489,7 @@ function landmarkLocal(subject, name){
   return [f[0] ? -lm.x : lm.x, f[1] ? -(lm.y || 0) : (lm.y || 0), f[2] ? -lm.z : lm.z];
 }
 const OFF_LIMIT = 55;                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
+const OFF_LIMIT_Z = 75;                                            // along the table: a whole child's head lies 65 cm from its middle
 const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm
 // dev server only: try a protocol pose from the console (roll, joints, centring), as applyProtocol would
 if (import.meta.env?.DEV) window.__applyPose = (pose) => { applyPose(pose); syncScene(); };
@@ -3515,7 +3519,7 @@ function applyPose(pose){
     const ox = -w[0], oz = -w[2];
     const xlim = S.mode === 'xray' && S.room === 'table' ? TABLE_X_LIMIT : OFF_LIMIT;
     S.objOff.x = Math.max(-xlim, Math.min(xlim, ox));
-    S.objOff.z = Math.max(-OFF_LIMIT, Math.min(OFF_LIMIT, oz));
+    S.objOff.z = Math.max(-OFF_LIMIT_Z, Math.min(OFF_LIMIT_Z, oz));
     clamped = S.objOff.x !== ox || S.objOff.z !== oz;
   }
   // the controls show what the protocol did, so the operator can see and change it
@@ -3611,7 +3615,7 @@ const fmtMGy=(v)=> v==null ? '—' : (v<0.1 ? v.toFixed(3) : v<10 ? v.toFixed(2)
 const fmtDap=(v)=> (v<10 ? v.toFixed(2) : v<100 ? v.toFixed(1) : v.toFixed(0))+'<small>µGy·m²</small>';
 /* Subjects with a midline, where the marker's letter can be checked against the side it lies on.
    A single limb cannot be told left from right here, so only its placement is judged. */
-const BILATERAL=new Set(['chest','skull','headneck','chestabdopelvis','wholebody']);
+const BILATERAL=new Set(['chest','skull','headneck','chestabdopelvis','wholebody','pediatric']);
 function updateDoseReadout(){
   const d=S.lastDose, set=(id,h)=>{ const el=$(id); if(el) el.innerHTML=h; };
   if(!d){ set('esdV','—'); set('dapV','—'); set('dapSumV','—'); return; }
@@ -4642,8 +4646,8 @@ window.addEventListener('load',()=>{
     // the fluoro monitor floats the tabletop: drag the live image and the patient follows,
     // with the offset sliders kept in step so the two controls never disagree
     movePatient: (dx, dz) => {
-      const lim = (v) => Math.max(-OFF_LIMIT, Math.min(OFF_LIMIT, v));
-      S.objOff.x = lim(S.objOff.x + dx); S.objOff.z = lim(S.objOff.z + dz);
+      const lim = (v, L = OFF_LIMIT) => Math.max(-L, Math.min(L, v));
+      S.objOff.x = lim(S.objOff.x + dx); S.objOff.z = lim(S.objOff.z + dz, OFF_LIMIT_Z);
       for (const [id, ax] of [['objOffX', 'x'], ['objOffZ', 'z']]) {
         const el = $(id); if (el) el.value = S.objOff[ax].toFixed(1);
         const v = $(id + 'v'); if (v) v.textContent = S.objOff[ax].toFixed(1) + ' cm';

@@ -15,10 +15,10 @@ const palpation = load('../src/data/palpation.json');
 applyCrops(load('../src/data/crops.json'), { joints: load('../src/data/joints.json'), landmarks, centring, palpation });
 const all = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections.map((p) => ({ ...p, part: g.part }))));
 const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'skull', 'headneck', 'chestabdopelvis', 'upperextremity', 'lowerextremity', 'foot',
-  'wholebody', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
+  'wholebody', 'pediatric', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
-  assert.equal(all.length, 58);           // (47, the 3 pasting studies, the 8 skull views)
+  assert.equal(all.length, 64);           // (47, the 3 pasting studies, the 8 skull views, the 6 child views)
   for (const p of all) assert.ok(BROWSER_SUBJECTS.has(p.subject), `${p.proj}: subject ${p.subject}`);
 });
 
@@ -113,6 +113,18 @@ test('the joints come in anatomical order along each limb', () => {
   assert.ok(C.pelvis.z < C.kub.z && C.kub.z < C.lumbar.z && C.lumbar.z < C.thoracic.z, 'trunk: pelvis < crest < L3 < T7');
 });
 
+test('the pediatric child: its points lie in anatomical order, skull to feet, each limb on its own side', () => {
+  // a composite (services/compute/app/build_pediatric.py): a grafted part placed upside down or on
+  // the wrong side would show here first. Volume frame: +z superior, +x the patient's LEFT
+  const P = landmarks.pediatric;
+  const up = ['ankleR', 'kneeR', 'pelvis', 'kub', 'lumbar', 'thoracic', 'cspine', 'skull'];
+  for (let i = 1; i < up.length; i++) assert.ok(P[up[i - 1]].z < P[up[i]].z, `${up[i - 1]} below ${up[i]}`);
+  assert.ok(P.wristR.z < P.elbowR.z && P.elbowR.z < P.thoracic.z, 'the hand below the elbow, the elbow below T7');
+  for (const j of ['knee', 'ankle', 'elbow', 'wrist']) assert.ok(P[j + 'R'].x < -5 && P[j + 'L'].x > 5, `${j}: right at -x, left at +x`);
+  // the child's pediatric protocols centre on its own points, and no adult protocol loads it
+  for (const p of all.filter((x) => x.subject === 'pediatric')) assert.match(p.proj, /\(child\)$/, p.proj);
+});
+
 test('every landmark records how it was found and how sure that is', () => {
   for (const [m, set] of Object.entries(landmarks)) {
     if (m.startsWith('_')) continue;
@@ -191,7 +203,7 @@ test('the skull, sinus and facial views load the Skull, angled to the OML and ce
   // view's angle to the OML is its own: Caldwell 15 degrees caudad, Towne 30 caudad (+cc is caudal),
   // Waters with the head extended until the OML is 37 degrees to the receptor (53 from square), the
   // laterals 7 degrees up to lay the IOML across the receptor
-  const head = all.filter((p) => p.part === 'Head');
+  const head = all.filter((p) => p.part === 'Head' && p.subject !== 'pediatric');      // (the child's own head views are on the child)
   assert.ok(head.length >= 10, `${head.length} head views`);
   for (const p of head) {
     assert.equal(p.subject, 'skull', p.proj);
