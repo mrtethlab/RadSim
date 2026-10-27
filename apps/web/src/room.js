@@ -1,16 +1,21 @@
 /* ============================================================================
    X-RAY ROOM: the table, the wall stand, the ceiling-mounted tube
    ============================================================================
-   Three set-ups for the same radiography physics (app.js setRoom):
+   Four set-ups for the same radiography physics (app.js setRoom):
      table     the patient lies on a floating tabletop; the receptor is in the bucky tray under it
-     wall      the patient stands at a wall stand; the receptor is in the upright bucky
+     wall      the patient stands at a wall stand, feet on the floor; the receptor is in the
+               upright bucky, which rides up and down the column to the anatomy
      detector  a free detector, the patient lying on it (the original room)
+     seated    the wall stand's bucky tilted flat, the patient on a stool beside it with the limb on
+               the cover: the hand, the wrist, the forearm and the elbow (and, tilted off level,
+               the superoinferior axial shoulder and the seated Merchant skyline)
    The physics frame never changes: the receptor is the plane y = 0, the beam comes down -y, the
    patient's long axis is +z. The wall stand is that same frame turned upright (app.js rotates
    the room group), so everything below is modelled in WORLD space for its own set-up:
      table: the frame as is; the tabletop surface at y = ROOM_GAP.table, the floor at TABLE_FLOOR
      wall:  physics +y (toward the tube) = world +z, physics +z (head) = world +y; the cover's
             front at z = ROOM_GAP.wall, the floor at WALL_FLOOR
+     seated: the frame as is; the cover at y = ROOM_GAP.seated, the floor at SEATED_FLOOR
    ROOM_GAP is real geometry, not decoration: the patient rests that far above the receptor
    (the tabletop and bucky, the stand's cover), so it is object-to-image distance in the image.
    Units: cm. Modelled after a modern ceiling-suspended DR room: floating white tabletop on a
@@ -19,9 +24,10 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
-export const ROOM_GAP = { detector: 0, table: 5, wall: 3 };   // receptor to patient surface (cm)
+export const ROOM_GAP = { detector: 0, table: 5, wall: 3, seated: 3 };   // receptor to patient surface (cm)
 export const TABLE_FLOOR = -80;                                 // the tabletop 85 cm above the floor
-export const WALL_FLOOR = -130;                                 // the receptor centre 130 cm up
+export const WALL_FLOOR = -130;                                 // the receptor centre 130 cm up (the bucky at 0)
+export const SEATED_FLOOR = -72;                                // the flat bucky at a seated patient's elbow height
 const CEILING_ABOVE_FLOOR = 270;
 
 function mats() {
@@ -93,6 +99,24 @@ function buildTable(M) {
 // the tabletop (or the stand's cover), as light does, and never shows through on the base or floor
 function shade(g) { g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } }); }
 
+/* The bucky's printed cover: border, centring cross and the AEC chambers. sx, sz: which way
+   physics x and z run across the canvas on that face (the upright cover shows them as world -x
+   and up, the flat one as they are). */
+function coverMat(aecCells, W, sx, sz) {
+  return new THREE.MeshStandardMaterial({ roughness: 0.6,
+    map: canvasTex(580, 620, (c, w, h) => {
+      const k = w / W, cx = w / 2, cy = h / 2;
+      c.fillStyle = '#f1f3f4'; c.fillRect(0, 0, w, h);
+      c.strokeStyle = '#c9ced3'; c.lineWidth = 3; c.strokeRect(18, 18, w - 36, h - 36);
+      c.strokeStyle = '#8b939b'; c.lineWidth = 3;
+      c.beginPath(); c.moveTo(cx, cy - 70); c.lineTo(cx, cy + 70); c.moveTo(cx - 70, cy); c.lineTo(cx + 70, cy); c.stroke();
+      c.lineWidth = 2.5; c.strokeStyle = '#a7aeb5';
+      for (const p of Object.values(aecCells)) {
+        c.beginPath(); c.arc(cx + sx * p.x * k, cy + sz * p.z * k, 2.9 * k, 0, Math.PI * 2); c.stroke();
+      }
+    }) });
+}
+
 /* ---------------------------------------------------------------- the wall stand */
 function buildWall(M, aecCells) {
   const g = new THREE.Group();
@@ -104,18 +128,7 @@ function buildWall(M, aecCells) {
   // the printed cover: border, centring cross and the AEC chambers where the bucky has them
   // (physics x, z -> world -x, y on this face)
   const W = 58, H = 62;
-  const cover = mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ roughness: 0.6,
-    map: canvasTex(580, 620, (c, w, h) => {
-      const k = w / W, cx = w / 2, cy = h / 2;
-      c.fillStyle = '#f1f3f4'; c.fillRect(0, 0, w, h);
-      c.strokeStyle = '#c9ced3'; c.lineWidth = 3; c.strokeRect(18, 18, w - 36, h - 36);
-      c.strokeStyle = '#8b939b'; c.lineWidth = 3;
-      c.beginPath(); c.moveTo(cx, cy - 70); c.lineTo(cx, cy + 70); c.moveTo(cx - 70, cy); c.lineTo(cx + 70, cy); c.stroke();
-      c.lineWidth = 2.5; c.strokeStyle = '#a7aeb5';
-      for (const p of Object.values(aecCells)) {
-        c.beginPath(); c.arc(cx - p.x * k, cy - p.z * k, 2.9 * k, 0, Math.PI * 2); c.stroke();
-      }
-    }) }), 0, 0, front + 0.02);
+  const cover = mesh(new THREE.PlaneGeometry(W, H), coverMat(aecCells, W, -1, -1), 0, 0, front + 0.02);
   cover.receiveShadow = true; bucky.add(cover);
   // side grips
   for (const sx of [-1, 1]) bucky.add(mesh(rbox(2.4, 30, 3.4, 1.1), M.grey, sx * 32.2, 0, front - 5));
@@ -145,6 +158,41 @@ function buildWall(M, aecCells) {
   setSid(180);
   shade(g);
   return { g, setSid, bucky };
+}
+
+/* ---------------------------------------------------------------- the seated set-up
+   The wall stand with its bucky tilted flat on the carriage, the cover at a seated patient's
+   elbow height, and a stool beside it. The column stands beyond the far edge (+x); the patient
+   sits at the near long edge, the limb laid along the cover (physics z). The bucky does not ride
+   here: the receptor stays under the central ray's home, as a free plate does. */
+function buildSeated(M, aecCells) {
+  const g = new THREE.Group();
+  const top = ROOM_GAP.seated;
+  g.add(mesh(rbox(62, 12, 66, 2.6), M.white, 0, top - 6, 0));
+  const W = 58, H = 62;
+  const cover = mesh(new THREE.PlaneGeometry(W, H).rotateX(-Math.PI / 2), coverMat(aecCells, W, 1, 1), 0, top + 0.02, 0);
+  cover.receiveShadow = true; g.add(cover);
+  for (const sz of [-1, 1]) g.add(mesh(rbox(30, 3.4, 2.4, 1.1), M.grey, 0, top - 5, sz * 34));     // the grips
+  // the carriage and the arm out to the column
+  g.add(mesh(rbox(10, 14, 32, 1.2), M.grey, 36, top - 10, 0));
+  g.add(mesh(rbox(16, 6, 12, 1.2), M.grey, 44, top - 12, 0));
+  const colTop = top + 120, colH = colTop - SEATED_FLOOR;
+  g.add(mesh(rbox(16, colH, 12, 1.5), M.silver, 56, SEATED_FLOOR + colH / 2, 0));
+  g.add(mesh(new THREE.BoxGeometry(16.6, 1.6, 12.6),
+    new THREE.MeshStandardMaterial({ color: 0x0d3940, emissive: 0x35d6e8, emissiveIntensity: 1.4 }), 56, colTop - 4, 0));
+  g.add(mesh(rbox(17.2, 3.4, 13.2, 1.2), M.white, 56, colTop - 1.3, 0));
+  g.add(mesh(rbox(34, 2.4, 40, 1), M.grey, 56, SEATED_FLOOR + 1.2, 0));
+  // the stool: a round padded seat on a gas column and a five-star base, beside the near edge
+  const stool = new THREE.Group(); stool.position.set(-52, SEATED_FLOOR, -18); g.add(stool);
+  stool.add(mesh(new THREE.CylinderGeometry(19, 19, 7, 40), M.dark, 0, 50, 0));
+  stool.add(mesh(new THREE.CylinderGeometry(2.6, 2.6, 40, 20), M.silver, 0, 27, 0));
+  for (let i = 0; i < 5; i++) {
+    const a = i * 2 * Math.PI / 5, leg = mesh(rbox(26, 3, 4, 1), M.black, 11 * Math.cos(a), 5, 11 * Math.sin(a));
+    leg.rotation.y = -a; stool.add(leg);
+    stool.add(mesh(new THREE.SphereGeometry(2.4, 14, 10), M.black, 23 * Math.cos(a), 2.4, 23 * Math.sin(a)));
+  }
+  shade(g);
+  return { g };
 }
 
 /* ---------------------------------------------------------------- the ceiling column */
@@ -233,10 +281,11 @@ export function buildRoom(scene, { aecCells }) {
   const M = mats();
   const tb = buildTable(M), table = tb.g; table.visible = false; scene.add(table);
   const wall = buildWall(M, aecCells); wall.g.visible = false; scene.add(wall.g);
+  const seated = buildSeated(M, aecCells); seated.g.visible = false; scene.add(seated.g);
   const column = buildColumn(M); column.g.visible = false; scene.add(column.g);
   const floor = new THREE.Mesh(new THREE.CircleGeometry(420, 64).rotateX(-Math.PI / 2),
     new THREE.MeshStandardMaterial({ color: 0x1b2027, roughness: 0.95, metalness: 0 }));
   floor.receiveShadow = true; floor.visible = false; scene.add(floor);
-  return { table, deck: tb.deck, tray: tb.tray, wall: wall.g, wallBucky: wall.bucky, setWallSid: wall.setSid,
+  return { table, deck: tb.deck, tray: tb.tray, wall: wall.g, wallBucky: wall.bucky, setWallSid: wall.setSid, seated: seated.g,
     column: column.g, placeColumn: column.place, floor };
 }

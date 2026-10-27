@@ -44,7 +44,7 @@ import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from '
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
 import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
-import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR } from './room.js';
+import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR, SEATED_FLOOR } from './room.js';
 import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay, dxaMirror } from './dxa.js';
 import { initDxaExam, dxaExamMode } from './dxaExam.js';
 import { initPasting, pastingSelect, pastingActive, pastingArmed, pastingBlocked, pastingStart, pastingRelease,
@@ -893,6 +893,46 @@ function skinSample(vm){
    (the tabletop, the wall stand's cover: ROOM_GAP, real object-to-image distance), plus the
    lift slider. Every consumer (the physics, the scene, the trainer) reads it from here. */
 function receptorGap(){ return S.mode==='xray' ? (ROOM_GAP[S.room]||0) : 0; }
+/* STANDING AT THE WALL. A patient at the wall stand stands on the floor: the part of them that
+   is lowest (a foot, for a leg or a whole body) is on it, and where the model is only part of a
+   body it is at the height that part has on a standing adult (a 170 cm one: the femoral heads 90 cm
+   up, T7 127, C4 147, the nasion 160, the elbow of a hanging arm 105). The patient does not go up
+   and down to the receptor: the bucky rides the column to the anatomy, with the tube (S.tubeZ,
+   which the bucky follows). Only the body models stand; a phantom or a hand at the wall is placed
+   by hand, as before. */
+const STAND={ lowerextremity:{ floor:true }, foot:{ floor:true }, pediatric:{ floor:true }, wholebody:{ floor:true },
+  chestabdopelvis:{ lm:'femoralHeadR', h:90 }, chest:{ lm:'T7', h:127 }, headneck:{ lm:'C4', h:147 },
+  skull:{ lm:'nasion', h:160 }, upperextremity:{ lm:'elbowJoint', h:105 } };
+// the tube's (and the bucky's) travel up and down the wall stand: the receptor centre from 25 to
+// 180 cm above the floor
+const WALL_TUBE=[WALL_FLOOR+25, 50];
+const clampWallTube=(z)=>Math.max(WALL_TUBE[0], Math.min(WALL_TUBE[1], z));
+function standing(){ return S.mode==='xray' && S.room==='wall' && !!STAND[S.subject] && !!S.voxelModel; }
+let standKey='', standZ=0;
+function wallStandZ(){
+  const st=STAND[S.subject], vm=S.voxelModel, ch=jointsActive();
+  const key=S.subject+'|'+JSON.stringify(S.objRot)+(ch?JSON.stringify(S.joints):'');
+  if(key===standKey) return standZ;
+  const R=objMat();
+  let z=S.objOff.z;
+  if(st.floor){
+    if(!vm.data) return z;
+    if(restFor!==vm){ restPts=skinSample(vm); restFor=vm; restKey=''; }
+    const cc=ch ? compileChain(ch, S.joints) : null;
+    let lo=Infinity;
+    for(let i=0;i<restPts.length;i+=3){
+      const q=cc ? forwardCompiled([restPts[i],restPts[i+1],restPts[i+2]], cc) : [restPts[i],restPts[i+1],restPts[i+2]];
+      const h=R[6]*q[0]+R[7]*q[1]+R[8]*q[2];
+      if(h<lo) lo=h;
+    }
+    if(Number.isFinite(lo)) z=WALL_FLOOR-lo;
+  } else {
+    const rest=landmarkLocal(S.subject, st.lm);
+    if(rest){ const w=applyMat3(R, poseLoc(rest)); z=WALL_FLOOR+st.h-w[2]; }
+  }
+  standKey=key; standZ=z;
+  return z;
+}
 function restHeight(){ return restHeightOnReceptor() + receptorGap(); }
 function restHeightOnReceptor(){
   const vm=S.voxelModel;
@@ -1483,6 +1523,7 @@ function buildPhantom(){
   const R=objMat();
   const vm=S.voxelModel;
   if(!vm) return new Phantom();          // nothing loaded yet (first frames during boot)
+  if(standing()) S.objOff.z=wallStandZ();
   const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x-BK().x;
   // x-ray: the object rests on the receptor plus the height offset — which is where OID
   // comes from. Lifting it moves the anatomy toward the source: real magnification and
@@ -2016,6 +2057,7 @@ window.radsimContrast={
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
+  if(standing()) S.objOff.z=wallStandZ();       // (standing on the floor at the wall stand)
   if(!buckyRaf) buckyFollow();                  // (a protocol, a reset or a room change moved the tube)
   roomFrame();                                  // the physics frame into the room (upright at the wall)
   // The voxel model is placed by ctSyncScene in CT mode; in x-ray it rests on the receptor.
@@ -2180,7 +2222,7 @@ const WALL_Q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().se
    the bucky's offset (BK). Their places in the room do not change; only the receptor moves under
    them. A free plate, and every other mode, has no bucky: BK is zero. */
 const B0={x:0,z:0};
-function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }
+function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }   // (the seated bucky is tilted flat, and stays put)
 const BUCKY_SPEED=30;                       // cm/s, the motor's
 const COLL_ROT_DETENT=5;                    // deg: the collimator clicks into square within this of 0
 const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider
@@ -2219,11 +2261,17 @@ function roomSync(){
   const room=S.mode==='xray' ? S.room : null;
   r.table.visible=room==='table';
   r.wall.visible=room==='wall';
-  r.floor.visible=room==='table' || room==='wall';
-  r.floor.position.y=room==='wall' ? WALL_FLOOR : TABLE_FLOOR;
+  r.seated.visible=room==='seated';
+  r.floor.visible=room==='table' || room==='wall' || room==='seated';
+  r.floor.position.y=roomFloor(room);
   // the receptor sits inside the bucky (under the tabletop, behind the cover): its outline,
   // the AEC chambers and the hang arrow are shown on the surface the patient touches
-  if(room==='table' || room==='wall') three.det.visible=false;
+  if(room==='table' || room==='wall' || room==='seated') three.det.visible=false;
+  // the tube travels the column's length at the wall; elsewhere a few centimetres either way
+  const tz=$('tubeZ'), tr=room==='wall' ? WALL_TUBE : [-18, 18];
+  if(tz && +tz.min!==tr[0]){ tz.min=tr[0]; tz.max=tr[1]; tz.value=S.tubeZ; }
+  // a patient standing on the floor is not moved up and down: the bucky is
+  const oz=$('objOffZ'); if(oz) oz.disabled=standing();
   // at the table the top floats on its base only so far across: the cross offset stops at 21 cm
   const ox=$('objOffX'), xlim=room==='table' ? TABLE_X_LIMIT : OFF_LIMIT;
   if(ox && +ox.max!==xlim){ ox.min=-xlim; ox.max=xlim; }
@@ -2244,21 +2292,28 @@ function roomSync(){
   r.column.visible=S.mode==='xray' && three.tube.visible;
   if(r.column.visible){
     three.tube.updateMatrixWorld(true);
-    r.placeColumn(three.collLCD.mount.getWorldPosition(new THREE.Vector3()), room==='wall' ? WALL_FLOOR : TABLE_FLOOR);
+    r.placeColumn(three.collLCD.mount.getWorldPosition(new THREE.Vector3()), roomFloor(room));
   }
 }
-const ROOM_SID={ table:100, wall:180, detector:100 };
+const roomFloor=(room)=>room==='wall' ? WALL_FLOOR : room==='seated' ? SEATED_FLOOR : TABLE_FLOOR;
+const ROOM_SID={ table:100, wall:180, detector:100, seated:100 };
 // how far the tube can be from the receptor in each set-up: the ceiling column over the table
 // stops at 130 cm; at the wall stand and over a free plate it reaches 210
-const SID_MIN=80, ROOM_SID_MAX={ table:130, wall:210, detector:210 };
+const SID_MIN=80, ROOM_SID_MAX={ table:130, wall:210, detector:210, seated:150 };
 function clampSid(v){ return Math.max(SID_MIN, Math.min(ROOM_SID_MAX[S.room]||210, v)); }
 const GRID_FOCI=[115, 180];
 function gridFocusFor(sid){ return GRID_FOCI.reduce((a,b)=>Math.abs(b-sid)<Math.abs(a-sid)?b:a); }
-const ROOM_ORBIT={ table:190, wall:230, detector:115 };
+const ROOM_ORBIT={ table:190, wall:230, detector:115, seated:140 };
 function setRoom(room){
   if(!ROOM_SID[room]) return;
-  if(room==='detector' && pastingActive()) return;   // pasting needs the tracking bucky (src/pasting.js)
+  if((room==='detector' || room==='seated') && pastingActive()) return;   // pasting needs the tracking bucky (src/pasting.js)
+  // The anatomy under the central ray stays under it: lying down the patient is moved to the
+  // tube; standing at the wall, the tube (and the bucky) go to the anatomy.
+  const wasStanding=standing(), under=S.tubeZ-S.objOff.z;
   S.room=room;
+  if(wasStanding && !standing()){ S.objOff.z=Math.max(-OFF_LIMIT_Z, Math.min(OFF_LIMIT_Z, -under)); S.tubeZ=0; S.bucky.z=0; }
+  else if(standing()){ standKey=''; S.objOff.z=wallStandZ(); S.tubeZ=clampWallTube(under+S.objOff.z); S.bucky.z=S.tubeZ; }
+  syncCentringUI();
   document.querySelectorAll('#roomSel button').forEach(b=>b.classList.toggle('on', b.dataset.room===room));
   // the set-up's usual distance (180 cm at the wall stand, the PA chest's), with the grid focused to it
   S.sid=clampSid(ROOM_SID[room]); S.gridFocus=gridFocusFor(S.sid); setGridFocusUI();
@@ -2278,13 +2333,19 @@ function pasteLock(on){
   if(on){
     if(S.detBaseW!==43) setDetSize(43,43);
     S.collZ=43; if(cz) cz.value=S.collZ;
-    if(S.room==='detector') setRoom('wall');
+    if(S.room==='detector' || S.room==='seated') setRoom('wall');
   }
   if(cz) cz.disabled=on;
   document.querySelectorAll('#detSizeSeg button').forEach(b=>{ b.disabled=on && +b.dataset.w!==43; });
   const db=document.querySelector('#roomSel button[data-room="detector"]');
   if(db){ db.disabled=on; db.title=on ? 'Free detector: not for a pasting study (it needs the tracking bucky)' : 'Free detector: the patient lying on the plate'; }
+  const sb=document.querySelector('#roomSel button[data-room="seated"]');
+  if(sb){ sb.disabled=on; sb.title=on ? 'Seated: not for a pasting study (it needs the tracking bucky)' : "Seated: the wall stand's bucky turned flat, the patient on a stool beside it"; }
   updateGeomReadouts(); syncScene();
+}
+function syncCentringUI(){
+  const oz=$('objOffZ'); if(oz){ oz.value=S.objOff.z; const v=$('objOffZv'); if(v) v.textContent=S.objOff.z.toFixed(1)+' cm'; }
+  const tz=$('tubeZ'); if(tz) tz.value=S.tubeZ;
 }
 /* OID is the patient's height over the receptor: the lift, plus the tabletop or cover. */
 function syncOidUI(){
@@ -3595,6 +3656,15 @@ function applyPose(pose){
   setSl('objOffX', S.objOff.x.toFixed(1), S.objOff.x.toFixed(1) + ' cm');
   setSl('objOffZ', S.objOff.z.toFixed(1), S.objOff.z.toFixed(1) + ' cm');
   for (const id of ['tubeX', 'tubeZ', 'angLM']) { const el = $(id); if (el) el.value = 0; }
+  // standing at the wall: the patient is on the floor, and the tube and bucky go up or down to the
+  // landmark (at once: a protocol sets the room as it says)
+  if (standing()) {
+    standKey = '';
+    S.objOff.z = wallStandZ();
+    S.tubeZ = clampWallTube(loc ? applyMat3(objMat(), loc)[2] + S.objOff.z : S.objOff.z);
+    S.bucky.z = S.tubeZ;
+    syncCentringUI();
+  }
   const cc = $('angCC'); if (cc) cc.value = S.angCC;
   updateGeomReadouts();
   if (note) {
@@ -3635,7 +3705,7 @@ function openProtocolPopup(){
       '<div class="proto-region"><div class="proto-rname">'+rg.region+'</div><div class="proto-projs">'+
       rg.projections.map(p=>{ const cur=S.protocol&&S.protocol.part===gr.part&&S.protocol.proj===p.proj;
         // a pasting study needs the tracking bucky: the wall stand or the table, not a free plate
-        const off=p.paste && S.room==='detector';
+        const off=p.paste && (S.room==='detector' || S.room==='seated');
         return '<button class="proto-proj'+(cur?' on':'')+'" data-part="'+gr.part+'" data-proj="'+p.proj+'"'
           +(off?' disabled title="Wall stand or table only: the study needs the tracking bucky"':'')+'>'
           +p.proj+'<small>'+p.kv+' kVp · '+p.mas+' mAs'+(p.grid?' · grid':' · no grid')
@@ -4769,7 +4839,7 @@ window.addEventListener('load',()=>{
   initTutorial({ applyMode: ctApplyMode });
   initPalpation({ THREE, three, S, voxelFlips, objMat, poseLoc,
     modelCentre: () => [S.objOff.x-BK().x, restHeight() + S.objOff.y, S.objOff.z-BK().z] });
-  initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent,
+  initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent, setRoom,
     palpation: { list: palpationList, set: setPalpated, clear: clearPalpation, active: palpatedKeys },
     tubeFrame, objMat, voxelFlips,
     landmarkLocal: (name) => landmarkLocal(S.subject, name),

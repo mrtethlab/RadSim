@@ -1,33 +1,36 @@
 /* ============================================================================
    VIEW ORDER — how efficiently a series is ordered (the Protocol Trainer).
 
-   A radiographer orders the views of a requisition to move as little as possible, and moves
-   the big things least: the ROOM (wall stand, table, free detector: the tube, the receptor and
-   often the patient go with it), then the patient's POSITION (getting up, lying down or rolling
-   over, then how far the body or limb turns between views: PA, then the oblique, then the
-   lateral, not PA, lateral, oblique), then the CENTRAL-RAY ANGLE (re-angling the tube), then
-   the ANATOMY (working along the limb rather than back and forth), and last the COLLIMATION
-   (similar fields together).
-
+   A radiographer orders the views of a requisition to make the fewest costly changes between
+   them. The costs, dearest first:
+     ROOM     going between the room's set-ups (the wall stand, the table, a free detector on the
+              stretcher, the seated bucky): the patient gets up or lies down, the tube and
+              receptor are set up again;
+     MOVES    moving the patient (sitting, lying, standing, rolling, turning, obliquing) or the
+              receptor round them (under the leg, or stood beside it for a horizontal beam);
+     ADJUSTS  what the radiographer does at the tube alone: re-angling the central ray, then
+              re-centring along the anatomy, then re-collimating.
    Each step between two views costs a tuple in that priority, and a series costs the sum. Two
-   series compare LEXICOGRAPHICALLY: one room change fewer beats any amount of turning, one
-   posture change fewer beats any amount of tube angle. The best order is found exactly
-   (Held-Karp over the subsets: lexicographic order is preserved under addition, so the
-   dynamic programme's local choice is the global one), which is quick for the 1-12 views a
-   requisition has.
+   series compare LEXICOGRAPHICALLY: one room change fewer beats any number of moves, one move
+   fewer beats any amount of angling, centring and collimating. So the views that need only the
+   tube adjusted go together (a leg's APs along the limb), and the last ties go to the fewer
+   degrees turned (PA, oblique, lateral rather than PA, lateral, oblique).
 
-   view: { name, room ('wall' | 'table' | 'detector'), posture, rot (deg), cc (deg, + caudal),
+   The best order is found exactly (Held-Karp over the subsets: lexicographic order is preserved
+   under addition, so the dynamic programme's local choice is the global one), which is quick for
+   the views a requisition has; a very long worklist is improved locally instead.
+
+   view: { name, room ('wall' | 'table' | 'detector' | 'seated'), posture, rot (deg),
+           xt (a horizontal beam, the receptor beside the patient), cc (deg, + caudal),
            site: [x, z] (cm), coll: [w, l] (cm) }
    ============================================================================ */
 
 export const TIERS = [
   { key: 'room', label: 'Room changes', unit: '' },
-  { key: 'posture', label: 'Patient position changes', unit: '' },
-  { key: 'rot', label: 'Patient or limb turns', unit: '' },
+  { key: 'moves', label: 'Patient or receptor moves', unit: '' },
   { key: 'angle', label: 'Tube re-angling', unit: '°' },
-  { key: 'receptor', label: 'Receptor changes', unit: '' },
-  { key: 'travel', label: 'Anatomy travel', unit: ' cm' },
-  { key: 'coll', label: 'Collimation changes', unit: ' cm' },
+  { key: 'travel', label: 'Re-centring along the anatomy', unit: ' cm' },
+  { key: 'coll', label: 'Re-collimating', unit: ' cm' },
   { key: 'turn', label: 'Turning, in all', unit: '°' },
 ];
 const N = TIERS.length;
@@ -36,29 +39,20 @@ const EPS = 1e-6;
 // the shorter way round between two turns (a PA at 180 is a PA at -180)
 const turn = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
 
-/* The cost of going from view a to view b, one entry per tier. A turn counts only within one
-   room and posture (a patient who gets up off the table is positioned afresh at the wall), and
-   as a REPOSITIONING, not by its degrees: a leg on a stretcher has all its views at one rotation
-   taken along the limb before it is turned, not the ankle, the knee and the ankle again to save
-   a few degrees. The degrees break the last ties (PA, oblique, lateral rather than PA, lateral,
-   oblique). */
-const TURN_MIN = 10;                          // a smaller change is the same position, adjusted
-/* THE ROOM is where the patient is: standing at the wall stand, or on the table (or a stretcher
-   beside it). The table's bucky and a free detector laid on the tabletop or stood beside the leg
-   are one room: the patient does not move between them, the radiographer swaps the receptor.
-   That swap is priced below every movement of the patient and the tube, so a leg on a stretcher
-   has its APs taken along the limb (ankle, tib/fib, knee, femur: centring and collimation only)
-   before it is turned, whichever receptor each one wants. */
-const place = (r) => (r === 'wall' ? 'wall' : 'table');
+/* The cost of going from view a to view b, one entry per tier. Within one room a move is a
+   change of posture, a turn of the patient or the limb (a smaller change than TURN_MIN is the same
+   position, adjusted), or the receptor taken from under the patient to beside them for a
+   horizontal beam; a patient who changes room is set up afresh, so nothing more is counted. */
+const TURN_MIN = 10;
 export function stepCost(a, b) {
-  const room = place(a.room) !== place(b.room) ? 1 : 0, posture = a.posture !== b.posture ? 1 : 0;
+  const room = a.room !== b.room ? 1 : 0;
+  const posture = !room && a.posture !== b.posture;
   const deg = room || posture ? 0 : turn(a.rot || 0, b.rot || 0);
+  const moves = room ? 0 : (posture ? 1 : 0) + (deg >= TURN_MIN ? 1 : 0) + (!!a.xt !== !!b.xt ? 1 : 0);
   return [
     room,
-    posture,
-    deg >= TURN_MIN ? 1 : 0,
+    moves,
     Math.abs((a.cc || 0) - (b.cc || 0)),
-    !room && a.room !== b.room ? 1 : 0,
     a.site && b.site ? Math.hypot(a.site[0] - b.site[0], a.site[1] - b.site[1]) : 0,
     a.coll && b.coll ? Math.abs(a.coll[0] - b.coll[0]) + Math.abs(a.coll[1] - b.coll[1]) : 0,
     deg,
@@ -148,11 +142,11 @@ function improvedOrder(views) {
 /* What changes on a step, in words, for the worklist's step markers. */
 export function stepChanges(a, b) {
   const c = stepCost(a, b), out = [];
-  if (c[0]) out.push({ tier: 0, text: `room: ${a.room} → ${b.room}` });
-  if (c[1]) out.push({ tier: 1, text: `position: ${a.posture} → ${b.posture}` });
-  if (c[2]) out.push({ tier: 2, text: `turn ${Math.round(c[7])}°` });
-  if (c[3] >= 1) out.push({ tier: 3, text: `tube ${Math.round(c[3])}°` });
-  if (c[4]) out.push({ tier: 4, text: `receptor: ${a.room} → ${b.room}` });
+  if (c[0]) { out.push({ tier: 0, text: `room: ${a.room} → ${b.room}` }); return out; }
+  if (a.posture !== b.posture) out.push({ tier: 1, text: `position: ${a.posture} → ${b.posture}` });
+  else if (c[5] >= TURN_MIN) out.push({ tier: 1, text: `turn ${Math.round(c[5])}°` });
+  if (!!a.xt !== !!b.xt) out.push({ tier: 1, text: b.xt ? 'receptor beside, beam horizontal' : 'receptor under, beam vertical' });
+  if (c[2] >= 1) out.push({ tier: 2, text: `tube ${Math.round(c[2])}°` });
   return out;
 }
 

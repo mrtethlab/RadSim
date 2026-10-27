@@ -100,14 +100,14 @@ function checkProtocol(req, list) {
 /* Where and how a view is taken (core/viewOrder.js), for any projection in the chart: the
    department's views carry their own; anything else is placed by its part of the body. */
 const PART_DEFAULT = {
-  'Upper extremity': ['detector', 'seated', [24, 90]], 'Lower extremity': ['detector', 'supine', [10, 30]],
+  'Upper extremity': ['seated', 'seated', [24, 90]], 'Lower extremity': ['detector', 'supine', [10, 30]],
   'Chest': ['wall', 'erect', [0, 125]], 'Abdomen / Pelvis': ['table', 'supine', [0, 95]],
   'Spine': ['table', 'supine', [0, 120]], 'Head': ['table', 'supine', [0, 165]], 'Long length': ['wall', 'erect', [0, 90]],
 };
 function orderView(name) {
   const f = findProj(name), m = VIEW_META[name];
   const d = PART_DEFAULT[f?.part] || ['table', 'supine', [0, 100]];
-  return { name, room: m?.room || d[0], posture: m?.posture || d[1], rot: m ? m.rot : (f?.p.pose?.roll || 0),
+  return { name, room: m?.room || d[0], posture: m?.posture || d[1], rot: m ? m.rot : (f?.p.pose?.roll || 0), xt: !!m?.xt,
     cc: f?.p.pose?.cc || 0, site: m?.site || d[2], coll: f?.p.coll || null };
 }
 
@@ -245,15 +245,14 @@ function resultHTML() {
 const fmtTier = (v, t) => (t.unit ? Math.round(v) + t.unit : String(Math.round(v)));
 function orderWhy(o) {
   const t = TIERS[o.tier], mine = Math.round(o.total[o.tier]), best = Math.round(o.best[o.tier]);
+  const n = (v, one, many) => `${v} ${v === 1 ? one : many}`;
   switch (t.key) {
-    case 'room': return `The room changes ${mine} time${mine === 1 ? '' : 's'}; ${best} ${best === 1 ? 'is' : 'are'} enough. Take every view in one room before moving to the next.`;
-    case 'posture': return `The patient changes position ${mine} times; ${best} ${best === 1 ? 'is' : 'are'} enough. Group the views taken in the same position.`;
-    case 'rot': return `The patient (or the limb) is turned ${mine} times; ${best} ${best === 1 ? 'is' : 'are'} enough. Take every view in one position before turning.`;
-    case 'turn': return `The turns add up to ${mine}°; ${best}° is enough. Turn progressively in one direction (PA, oblique, lateral).`;
+    case 'room': return `The room changes ${n(mine, 'time', 'times')}; ${best} ${best === 1 ? 'is' : 'are'} enough. Take every view in one room set-up before moving to the next.`;
+    case 'moves': return `The patient or the receptor is moved ${n(mine, 'time', 'times')}; ${best} ${best === 1 ? 'is' : 'are'} enough. Take every view that needs only the tube re-centred, re-angled or re-collimated before moving the patient.`;
     case 'angle': return `The tube is re-angled ${mine}° in all; ${best}° is enough. Take the views at one central-ray angle together.`;
-    case 'receptor': return `The receptor is swapped ${mine} times (bucky and free detector); ${best} ${best === 1 ? 'is' : 'are'} enough. Take the views on one receptor together where the patient need not move.`;
     case 'travel': return `The centring moves ${mine} cm along the patient; ${best} cm is enough. Work along the anatomy, not back and forth.`;
-    default: return `The field changes ${mine} cm in all; ${best} cm is enough. Take similar fields together.`;
+    case 'coll': return `The field changes ${mine} cm in all; ${best} cm is enough. Take similar fields together.`;
+    default: return `The turns add up to ${mine}°; ${best}° is enough. Turn progressively in one direction (PA, oblique, lateral).`;
   }
 }
 

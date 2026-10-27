@@ -39,6 +39,9 @@ export function trainerOnMode(mode) {
 
 function openTrainer() {
   H.applyMode('xray');
+  // the series are marked on centring by moving the patient, which a patient standing on the floor
+  // at the wall stand is not (app.js STAND): they are taken lying on the table
+  if (H.S.room === 'wall') H.setRoom('table');
   T = { series: null, vi: 0, step: 'position', results: [], req: null, busy: false };
   document.body.classList.add('trainer');
   showCompare(false);

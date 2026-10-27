@@ -148,16 +148,18 @@ export const HOSPITAL = [
 
 export const lineById = (id) => HOSPITAL.find((l) => l.id === id) || null;
 
-/* WHERE AND HOW each view is taken, for judging the order of a series. The priority, highest
-   first: the room (wall stand / table bucky / free detector), the patient's position (posture,
-   then how far the body or limb turns between views), the central-ray angle, how far apart the
-   anatomy is, and the collimation (from protocols.json).
-     room     'wall' | 'table' | 'detector'   (as the room selector names them)
-     posture  how the patient is: 'seated' (at the end of the table), 'supine', 'prone', 'erect',
-              'lateral' (recumbent on the side), 'oblique' (recumbent, turned)
-     rot      degrees the body (or the limb) is turned from that posture's start: views at one
-              posture are cheapest taken in order of rotation
-     site     the anatomy on a standing adult, [x across (cm, the patient's right +), z height (cm)] */
+/* WHERE AND HOW each view is taken, for judging the order of a series (core/viewOrder.js).
+     room     the set-up, as the room selector names them: 'wall' (the wall stand, upright),
+              'table' (the table's bucky), 'detector' (a free detector, the patient lying on it or
+              on a stretcher, the plate placed as needed), 'seated' (the wall stand's bucky turned
+              flat, the patient on a stool beside it)
+     posture  how the patient is: 'seated', 'supine', 'prone', 'erect', 'lateral' (recumbent on
+              the side), 'oblique' (recumbent, turned)
+     rot      degrees the body (or the limb) is turned from that posture's start
+     xt       a horizontal beam: the receptor stood beside the patient, who does not move
+     site     the anatomy on a standing adult, [x across (cm, the patient's right +), z height (cm)]
+   The hand, wrist, forearm and elbow are taken seated at the flat bucky, and so are the seated
+   (Merchant) skyline and the superoinferior axial shoulder, with the bucky tilted off level. */
 const S_ = (x, z) => [x, z];
 const SITE = {
   hand: S_(27, 74), wrist: S_(26, 82), forearm: S_(24, 92), elbow: S_(22, 105), humerus: S_(20, 120),
@@ -166,25 +168,25 @@ const SITE = {
   coccyx: S_(0, 84), lspine: S_(0, 105), abdomen: S_(0, 100), tspine: S_(0, 125), chest: S_(0, 125),
   ribs: S_(12, 125), cspine: S_(0, 148), c7t1: S_(0, 140), neck: S_(0, 152), odontoid: S_(0, 155),
 };
-const v = (room, posture, rot, site) => ({ room, posture, rot, site: SITE[site] });
+const v = (room, posture, rot, site, xt = false) => ({ room, posture, rot, site: SITE[site], xt });
 export const VIEW_META = {
-  'PA hand': v('detector', 'seated', 0, 'hand'),
-  'Oblique hand': v('detector', 'seated', 45, 'hand'),
-  'Lateral hand': v('detector', 'seated', 90, 'hand'),
-  'Fan lateral hand': v('detector', 'seated', 90, 'hand'),
-  'Ballcatcher hands (Norgaard)': v('detector', 'seated', 135, 'hand'),
-  'PA wrist': v('detector', 'seated', 0, 'wrist'),
-  'Oblique wrist': v('detector', 'seated', 45, 'wrist'),
-  'Lateral wrist': v('detector', 'seated', 90, 'wrist'),
-  'External oblique wrist': v('detector', 'seated', 135, 'wrist'),
-  'Scaphoid view wrist': v('detector', 'seated', 0, 'wrist'),
-  'AP forearm': v('detector', 'seated', 0, 'forearm'),
-  'Lateral forearm': v('detector', 'seated', 90, 'forearm'),
-  'AP elbow': v('detector', 'seated', 0, 'elbow'),
-  'Internal oblique elbow': v('detector', 'seated', 45, 'elbow'),
-  'External oblique elbow': v('detector', 'seated', -45, 'elbow'),
-  'Lateral elbow': v('detector', 'seated', 90, 'elbow'),
-  'Radial head lateral elbow': v('detector', 'seated', 90, 'elbow'),
+  'PA hand': v('seated', 'seated', 0, 'hand'),
+  'Oblique hand': v('seated', 'seated', 45, 'hand'),
+  'Lateral hand': v('seated', 'seated', 90, 'hand'),
+  'Fan lateral hand': v('seated', 'seated', 90, 'hand'),
+  'Ballcatcher hands (Norgaard)': v('seated', 'seated', 135, 'hand'),
+  'PA wrist': v('seated', 'seated', 0, 'wrist'),
+  'Oblique wrist': v('seated', 'seated', 45, 'wrist'),
+  'Lateral wrist': v('seated', 'seated', 90, 'wrist'),
+  'External oblique wrist': v('seated', 'seated', 135, 'wrist'),
+  'Scaphoid view wrist': v('seated', 'seated', 0, 'wrist'),
+  'AP forearm': v('seated', 'seated', 0, 'forearm'),
+  'Lateral forearm': v('seated', 'seated', 90, 'forearm'),
+  'AP elbow': v('seated', 'seated', 0, 'elbow'),
+  'Internal oblique elbow': v('seated', 'seated', 45, 'elbow'),
+  'External oblique elbow': v('seated', 'seated', -45, 'elbow'),
+  'Lateral elbow': v('seated', 'seated', 90, 'elbow'),
+  'Radial head lateral elbow': v('seated', 'seated', 90, 'elbow'),
   'AP humerus': v('wall', 'erect', 0, 'humerus'),
   'Lateral humerus': v('wall', 'erect', 90, 'humerus'),
   'AP shoulder internal rotation': v('wall', 'erect', 0, 'shoulder'),
@@ -193,7 +195,7 @@ export const VIEW_META = {
   'Grashey shoulder (glenoid AP oblique)': v('wall', 'erect', 35, 'shoulder'),
   'Y view shoulder': v('wall', 'erect', 50, 'shoulder'),
   'Axial shoulder (inferosuperior)': v('table', 'supine', 0, 'shoulder'),
-  'Axial shoulder (superoinferior)': v('table', 'seated', 0, 'shoulder'),
+  'Axial shoulder (superoinferior)': v('seated', 'seated', 0, 'shoulder'),
   'AP clavicle': v('wall', 'erect', 0, 'clavicle'),
   'AP axial clavicle': v('wall', 'erect', 0, 'clavicle'),
   'AP foot': v('detector', 'supine', 0, 'foot'),
@@ -207,15 +209,15 @@ export const VIEW_META = {
   'Internal oblique tibia/fibula': v('detector', 'supine', 45, 'leg'),
   'External oblique tibia/fibula': v('detector', 'supine', -45, 'leg'),
   'Lateral tibia/fibula': v('detector', 'supine', 90, 'leg'),
-  'AP knee': v('table', 'supine', 0, 'knee'),
-  'Internal oblique knee': v('table', 'supine', 45, 'knee'),
-  'External oblique knee': v('table', 'supine', -45, 'knee'),
+  'AP knee': v('detector', 'supine', 0, 'knee'),
+  'Internal oblique knee': v('detector', 'supine', 45, 'knee'),
+  'External oblique knee': v('detector', 'supine', -45, 'knee'),
   'Lateral knee': v('table', 'lateral', 90, 'knee'),
-  'Cross-table lateral knee': v('detector', 'supine', 0, 'knee'),
+  'Cross-table lateral knee': v('detector', 'supine', 0, 'knee', true),
   'AP knee standing': v('wall', 'erect', 0, 'knee'),
   'Lateral knee standing': v('wall', 'erect', 90, 'knee'),
   'Rosenberg knee (PA 45° flexion)': v('wall', 'erect', 180, 'knee'),
-  'Skyline knee': v('table', 'supine', 0, 'knee'),
+  'Skyline knee': v('seated', 'seated', 0, 'knee'),
   'AP femur': v('table', 'supine', 0, 'femur'),
   'Lateral femur': v('table', 'lateral', 90, 'femur'),
   'Femur pasting': v('table', 'supine', 0, 'femur'),
@@ -224,7 +226,7 @@ export const VIEW_META = {
   'AP hip (no leg rotation)': v('table', 'supine', 0, 'hip'),
   'Frog-leg lateral hip': v('table', 'supine', 0, 'hip'),
   'Roll-up lateral hip (Lauenstein)': v('table', 'oblique', 45, 'hip'),
-  'Cross-table lateral hip': v('detector', 'supine', 0, 'hip'),
+  'Cross-table lateral hip': v('detector', 'supine', 0, 'hip', true),
   'AP pelvis': v('table', 'supine', 0, 'pelvis'),
   'AP pelvis (no leg rotation)': v('table', 'supine', 0, 'pelvis'),
   'Judet RPO pelvis': v('table', 'oblique', -45, 'pelvis'),

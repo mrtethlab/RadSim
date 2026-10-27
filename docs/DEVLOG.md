@@ -19,7 +19,14 @@ A second trainer in the X-ray card. The existing Trainer is renamed **Positionin
 - **The worklist:** the student picks anatomy and views from the room's own chart. Each line of the hospital list is now a distinct projection: 49 were added to protocols.json, for 113 in all. Views a rigid model cannot truly make are marked approx.
 - **Marking** (`trainer/hospitalProtocols.js`, `core/viewOrder.js`):
   - Protocol: missing views and views not needed. Combined lines share views (sacrum with SI joints), and either/or slots accept either view (SI or IS axial).
-  - Order: priced lexicographically by room, then position (posture changes, then turns of the patient or limb, counted as repositionings), then tube angle, then receptor swaps (the bucky and a free detector are one room: the patient does not move between them), then anatomy travel, then collimation, and last the degrees turned. A leg on a stretcher therefore has all its views at one rotation taken along the limb before it is turned. The best order is found exactly by Held-Karp over subsets, up to 13 views; past that, the given order is improved by moves and reversals.
+  - Order: priced lexicographically in three levels of cost:
+    1. room changes between the four set-ups;
+    2. moves of the patient (posture, or a turn of the body or limb, each counted once) or of the receptor around them (stood beside the leg for a horizontal beam);
+    3. adjustments at the tube alone (re-angling, re-centring along the anatomy, re-collimating).
+    The last ties go to the fewer degrees turned. So a leg on a stretcher has every view that needs only the tube adjusted taken together, along the limb, before it is moved. The best order is found exactly by Held-Karp over subsets, up to 13 views; past that, the given order is improved by moves and reversals.
+- **Rooms (the x-ray room too):**
+  - A fourth set-up, **seated**: the wall stand's bucky turned flat at a seated patient's elbow height, with a stool beside it. It is used for the finger, hand, wrist, scaphoid, forearm and elbow views, and, with the bucky tilted, for the superoinferior axial shoulder and the seated Merchant skyline.
+  - **At the wall stand the patient stands on the floor.** The legs and whole bodies stand on their lowest point. The partial models stand at a 170 cm adult's heights: femoral heads 90 cm, T7 127, C4 147, nasion 160, a hanging elbow 105. The tube and bucky ride the column to the anatomy (25-180 cm), and the patient's up/down offset is locked. A protocol takes the tube to its landmark. A room change keeps the anatomy under the central ray. The Positioning Trainer, which marks centring by moving the patient, opens on the table.
 - **Films:** each chosen view is applied as the sandbox applies it, then exposed dry at an 800×1000 matrix with full processing. Films for a left limb are mirrored, and each carries a burned-in marker.
 - **Pathology** (`core/pathology.js`) is stamped into the loaded volume for the exposure and put back exactly. The physics decides what each view shows:
   - the scaphoid waist line is clearest on the scaphoid view;
