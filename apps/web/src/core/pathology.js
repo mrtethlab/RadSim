@@ -581,7 +581,7 @@ function joint(ctx, name) {
    is sharp on; the PA and the lateral cross it at 20 degrees and more, and see a faint band.
    (The bone is looked for in 2.4 cm: in a smaller ball the radial styloid's cut end, only
    reachable through the scaphoid, went with it.) */
-function scaphoidWaist(ctx, { gap = 0.11, cranial = 20 } = {}) {
+function scaphoidWaist(ctx, { gap = 0.16, cranial = 20 } = {}) {
   const comp = boneNear(ctx.vol, ctx.point('scaphoid'), { r: 2.4, erodeCm: 0.1, minCm3: 0.4 });
   if (!comp) throw new Error('no scaphoid found');
   const { c, axes, sd } = principalAxes(comp.pts);

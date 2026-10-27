@@ -1294,7 +1294,8 @@ const S = {
 // 'quick' is a fast draft preview at the sim's original coarse matrix (~1 mm
 // pixels — not a real DR resolution) so a voxel-body exposure returns in well
 // under a second; low/std/high are true modern DR matrices (~100 µm pixels).
-const RES_MAP={ quick:[320,400], low:[2000,2450], std:[2500,3070], high:[3500,4300] };
+// (film: the Protocol Trainer's films, read as films rather than previews, in a few seconds each)
+const RES_MAP={ quick:[320,400], film:[800,1000], low:[2000,2450], std:[2500,3070], high:[3500,4300] };
 const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125,160,200,250,320,400,500,600];
 
 /* ---- AEC (automatic exposure control) ----
@@ -4788,6 +4789,7 @@ window.addEventListener('load',()=>{
   initProtocolTrainer({ S, applyMode: ctApplyMode, protocols: () => protocolData, applyProtocol, setRoom,
     hasCentre: (subject, name) => !!(centringData[subject]?.[name] || landmarkData[subject]?.[name]),
     setMarker: (side) => setSideMarker(side, false),
+    setResolution: (res) => { const was=S.resolution; S.resolution=res; applyDet(); return was; },
     exposeDry: () => computeRadiograph({ dry:true }),
     renderFilm: (target, entry) => { const r=S.imgRot, fh=S.flipH, fv=S.flipV; S.imgRot=0; S.flipH=false; S.flipV=false;
       try { renderRadiograph(target, entry, { processed:true }); } finally { S.imgRot=r; S.flipH=fh; S.flipV=fv; } },

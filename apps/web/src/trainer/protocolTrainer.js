@@ -358,7 +358,7 @@ const apply = (p, part) => new Promise((done) => H.applyProtocol(p, part, done))
 async function expose(name) {
   const f = findProj(name);
   if (!f) throw new Error('no protocol ' + name);
-  const req = P.req, meta = VIEW_META[name];
+  const meta = VIEW_META[name];
   const ex = examFor(name);
   const side = ex?.side || null;
   const line = ex ? lineById(ex.line) : null;
@@ -370,12 +370,19 @@ async function expose(name) {
     if (/R$/.test(p.pose.centre || '') && H.hasCentre(p.subject, p.pose.centre.slice(0, -1) + 'L')) p.pose.centre = p.pose.centre.slice(0, -1) + 'L';
   }
   if (meta?.room) H.setRoom(meta.room);
-  await apply(p, f.part);
+  const res = H.setResolution('film');
+  try {
+    await apply(p, f.part);
+    return await filmOf(name, p, line, side, meta);
+  } finally { H.setResolution(res); }
+}
+async function filmOf(name, p, line, side, meta) {
+  const req = P.req;
   // the pathology belongs to one model: stamped when this view is of it
   const path = req.pathology;
   if (path && PATHOLOGY[path.id]?.subject === H.S.subject) {
     await H.setPathology(path.id, { side: path.side || side || 'R', posture: posture(meta), expiration: /expiration/i.test(name) });
-  } else H.clearPathology?.();
+  } else await H.clearPathology?.();
   H.setMarker(null);
   const entry = await H.exposeDry();
   const film = document.createElement('canvas');
