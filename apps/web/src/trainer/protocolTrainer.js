@@ -159,7 +159,7 @@ function reqHTML(r) {
       <div class="rq-box rq-wide"><div class="rq-bt">Referring physician</div>
         <div class="rq-name">${esc(d.name)}${d.credentials ? `, ${esc(d.credentials)}` : ''}</div>
         ${row('Specialty', d.specialty)}${row('Office / department', d.office || d.department)}${row('Address', d.address)}
-        ${row('Phone', d.phone)}${row('Fax', d.fax)}${row('Billing #', d.billing)}${row('cc', d.cc)}</div>
+        ${row('Phone', d.phone)}${row('Fax', d.fax)}${row('Billing #', d.billing)}${row('cc', d.cc && typeof d.cc === 'object' ? [d.cc.name, d.cc.clinic].filter(Boolean).join(', ') : d.cc)}</div>
     </div>
     <div class="rq-box rq-exam"><div class="rq-bt">Examination requested</div>
       ${(r.exams || []).map((x) => `<div class="rq-ex">${esc(x.name)}</div>`).join('')}
