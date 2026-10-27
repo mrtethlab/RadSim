@@ -699,8 +699,8 @@
               "lut": "shoulderObl",
               "sid": 100,
               "coll": [
-                12,
-                12
+                10,
+                10
               ],
               "det": [
                 25,
@@ -716,20 +716,20 @@
                 "through": true,
                 "joints": { "shoulder.abd": 90 },
                 "fidelity": "approx",
-                "note": "Supine, the arm abducted 90 degrees (the shoulder field joint, data/joints.json), the receptor against the top of the shoulder, the beam up through the axilla to the glenohumeral joint. Angled to run along the glenoid's face, measured on this model (it faces 41 degrees forward and 20 up): 15 degrees medially and 13 posteriorly, so the joint space opens. Collimated to the joint, off the chest. The model's chest wall ends a hand's breadth from the shoulder."
+                "note": "Supine, the arm abducted 90 degrees (the shoulder field joint, data/joints.json), the receptor against the top of the shoulder, the beam up through the axilla to the glenohumeral joint. Angled to run along the glenoid's face, measured on this model (it faces 41 degrees forward and 20 up): 15 degrees medially and 13 posteriorly, so the joint space opens. Collimated 10 x 10 cm to the joint, off the ribs. The model's chest wall ends a hand's breadth from the shoulder."
               }
             },
             {
               "proj": "Axial shoulder (superoinferior)",
               "kv": 72,
-              "mas": 16,
+              "mas": 10,
               "grid": true,
               "aec": "c",
               "lut": "shoulderObl",
               "sid": 100,
               "coll": [
-                12,
-                12
+                10,
+                10
               ],
               "det": [
                 25,
@@ -745,7 +745,7 @@
                 "through": true,
                 "joints": { "shoulder.abd": 90 },
                 "fidelity": "approx",
-                "note": "Seated, the arm abducted 90 degrees over the receptor (the shoulder field joint, data/joints.json), the beam down through the glenohumeral joint, angled along the glenoid's face as measured on this model: 15 degrees toward the elbow and 13 anteriorly, so the joint space opens. Collimated to the joint. The model's chest wall ends a hand's breadth from the shoulder."
+                "note": "Seated, the arm abducted 90 degrees over the receptor (the shoulder field joint, data/joints.json), the beam down through the glenohumeral joint, angled along the glenoid's face as measured on this model: 15 degrees toward the elbow and 13 anteriorly, so the joint space opens. Collimated 10 x 10 cm to the joint. The model's chest wall ends a hand's breadth from the shoulder."
               }
             }
           ]

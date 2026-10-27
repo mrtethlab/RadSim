@@ -2286,9 +2286,17 @@ function buckyFollow(){
   };
   buckyRaf=requestAnimationFrame(step);
 }
+/* A HORIZONTAL BEAM on the free detector. The physics frame never changes (the beam down onto the
+   receptor), so a patient whose long axis runs along the beam (tilted 90 degrees: an
+   inferosuperior axial shoulder) stands on their head in it. On the free detector that pose is shown
+   as it is taken: the patient lies supine, and the receptor stands against the top of the shoulder
+   with the tube level at the feet' side, the frame turned back by the tilt. */
+const HB_TILT=80;
+const hbQ=new THREE.Quaternion(), HB_AXIS=new THREE.Vector3(1,0,0);
+function horizontalBeam(){ return S.mode==='xray' && S.room==='detector' && Math.abs(S.objRot.x)>=HB_TILT; }
 function roomFrame(){
   const wall=S.mode==='xray' && S.room==='wall';
-  three.rig.quaternion.copy(wall ? WALL_Q : new THREE.Quaternion());
+  three.rig.quaternion.copy(wall ? WALL_Q : horizontalBeam() ? hbQ.setFromAxisAngle(HB_AXIS, -S.objRot.x*Math.PI/180) : new THREE.Quaternion());
   const B=BK();
   three.rig.position.set(B.x,0,B.z).applyQuaternion(three.rig.quaternion);
   three.rig.updateMatrixWorld(true);
@@ -2984,6 +2992,7 @@ async function computeRadiograph(opts={}){
     for(let j=0;j<ny;j++)for(let i=0;i<nx;i++) if(need[j*nx+i]){ if(i<a0)a0=i; if(i>a1)a1=i; if(j<b0)b0=j; if(j>b1)b1=j; }
     const traced = phantom.voxel && a1>=0 ? phantom.cropTo(source,
       [(a0-1-halfU)*pxU, (a1+1-halfU)*pxU, (b0-1-halfV)*pxV, (b1+1-halfV)*pxV]) : phantom;
+    tm.traced=traced.voxel ? [traced.nx, traced.ny, traced.nz, a1-a0+1, b1-b0+1] : null;
     dose=await AttenuationEngine.project({
       phantom:traced, source, detCenter, detU, detV, nx, ny, pxU, pxV, need,
       spectrum, I0, refDist:100,
@@ -2992,7 +3001,7 @@ async function computeRadiograph(opts={}){
   }
   tm.project=performance.now();
   S.lastTiming={ pose:tm.pose-tm.t0, phantom:tm.phantom-tm.pose, project:tm.project-tm.phantom,
-                 dims:phantom.voxel ? [phantom.nx, phantom.ny, phantom.nz] : null, nx, ny, t0:tm.t0 };
+                 dims:phantom.voxel ? [phantom.nx, phantom.ny, phantom.nz] : null, traced:tm.traced||null, nx, ny, t0:tm.t0 };
 
   /* THE OPEN BEAM at every pixel: what the receptor would read with nobody in the way. The EI
      has to set aside raw beam before it measures the anatomy, and it used to find the raw
@@ -3667,6 +3676,8 @@ function landmarkLocal(subject, name){
 const OFF_LIMIT = 55;                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
 const OFF_LIMIT_Z = 75;                                            // along the table: a whole child's head lies 65 cm from its middle
 const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm
+// dev server only: the phantom as an exposure builds it (for timing its traces)
+if (import.meta.env?.DEV) window.__buildPhantom = () => buildPhantom();
 // dev server only: try a protocol pose from the console (roll, joints, centring), as applyProtocol would
 if (import.meta.env?.DEV) window.__applyPose = (pose) => { applyPose(pose); syncScene(); };
 // (and a whole protocol by its projection's name, as the picker applies it)

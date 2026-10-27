@@ -149,16 +149,31 @@ export class VoxelPhantom {
     if (i1.some((v, k) => v < i0[k])) return this;
     const m = [0, 1, 2].map((k) => i1[k] - i0[k] + 1);
     if (m[0] * m[1] * m[2] > 0.6 * n[0] * n[1] * n[2]) return this;
-    const out = new Uint8Array(m[0] * m[1] * m[2]), f = this.flip;
-    for (let z = 0; z < m[2]; z++) for (let y = 0; y < m[1]; y++) {
-      const oz = f[2] ? m[2] - 1 - z : z, oy = f[1] ? m[1] - 1 - y : y;
-      const row = (oz * m[1] + oy) * m[0];
-      for (let x = 0; x < m[0]; x++) out[row + (f[0] ? m[0] - 1 - x : x)] = this.idAt(x + i0[0], y + i0[1], z + i0[2]);
+    // LAID OUT ALONG THE BEAM: the data runs fastest along the axis the beam mostly travels. A
+    // beam down the grid's slowest axis (a body tilted onto it: the axial shoulders) steps a slice's
+    // width at every voxel and misses the cache at each, five times the cost of the same rays along
+    // the rows. The grid's axes are permuted (perm[k]: the old axis that is new axis k) and the
+    // rotation with them, so the box is the same box in the room.
+    const lc = local([(x0 + x1) / 2, 0, (z0 + z1) / 2]), dl = [lc[0] - o[0], lc[1] - o[1], lc[2] - o[2]];
+    const ax = [0, 1, 2].reduce((a, k) => (Math.abs(dl[k]) > Math.abs(dl[a]) ? k : a), 0);
+    const perm = ax === 0 ? [0, 1, 2] : ax === 1 ? [1, 0, 2] : [2, 0, 1];
+    const M = perm.map((k) => m[k]), f = this.flip, nf = perm.map((k) => f[k]);
+    const out = new Uint8Array(M[0] * M[1] * M[2]), g = [0, 0, 0];
+    for (let k2 = 0; k2 < M[2]; k2++) for (let k1 = 0; k1 < M[1]; k1++) {
+      g[perm[2]] = k2 + i0[perm[2]]; g[perm[1]] = k1 + i0[perm[1]];
+      const row = ((nf[2] ? M[2] - 1 - k2 : k2) * M[1] + (nf[1] ? M[1] - 1 - k1 : k1)) * M[0];
+      for (let k0 = 0; k0 < M[0]; k0++) {
+        g[perm[0]] = k0 + i0[perm[0]];
+        out[row + (nf[0] ? M[0] - 1 - k0 : k0)] = this.idAt(g[0], g[1], g[2]);
+      }
     }
     // the box's centre, from the grid's, in the local frame; and where the rotation puts it
     const off = [0, 1, 2].map((k) => this.min[k] + (i0[k] + i1[k] + 1) / 2 * this.vs[k] - c[k]);
     const w = rot ? [Rw[0] * off[0] + Rw[1] * off[1] + Rw[2] * off[2], Rw[3] * off[0] + Rw[4] * off[1] + Rw[5] * off[2], Rw[6] * off[0] + Rw[7] * off[1] + Rw[8] * off[2]] : off;
-    const ph = new VoxelPhantom({ dims: m, vs: this.vs, data: out }, [c[0] + w[0], c[1] + w[1], c[2] + w[2]], f, this.rot);
+    // the rotation of the permuted grid: R' = R P^T (its column k is R's column perm[k])
+    const R0 = rot ? Rw : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    const Rp = [0, 1, 2].flatMap((i) => perm.map((k) => R0[i * 3 + k]));
+    const ph = new VoxelPhantom({ dims: M, vs: perm.map((k) => this.vs[k]), data: out }, [c[0] + w[0], c[1] + w[1], c[2] + w[2]], nf, Rp);
     ph.concLUT = this.concLUT; ph.baLUT = this.baLUT; ph.gasLUT = this.gasLUT; ph.ns = this.ns;
     return ph;
   }

@@ -194,7 +194,7 @@ export const VIEW_META = {
   'AP shoulder neutral rotation': v('wall', 'erect', 0, 'shoulder'),
   'Grashey shoulder (glenoid AP oblique)': v('wall', 'erect', 35, 'shoulder'),
   'Y view shoulder': v('wall', 'erect', 50, 'shoulder'),
-  'Axial shoulder (inferosuperior)': v('table', 'supine', 0, 'shoulder'),
+  'Axial shoulder (inferosuperior)': v('detector', 'supine', 0, 'shoulder', true),
   'Axial shoulder (superoinferior)': v('seated', 'seated', 0, 'shoulder'),
   'AP clavicle': v('wall', 'erect', 0, 'clavicle'),
   'AP axial clavicle': v('wall', 'erect', 0, 'clavicle'),

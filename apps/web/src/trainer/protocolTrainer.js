@@ -406,8 +406,16 @@ async function filmOf(name, p, line, side, meta) {
   const entry = await H.exposeDry();
   const film = document.createElement('canvas');
   H.renderFilm(film, entry);
-  return hang(film, marker(name, line, side, p), line?.side === 'limb' && side === 'L');
+  return hang(film, marker(name, line, side, p), line?.side === 'limb' && side === 'L', HANG[name]);
 }
+/* Films hung otherwise than the room hangs them. The axial shoulders hang anterior up, the marker
+   on that side: the inferosuperior already does (the beam up the body, the front of the patient at
+   the receptor's head end), with its marker as it reads; the superoinferior, the beam the other way,
+   comes out anterior down, so it is turned over, and its marker lies pronated (reversed) on the
+   receptor. */
+const HANG = {
+  'Axial shoulder (superoinferior)': { turn: true, pronated: true },
+};
 // the exam this view answers (its line has the view), for the side
 function examFor(name) {
   return (P.req.exams || []).find((x) => { const l = lineById(x.line); return l && (l.views.includes(name) || (l.either || []).some((e) => e.of.includes(name))); })
@@ -421,14 +429,15 @@ function marker(name, line, side, p) {
   const roll = ((((p.pose?.roll || 0) + 180) % 360) + 360) % 360 - 180;
   return roll > 0 && roll < 180 ? 'L' : 'R';
 }
-/* Hang the film: mirrored for a left limb (every limb model is a right one), the marker
-   burned into the top corner. */
-function hang(src, mk, mirror) {
+/* Hang the film: mirrored for a left limb (every limb model is a right one), turned over where
+   HANG says, the marker burned into the top corner (reversed when it lay pronated). */
+function hang(src, mk, mirror, how = {}) {
   const out = document.createElement('canvas');
   out.width = src.width; out.height = src.height;
   const g = out.getContext('2d');
   g.fillStyle = '#000'; g.fillRect(0, 0, out.width, out.height);
   g.save();
+  if (how.turn) { g.translate(out.width, out.height); g.rotate(Math.PI); }
   if (mirror) { g.translate(out.width, 0); g.scale(-1, 1); }
   g.drawImage(src, 0, 0);
   g.restore();
@@ -437,7 +446,10 @@ function hang(src, mk, mirror) {
   g.textBaseline = 'top';
   g.lineWidth = Math.max(2, s * 0.12); g.strokeStyle = 'rgba(0,0,0,0.8)'; g.fillStyle = '#fff';
   const x = Math.round(s * 0.5), y = Math.round(s * 0.4);
+  g.save();
+  if (how.pronated) { const w = g.measureText(mk).width; g.translate(2 * x + w, 0); g.scale(-1, 1); }
   g.strokeText(mk, x, y); g.fillText(mk, x, y);
+  g.restore();
   return out;
 }
 

@@ -209,8 +209,10 @@ def shoulder_field(name='upperextremity'):
     hk = np.nonzero(lab == hum)
     hz_top = (hk[0].max() - (V.n[2] - 1) / 2) * V.sp[2]
     # the arm: the humerus and every piece whose middle is below the humerus's upper third (the
-    # forearm, the hand, any loose carpal); the girdle and the chest wall: the rest
-    arm_ids = {hum} | {int(order[i]) for i in range(n) if zc(i) < hz_top - 12.0 and sizes[order[i] - 1] >= 20}
+    # forearm, the hand, any loose carpal or fragment, however small: a speck by the elbow counted
+    # as chest wall pulled the elbow's skin to 0.8 of the turn, and 90 degrees of abduction tore it
+    # into spikes); the girdle and the chest wall: the rest
+    arm_ids = {hum} | {int(order[i]) for i in range(n) if zc(i) < hz_top - 12.0}
     arm = np.isin(lab, list(arm_ids))
     trunk = V.bone & ~arm
     # the head: the humerus's surface within 1.5 cm of the girdle (where it faces the glenoid),
@@ -239,8 +241,17 @@ def shoulder_field(name='upperextremity'):
     da = ndi.distance_transform_edt(~A_, sampling=SHOULDER_SP) + 1e-3
     dt = ndi.distance_transform_edt(~T_, sampling=SHOULDER_SP) + 1e-3
     W = dt ** SHOULDER_POW / (dt ** SHOULDER_POW + da ** SHOULDER_POW)
-    W = ndi.gaussian_filter(W, 0.8 / SHOULDER_SP)
+    W = ndi.gaussian_filter(W, 1.0 / SHOULDER_SP)
+    # below the axilla the model is arm alone (the chest wall slab ends ~5 cm under the head): the
+    # whole turn, reached smoothly over 4 cm, so the arm moves as one piece from there down
+    zg = o[2] + np.arange(dims[2]) * SHOULDER_SP
+    lo, hi = c[2] - 10.0, c[2] - 6.0
+    ramp = np.clip((hi - zg) / (hi - lo), 0, 1)[:, None, None]       # 1 below lo, 0 above hi
+    W = ramp + (1 - ramp) * W
     W = np.where(W < 0.02, 0, np.where(W > 0.98, 1, W))
+    # and every bone takes its own piece's share exactly (a bone vertex reads it just inside)
+    W[ndi.binary_dilation(A_)] = 1.0
+    W[T_] = 0.0
     q = np.round(W * 255).astype(np.uint8)
     (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f'{name}.shoulderw.bin').write_bytes(q.tobytes())
     ant = perp([0, 1, 0], d); med = perp([-1, 0, 0], d); lat = perp([1, 0, 0], d)

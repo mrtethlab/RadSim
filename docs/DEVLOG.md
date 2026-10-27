@@ -34,13 +34,16 @@ A second trainer in the X-ray card. The existing Trainer is renamed **Positionin
   - The AP shoulders in internal (90 degrees) and neutral (45 degrees) rotation are now true views.
   - Both axials abduct the arm 90 degrees, with the body's long axis along the beam: supine and up through the axilla, or seated and down over the receptor.
     - The central ray runs along the glenoid's face. The face is measured on this model (a plane fitted to the scapula beside the head): 15 degrees medial or toward the elbow, and 13 degrees AP. So the joint space opens.
-    - They are centred on a measured glenohumeral joint line, collimated 12 x 12 cm off the chest, and exposed to DI about 0 with the equalised table.
+    - They are centred on a measured glenohumeral joint line, collimated 10 x 10 cm off the ribs, and exposed to DI about 0 with the equalised table.
+  - The inferosuperior is taken on the free detector: a pose tilted onto the beam is shown there as the receptor standing against the top of the shoulder, with the tube level at the feet' side and the patient supine (the physics frame turned back by the tilt).
+  - The superoinferior hangs turned over, so both axials hang anterior up. The marker sits on that side: as it reads for the inferosuperior, reversed (pronated) for the superoinferior.
+  - The joint's weights: every arm piece counts as arm, however small (a speck by the elbow counted as chest wall tore the abducted arm's skin into spikes). The arm below the axilla takes the whole turn. Each bone takes its own piece's share exactly.
   - The scapular Y is a 58 degree PA oblique, measured so the beam lies in the plane of this model's scapula (it was rolled 45 degrees the wrong way). It has an equalised display table.
   - The arm model's chest-wall slab was solid muscle and fat where the source has lung. It whited the Y out, so when the model loads, the tissue inside the ribs' arc is made lung (`core/thoraxFill.js`). Every shoulder film now shows lung and ribs medially.
 - **Ray casting, all films:**
   - Only the rays the collimated field (and any active AEC chamber) needs are cast.
   - The ray caster gets only the part of the volume the beam crosses (`VoxelPhantom.cropTo`: the edge rays clipped to the box, and the box's corners inside the beam; tested ray for ray against the whole volume).
-  - A posed volume is first cut to what it holds.
+  - A posed volume is first cut to what it holds, and the crop is laid out with the beam's main direction as its fastest axis.
   - An axial shoulder's ray cast went from 26 s to 1.2 s.
 - **Films:** each chosen view is applied as the sandbox applies it, then exposed dry at an 800×1000 matrix with full processing. Films for a left limb are mirrored, and each carries a burned-in marker.
 - **Pathology** (`core/pathology.js`) is stamped into the loaded volume for the exposure and put back exactly. The physics decides what each view shows:
