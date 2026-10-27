@@ -666,11 +666,11 @@
             },
             {
               "proj": "Y view shoulder",
-              "kv": 75,
-              "mas": 3.2,
+              "kv": 80,
+              "mas": 4,
               "grid": true,
               "aec": "c",
-              "lut": "bone",
+              "lut": "shoulderObl",
               "sid": 100,
               "coll": [
                 22,
@@ -683,11 +683,11 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 45,
+                "roll": -122,
                 "cc": 0,
                 "centre": "shoulder",
                 "fidelity": "approx",
-                "note": "The Y view puts the scapula in profile; this model carries only part of the scapula, so the Y is not fully formed."
+                "note": "A PA oblique, the affected side to the receptor, turned until the beam lies in the plane of the scapula: measured on this model's scapula, 32 degrees off coronal, so 58 degrees from the PA. The model's chest wall ends a hand's breadth below the axilla (the flat lower edge), and its scapula at the crop."
               }
             },
             {

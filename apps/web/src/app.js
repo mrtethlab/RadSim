@@ -19,6 +19,7 @@ import { radiographDose, entryDistance } from './core/patientDose.js';
 import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict, setSideMarker } from './sideMarker.js';
 import { initTrainer, trainerOnMode } from './trainer/trainer.js';
 import { initProtocolTrainer, protocolTrainerOnMode } from './trainer/protocolTrainer.js';
+import { fillThoraxLung } from './core/thoraxFill.js';
 import { initPalpation, palpationSync, setPalpated, palpationList, clearPalpation, palpatedKeys } from './trainer/palpate.js';
 import { patientPrimary, MISSED } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
@@ -426,6 +427,8 @@ async function setSubject(sub){
     S.subjectLoading=true;   // guards CT START/exposure until the swap completes
     try{
       vm=await loadVoxelModel(import.meta.env.BASE_URL+'models/'+sub, sub);
+      // the arm's chest-wall slab is solid where the source had lung (core/thoraxFill.js)
+      if(sub==='upperextremity' && vm.data) fillThoraxLung({ data:vm.data, dims:vm.dims, spacingMM:vm.spacingMM });
       await loadJointFields(sub);
       S.voxelCache[sub]=vm;
       if(vm.meshUrl){
