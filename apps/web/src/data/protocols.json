@@ -127,6 +127,65 @@
                 "cc": 0,
                 "centre": "mcp2Joint"
               }
+            },
+            {
+              "proj": "Fan lateral hand",
+              "kv": 58,
+              "mas": 1.6,
+              "grid": false,
+              "lut": "hand",
+              "sid": 100,
+              "coll": [
+                13,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "mcp2Joint",
+                "joints": {
+                  "digit.2": 10,
+                  "digit.3": 25,
+                  "digit.4": 40,
+                  "digit.5": 55
+                }
+              }
+            },
+            {
+              "proj": "Ballcatcher hands (Norgaard)",
+              "kv": 57,
+              "mas": 1,
+              "grid": false,
+              "lut": "hand",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 135,
+                "cc": 0,
+                "centre": "mcp3Joint",
+                "joints": {
+                  "digit.2": 20,
+                  "digit.3": 20,
+                  "digit.4": 20,
+                  "digit.5": 20
+                },
+                "note": "The AP oblique of both hands together (the ballcatcher's position), here the one hand: from the lateral, turned on 45 degrees toward supination, fingers slightly cupped."
+              }
             }
           ]
         },
@@ -200,6 +259,56 @@
                 "roll": 90,
                 "cc": 0,
                 "centre": "midcarpal"
+              }
+            },
+            {
+              "proj": "External oblique wrist",
+              "kv": 60,
+              "mas": 1.6,
+              "grid": false,
+              "lut": "hand",
+              "sid": 100,
+              "coll": [
+                10,
+                13
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 135,
+                "cc": 0,
+                "centre": "midcarpal"
+              }
+            },
+            {
+              "proj": "Scaphoid view wrist",
+              "kv": 58,
+              "mas": 1.25,
+              "grid": false,
+              "lut": "hand",
+              "sid": 100,
+              "coll": [
+                10,
+                13
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "hand",
+              "pose": {
+                "roll": 0,
+                "cc": 15,
+                "centre": "scaphoid",
+                "through": true,
+                "joints": {
+                  "wrist.dev": 25
+                }
               }
             }
           ]
@@ -289,6 +398,57 @@
               }
             },
             {
+              "proj": "Internal oblique elbow",
+              "kv": 64,
+              "mas": 2,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 41,
+                "cc": 0,
+                "centre": "elbowJoint",
+                "joints": {
+                  "elbow.roll": -160
+                },
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
+              }
+            },
+            {
+              "proj": "External oblique elbow",
+              "kv": 64,
+              "mas": 2,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": -49,
+                "cc": 0,
+                "centre": "elbowJoint",
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
+              }
+            },
+            {
               "proj": "Lateral elbow",
               "kv": 66,
               "mas": 2.0,
@@ -314,6 +474,35 @@
                   "elbow.flex": 90,
                   "elbow.roll": -90
                 }
+              }
+            },
+            {
+              "proj": "Radial head lateral elbow",
+              "kv": 68,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                15,
+                18
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 86,
+                "cc": -45,
+                "centre": "elbowJoint",
+                "through": true,
+                "joints": {
+                  "elbow.flex": 90,
+                  "elbow.roll": -90
+                },
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             }
           ]
@@ -375,7 +564,7 @@
           "region": "Shoulder",
           "projections": [
             {
-              "proj": "AP shoulder",
+              "proj": "AP shoulder internal rotation",
               "kv": 72,
               "mas": 6.4,
               "grid": true,
@@ -396,7 +585,83 @@
                 "roll": 0,
                 "cc": 0,
                 "centre": "shoulder",
-                "note": "The patient lies supine and this arm rests internally rotated (epicondyles front to back), so this is the AP shoulder in internal rotation: the lesser tubercle in profile medially."
+                "fidelity": "approx",
+                "note": "The model has no shoulder joint, and this arm rests in the anatomical position (epicondyles parallel to the receptor, data/palpation.json): the humerus cannot be turned in under the girdle, so it shows externally rotated. On a patient the back of the hand rests on the hip, the epicondyles perpendicular to the receptor: the lesser tubercle in profile medially."
+              }
+            },
+            {
+              "proj": "AP shoulder external rotation",
+              "kv": 72,
+              "mas": 6.4,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "shoulder",
+                "note": "This arm rests in the anatomical position, the epicondyles parallel to the receptor (data/palpation.json): the humerus is externally rotated, the greater tubercle in profile laterally."
+              }
+            },
+            {
+              "proj": "AP shoulder neutral rotation",
+              "kv": 72,
+              "mas": 6.4,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "shoulder",
+                "fidelity": "approx",
+                "note": "The model has no shoulder joint: the humerus cannot turn under the girdle, so it shows as this arm rests. On a patient the palm rests against the thigh, the epicondyles about 45 degrees to the receptor."
+              }
+            },
+            {
+              "proj": "Grashey shoulder (glenoid AP oblique)",
+              "kv": 75,
+              "mas": 6.4,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": -40,
+                "cc": 0,
+                "centre": "shoulder"
               }
             },
             {
@@ -423,6 +688,114 @@
                 "centre": "shoulder",
                 "fidelity": "approx",
                 "note": "The Y view puts the scapula in profile; this model carries only part of the scapula, so the Y is not fully formed."
+              }
+            },
+            {
+              "proj": "Axial shoulder (inferosuperior)",
+              "kv": 72,
+              "mas": 8,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 0,
+                "cc": -45,
+                "centre": "shoulder",
+                "through": true,
+                "fidelity": "approx",
+                "note": "The model has no shoulder joint to abduct the arm, and the arm at the side lies along the axial beam. The tube is angled 45 degrees cephalad on the AP instead, halfway to the axial."
+              }
+            },
+            {
+              "proj": "Axial shoulder (superoinferior)",
+              "kv": 72,
+              "mas": 10,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                20,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "upperextremity",
+              "pose": {
+                "roll": 0,
+                "cc": 45,
+                "centre": "shoulder",
+                "through": true,
+                "fidelity": "approx",
+                "note": "The model has no shoulder joint to abduct the arm, and the arm at the side lies along the axial beam. The tube is angled 45 degrees caudad on the AP instead, halfway to the axial: the humeral head, glenoid and coracoid from above."
+              }
+            }
+          ]
+        },
+        {
+          "region": "Clavicle",
+          "projections": [
+            {
+              "proj": "AP clavicle",
+              "kv": 70,
+              "mas": 16,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                25,
+                14
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "landscape",
+              "subject": "headneck",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "clavicleR"
+              }
+            },
+            {
+              "proj": "AP axial clavicle",
+              "kv": 70,
+              "mas": 12.5,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                25,
+                14
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "landscape",
+              "subject": "headneck",
+              "pose": {
+                "roll": 0,
+                "cc": -25,
+                "centre": "clavicleR",
+                "through": true
               }
             }
           ]
@@ -684,6 +1057,32 @@
               }
             },
             {
+              "proj": "External oblique ankle",
+              "kv": 64,
+              "mas": 3.2,
+              "grid": false,
+              "lut": "ankle",
+              "sid": 100,
+              "coll": [
+                13,
+                16
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "foot",
+              "pose": {
+                "roll": -45,
+                "cc": 0,
+                "centre": "intermalleolar",
+                "joints": {
+                  "ankle.flex": 0
+                }
+              }
+            },
+            {
               "proj": "Lateral ankle",
               "kv": 65,
               "mas": 2.0,
@@ -707,6 +1106,107 @@
                 "joints": {
                   "ankle.flex": 0
                 }
+              }
+            }
+          ]
+        },
+        {
+          "region": "Lower leg",
+          "projections": [
+            {
+              "proj": "AP tibia/fibula",
+              "kv": 66,
+              "mas": 2.5,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -23,
+                "cc": 0,
+                "centre": "legMid",
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              }
+            },
+            {
+              "proj": "Internal oblique tibia/fibula",
+              "kv": 66,
+              "mas": 2.5,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 22,
+                "cc": 0,
+                "centre": "legMid",
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              }
+            },
+            {
+              "proj": "External oblique tibia/fibula",
+              "kv": 66,
+              "mas": 2,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -68,
+                "cc": 0,
+                "centre": "legMid",
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              }
+            },
+            {
+              "proj": "Lateral tibia/fibula",
+              "kv": 66,
+              "mas": 2.5,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -117,
+                "cc": 0,
+                "centre": "legMid",
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
               }
             }
           ]
@@ -740,6 +1240,56 @@
               }
             },
             {
+              "proj": "Internal oblique knee",
+              "kv": 68,
+              "mas": 8,
+              "grid": true,
+              "aec": "c",
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                18,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 22,
+                "cc": 0,
+                "centre": "knee",
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              }
+            },
+            {
+              "proj": "External oblique knee",
+              "kv": 68,
+              "mas": 8,
+              "grid": true,
+              "aec": "c",
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                18,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -68,
+                "cc": 0,
+                "centre": "knee",
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              }
+            },
+            {
               "proj": "Lateral knee",
               "kv": 70,
               "mas": 10,
@@ -765,6 +1315,144 @@
                 "joints": {
                   "knee.flex": 25
                 }
+              }
+            },
+            {
+              "proj": "Cross-table lateral knee",
+              "kv": 65,
+              "mas": 5,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                18,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -117,
+                "cc": 0,
+                "centre": "knee",
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              }
+            },
+            {
+              "proj": "AP knee standing",
+              "kv": 70,
+              "mas": 8,
+              "grid": true,
+              "aec": "c",
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                18,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -23,
+                "cc": 0,
+                "centre": "knee",
+                "fidelity": "approx",
+                "note": "Taken standing, weight-bearing, to show the joint spaces under load; this model lies unloaded, so its joint spaces are the supine knee's. This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              }
+            },
+            {
+              "proj": "Lateral knee standing",
+              "kv": 72,
+              "mas": 10,
+              "grid": true,
+              "aec": "c",
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                18,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -117,
+                "cc": 0,
+                "centre": "knee",
+                "joints": {
+                  "knee.flex": 25
+                },
+                "fidelity": "approx",
+                "note": "Taken standing, weight-bearing, to show the joint spaces under load; this model lies unloaded, so its joint spaces are the supine knee's. This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              }
+            },
+            {
+              "proj": "Skyline knee",
+              "kv": 65,
+              "mas": 10,
+              "grid": false,
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                18,
+                13
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "landscape",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 157,
+                "cc": -25,
+                "centre": "knee",
+                "through": true,
+                "joints": {
+                  "knee.flex": 110
+                },
+                "fidelity": "approx",
+                "note": "The skyline lays the beam tangential to the patellofemoral joint with the knee flexed 40-45 degrees and the receptor on the thigh or the shins; here the receptor lies beyond the whole limb, and at 45 degrees the beam runs down the femur or the tibia. It is taken the Settegast way instead: prone, the knee flexed 110 degrees, the beam 25 degrees cephalad."
+              }
+            },
+            {
+              "proj": "Rosenberg knee (PA 45° flexion)",
+              "kv": 70,
+              "mas": 8,
+              "grid": true,
+              "aec": "c",
+              "lut": "limb",
+              "sid": 100,
+              "coll": [
+                18,
+                22
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": 157,
+                "cc": 10,
+                "centre": "knee",
+                "through": true,
+                "joints": {
+                  "knee.flex": 45
+                },
+                "fidelity": "approx",
+                "note": "Standing PA with the knee flexed 45 degrees, weight-bearing; this model lies unloaded. This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
               }
             }
           ]
@@ -858,6 +1546,33 @@
               }
             },
             {
+              "proj": "PA chest expiration",
+              "kv": 120,
+              "mas": 2.5,
+              "cm": 22,
+              "grid": true,
+              "aec": "lr",
+              "lut": "chest",
+              "sid": 180,
+              "coll": [
+                35,
+                42
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chest",
+              "pose": {
+                "roll": 180,
+                "cc": 0,
+                "centre": "T7",
+                "fidelity": "approx",
+                "note": "Taken after full expiration, to show a small pneumothorax against the denser lung; this model's lungs cannot deflate, so the film is the inspiration PA's."
+              }
+            },
+            {
               "proj": "Lateral chest",
               "kv": 120,
               "mas": 6.4,
@@ -904,6 +1619,61 @@
                 "roll": 0,
                 "cc": 0,
                 "centre": "T7"
+              }
+            }
+          ]
+        },
+        {
+          "region": "Ribs",
+          "projections": [
+            {
+              "proj": "Anterior oblique ribs",
+              "kv": 75,
+              "mas": 8,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                22,
+                40
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chest",
+              "pose": {
+                "roll": 135,
+                "cc": 0,
+                "centre": "ribsR",
+                "note": "Written for the right ribs: PA oblique (LAO), the affected side away from the receptor. The left ribs mirror it (RAO)."
+              }
+            },
+            {
+              "proj": "Posterior oblique ribs",
+              "kv": 75,
+              "mas": 8,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                22,
+                40
+              ],
+              "det": [
+                35,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "chest",
+              "pose": {
+                "roll": -45,
+                "cc": 0,
+                "centre": "ribsR",
+                "note": "Written for the right ribs: AP oblique (RPO), the affected side toward the receptor. The left ribs mirror it (LPO)."
               }
             }
           ]
@@ -1053,6 +1823,361 @@
                 "centre": "pelvis",
                 "legs": 15
               }
+            },
+            {
+              "proj": "AP pelvis (no leg rotation)",
+              "kv": 80,
+              "mas": 25,
+              "cm": 21,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                43,
+                35
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "landscape",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "pelvis",
+                "legs": 0,
+                "note": "Trauma: the legs are not turned in, a possible fracture is left as it lies."
+              }
+            },
+            {
+              "proj": "Judet RPO pelvis",
+              "kv": 80,
+              "mas": 40,
+              "cm": 24,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                43,
+                35
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "landscape",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": -45,
+                "cc": 0,
+                "centre": "pelvis"
+              }
+            },
+            {
+              "proj": "Judet LPO pelvis",
+              "kv": 80,
+              "mas": 40,
+              "cm": 24,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                43,
+                35
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "landscape",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 45,
+                "cc": 0,
+                "centre": "pelvis"
+              }
+            },
+            {
+              "proj": "Inlet pelvis",
+              "kv": 85,
+              "mas": 80,
+              "cm": 28,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                43,
+                35
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "landscape",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 40,
+                "centre": "pelvis",
+                "through": true,
+                "legs": 15
+              }
+            },
+            {
+              "proj": "Outlet pelvis",
+              "kv": 85,
+              "mas": 80,
+              "cm": 24,
+              "grid": true,
+              "aec": "lrc",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                43,
+                35
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "landscape",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": -40,
+                "centre": "pelvis",
+                "through": true,
+                "legs": 15
+              }
+            }
+          ]
+        },
+        {
+          "region": "Hip",
+          "projections": [
+            {
+              "proj": "AP hip",
+              "kv": 80,
+              "mas": 25,
+              "cm": 16,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                24,
+                30
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "femoralHeadR",
+                "legs": 15
+              }
+            },
+            {
+              "proj": "AP hip (no leg rotation)",
+              "kv": 80,
+              "mas": 25,
+              "cm": 16,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                24,
+                30
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "femoralHeadR",
+                "legs": 0,
+                "note": "Trauma: the leg is not turned in, a possible fracture is left as it lies."
+              }
+            },
+            {
+              "proj": "Frog-leg lateral hip",
+              "kv": 80,
+              "mas": 25,
+              "cm": 16,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                24,
+                30
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 0,
+                "centre": "femoralHeadR",
+                "legs": -45,
+                "fidelity": "approx",
+                "note": "This model's legs end at the upper thigh and turn only about their long axes (the leg rotation): the hip cannot flex or abduct. The femur is turned out as far as it goes in place of the frog-leg's flexion and abduction."
+              }
+            },
+            {
+              "proj": "Roll-up lateral hip (Lauenstein)",
+              "kv": 80,
+              "mas": 32,
+              "cm": 18,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                24,
+                30
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": -45,
+                "cc": 0,
+                "centre": "femoralHeadR",
+                "legs": -45,
+                "fidelity": "approx",
+                "note": "This model's legs end at the upper thigh and turn only about their long axes (the leg rotation): the hip cannot flex or abduct. The patient rolls 45 degrees onto the hip and the femur is turned out as far as it goes, laying its lateral surface toward the table."
+              }
+            },
+            {
+              "proj": "Cross-table lateral hip",
+              "kv": 85,
+              "mas": 50,
+              "cm": 19,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                24,
+                30
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": -90,
+                "cc": -45,
+                "centre": "femoralHeadR",
+                "through": true,
+                "fidelity": "approx",
+                "note": "The beam runs horizontally from the inner thigh, perpendicular to the femoral neck (45 degrees to the long axis), to a receptor at the hip; here the patient lies on the hip instead, under a vertical beam. The other leg is raised out of the field on a patient; this model's legs end at the upper thigh."
+              }
+            }
+          ]
+        },
+        {
+          "region": "Sacrum / coccyx",
+          "projections": [
+            {
+              "proj": "AP axial sacrum / SI joints",
+              "kv": 80,
+              "mas": 64,
+              "cm": 21,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                24,
+                30
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": -20,
+                "centre": "sacrum",
+                "through": true
+              }
+            },
+            {
+              "proj": "AP axial coccyx",
+              "kv": 80,
+              "mas": 50,
+              "cm": 22,
+              "grid": true,
+              "aec": "c",
+              "lut": "bone",
+              "sid": 100,
+              "coll": [
+                18,
+                20
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 0,
+                "cc": 10,
+                "centre": "coccyx",
+                "through": true
+              }
+            },
+            {
+              "proj": "Lateral sacrum / coccyx",
+              "kv": 100,
+              "mas": 125,
+              "cm": 30,
+              "grid": true,
+              "aec": "c",
+              "lut": "spineLat",
+              "sid": 100,
+              "coll": [
+                20,
+                30
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "chestabdopelvis",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "sacrum"
+              }
             }
           ]
         },
@@ -1169,6 +2294,60 @@
               }
             },
             {
+              "proj": "Lateral cervical flexion",
+              "kv": 78,
+              "mas": 50,
+              "grid": true,
+              "aec": "c",
+              "lut": "spine",
+              "sid": 180,
+              "coll": [
+                18,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "C4",
+                "joints": {
+                  "neck.flex": 50
+                }
+              }
+            },
+            {
+              "proj": "Lateral cervical extension",
+              "kv": 78,
+              "mas": 40,
+              "grid": true,
+              "aec": "c",
+              "lut": "spine",
+              "sid": 180,
+              "coll": [
+                18,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "C4",
+                "joints": {
+                  "neck.flex": -50
+                }
+              }
+            },
+            {
               "proj": "AP open mouth",
               "kv": 75,
               "mas": 20,
@@ -1222,6 +2401,62 @@
               }
             },
             {
+              "proj": "RAO cervical",
+              "kv": 76,
+              "mas": 64,
+              "grid": true,
+              "aec": "c",
+              "lut": "spine",
+              "sid": 180,
+              "coll": [
+                15,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": -135,
+                "cc": 15,
+                "centre": "C4",
+                "through": true,
+                "joints": {
+                  "neck.flex": -10
+                }
+              }
+            },
+            {
+              "proj": "LAO cervical",
+              "kv": 76,
+              "mas": 64,
+              "grid": true,
+              "aec": "c",
+              "lut": "spine",
+              "sid": 180,
+              "coll": [
+                15,
+                25
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 135,
+                "cc": 15,
+                "centre": "C4",
+                "through": true,
+                "joints": {
+                  "neck.flex": -10
+                }
+              }
+            },
+            {
               "proj": "Swimmers lateral",
               "kv": 85,
               "mas": 40.0,
@@ -1245,6 +2480,63 @@
                 "centre": "C7T1",
                 "fidelity": "approx",
                 "note": "This patient lies with both arms at the sides. On a patient the arm nearer the receptor is raised over the head and the other shoulder depressed, to take the shoulders off C7-T1."
+              }
+            }
+          ]
+        },
+        {
+          "region": "Soft-tissue neck",
+          "projections": [
+            {
+              "proj": "Lateral soft-tissue neck (adenoids)",
+              "kv": 65,
+              "mas": 20,
+              "grid": false,
+              "lut": "softtissue",
+              "sid": 100,
+              "coll": [
+                18,
+                20
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "eam",
+                "joints": {
+                  "neck.flex": -10
+                }
+              }
+            },
+            {
+              "proj": "Lateral soft-tissue neck (epiglottis)",
+              "kv": 70,
+              "mas": 25,
+              "grid": false,
+              "lut": "softtissue",
+              "sid": 180,
+              "coll": [
+                18,
+                24
+              ],
+              "det": [
+                25,
+                30
+              ],
+              "orient": "portrait",
+              "subject": "headneck",
+              "pose": {
+                "roll": 90,
+                "cc": 0,
+                "centre": "C4",
+                "joints": {
+                  "neck.flex": -10
+                }
               }
             }
           ]
@@ -1789,12 +3081,44 @@
                   "knee joint"
                 ]
               }
+            },
+            {
+              "proj": "Lateral femur pasting",
+              "kv": 77,
+              "mas": 40,
+              "grid": true,
+              "aec": "c",
+              "lut": "pasteLimb",
+              "sid": 180,
+              "coll": [
+                15,
+                43
+              ],
+              "det": [
+                43,
+                43
+              ],
+              "orient": "portrait",
+              "subject": "lowerextremity",
+              "pose": {
+                "roll": -117,
+                "cc": 0,
+                "centre": "femur",
+                "note": "This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+              },
+              "paste": {
+                "coi": 8,
+                "limits": [
+                  "hip joint",
+                  "knee joint"
+                ]
+              }
             }
           ]
         }
       ]
     }
   ],
-  "_pose": "pose.roll: degrees about the long axis from the subject's rest pose (body subjects rest supine/AP; the hand rests PA); +roll lifts world +x. pose.cc: central-ray angle, negative = cephalic. pose.centre: a landmark in landmarks.json (measured by tools/measure_landmarks.py) that the patient is moved to put under the central ray. pose.fidelity \"approx\" marks a view a rigid model cannot truly achieve; pose.note says why.",
+  "_pose": "pose.roll: degrees about the long axis from the subject's rest pose (body subjects rest supine/AP; the hand rests PA); +roll lifts world +x. pose.cc: central-ray angle, negative = cephalic. pose.centre: a landmark in landmarks.json (measured by tools/measure_landmarks.py) that the patient is moved to put under the central ray. pose.through: an angled central ray is aimed through that point, as a radiographer aims it, the patient moved along the table by the point's height above the receptor times the angle's tangent; without it the point is placed over the receptor's centre. pose.fidelity \"approx\" marks a view a rigid model cannot truly achieve; pose.note says why.",
   "_paste": "paste: a long-length study stitched from several images (src/pasting.js, src/core/pasting.js), taken at the wall stand or the table with the tube tilted about its focal spot over a tracking bucky. paste.coi: the default centre of interest, cm of the anatomy above the cover or tabletop (the plane the stitched image's ruler is calibrated at); paste.limits: the landmarks the superior and inferior limits are set just beyond. mAs is written for 180 cm and follows the room's pasting distance by the inverse square."
 }

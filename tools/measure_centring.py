@@ -320,18 +320,128 @@ def trunk(name):
     return out
 
 
+# ---------------------------------------------------------------- the hospital protocol views
+# The views the Protocol Trainer's hospital table adds (apps/web/src/trainer/hospitalProtocols.js):
+# the leg, the clavicle, the soft-tissue neck, the sacrum and coccyx, the ribs. Measured on their
+# own and merged into each model's set (`python tools/measure_centring.py added`), so a model whose
+# own points need inputs a checkout may lack (the head CT's vertebra labels) keeps them.
+def leg_points():
+    V = Vol('lowerextremity').main_bone()
+    knee, ankle = lm('lowerextremity', 'knee'), lm('lowerextremity', 'ankle')
+    z = (knee[2] + ankle[2]) / 2
+    x, y, _ = V.coords(V.bone & zband(V, z - 0.25, z + 0.25))
+    return {'legMid': pt([x.mean(), y.mean(), z],
+        f'midway between the knee joint and the tibiotalar joint ({knee[2]:.1f} / {ankle[2]:.1f}), the centre of the tibia and fibula\'s section there',
+        'AP, AP obliques and lateral tibia/fibula: CR perpendicular to the mid-point of the leg, both joints on the receptor (Bontrager; Radiopaedia)')}
+
+
+def neck_points():
+    """The right clavicle and the ear canals on the head and neck model (no vertebra labels needed)."""
+    V = Vol('headneck')
+    out = {}
+    # THE CLAVICLE. Laterally it is the topmost bone in front of the vertebral bodies' plane (the first
+    # rib arches below it, the acromion and the scapula's border lie behind). At 9.5 cm right of the
+    # midline, half way out from the sternoclavicular joint (2 cm off the midline) to the
+    # acromioclavicular (17 cm): the centroid of the bone in its top 1.6 cm there
+    c4 = C_OLD['headneck']['C4']
+    x, y, z = V.coords(V.bone & xband(V, 9.0, 10.0) & zband(V, -18, -8))
+    front = y > c4['y'] + 1.0
+    top = z[front].max()
+    sel = front & (z >= top - 1.6)
+    out['clavicleR'] = pt([9.5, y[sel].mean(), z[sel].mean()],
+        f'the right clavicle half way along it (9.5 cm right of the midline): the centroid of the topmost bone in front of the vertebral bodies (top at z {top:.1f})',
+        'AP and AP axial clavicle: CR to the mid-clavicle (Bontrager; Radiopaedia)')
+    # THE EAR CANALS: air enclosed by tissue above, below, in front and behind (within 1.2 cm), beside
+    # each mastoid process and level with or above its tip; the largest such piece each side
+    air = V.v == 0
+    r = int(round(1.2 / V.sp[0]))
+    enclosed = air.copy()
+    for ax in (0, 1):
+        for s in (1, -1):
+            hit = np.zeros_like(air)
+            for d in range(1, r + 1):
+                hit |= np.roll(~air, s * d, axis=ax)
+            enclosed &= hit
+    ears = []
+    for side in ('mastoidR', 'mastoidL'):
+        m = P('headneck', side)
+        cx, cy, cz = V.coords(enclosed)
+        sel = (np.abs(cz - m[2] - 1.5) < 2.5) & (np.abs(cy - m[1] - 0.5) < 2.5) & (np.sign(cx) == np.sign(m[0])) & (np.abs(cx) > 3) & (np.abs(cx) < 9)
+        mask = np.zeros(V.v.shape, bool)
+        k, j, i = np.nonzero(enclosed)
+        mask[k[sel], j[sel], i[sel]] = True
+        lab, n = ndi.label(mask)
+        big = int(np.argmax(ndi.sum(mask, lab, range(1, n + 1)))) + 1
+        ex, ey, ez = V.coords(lab == big)
+        ears.append(np.array([ex.mean(), ey.mean(), ez.mean()]))
+        print(f'  headneck: ear canal beside {side}: ({ex.mean():.2f} {ey.mean():.2f} {ez.mean():.2f})')
+    out['eam'] = pt((ears[0] + ears[1]) / 2,
+        'midway between the ear canals: the air each side enclosed by tissue within 1.2 cm, beside and above the mastoid tip',
+        'Lateral soft-tissue neck (adenoids): CR to the EAM, the nasopharynx in the field (Radiopaedia)', 'high')
+    return out
+
+
+def pelvis_points():
+    """The sacrum and coccyx on the trunk: the midline bone behind the pelvis, S1 to the tip."""
+    V = Vol('chestabdopelvis')
+    zc = (P('chestabdopelvis', 'iliacCrestR')[2] + P('chestabdopelvis', 'iliacCrestL')[2]) / 2
+    x, y, z = V.coords(V.bone)
+    # the tip: the lowest midline bone behind the pelvis (the symphysis is in front, y > 0)
+    back = (np.abs(x) < 1.5) & (y < -5)
+    tip = z[back & (z < zc - 10)].min()
+    s1 = zc - 5.0                               # the crest is L4-L5; L5 a vertebra (about 4 cm) and a disc below
+    sac = (np.abs(x) < 4) & (z <= s1) & (z >= tip + 3.5) & (y < 4)
+    coc = back & (z <= tip + 3.5)
+    print(f'  chestabdopelvis: S1 top ~{s1:.1f}, coccyx tip {tip:.1f}')
+    return {
+        'sacrum': pt([0, y[sac].mean(), z[sac].mean()],
+            f'the sacrum: the centroid of the bone within 4 cm of the midline from S1 (z {s1:.1f}, 5 cm below the crests) to the coccyx (3.5 cm above its tip)',
+            'AP axial sacrum: CR 15 degrees cephalad, entering 5 cm superior to the symphysis pubis; lateral sacrum: CR to the sacrum, 8-10 cm posterior to the ASIS (Bontrager; Radiopaedia)'),
+        'coccyx': pt([0, y[coc].mean(), z[coc].mean()],
+            f'the coccyx: the centroid of the midline bone behind the pelvis in the 3.5 cm above its tip (z {tip:.1f})',
+            'AP axial coccyx: CR 10 degrees caudad, entering 5 cm superior to the symphysis pubis (Bontrager; Radiopaedia)'),
+    }
+
+
+def rib_points():
+    V = Vol('chest')
+    z7 = C_OLD['chest']['T7']['z']
+    x, _, _ = V.coords(V.bone & zband(V, z7 - 0.5, z7 + 0.5))
+    edge = float(x.max())
+    return {'ribsR': pt([edge / 2, midcoronal_y(V, z7), z7],
+        f'midway between the midsagittal plane and the right lateral margin of the ribs ({edge:.1f} cm) at T7, on the midcoronal plane',
+        'Ribs above the diaphragm, PA and AP obliques: CR midway between the midsagittal plane and the lateral margin of the affected side, at T7 (Bontrager)')}
+
+
+C_OLD = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else {}
+ADDED = {'lowerextremity': leg_points, 'headneck': neck_points, 'chestabdopelvis': pelvis_points, 'chest': rib_points}
+
+
 def main(only=None):
-    """Every model, or only those named; the others keep what the file already has."""
+    """Every model, or only those named; the others keep what the file already has. 'added': only the
+    hospital protocol points, merged into what each model has."""
     old = json.loads(OUT.read_text(encoding='utf-8')) if OUT.exists() else {}
     out = {'_about': __doc__.strip().splitlines()[0] + ' Rest-frame cm from the volume centre.'}
+    added = bool(only and 'added' in only)
     for name, fn in (('hand', hand), ('lowerextremity', lower_extremity), ('upperextremity', upper_extremity), ('headneck', head_neck),
                      ('skull', skull), ('chest', lambda: trunk('chest')), ('chestabdopelvis', lambda: trunk('chestabdopelvis'))):
-        if only and name not in only:
-            out[name] = old.get(name, {})
+        if added or (only and name not in only):
+            out[name] = dict(old.get(name, {}))
+            if added and name in ADDED:
+                out[name].update(ADDED[name]())
             continue
-        out[name] = fn()
+        out[name] = {**fn(), **(ADDED[name]() if name in ADDED else {})}
         for k, v in out[name].items():
             print(f'{name:16s} {k:16s} ({v["x"]:7.2f} {v["y"]:7.2f} {v["z"]:7.2f})  {v["how"][:80]}')
+    for name, pts in old.items():                # (the child's points: tools/measure_pediatric.py writes them)
+        if name not in out:
+            out[name] = pts
+    if added:
+        for name in ADDED:
+            for k in ('legMid', 'clavicleR', 'eam', 'sacrum', 'coccyx', 'ribsR'):
+                if k in out[name]:
+                    v = out[name][k]
+                    print(f'{name:16s} {k:16s} ({v["x"]:7.2f} {v["y"]:7.2f} {v["z"]:7.2f})  {v["how"][:80]}')
     OUT.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     print('wrote', OUT)
 
