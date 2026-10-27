@@ -2421,7 +2421,7 @@ body.mobile .anim-cap{font-size:13px; left:10px; bottom:10px}
 
 /* ---- PROTOCOL TRAINER (src/trainer/protocolTrainer.js) ---------------------------------- */
 .hc-acts .hc-ptrainer{background:#2a3a4a; border-color:#4d6a86}
-.ptrainer{position:fixed; inset:0; z-index:60; background:var(--bg); overflow:auto; padding:0 16px 40px; color:var(--txt)}
+.ptrainer{position:fixed; inset:0; z-index:1000; background:var(--bg); overflow:auto; padding:0 16px 40px; color:var(--txt)}
 .ptrainer[hidden]{display:none}
 .ptr-bar{position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:10px; padding:10px 0; background:var(--bg); border-bottom:1px solid var(--edge); margin-bottom:12px}
 .ptr-title{font-family:var(--disp); font-size:19px; letter-spacing:1px; text-transform:uppercase; color:#ffd98a}

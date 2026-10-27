@@ -6,6 +6,30 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-27
+
+### Protocol Trainer — PR pending
+A second trainer in the X-ray card. The existing Trainer is renamed **Positioning Trainer**.
+- **The requisition** (`trainer/requisition.js`, `trainer/cases.js`) is a fully detailed, seeded and fictional form:
+  - the patient's demographics, health card, allergies, medications and pregnancy status;
+  - the encounter (outpatient, inpatient bed, ED), priority and accession;
+  - the referring physician, their office and the cc;
+  - the exams requested, the reason for exam and a full clinical history.
+  - There are 88 case templates, 15 of them multi-exam. At least one covers each line of the department's protocol list.
+- **The worklist:** the student picks anatomy and views from the room's own chart. Each line of the hospital list is now a distinct projection: 49 were added to protocols.json, for 113 in all. Views a rigid model cannot truly make are marked approx.
+- **Marking** (`trainer/hospitalProtocols.js`, `core/viewOrder.js`):
+  - Protocol: missing views and views not needed. Combined lines share views (sacrum with SI joints), and either/or slots accept either view (SI or IS axial).
+  - Order: priced lexicographically by room, then position (posture, then turning), then tube angle, then anatomy travel, then collimation. The best order is found exactly, by Held-Karp over subsets.
+- **Films:** each chosen view is applied as the sandbox applies it, then exposed dry at an 800×1000 matrix with full processing. Films for a left limb are mirrored, and each carries a burned-in marker.
+- **Pathology** (`core/pathology.js`) is stamped into the loaded volume for the exposure and put back exactly. The physics decides what each view shows:
+  - the scaphoid waist line is clearest on the scaphoid view;
+  - air-fluid levels appear on the erect abdomen only;
+  - the pneumothorax is larger on expiration.
+  - Lesions the model's resolution or crop cannot show are never drawn; those requisitions come out normal.
+- Checked in the app on the scaphoid follow-up, pneumothorax, obstruction and shoulder trauma cases, and at phone width. 343 tests pass.
+
+---
+
 ## 2026-10-25
 
 ### October uplifts — [#89](https://github.com/mrtethlab/RadSim/pull/89)
