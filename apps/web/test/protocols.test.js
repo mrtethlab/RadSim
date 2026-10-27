@@ -287,12 +287,23 @@ test('an angled ray is aimed through its point only when there is an angle', () 
 });
 
 test('the views a rigid model cannot make are marked approximate', () => {
-  for (const n of ['AP shoulder internal rotation', 'AP shoulder neutral rotation', 'Axial shoulder (inferosuperior)',
-    'Axial shoulder (superoinferior)', 'Frog-leg lateral hip', 'Roll-up lateral hip (Lauenstein)', 'Cross-table lateral hip',
+  for (const n of ['Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)', 'Y view shoulder', 'Frog-leg lateral hip', 'Roll-up lateral hip (Lauenstein)', 'Cross-table lateral hip',
     'AP knee standing', 'Lateral knee standing', 'Skyline knee', 'Rosenberg knee (PA 45° flexion)', 'PA chest expiration'])
     assert.equal(all.find((p) => p.proj === n).pose.fidelity, 'approx', n);
-  // the arm rests in the anatomical position (epicondyles parallel to the receptor): its AP shoulder is the external rotation
-  assert.notEqual(all.find((p) => p.proj === 'AP shoulder external rotation').pose.fidelity, 'approx');
+  // the arm rests in the anatomical position (epicondyles parallel to the receptor): its AP shoulder is the external rotation,
+  // and the shoulder joint turns the humerus in for the neutral and internal rotations
+  const sh = (n) => all.find((p) => p.proj === n).pose;
+  for (const n of ['AP shoulder external rotation', 'AP shoulder neutral rotation', 'AP shoulder internal rotation']) assert.notEqual(sh(n).fidelity, 'approx', n);
+  assert.equal(sh('AP shoulder external rotation').joints?.['shoulder.rot'] || 0, 0);
+  assert.equal(sh('AP shoulder neutral rotation').joints['shoulder.rot'], 45);
+  assert.equal(sh('AP shoulder internal rotation').joints['shoulder.rot'], 90);
+  // the axials abduct the arm 70-90 degrees and lay the body's long axis along the beam
+  for (const n of ['Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)']) {
+    const a = sh(n).joints['shoulder.abd'];
+    assert.ok(a >= 70 && a <= 90, `${n}: abducted ${a}`);
+    assert.equal(Math.abs(sh(n).tilt), 90, n);
+  }
+  assert.equal(Math.sign(sh('Axial shoulder (inferosuperior)').tilt), -Math.sign(sh('Axial shoulder (superoinferior)').tilt));
 });
 
 test('the hospital views centre on measured, sourced points', () => {

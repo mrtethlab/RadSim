@@ -585,8 +585,8 @@
                 "roll": 0,
                 "cc": 0,
                 "centre": "shoulder",
-                "fidelity": "approx",
-                "note": "The model has no shoulder joint, and this arm rests in the anatomical position (epicondyles parallel to the receptor, data/palpation.json): the humerus cannot be turned in under the girdle, so it shows externally rotated. On a patient the back of the hand rests on the hip, the epicondyles perpendicular to the receptor: the lesser tubercle in profile medially."
+                "joints": { "shoulder.rot": 90 },
+                "note": "The humerus turned 90 degrees in from the anatomical position at the shoulder (the shoulder field joint, data/joints.json): the epicondyles perpendicular to the receptor, the lesser tubercle in profile medially."
               }
             },
             {
@@ -611,7 +611,7 @@
                 "roll": 0,
                 "cc": 0,
                 "centre": "shoulder",
-                "note": "This arm rests in the anatomical position, the epicondyles parallel to the receptor (data/palpation.json): the humerus is externally rotated, the greater tubercle in profile laterally."
+                "note": "This arm rests in the anatomical position, the epicondyles parallel to the receptor (data/palpation.json): the humerus externally rotated, the greater tubercle in profile laterally."
               }
             },
             {
@@ -636,8 +636,8 @@
                 "roll": 0,
                 "cc": 0,
                 "centre": "shoulder",
-                "fidelity": "approx",
-                "note": "The model has no shoulder joint: the humerus cannot turn under the girdle, so it shows as this arm rests. On a patient the palm rests against the thigh, the epicondyles about 45 degrees to the receptor."
+                "joints": { "shoulder.rot": 45 },
+                "note": "The humerus turned 45 degrees in from the anatomical position (the shoulder field joint, data/joints.json): the epicondyles about 45 degrees to the receptor, as with the palm against the thigh."
               }
             },
             {
@@ -710,11 +710,12 @@
               "subject": "upperextremity",
               "pose": {
                 "roll": 0,
-                "cc": -45,
+                "tilt": 90,
+                "cc": 0,
                 "centre": "shoulder",
-                "through": true,
+                "joints": { "shoulder.abd": 90 },
                 "fidelity": "approx",
-                "note": "The model has no shoulder joint to abduct the arm, and the arm at the side lies along the axial beam. The tube is angled 45 degrees cephalad on the AP instead, halfway to the axial."
+                "note": "Supine, the arm abducted 90 degrees (the shoulder field joint, data/joints.json), the receptor against the top of the shoulder, the beam horizontal up through the axilla. The central ray is not angled the 15-30 degrees medially a patient's chest would ask for, and the model's chest wall ends a hand's breadth from the shoulder."
               }
             },
             {
@@ -737,11 +738,12 @@
               "subject": "upperextremity",
               "pose": {
                 "roll": 0,
-                "cc": 45,
+                "tilt": -90,
+                "cc": 0,
                 "centre": "shoulder",
-                "through": true,
+                "joints": { "shoulder.abd": 90 },
                 "fidelity": "approx",
-                "note": "The model has no shoulder joint to abduct the arm, and the arm at the side lies along the axial beam. The tube is angled 45 degrees caudad on the AP instead, halfway to the axial: the humeral head, glenoid and coracoid from above."
+                "note": "Seated, the arm abducted 90 degrees over the receptor (the shoulder field joint, data/joints.json), the beam down through the shoulder. The 5-10 degree angle toward the elbow is not given, and the model's chest wall ends a hand's breadth from the shoulder."
               }
             }
           ]

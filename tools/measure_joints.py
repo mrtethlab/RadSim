@@ -32,6 +32,16 @@ everything below none; the soft tissue between takes the weights of the bones ne
 (the facets), with the neck's own axis from C7-T1 to C1-C2. Needs the head CT's labels and nibabel
 (the compute venv: services/compute/.venv).
 
+THE SHOULDER is a FIELD joint too (shoulder_field): the arm model carries the shoulder girdle and
+a slab of the chest wall beside the arm, and no plane through the shoulder parts the humerus from
+them (the scapula's body hangs below the glenoid, the flank lies against the arm). The humerus and
+every bone below it take the whole turn, the scapula, clavicle and ribs none, the soft tissue the
+blend of the bones nearest it. Its centre is the humeral head's, a sphere fitted to the head where
+it faces the glenoid; its motions are rotation about the humerus's own axis (internal +) and
+abduction, in that order (the humerus turned about its axis, then raised).
+
+    python tools/measure_joints.py shoulder  # the shoulder alone, put first in the arm's chain
+
 THE DIGITS of the hand curl, one slider a digit (hand_digits): each digit's three joints are field
 joints whose shares are read at the rest point, from one weight grid a digit beside the model
 (hand.digit1.bin ... hand.digit5.bin). Their bones are found as pieces of the volume (the joint
@@ -175,6 +185,77 @@ def neck_field(name='headneck'):
     q = np.round(W * 255).astype(np.uint8)
     (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f'{name}.neckw.bin').write_bytes(q.tobytes())
     return {'file': f'{name}.neckw.bin', 'dims': dims.tolist(), 'sp': FIELD_SP, 'origin': o.round(4).tolist()}
+
+
+# THE SHOULDER (see the module's notes). Its grid reaches well past the model, so a forearm the
+# elbow has swung forward is still read as the arm's (outside a field nothing turns).
+SHOULDER_SP = 0.6                         # cm, the weight grid
+SHOULDER_BOX = ((-22.0, 40.0), (-26.0, 40.0), (-36.0, 36.0))   # x, y, z (cm, rest frame)
+SHOULDER_POW = 3                          # the inverse-distance blend's power
+
+
+def shoulder_field(name='upperextremity'):
+    """The shoulder joint for joints.json, its weight grid written beside the model."""
+    V = Vol(name)
+    # the bone itself, not the skeleton mask (which takes the cartilage in, and joins the humerus to
+    # the glenoid across it)
+    V.bone = np.isin(V.v, [17, 18] + list(range(54, 62)))
+    lab, n = ndi.label(V.bone)
+    sizes = ndi.sum(V.bone, lab, range(1, n + 1))
+    order = np.argsort(sizes)[::-1] + 1
+    cz = ndi.center_of_mass(V.bone, lab, list(order))
+    zc = lambda i: (cz[i][0] - (V.n[2] - 1) / 2) * V.sp[2]          # a piece's mean height, cm
+    hum = int(order[1])                                               # the humerus: the second piece
+    hk = np.nonzero(lab == hum)
+    hz_top = (hk[0].max() - (V.n[2] - 1) / 2) * V.sp[2]
+    # the arm: the humerus and every piece whose middle is below the humerus's upper third (the
+    # forearm, the hand, any loose carpal); the girdle and the chest wall: the rest
+    arm_ids = {hum} | {int(order[i]) for i in range(n) if zc(i) < hz_top - 12.0 and sizes[order[i] - 1] >= 20}
+    arm = np.isin(lab, list(arm_ids))
+    trunk = V.bone & ~arm
+    # the head: the humerus's surface within 1.5 cm of the girdle (where it faces the glenoid),
+    # a sphere fitted to it
+    H = np.stack(V.coords(lab == hum), 1)
+    T = np.stack(V.coords(trunk), 1)
+    from scipy.spatial import cKDTree
+    near = cKDTree(T).query(H, distance_upper_bound=1.5)[0] < 1.5
+    S = H[near & (H[:, 2] > hz_top - 6.0)]
+    A = np.c_[2 * S, np.ones(len(S))]
+    sol = np.linalg.lstsq(A, (S ** 2).sum(1), rcond=None)[0]
+    c = sol[:3]; r = float(np.sqrt(sol[3] + c @ c))
+    # the humerus's axis, from the head to the elbow
+    el = np.array(v3(CENT[name]['elbowJoint']))
+    d = el - c; d /= np.linalg.norm(d)
+    # the grid
+    o = np.array([b[0] for b in SHOULDER_BOX])
+    dims = np.array([int(round((b[1] - b[0]) / SHOULDER_SP)) + 1 for b in SHOULDER_BOX])
+    def mask_on_grid(P):
+        g = np.round((P - o) / SHOULDER_SP).astype(int)
+        g = g[(g >= 0).all(1) & (g < dims).all(1)]
+        m = np.zeros(dims[::-1], bool); m[g[:, 2], g[:, 1], g[:, 0]] = True
+        return m
+    A_ = mask_on_grid(np.stack(V.coords(arm), 1))
+    T_ = mask_on_grid(T)
+    da = ndi.distance_transform_edt(~A_, sampling=SHOULDER_SP) + 1e-3
+    dt = ndi.distance_transform_edt(~T_, sampling=SHOULDER_SP) + 1e-3
+    W = dt ** SHOULDER_POW / (dt ** SHOULDER_POW + da ** SHOULDER_POW)
+    W = ndi.gaussian_filter(W, 0.8 / SHOULDER_SP)
+    W = np.where(W < 0.02, 0, np.where(W > 0.98, 1, W))
+    q = np.round(W * 255).astype(np.uint8)
+    (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f'{name}.shoulderw.bin').write_bytes(q.tobytes())
+    ant = perp([0, 1, 0], d); med = perp([-1, 0, 0], d); lat = perp([1, 0, 0], d)
+    print(f'shoulder: head centre {c.round(2)}, radius {r:.2f} cm from {len(S)} surface voxels; '
+          f'arm pieces {len(arm_ids)}; grid {dims.tolist()}')
+    return {'label': 'Shoulder', 'c': [round(float(x), 2) for x in c], 'distal': d.round(3).tolist(), 'blend': 0,
+            'field': {'file': f'{name}.shoulderw.bin', 'dims': dims.tolist(), 'sp': SHOULDER_SP, 'origin': o.round(4).tolist()},
+            'how': f'the glenohumeral joint, a field joint: the centre of the humeral head (a {r:.1f} cm sphere fitted where it '
+                   'faces the glenoid); the humerus and the arm below it turn, the scapula, clavicle and chest wall stay',
+            'motions': [
+                {'key': 'shoulder.rot', 'label': 'Rotation', 'neg': 'external', 'pos': 'internal', 'roll': True,
+                 'from': ant.round(3).tolist(), 'toward': med.round(3).tolist(), 'range': [-60, 90]},
+                {'key': 'shoulder.abd', 'label': 'Abduction', 'neg': 'adduction', 'pos': 'abduction',
+                 'toward': lat.round(3).tolist(), 'range': [0, 120]},
+            ]}
 
 
 # THE JAW, a second field joint on the head: the mandible hinged at its condyles, so the open-mouth
@@ -762,6 +843,14 @@ def solve_thumb(V, piece, J, pieces, curls):
 
 def main():
     out = {'_about': __doc__.strip().splitlines()[0]}
+    if sys.argv[1:] == ['shoulder']:
+        # the shoulder alone, first in the arm's chain (a chain lists its joints proximal first)
+        old = json.loads(OUT.read_text(encoding='utf-8'))
+        arm = {k: v for k, v in old['upperextremity'].items() if k != 'shoulder'}
+        old['upperextremity'] = {'shoulder': shoulder_field(), **arm}
+        OUT.write_text(json.dumps(old, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+        print('wrote the shoulder to', OUT)
+        return
     # ---- the hand: the wrist
     rs, m3 = PALP['hand']['radialStyloid'], CENT['hand']['mcp3Joint']
     radial = 1 if rs['x'] > m3['x'] else -1
@@ -818,7 +907,7 @@ def main():
     roll = lambda key, label, rng, rest=None: dict({'key': key, 'label': label, 'neg': 'pronation', 'pos': 'supination', 'roll': True,
                                                  'from': antp.round(3).tolist(), 'toward': lat.round(3).tolist(), 'range': rng},
                                                 **({'rest': rest} if rest else {}))
-    arm = {'elbow': {
+    arm = {'shoulder': shoulder_field(), 'elbow': {
         'label': 'Elbow', 'c': [round(float(c), 2) for c in ec],
         'distal': fore, 'blend': 1.5, 'spread': spread,
         'how': f'the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon; the forearm pronates over its {spread} cm',

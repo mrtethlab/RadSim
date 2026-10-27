@@ -28,6 +28,13 @@ A second trainer in the X-ray card. The existing Trainer is renamed **Positionin
 - **Rooms (the x-ray room too):**
   - A fourth set-up, **seated**: the wall stand's bucky turned flat at a seated patient's elbow height, with a stool beside it. It is used for the finger, hand, wrist, scaphoid, forearm and elbow views, and, with the bucky tilted, for the superoinferior axial shoulder and the seated Merchant skyline.
   - **At the wall stand the patient stands on the floor.** The legs and whole bodies stand on their lowest point. The partial models stand at a 170 cm adult's heights: femoral heads 90 cm, T7 127, C4 147, nasion 160, a hanging elbow 105. The tube and bucky ride the column to the anatomy (25-180 cm), and the patient's up/down offset is locked. A protocol takes the tube to its landmark. A room change keeps the anatomy under the central ray. The Positioning Trainer, which marks centring by moving the patient, opens on the table.
+- **The shoulder (the x-ray room too):**
+  - The arm model has a shoulder joint: a weight-field joint like the neck's, centred on the humeral head. The head is a 2.3 cm sphere fitted where it faces the glenoid. The humerus and the arm below it turn; the scapula, clavicle and chest wall stay.
+  - Its motions are rotation (internal +) and abduction, on sliders in the positioning panel.
+  - The AP shoulders in internal (90 degrees) and neutral (45 degrees) rotation are now true views.
+  - Both axials abduct the arm 90 degrees, with the body's long axis along the beam: supine and up through the axilla, or seated and down over the receptor. They stay approx because the medial and toward-the-elbow angles are not given.
+  - The scapular Y is a 58 degree PA oblique, measured so the beam lies in the plane of this model's scapula (it was rolled 45 degrees the wrong way). It has an equalised display table.
+  - The arm model's chest-wall slab was solid muscle and fat where the source has lung. It whited the Y out, so when the model loads, the tissue inside the ribs' arc is made lung (`core/thoraxFill.js`). Every shoulder film now shows lung and ribs medially.
 - **Films:** each chosen view is applied as the sandbox applies it, then exposed dry at an 800×1000 matrix with full processing. Films for a left limb are mirrored, and each carries a burned-in marker.
 - **Pathology** (`core/pathology.js`) is stamped into the loaded volume for the exposure and put back exactly. The physics decides what each view shows:
   - the scaphoid waist line is clearest on the scaphoid view;
