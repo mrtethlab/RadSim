@@ -18,7 +18,7 @@
    shows of the pathology is what the physics shows — a missed view can miss the fracture.
    ============================================================================ */
 import { HOSPITAL, VIEW_META, lineById } from './hospitalProtocols.js';
-import { makeRequisition, seedRng } from './requisition.js';
+import { makeRequisition, seedRng, HOSPITAL_INFO } from './requisition.js';
 import { judgeOrder, orderCost, stepChanges, TIERS } from '../core/viewOrder.js';
 
 let H = null;                 // app hooks
@@ -136,13 +136,13 @@ function render() {
 function reqHTML(r) {
   const p = r.patient || {}, e = r.encounter || {}, d = r.referrer || {};
   const row = (k, v) => v || v === 0 ? `<div class="rq-f"><span>${esc(k)}</span><b>${esc(v)}</b></div>` : '';
-  const name = [p.surname?.toUpperCase(), p.given].filter(Boolean).join(', ');
+  const name = p.name || [p.surname?.toUpperCase(), p.given].filter(Boolean).join(', ');
   const loc = e.location || [e.unit, e.room && `Rm ${e.room}`, e.bed && `Bed ${e.bed}`].filter(Boolean).join(' · ');
   const preg = p.pregnancy ? (typeof p.pregnancy === 'string' ? p.pregnancy : [p.pregnancy.status, p.pregnancy.lmp && `LMP ${p.pregnancy.lmp}`].filter(Boolean).join(' · ')) : null;
   const list = (v) => Array.isArray(v) ? v.join(', ') : v;
   return `
     <div class="rq-head">
-      <div><div class="rq-fac">${esc(r.facility || 'Lakeshore Regional Health Centre')}</div>
+      <div><div class="rq-fac">${esc(HOSPITAL_INFO.name)}</div>
         <div class="rq-doc">Diagnostic Imaging Requisition</div></div>
       <div class="rq-acc">${row('Accession', e.accession)}${row('Ordered', e.ordered)}
         <div class="rq-pri pri-${esc(String(e.priority || 'Routine').toLowerCase())}">${esc(e.priority || 'Routine')}</div></div>
@@ -150,11 +150,12 @@ function reqHTML(r) {
     <div class="rq-grid">
       <div class="rq-box"><div class="rq-bt">Patient</div>
         <div class="rq-name">${esc(name)}</div>
-        ${row('Sex', p.sex)}${row('DOB', p.dob && `${p.dob} (${p.age} y)`)}${row('MRN', p.mrn)}${row('Health card', p.hcn)}
+        ${row('Sex', p.sex)}${row('DOB', p.dob && `${p.dob} (${p.ageText || p.age + ' y'})`)}${row('MRN', p.mrn)}${row('Health card', p.healthCard || p.hcn)}
         ${row('Address', p.address)}${row('Phone', p.phone)}${row('Language', p.language)}${row('Interpreter', p.interpreter === true ? 'Required' : p.interpreter || null)}</div>
       <div class="rq-box"><div class="rq-bt">Encounter</div>
-        ${row('Class', e.class)}${row('Location', loc)}${row('Mobility', p.mobility || e.mobility)}${row('Isolation', p.isolation || e.isolation)}
-        ${row('Weight', p.weight)}${row('Height', p.height)}</div>
+        ${row('Class', e.patientClass || e.class)}${row('Location', loc)}${row('Mobility', p.mobility || e.mobility)}${row('Isolation', p.isolation || e.isolation)}
+        ${row('Weight', p.weightKg ? p.weightKg + ' kg' : p.weight)}${row('Height', p.heightCm ? p.heightCm + ' cm' : p.height)}
+        ${p.familyPhysician ? row('Family MD', p.familyPhysician.name) : row('Family MD', 'None (unattached)')}</div>
       <div class="rq-box rq-wide"><div class="rq-bt">Referring physician</div>
         <div class="rq-name">${esc(d.name)}${d.credentials ? `, ${esc(d.credentials)}` : ''}</div>
         ${row('Specialty', d.specialty)}${row('Office / department', d.office || d.department)}${row('Address', d.address)}
@@ -316,8 +317,8 @@ function filmsHTML() {
       ${P.report ? reportHTML() : ''}` : ''}`;
 }
 function reportHTML() {
-  const r = P.req, f = r.findings || {};
-  const text = r.pathology ? (f.positive || f.text) : (f.negative || f.text);
+  const r = P.req, f = r.findings;
+  const text = typeof f === 'string' ? f : f && (r.pathology ? f.positive : f.negative);
   return `<div class="ptr-report"><div class="rq-bt">Findings</div><div>${esc(text || 'No acute findings.')}</div></div>`;
 }
 function paintFilms() {
