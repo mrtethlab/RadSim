@@ -19,6 +19,7 @@
    ============================================================================ */
 import { HOSPITAL, VIEW_META, lineById } from './hospitalProtocols.js';
 import { makeRequisition, seedRng, HOSPITAL_INFO } from './requisition.js';
+import { PATHOLOGY } from '../core/pathology.js';
 import { judgeOrder, orderCost, stepChanges, TIERS } from '../core/viewOrder.js';
 
 let H = null;                 // app hooks
@@ -58,7 +59,7 @@ function newRequisition(seed) {
   P.ticket++;
   H.clearPathology?.();
   P.seed = seed ?? ((Math.random() * 2 ** 31) >>> 0);
-  P.req = makeRequisition({ rng: seedRng(P.seed) });
+  P.req = makeRequisition({ rng: seedRng(P.seed), drawable: (id) => PATHOLOGY[id]?.available !== false });
   P.region = null; P.list = []; P.checked = null; P.films = {}; P.missed = false; P.counted = false; P.report = false;
   render();
 }
@@ -372,7 +373,7 @@ async function expose(name) {
   await apply(p, f.part);
   // the pathology belongs to one model: stamped when this view is of it
   const path = req.pathology;
-  if (path && H.pathologySubject?.(path.id) === H.S.subject) {
+  if (path && PATHOLOGY[path.id]?.subject === H.S.subject) {
     await H.setPathology(path.id, { side: path.side || side || 'R', posture: posture(meta), expiration: /expiration/i.test(name) });
   } else H.clearPathology?.();
   H.setMarker(null);

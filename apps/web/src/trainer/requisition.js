@@ -295,7 +295,7 @@ function physician(rng, key, setting) {
 
 /* A requisition. rng: a seeded generator (seedRng), or seed to make one; caseId: a case from
    cases.js (default: any); today: the day it is made (default now). */
-export function makeRequisition({ rng, seed, caseId, today } = {}) {
+export function makeRequisition({ rng, seed, caseId, today, drawable } = {}) {
   rng = rng || seedRng(seed ?? newSeed());
   const now = today ? new Date(today) : new Date();
   const c = caseId ? caseById(caseId) : pick(rng, CASES);
@@ -398,6 +398,8 @@ export function makeRequisition({ rng, seed, caseId, today } = {}) {
   let hit = null;
   let r = rng();
   for (const p of c.pathology || []) { if (r < p.p) { hit = p; break; } r -= p.p; }
+  // (a lesion the films cannot show is not given: the requisition is then a normal one)
+  if (hit && drawable && !drawable(hit.id)) hit = null;
   const pathology = hit ? { id: hit.id, side: LATERAL.has(hit.id) ? side : null, line: hit.line ?? c.lines[0] } : null;
   const findings = fill(hit ? hit.positive ?? c.findings?.positive : c.findings?.negative) ?? null;
 

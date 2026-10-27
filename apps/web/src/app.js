@@ -11,6 +11,7 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
+import { PATHOLOGY, makeCtx, stampPathology, undoPathology } from './core/pathology.js';
 import { axisToward, forwardChain, forwardCompiled, forwardSkin, forwardBone, boneSide, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
@@ -450,6 +451,7 @@ async function setSubject(sub){
     finally{ if(req===subjectReq) S.subjectLoading=false; }
   }
   if(req!==subjectReq) return;          // a newer request has been made: this one is only cached
+  if(patho && patho.vm!==vm) clearPathology();   // the last patient's lesion goes with them
   S.voxelModel=vm; S.subject=sub;
   syncBoneViewUI();                     // (bones only carries over to the next model that has bone)
   if(S.boneView) ensureBoneMesh(sub).then(()=>{ if(S.subject===sub){ applyPhotoSkin(); syncScene(); } });
@@ -807,6 +809,60 @@ function jointPosedVolume(vm){
   if(!poseCache(vm).has(key)){ if(S.mode==='fluoro') return null; keepPose(vm, key, poseVolume(vm, voxelFlips(), ch, S.joints)); }
   return poseCache(vm).get(key);
 }
+/* ---- PATHOLOGY (core/pathology.js) ------------------------------------------------------------
+   The Protocol Trainer's patient may have a fracture, an effusion, a stone: it is stamped into the
+   loaded volume (vm.data) for the films and taken out again, exactly, afterwards. Everything made
+   FROM vm.data has to go with it, or a film would show the patient as they were: the posed volumes
+   (the joint pose cache, the leg rotation's femurs and their pose), the pose workers' copies of
+   the model, and the skin the patient is rested on the receptor by. A pose still being made in a
+   worker was made from the volume as it was, so it is waited for first and only then thrown away
+   with the rest: let it land after, and an unstamped pose would sit in the cache.
+   One lesion at a time; a new one takes the last one out first. It belongs to the x-ray room and
+   to one patient, so a change of either takes it out. */
+let patho=null;                                    // { vm, id, opts, undo }
+let pathoChain=Promise.resolve();
+// the x-ray room's flips for a subject (voxelFlips() as it is in the x-ray room, whatever the mode)
+function xrayFlips(sub){ const f=[true,true,false]; if(ROLLED_180.has(sub)){ f[0]=!f[0]; f[1]=!f[1]; } return f; }
+async function settlePoses(vm){
+  while(vm?._jpending?.size) await Promise.all([...vm._jpending.values()]);
+}
+function dropDerived(vm){
+  vm._jcache=null; vm._posed=null; vm._femurs=null;
+  for(const w of (posePool||[])){ w._modelKey=null; w._planFor=null; }
+  if(restFor===vm) restFor=null;
+}
+// queued, so a set and a clear asked for together run in the order asked
+const pathoQueue=(fn)=>(pathoChain=pathoChain.then(fn, fn));
+async function takeOutPathology(){
+  if(!patho) return;
+  const { vm, undo }=patho;
+  await settlePoses(vm);
+  undoPathology(vm, undo); dropDerived(vm);
+  patho=null;
+}
+function setPathology(id, opts={}){
+  return pathoQueue(async ()=>{
+    const P=PATHOLOGY[id];
+    if(!P) throw new Error(`unknown pathology: ${id}`);
+    const vm=S.voxelModel;
+    if(!vm?.data || S.subject!==P.subject) throw new Error(`${id} is drawn on ${P.subject}; the subject is ${S.subject}`);
+    await takeOutPathology();
+    if(P.available===false && !opts.force) return { id, available:false, why:P.why };
+    await settlePoses(vm);
+    const ctx=makeCtx(S.subject, vm, { landmarks:landmarkData[S.subject]||{}, centring:centringData[S.subject]||{},
+      joints:jointData[S.subject]||{}, flips:xrayFlips(S.subject) });
+    const undo=stampPathology(vm, id, ctx, opts);
+    dropDerived(vm);
+    patho={ vm, id, opts:{ ...opts }, undo };
+    return { id, available:true, ms:Math.round(undo.ms), voxels:undo.idx.length, info:undo.info };
+  });
+}
+function clearPathology(){ return pathoQueue(takeOutPathology); }
+window.radsimPathology={
+  set:setPathology, clear:clearPathology,
+  list:()=>Object.entries(PATHOLOGY).map(([id, p])=>({ id, subject:p.subject, label:p.label, available:p.available!==false, ...(p.why ? { why:p.why } : {}) })),
+  current:()=>patho ? { id:patho.id, opts:{ ...patho.opts }, subject:S.subject, voxels:patho.undo.idx.length, ms:Math.round(patho.undo.ms) } : null,
+};
 /* REST ON THE TABLE. A patient lies on the receptor whichever way they are turned. The model
    used to stand at half its unrotated depth, so a lateral, an oblique or a tilt sank part of it
    below the receptor plane, where the tracer stops counting: a lateral lost its dependent side,
@@ -4603,7 +4659,7 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   setInterval(tabActivity, 250);
   // CT mode lives in its own module; give it the handles it needs from the app glue.
-  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); protocolTrainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
+  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); protocolTrainerOnMode(m); if(m!=='xray') clearPathology(); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
            setSubject: (s) => setSubject(s),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
@@ -4735,9 +4791,7 @@ window.addEventListener('load',()=>{
     exposeDry: () => computeRadiograph({ dry:true }),
     renderFilm: (target, entry) => { const r=S.imgRot, fh=S.flipH, fv=S.flipV; S.imgRot=0; S.flipH=false; S.flipV=false;
       try { renderRadiograph(target, entry, { processed:true }); } finally { S.imgRot=r; S.flipH=fh; S.flipV=fv; } },
-    pathologySubject: (id) => window.radsimPathology?.subjectOf?.(id) ?? null,
-    setPathology: (id, opts) => window.radsimPathology?.set?.(id, opts),
-    clearPathology: () => window.radsimPathology?.clear?.() });
+    setPathology, clearPathology });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
