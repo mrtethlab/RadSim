@@ -124,6 +124,14 @@
    "how": "the elbow joint: 1.5 cm distal of the midpoint of the measured epicondyles",
    "guide": "AP, AP obliques and lateral elbow: CR perpendicular to the mid elbow joint (Bontrager; Radiopaedia)",
    "confidence": "medium"
+  },
+  "glenohumeral": {
+   "x": -1.41,
+   "y": 0.09,
+   "z": 27.83,
+   "how": "the glenohumeral joint line: from the centre of the humeral head (data/joints.json shoulder) one head radius (2.3 cm) along the normal of the glenoid face, the plane fitted to the scapula within 1.3 cm of the head (tools/measure_joints.py)",
+   "guide": "Inferosuperior and superoinferior axial shoulder: CR to the glenohumeral joint (Bontrager; Radiopaedia)",
+   "confidence": "medium"
   }
  },
  "headneck": {

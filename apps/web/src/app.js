@@ -1519,6 +1519,33 @@ function syncLegRotUI(){
   const v=$('legRotV'); if(v) v.textContent=legRotLabel(S.legRot);
 }
 const legRotLabel=(d)=> d===0 ? '0°' : d>0 ? `${d}° in` : `${-d}° out`;
+/* The occupied part of a posed volume ({ data, dims } in the model's data order), once per pose:
+   { data, dims, off } with off the cropped grid's centre from the full grid's, cm, in data order
+   (flips are applied by the caller, as the phantom applies them to its indices). */
+function cropPosed(posed, vm){
+  if(posed._crop!==undefined) return posed._crop;
+  const [nx,ny,nz]=posed.dims, d=posed.data, sp=vm.spacingMM.map(v=>v/10);
+  let x0=nx, x1=-1, y0=ny, y1=-1, z0=nz, z1=-1;
+  for(let z=0;z<nz;z++) for(let y=0;y<ny;y++){
+    const o=(z*ny+y)*nx;
+    let a=-1, b=-1;
+    for(let x=0;x<nx;x++) if(d[o+x]){ a=x; break; }
+    if(a<0) continue;
+    for(let x=nx-1;x>=a;x--) if(d[o+x]){ b=x; break; }
+    if(a<x0) x0=a; if(b>x1) x1=b; if(y<y0) y0=y; if(y>y1) y1=y; if(z<z0) z0=z; if(z>z1) z1=z;
+  }
+  if(x1<0) return (posed._crop=null);
+  const m=[x1-x0+1, y1-y0+1, z1-z0+1];
+  // not worth a copy unless it saves a quarter
+  if(m[0]*m[1]*m[2] > 0.75*nx*ny*nz) return (posed._crop=null);
+  const out=new Uint8Array(m[0]*m[1]*m[2]);
+  for(let z=0;z<m[2];z++) for(let y=0;y<m[1];y++){
+    const src=((z+z0)*ny+(y+y0))*nx+x0;
+    out.set(d.subarray(src, src+m[0]), (z*m[1]+y)*m[0]);
+  }
+  const off=[[x0,m[0],nx],[y0,m[1],ny],[z0,m[2],nz]].map(([a0,n,N],i)=>(a0+(n-1)/2-(N-1)/2)*sp[i]);
+  return (posed._crop={ data:out, dims:m, off });
+}
 function buildPhantom(){
   // Return a VoxelPhantom centred at the CT patient offset (couch position / table
   // height) or the x-ray object offset, so scout + recon sweep the real anatomy.
@@ -1533,7 +1560,16 @@ function buildPhantom(){
   // real geometric unsharpness, because the divergent rays do the rest.
   const cy = S.mode==='ct' ? S.ct.patientY : restHeight() + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z-BK().z;
-  const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R, jointPosedVolume(vm) || posedVolume(vm, legRotNow()));
+  let posed = jointPosedVolume(vm) || posedVolume(vm, legRotNow()), centre=[cx,cy,cz];
+  // a posed volume is padded evenly round its centre, as far as the bent part reaches either way
+  // (an arm abducted 90 degrees: 1228 x 430 x 755 voxels, 26 s of ray casting at a film's matrix);
+  // the ray caster is given only the voxels that hold anything, and the centre moved to match
+  const crop = posed?.dims ? cropPosed(posed, vm) : null;
+  if(crop){
+    const f=voxelFlips(), o=crop.off.map((v,i)=>f[i] ? -v : v), w=applyMat3(R, o);
+    posed=crop; centre=[cx+w[0], cy+w[1], cz+w[2]];
+  }
+  const ph = vm.makePhantom(centre, voxelFlips(), R, posed);
   applyContrast(ph);
   applyBarium(ph);
   return ph;
@@ -2934,8 +2970,22 @@ async function computeRadiograph(opts={}){
     }
   }
   if(!dose){
+    // the rays worth casting: the collimated field, and the AEC's chambers (which read the dose
+    // wherever they lie, in the field or not)
+    const need=mask.slice();
+    for(const k of ['l','c','r']){
+      if(!S.aecCells[k]) continue; const c=AEC_CELLS[k];
+      const i0=Math.max(0,Math.round((c.x-AEC_W/2)/pxU+halfU)), i1=Math.min(nx-1,Math.round((c.x+AEC_W/2)/pxU+halfU));
+      const j0=Math.max(0,Math.round((c.z-AEC_L/2)/pxV+halfV)), j1=Math.min(ny-1,Math.round((c.z+AEC_L/2)/pxV+halfV));
+      for(let j=j0;j<=j1;j++) need.fill(1, j*nx+i0, j*nx+i1+1);
+    }
+    // and only the part of the volume those rays can reach
+    let a0=nx, a1=-1, b0=ny, b1=-1;
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++) if(need[j*nx+i]){ if(i<a0)a0=i; if(i>a1)a1=i; if(j<b0)b0=j; if(j>b1)b1=j; }
+    const traced = phantom.voxel && a1>=0 ? phantom.cropTo(source,
+      [(a0-1-halfU)*pxU, (a1+1-halfU)*pxU, (b0-1-halfV)*pxV, (b1+1-halfV)*pxV]) : phantom;
     dose=await AttenuationEngine.project({
-      phantom, source, detCenter, detU, detV, nx, ny, pxU, pxV,
+      phantom:traced, source, detCenter, detU, detV, nx, ny, pxU, pxV, need,
       spectrum, I0, refDist:100,
       onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
     });

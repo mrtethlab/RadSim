@@ -99,6 +99,69 @@ export class VoxelPhantom {
     this.gasLUT = gasLUT || null;
     this.ns = ns || this.ns || 256;
   }
+  /* The part of the volume a beam can reach: the rays from the focal spot src to the rectangle
+     [x0, x1] x [z0, z1] on the receptor plane (y = 0). Where the beam and the volume meet is a convex
+     solid, its corners where the beam's edge rays enter and leave the volume and the volume's own
+     corners inside the beam (and where its edges cross the beam's faces, which the edge rays, taken
+     closely, bound to within the margin). The crop is the grid box round them. Returns a phantom of
+     that box alone, placed where it was, or this one when the box saves little or a contrast field
+     is attached (its per-voxel maps are the full grid's). A tight field over a big volume was paying
+     for the cache misses of a volume it never touched: an axial shoulder's 12 cm field over an
+     abducted arm, 22 s. */
+  cropTo(src, [x0, x1, z0, z1], margin = 3) {
+    if (!this.data || this.sVol || this.giVol || !(src[1] > 0)) return this;
+    const c = [(this.min[0] + this.max[0]) / 2, (this.min[1] + this.max[1]) / 2, (this.min[2] + this.max[2]) / 2];
+    const n = [this.nx, this.ny, this.nz], lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    const R = this.rotT, rot = this.rotated;
+    const local = (p) => { if (!rot) return p; const x = p[0] - c[0], y = p[1] - c[1], z = p[2] - c[2];
+      return [c[0] + R[0] * x + R[1] * y + R[2] * z, c[1] + R[3] * x + R[4] * y + R[5] * z, c[2] + R[6] * x + R[7] * y + R[8] * z]; };
+    const grow = (q) => { for (let k = 0; k < 3; k++) { const g = (q[k] - this.min[k]) / this.vs[k]; if (g < lo[k]) lo[k] = g; if (g > hi[k]) hi[k] = g; } };
+    const o = local(src);
+    const edge = (px, pz) => {                       // one ray, clipped to the volume's box
+      const q = local([px, 0, pz]), d = [q[0] - o[0], q[1] - o[1], q[2] - o[2]];
+      let t0 = 0, t1 = 1;
+      for (let k = 0; k < 3; k++) {
+        if (Math.abs(d[k]) < 1e-12) { if (o[k] < this.min[k] || o[k] > this.max[k]) return; continue; }
+        let ta = (this.min[k] - o[k]) / d[k], tb = (this.max[k] - o[k]) / d[k];
+        if (ta > tb) { const t = ta; ta = tb; tb = t; }
+        if (ta > t0) t0 = ta; if (tb < t1) t1 = tb;
+        if (t1 < t0) return;
+      }
+      for (const t of [t0, t1]) grow([o[0] + t * d[0], o[1] + t * d[1], o[2] + t * d[2]]);
+    };
+    const S = 64;
+    for (let s = 0; s <= S; s++) {
+      const a = x0 + (x1 - x0) * s / S, b = z0 + (z1 - z0) * s / S;
+      edge(a, z0); edge(a, z1); edge(x0, b); edge(x1, b);
+    }
+    // the volume's corners that lie inside the beam (world: the corner turned about the centre)
+    const Rw = this.rot;
+    for (const cx of [this.min[0], this.max[0]]) for (const cy of [this.min[1], this.max[1]]) for (const cz of [this.min[2], this.max[2]]) {
+      const l = [cx - c[0], cy - c[1], cz - c[2]];
+      const w = rot ? [c[0] + Rw[0] * l[0] + Rw[1] * l[1] + Rw[2] * l[2], c[1] + Rw[3] * l[0] + Rw[4] * l[1] + Rw[5] * l[2], c[2] + Rw[6] * l[0] + Rw[7] * l[1] + Rw[8] * l[2]] : [cx, cy, cz];
+      if (w[1] >= src[1]) continue;
+      const t = src[1] / (src[1] - w[1]), hx = src[0] + (w[0] - src[0]) * t, hz = src[2] + (w[2] - src[2]) * t;
+      if (hx >= x0 && hx <= x1 && hz >= z0 && hz <= z1) grow([cx, cy, cz]);
+    }
+    if (!(hi[0] >= lo[0])) return this;
+    const i0 = [0, 1, 2].map((k) => Math.max(0, Math.floor(lo[k]) - margin));
+    const i1 = [0, 1, 2].map((k) => Math.min(n[k] - 1, Math.ceil(hi[k]) + margin));
+    if (i1.some((v, k) => v < i0[k])) return this;
+    const m = [0, 1, 2].map((k) => i1[k] - i0[k] + 1);
+    if (m[0] * m[1] * m[2] > 0.6 * n[0] * n[1] * n[2]) return this;
+    const out = new Uint8Array(m[0] * m[1] * m[2]), f = this.flip;
+    for (let z = 0; z < m[2]; z++) for (let y = 0; y < m[1]; y++) {
+      const oz = f[2] ? m[2] - 1 - z : z, oy = f[1] ? m[1] - 1 - y : y;
+      const row = (oz * m[1] + oy) * m[0];
+      for (let x = 0; x < m[0]; x++) out[row + (f[0] ? m[0] - 1 - x : x)] = this.idAt(x + i0[0], y + i0[1], z + i0[2]);
+    }
+    // the box's centre, from the grid's, in the local frame; and where the rotation puts it
+    const off = [0, 1, 2].map((k) => this.min[k] + (i0[k] + i1[k] + 1) / 2 * this.vs[k] - c[k]);
+    const w = rot ? [Rw[0] * off[0] + Rw[1] * off[1] + Rw[2] * off[2], Rw[3] * off[0] + Rw[4] * off[1] + Rw[5] * off[2], Rw[6] * off[0] + Rw[7] * off[1] + Rw[8] * off[2]] : off;
+    const ph = new VoxelPhantom({ dims: m, vs: this.vs, data: out }, [c[0] + w[0], c[1] + w[1], c[2] + w[2]], f, this.rot);
+    ph.concLUT = this.concLUT; ph.baLUT = this.baLUT; ph.gasLUT = this.gasLUT; ph.ns = this.ns;
+    return ph;
+  }
   // material id at a world point (or -1 outside the volume) — used for previews/debug
   idAtWorld(p) {
     const ix = Math.floor((p[0] - this.min[0]) / this.vs[0]);
