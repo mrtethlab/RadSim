@@ -58,7 +58,7 @@ function closeTrainer() {
 function renderChooser() {
   const col = $('trainerCol');
   col.innerHTML = `
-    <div class="tr-head"><div class="tr-title">Trainer</div>
+    <div class="tr-head"><div class="tr-title">Positioning Trainer</div>
       <button class="tr-x" id="trHome" title="Back to the home screen">&times;</button></div>
     <div class="tr-intro">Pick a series. Each view is set up in order (position, centre,
       collimate), then exposed and marked against the criteria an instructor uses. The film

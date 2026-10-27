@@ -17,6 +17,7 @@ import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core
 import { radiographDose, entryDistance } from './core/patientDose.js';
 import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict, setSideMarker } from './sideMarker.js';
 import { initTrainer, trainerOnMode } from './trainer/trainer.js';
+import { initProtocolTrainer, protocolTrainerOnMode } from './trainer/protocolTrainer.js';
 import { initPalpation, palpationSync, setPalpated, palpationList, clearPalpation, palpatedKeys } from './trainer/palpate.js';
 import { patientPrimary, MISSED } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
@@ -3048,7 +3049,7 @@ function computeCrop(nx,ny,mask){
 }
 /* Render a radiograph to `target`. With no `entry` it draws the active image (S.last*);
    pass a history entry to render that one (used for the review-strip thumbnails). */
-function renderRadiograph(target,entry){
+function renderRadiograph(target,entry,opts){
   const sig = entry? entry.sig : S.lastSignal;
   const nx  = entry? entry.nx  : S.nx;
   const ny  = entry? entry.ny  : S.ny;
@@ -3069,8 +3070,12 @@ function renderRadiograph(target,entry){
   // skin as a bright rim and laid a sheen over the bone) shows its plain tones
   const plain = entry? entry.plain : S.imgPlain;
   const enhOn=(_t.eOn!==undefined)?_t.eOn:(S.detailEnh && !plain);
-  const lat=!entry && S.lut?.latitude;
-  const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : lat ? activeLatitude(sig,nx,ny,mask,mx,lat) : null;
+  // (opts.processed: a passed entry processed as the active image is, made fresh rather than
+  // cached: the Protocol Trainer hangs films at full quality, not as thumbnails)
+  const full=!entry || !!opts?.processed;
+  const lat=full && S.lut?.latitude;
+  const baseArr=(enhOn && full)? (entry ? processImage(sig,nx,ny,mask,mx) : activeProcessed(sig,nx,ny,mask,mx))
+    : lat ? (entry ? latitudeImage(sig,nx,ny,mask,mx,lat) : activeLatitude(sig,nx,ny,mask,mx,lat)) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -4593,7 +4598,7 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   setInterval(tabActivity, 250);
   // CT mode lives in its own module; give it the handles it needs from the app glue.
-  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
+  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); protocolTrainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
            setSubject: (s) => setSubject(s),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
@@ -4719,6 +4724,15 @@ window.addEventListener('load',()=>{
     expose: async () => { if(S.exposing) return; S.exposing=true; try { await computeRadiograph(); } finally { S.exposing=false; } },
     exposeDry: () => computeRadiograph({ dry:true }),
     renderFull: renderRadiographFull });
+  initProtocolTrainer({ S, applyMode: ctApplyMode, protocols: () => protocolData, applyProtocol, setRoom,
+    hasCentre: (subject, name) => !!(centringData[subject]?.[name] || landmarkData[subject]?.[name]),
+    setMarker: (side) => setSideMarker(side, false),
+    exposeDry: () => computeRadiograph({ dry:true }),
+    renderFilm: (target, entry) => { const r=S.imgRot, fh=S.flipH, fv=S.flipV; S.imgRot=0; S.flipH=false; S.flipV=false;
+      try { renderRadiograph(target, entry, { processed:true }); } finally { S.imgRot=r; S.flipH=fh; S.flipV=fv; } },
+    pathologySubject: (id) => window.radsimPathology?.subjectOf?.(id) ?? null,
+    setPathology: (id, opts) => window.radsimPathology?.set?.(id, opts),
+    clearPathology: () => window.radsimPathology?.clear?.() });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)
