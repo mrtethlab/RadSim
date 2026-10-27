@@ -98,7 +98,7 @@ test('the patient is consistent: DOB and age, LMP only for females 12-55, sides 
     assert.equal(ageOn(new Date(y, m - 1, d), TODAY), p.age, `${r.caseId}: DOB ${p.dob} is not age ${p.age}`);
     if (p.sex === 'F' && p.age >= 12 && p.age <= 55) {
       assert.ok(p.pregnancy?.status, `${r.caseId}: no pregnancy status for a ${p.age} y female`);
-      if (p.pregnancy.lmp) assert.ok(p.pregnancy.lmp <= r.encounter.ordered.slice(0, 10), `${r.caseId}: LMP after the order`);
+      if (p.pregnancy.lmp) assert.ok(p.pregnancy.lmp < '2026-10-27', `${r.caseId}: LMP ${p.pregnancy.lmp} not before the exam`);
     } else assert.equal(p.pregnancy, null, `${r.caseId}: pregnancy for a ${p.age} y ${p.sex}`);
     assert.match(p.phone, /^\(\d{3}\) 555-01\d\d$/);
     assert.match(p.healthCard, /^WHC-\d{4}-\d{3}-\d{3}-[XYZ]{2}$/);

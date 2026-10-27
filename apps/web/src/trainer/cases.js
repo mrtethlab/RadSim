@@ -406,7 +406,7 @@ export const CASES = [
       + 'with a cane, wound healed. Routine 6 wk post-op review.',
     pathology: [{ id: 'hipArthroplasty', p: 1 }],
     findings: { positive: 'Total hip arthroplasty in satisfactory position; no lucency, fracture or dislocation.' } },
-  { id: 'pelvis-hip', lines: ['pelvis-routine'], age: [45, 80], sex: 'any', names: { 'pelvis-routine': 'XR PELVIS AND HIP' },
+  { id: 'pelvis-hip', lines: ['pelvis-routine'], age: [55, 85], sex: 'any', names: { 'pelvis-routine': 'XR PELVIS AND HIP' },
     setting: 'outpatient', referrer: { outpatient: { orthopaedics: 2, rheumatology: 1 } }, priority: 'Routine',
     question: ['{Side} hip pain ? AVN', 'Hip/groin pain ? OA ? AVN'],
     history: 'Deep {side} groin and buttock pain x {months} mo, now limping. Long-term prednisone for polymyalgia '

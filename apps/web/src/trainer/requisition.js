@@ -270,15 +270,15 @@ function body(rng, age, sex) {
   return { heightCm: Math.round(h), weightKg: age < 13 ? Math.round(w * 10) / 10 : Math.round(w) };
 }
 
-// LMP and pregnancy status: females 12-55 only
-function pregnancy(rng, sex, age, setting, ordered) {
+// LMP and pregnancy status on the day of the exam: females 12-55 only
+function pregnancy(rng, sex, age, setting, on) {
   if (sex !== 'F' || age < 12 || age > 55) return null;
   if (age >= 48 && chance(rng, 0.25 + (age - 48) * 0.1)) return { status: 'Post-menopausal', lmp: null };
   if (age <= 13 && chance(rng, 0.4)) return { status: 'Pre-menarchal', lmp: null };
   const status = choose(rng, setting === 'ED'
     ? { 'Not pregnant (β-hCG negative)': 3, 'Not pregnant': 2, Unsure: 1 }
     : { 'Not pregnant': 8, Unsure: 1 });
-  return { status, lmp: ymd(addDays(ordered, -int(rng, 3, 34))) };
+  return { status, lmp: ymd(addDays(on, -int(rng, 3, 34))) };
 }
 
 function physician(rng, key, setting) {
@@ -361,7 +361,7 @@ export function makeRequisition({ rng, seed, caseId, today } = {}) {
     address: address(rng), phone: phone(rng), language, interpreter,
     ...body(rng, age, sex),
     allergies, meds: c.meds ? [...c.meds] : ['None'],
-    pregnancy: pregnancy(rng, sex, age, setting, ordered),
+    pregnancy: pregnancy(rng, sex, age, setting, now),
     isolation: choose(rng, c.isolation ?? ISOLATION[setting]),
     mobility: age < 4 ? 'carried' : choose(rng, c.mobility ?? MOBILITY[setting]),
     familyPhysician,
