@@ -22,10 +22,11 @@
 export const TIERS = [
   { key: 'room', label: 'Room changes', unit: '' },
   { key: 'posture', label: 'Patient position changes', unit: '' },
-  { key: 'rot', label: 'Patient or limb turning', unit: '°' },
+  { key: 'rot', label: 'Patient or limb turns', unit: '' },
   { key: 'angle', label: 'Tube re-angling', unit: '°' },
   { key: 'travel', label: 'Anatomy travel', unit: ' cm' },
   { key: 'coll', label: 'Collimation changes', unit: ' cm' },
+  { key: 'turn', label: 'Turning, in all', unit: '°' },
 ];
 const N = TIERS.length;
 const EPS = 1e-6;
@@ -33,17 +34,24 @@ const EPS = 1e-6;
 // the shorter way round between two turns (a PA at 180 is a PA at -180)
 const turn = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360 - d); };
 
-/* The cost of going from view a to view b, one entry per tier. The turn counts only within one
-   room and posture: a patient who gets up off the table is positioned afresh at the wall. */
+/* The cost of going from view a to view b, one entry per tier. A turn counts only within one
+   room and posture (a patient who gets up off the table is positioned afresh at the wall), and
+   as a REPOSITIONING, not by its degrees: a leg on a stretcher has all its views at one rotation
+   taken along the limb before it is turned, not the ankle, the knee and the ankle again to save
+   a few degrees. The degrees break the last ties (PA, oblique, lateral rather than PA, lateral,
+   oblique). */
+const TURN_MIN = 10;                          // a smaller change is the same position, adjusted
 export function stepCost(a, b) {
   const room = a.room !== b.room ? 1 : 0, posture = a.posture !== b.posture ? 1 : 0;
+  const deg = room || posture ? 0 : turn(a.rot || 0, b.rot || 0);
   return [
     room,
     posture,
-    room || posture ? 0 : turn(a.rot || 0, b.rot || 0),
+    deg >= TURN_MIN ? 1 : 0,
     Math.abs((a.cc || 0) - (b.cc || 0)),
     a.site && b.site ? Math.hypot(a.site[0] - b.site[0], a.site[1] - b.site[1]) : 0,
     a.coll && b.coll ? Math.abs(a.coll[0] - b.coll[0]) + Math.abs(a.coll[1] - b.coll[1]) : 0,
+    deg,
   ];
 }
 
@@ -80,7 +88,7 @@ export function orderCost(views) {
 export function bestOrder(views) {
   const n = views.length;
   if (n <= 1) return views.map((_, i) => i);
-  if (n > 14) throw new Error('bestOrder: too many views');
+  if (n > 13) return improvedOrder(views);
   const step = views.map((a) => views.map((b) => stepCost(a, b)));
   const full = (1 << n) - 1;
   // cost[mask][last]: the cheapest way to take the views in mask, ending at last
@@ -105,12 +113,34 @@ export function bestOrder(views) {
   return order.reverse();
 }
 
+/* Past 13 views the subsets run to the millions (a worklist padded with every view going): the
+   given order improved by moving single views and reversing runs until nothing helps. Not
+   always the best, but never worse than the order given. */
+function improvedOrder(views) {
+  let ord = views.map((_, i) => i);
+  const cost = (o) => orderCost(o.map((i) => views[i])).total;
+  let best = cost(ord), better = true;
+  while (better) {
+    better = false;
+    for (let i = 0; i < ord.length; i++) for (let j = 0; j < ord.length; j++) {
+      if (i === j) continue;
+      const moved = ord.slice(); const [v] = moved.splice(i, 1); moved.splice(j, 0, v);
+      const rev = i < j ? [...ord.slice(0, i), ...ord.slice(i, j + 1).reverse(), ...ord.slice(j + 1)] : null;
+      for (const o of rev ? [moved, rev] : [moved]) {
+        const c = cost(o);
+        if (compareCost(c, best) < 0) { ord = o; best = c; better = true; }
+      }
+    }
+  }
+  return ord;
+}
+
 /* What changes on a step, in words, for the worklist's step markers. */
 export function stepChanges(a, b) {
   const c = stepCost(a, b), out = [];
   if (c[0]) out.push({ tier: 0, text: `room: ${a.room} → ${b.room}` });
   if (c[1]) out.push({ tier: 1, text: `position: ${a.posture} → ${b.posture}` });
-  if (c[2] >= 1) out.push({ tier: 2, text: `turn ${Math.round(c[2])}°` });
+  if (c[2]) out.push({ tier: 2, text: `turn ${Math.round(c[6])}°` });
   if (c[3] >= 1) out.push({ tier: 3, text: `tube ${Math.round(c[3])}°` });
   return out;
 }

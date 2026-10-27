@@ -8,14 +8,16 @@ const V = (name, room, posture, rot = 0, cc = 0, site = [0, 0], coll = [20, 20])
 
 test('a step costs each tier, the turn the short way round', () => {
   const c = stepCost(V('a', 'wall', 'erect', 135, 15, [0, 0]), V('b', 'wall', 'erect', -135, -15, [3, 4]));
-  assert.deepEqual(c.slice(0, 5), [0, 0, 90, 30, 5]);
+  assert.deepEqual(c.slice(0, 5), [0, 0, 1, 30, 5]);
+  assert.equal(c[6], 90);
+  assert.equal(stepCost(V('a', 'wall', 'erect', 0), V('b', 'wall', 'erect', 5))[2], 0);   // adjusted, not turned
   assert.equal(stepCost(V('a', 'wall', 'erect'), V('b', 'table', 'supine'))[0], 1);
 });
 
 test('one room change fewer beats any amount of turning', () => {
-  assert.equal(compareCost([0, 5, 900, 0, 0, 0], [1, 0, 0, 0, 0, 0]), -1);
-  assert.equal(compareCost([0, 1, 0, 0, 0, 0], [0, 0, 400, 90, 500, 99]), 1);
-  assert.equal(compareCost([0, 0, 10, 0, 0, 0], [0, 0, 10 + 1e-9, 0, 0, 0]), 0);
+  assert.equal(compareCost([0, 5, 9, 0, 0, 0, 900], [1, 0, 0, 0, 0, 0, 0]), -1);
+  assert.equal(compareCost([0, 1, 0, 0, 0, 0, 0], [0, 0, 4, 90, 500, 99, 400]), 1);
+  assert.equal(compareCost([0, 0, 1, 0, 0, 0, 10], [0, 0, 1, 0, 0, 0, 10 + 1e-9]), 0);
 });
 
 test('the best order groups the rooms, then turns progressively', () => {
@@ -39,7 +41,7 @@ test('a best order is judged efficient, and kept as given', () => {
   assert.deepEqual(j.bestOrder, [0, 1, 2]);
   const k = judgeOrder([views[0], views[2], views[1]]);
   assert.equal(k.efficient, false);
-  assert.equal(TIERS[k.tier].key, 'rot');
+  assert.equal(TIERS[k.tier].key, 'turn');                  // two turns either way; 90 degrees more of them
 });
 
 test('the exact search matches brute force on random series', () => {
@@ -69,4 +71,29 @@ test('every hospital view has where-and-how metadata', () => {
       assert.ok(Array.isArray(m.site), v);
     }
   }
+});
+
+test('a long worklist is improved, never made worse', () => {
+  let s = 3; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const rooms = ['wall', 'table', 'detector'];
+  const views = Array.from({ length: 16 }, (_, i) => V('v' + i, rooms[Math.floor(r() * 3)], 'supine',
+    Math.round(r() * 4) * 45, 0, [r() * 30, r() * 100]));
+  const ord = bestOrder(views);
+  assert.deepEqual(ord.slice().sort((a, b) => a - b), views.map((_, i) => i));
+  const got = orderCost(ord.map((i) => views[i])).total, given = orderCost(views).total;
+  assert.ok(compareCost(got, given) <= 0);
+  assert.ok(got[0] <= 2, `room changes ${got[0]}`);          // three rooms: two changes at best
+});
+
+test('a leg on a stretcher: every view at one rotation along the limb before it is turned', () => {
+  const L = (name, rot, site) => V(name, 'detector', 'supine', rot, 0, [10, site], [20, 30]);
+  const views = [L('AP ankle', 0, 8), L('AP knee', 0, 50), L('Lat ankle', 90, 8), L('Lat knee', 90, 50), L('AP tib', 0, 30), L('Lat tib', 90, 30)];
+  const j = judgeOrder(views);
+  const names = j.bestOrder.map((i) => views[i].name);
+  assert.equal(j.best[2], 1, names.join());                 // one turn
+  const aps = names.slice(0, 3).every((n) => n.startsWith('AP')) || names.slice(3).every((n) => n.startsWith('AP'));
+  assert.ok(aps, names.join());
+  // and along the limb within each rotation: ankle, tib, knee (or back)
+  const at = (n) => names.indexOf(n);
+  assert.ok(Math.abs(at('AP tib') - at('AP ankle')) === 1 && Math.abs(at('AP tib') - at('AP knee')) === 1, names.join());
 });

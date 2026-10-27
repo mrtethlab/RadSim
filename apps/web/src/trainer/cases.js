@@ -764,6 +764,63 @@ export const CASES = [
       + 'NSAIDs. Reduced lumbar flexion (modified Schober 3 cm). HLA-B27 +. Psoriasis.',
     meds: ['naproxen 500 mg PO BID', 'calcipotriol/betamethasone ointment'],
     findings: { negative: 'SI joints and lumbar spine normal.' } },
+
+  // ---- several orders for one patient from one physician: each exam its own order (and its own
+  //      reason for exam), one series for the student to plan across all of them
+  { id: 'orders-fall-leg', lines: ['ankle-routine', 'leg-routine', 'knee-trauma', 'femur-routine'], age: [20, 70], sex: 'any',
+    setting: 'ED', referrer: 'ED', priority: 'Urgent', mobility: 'stretcher',
+    question: '{Side} leg injury, fall from height',
+    questions: { 'ankle-routine': ['? # {side} ankle', 'Swollen {side} ankle ? fx'],
+      'leg-routine': ['? # {side} tib/fib', 'Midshaft {side} leg tenderness ? fx'],
+      'knee-trauma': ['? # {side} knee ? tibial plateau', '{Side} knee effusion ? fx'],
+      'femur-routine': ['? # {side} femur', '{Side} thigh pain ? fx'] },
+    history: 'Fell approx 3 m from a ladder {hours} h ago, landed on the {side} leg. Unable to weight-bear. Pain and '
+      + 'swelling {side} ankle, TTP mid tibia, {side} knee effusion with joint-line tenderness, pain on log roll of the '
+      + '{side} thigh. NV intact distally. No head strike, no LOC, C-spine cleared clinically. Analgesia given by EMS.',
+    pathology: [{ id: 'tibialShaftFx', p: 0.3, line: 'leg-routine', positive: 'Oblique fracture of the {side} tibial shaft; ankle, knee and femur intact.' }, { id: 'tibialPlateauFx', p: 0.2, line: 'knee-trauma', positive: 'Undisplaced lateral tibial plateau fracture with an effusion; the leg, ankle and femur intact.' },
+      { id: 'weberBFx', p: 0.15, line: 'ankle-routine', positive: 'Weber B fracture of the {side} distal fibula; the leg, knee and femur intact.' }, { id: 'femurShaftFx', p: 0.1, line: 'femur-routine', positive: 'Fracture of the {side} femoral shaft; knee, leg and ankle intact.' }],
+    findings: { negative: 'No fracture of the femur, knee, tibia, fibula or ankle. Small knee effusion.' } },
+  { id: 'orders-elderly-fall', lines: ['hip-trauma', 'wrist-trauma', 'shoulder-trauma'], age: [70, 95], sex: { F: 3, M: 1 },
+    setting: 'ED', referrer: 'ED', priority: 'Urgent', mobility: 'stretcher',
+    question: 'Mechanical fall, {side} hip, wrist and shoulder pain',
+    questions: { 'hip-trauma': ['? # NOF {side}', '{Side} hip pain, shortened and externally rotated ? NOF #'],
+      'wrist-trauma': ['? # distal radius {side}', '{Side} wrist deformity ? fx'],
+      'shoulder-trauma': ['? # proximal humerus {side}', '{Side} shoulder pain ? fx ? dislocation'] },
+    history: 'Tripped on a rug at home this morning, fell onto the {side} side with an outstretched {side} hand. Found by '
+      + 'family {hours} h later. {Side} leg shortened and externally rotated, painful hip ROM. {Side} wrist swollen with '
+      + 'dinner-fork deformity. {Side} shoulder bruised, painful to abduct. Osteoporosis, HTN, on apixaban for AF.',
+    meds: ['apixaban 5 mg PO BID', 'ramipril 5 mg PO daily', ...OSTEO_MEDS],
+    pathology: [{ id: 'femoralNeckFx', p: 0.35, line: 'hip-trauma', positive: 'Displaced {side} subcapital neck of femur fracture; wrist and shoulder intact.' }, { id: 'distalRadiusFx', p: 0.3, line: 'wrist-trauma', positive: 'Dorsally angulated distal radius fracture (Colles); hip and shoulder intact.' },
+      { id: 'humerusNeckFx', p: 0.2, line: 'shoulder-trauma', positive: 'Surgical neck fracture of the {side} humerus, no dislocation; hip and wrist intact.' }],
+    findings: { negative: 'No fracture of the hip, wrist or shoulder. Osteopenia.' } },
+  { id: 'orders-arm', lines: ['wrist-trauma', 'forearm-routine', 'elbow-routine', 'humerus-routine'], age: [18, 60], sex: 'any',
+    setting: 'ED', referrer: 'ED', priority: 'Urgent',
+    question: '{Side} arm injury ? fx',
+    questions: { 'wrist-trauma': '? # {side} wrist', 'forearm-routine': '? # {side} forearm',
+      'elbow-routine': '? # {side} elbow', 'humerus-routine': '? # {side} humerus' },
+    history: 'Cyclist vs car at low speed {hours} h ago, thrown onto the {side} arm. Diffuse pain from the wrist to the '
+      + 'mid humerus, swelling of the forearm and elbow, reduced ROM at the elbow. Radial pulse present, sensation '
+      + 'intact. Helmet on, no head injury.',
+    pathology: [{ id: 'forearmShaftFx', p: 0.3, line: 'forearm-routine', positive: 'Midshaft forearm fracture; wrist, elbow and humerus intact.' }, { id: 'humerusShaftFx', p: 0.2, line: 'humerus-routine', positive: 'Midshaft humeral fracture; forearm, wrist and elbow intact.' },
+      { id: 'distalRadiusFx', p: 0.2, line: 'wrist-trauma', positive: 'Distal radius fracture; forearm, elbow and humerus intact.' }],
+    findings: { negative: 'No fracture of the arm. Soft-tissue swelling at the elbow.' } },
+  { id: 'orders-spine-fall', lines: ['cspine-trauma', 'tspine-routine', 'lspine-routine', 'pelvis-only'], age: [20, 65], sex: 'any',
+    setting: 'ED', referrer: 'ED', priority: 'STAT', mobility: 'stretcher',
+    question: 'Fall from height, spine and pelvis',
+    questions: { 'cspine-trauma': '? # C-spine', 'tspine-routine': '? # T-spine', 'lspine-routine': '? # L-spine ? burst #',
+      'pelvis-only': '? pelvic ring injury' },
+    history: 'Fell 4 m from scaffolding {hours} h ago, landed on the buttocks then the back. Midline TTP T10-L2, pain in '
+      + 'the neck and over the sacrum. GCS 15, no focal neuro deficit. Collar and spine precautions from EMS. CT not '
+      + 'available for {hours} h (scanner down).',
+    findings: { negative: 'No fracture of the cervical, thoracic or lumbar spine or the pelvis. Alignment normal.' } },
+  { id: 'orders-sports-knee-ankle', lines: ['knee-trauma', 'ankle-routine'], age: [17, 40], sex: 'any', ...EDW,
+    question: 'Twisting injury {side} leg',
+    questions: { 'knee-trauma': ['? # {side} knee', '{Side} knee haemarthrosis ? fx'], 'ankle-routine': ['? # {side} ankle', 'Inversion injury {side} ankle'] },
+    history: 'Soccer: studs caught, twisted the {side} leg {hours} h ago. Immediate {side} knee swelling, unable to '
+      + 'fully extend. Lateral {side} ankle swelling, TTP posterior edge lateral malleolus (Ottawa +). Unable to '
+      + 'weight-bear 4 steps.',
+    pathology: [{ id: 'weberBFx', p: 0.3, line: 'ankle-routine', positive: 'Weber B distal fibular fracture; knee intact (effusion only).' }, { id: 'tibialPlateauFx', p: 0.15, line: 'knee-trauma', positive: 'Lateral tibial plateau fracture with an effusion; ankle intact.' }],
+    findings: { negative: 'No fracture of the knee or ankle. Knee effusion.' } },
 ];
 
 export const caseById = (id) => CASES.find((c) => c.id === id) || null;

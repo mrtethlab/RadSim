@@ -25,14 +25,14 @@ test('every hospital line has at least one case', () => {
   for (const l of HOSPITAL) assert.ok(used.has(l.id), `no case for ${l.id}`);
   assert.ok(CASES.length >= 70 && CASES.length <= 95, `${CASES.length} cases`);
   const multi = CASES.filter((c) => c.lines.length > 1).length;
-  assert.ok(multi >= 10 && multi <= 15, `${multi} multi-exam cases`);
+  assert.ok(multi >= 15, `${multi} multi-exam cases`);
 });
 
 test('every case names lines, pathology, departments and settings that exist', () => {
   const ids = new Set();
   for (const c of CASES) {
     assert.ok(!ids.has(c.id), `duplicate case ${c.id}`); ids.add(c.id);
-    assert.ok(c.lines.length >= 1 && c.lines.length <= 3, `${c.id}: ${c.lines.length} lines`);
+    assert.ok(c.lines.length >= 1 && c.lines.length <= 4, `${c.id}: ${c.lines.length} lines`);
     assert.equal(new Set(c.lines).size, c.lines.length, `${c.id}: a line twice`);
     for (const id of c.lines) {
       assert.ok(lineById(id), `${c.id}: no line ${id}`);
@@ -135,4 +135,17 @@ test('pathology is rolled at about its chance', () => {
   for (let i = 0; i < n; i++) if (makeRequisition({ seed: i, caseId: c.id, today: TODAY }).pathology) hits++;
   assert.ok(Math.abs(hits / n - c.pathology[0].p) < 0.08, `${hits}/${n}`);
   for (let i = 0; i < 20; i++) assert.equal(makeRequisition({ seed: i, caseId: 'hand-recheck', today: TODAY }).pathology.id, 'boxerFx');
+});
+
+test('each exam is its own order: its own accession and reason for exam', () => {
+  for (let seed = 1; seed < 300; seed++) {
+    const r = makeRequisition({ seed, caseId: 'orders-fall-leg', today: new Date(2026, 9, 27) });
+    assert.equal(r.exams.length, 4);
+    assert.equal(new Set(r.exams.map((x) => x.accession)).size, 4, 'accessions differ');
+    for (const x of r.exams) {
+      assert.ok(x.question && !/[{}]/.test(x.question), x.question);
+      assert.ok(x.side === 'L' || x.side === 'R');
+    }
+    assert.equal(new Set(r.exams.map((x) => x.side)).size, 1, 'one side for one injured leg');
+  }
 });

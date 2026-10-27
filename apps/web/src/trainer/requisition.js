@@ -23,7 +23,8 @@
                   familyPhysician: { name, clinic, phone, fax } | null (unattached) }
      encounter  { patientClass, location, unit, room, bed, priority, ordered, accession, facility }
      referrer   { name, credentials, specialty, department, address, phone, fax, billing, cc }
-     exams      [{ name, side: 'L' | 'R' | null, line }]   line: the answer
+     exams      [{ name, side: 'L' | 'R' | null, line, accession, question }]   one order each;
+                line: the answer
      question, request (or null), history
      pathology  { id, side, line } | null   side: for a lesion that has one
      findings   what the films show (null when the case says nothing)
@@ -387,11 +388,16 @@ export function makeRequisition({ rng, seed, caseId, today, drawable } = {}) {
   enc.accession = `XR${ymd(ordered).slice(2).replace(/-/g, '')}${digits(rng, 4)}`;
   enc.facility = `${HOSPITAL_INFO.imaging}, ${HOSPITAL_INFO.name}`;
 
-  // ---- the exams (the answer rides along)
-  const exams = c.lines.map((id) => {
+  // ---- the exams (the answer rides along). Each is its own order, as a department receives
+  // them: the same patient and physician, one accession apiece (consecutive), and the order's
+  // own reason for exam where the case gives one (questions: { lineId: ... })
+  const acc0 = +enc.accession.slice(-4);
+  const exams = c.lines.map((id, k) => {
     const L = lineById(id);
     const s = L.side ? side : null;
-    return { name: `${c.names?.[id] ?? EXAM_NAMES[L.exam]}${s ? ` ${T.SIDE}` : ''}`, side: s, line: id };
+    return { name: `${c.names?.[id] ?? EXAM_NAMES[L.exam]}${s ? ` ${T.SIDE}` : ''}`, side: s, line: id,
+      accession: enc.accession.slice(0, -4) + String((acc0 + k) % 10000).padStart(4, '0'),
+      question: c.questions?.[id] ? fill(choose(rng, c.questions[id])) : null };
   });
 
   // ---- the pathology, at most one
@@ -403,10 +409,12 @@ export function makeRequisition({ rng, seed, caseId, today, drawable } = {}) {
   const pathology = hit ? { id: hit.id, side: LATERAL.has(hit.id) ? side : null, line: hit.line ?? c.lines[0] } : null;
   const findings = fill(hit ? hit.positive ?? c.findings?.positive : c.findings?.negative) ?? null;
 
+  const question = fill(choose(rng, c.question));
+  for (const x of exams) x.question = x.question || question;
   return {
     seed: rng.seed ?? seed ?? null, caseId: c.id,
     patient, encounter: enc, referrer, exams,
-    question: fill(choose(rng, c.question)), request: fill(choose(rng, c.request)) || null,
+    question, request: fill(choose(rng, c.request)) || null,
     history: fill(choose(rng, c.history)), pathology, findings,
   };
 }

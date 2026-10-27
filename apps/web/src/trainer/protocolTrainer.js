@@ -60,7 +60,7 @@ function newRequisition(seed) {
   H.clearPathology?.();
   P.seed = seed ?? ((Math.random() * 2 ** 31) >>> 0);
   P.req = makeRequisition({ rng: seedRng(P.seed), drawable: (id) => PATHOLOGY[id]?.available !== false });
-  P.region = null; P.list = []; P.checked = null; P.films = {}; P.missed = false; P.counted = false; P.report = false;
+  P.region = null; P.list = []; P.checked = null; P.films = {}; P.missed = false; P.counted = false; P.report = false; P.order = 0;
   render();
 }
 
@@ -123,7 +123,7 @@ function render() {
       <button class="tr-x" id="ptrHome" title="Back to the home screen">&times;</button>
     </div>
     <div class="ptr-main">
-      <section class="ptr-paper">${reqHTML(P.req)}</section>
+      <section class="ptr-req">${ordersHTML(P.req)}<div class="ptr-paper">${reqHTML(P.req, P.req.exams[P.order] || P.req.exams[0])}</div></section>
       <section class="ptr-work">${workHTML()}</section>
     </div>
     <section class="ptr-films" id="ptrFilms">${filmsHTML()}</section>`;
@@ -133,8 +133,15 @@ function render() {
   paintFilms();
 }
 
-/* THE REQUISITION, as it comes off the printer. */
-function reqHTML(r) {
+/* SEVERAL ORDERS for one patient (a fall: the ankle, the leg, the knee and the femur) come as
+   separate requisitions from the one physician, each with its own accession and reason. */
+function ordersHTML(r) {
+  if ((r.exams || []).length < 2) return '';
+  return `<div class="ptr-orders"><span>${r.exams.length} orders</span>${r.exams.map((x, i) =>
+    `<button class="ptr-ord${i === P.order ? ' on' : ''}" data-ord="${i}">${esc(x.name)}</button>`).join('')}</div>`;
+}
+/* THE REQUISITION, as it comes off the printer: one order of the patient's. */
+function reqHTML(r, ex) {
   const p = r.patient || {}, e = r.encounter || {}, d = r.referrer || {};
   const row = (k, v) => v || v === 0 ? `<div class="rq-f"><span>${esc(k)}</span><b>${esc(v)}</b></div>` : '';
   const name = p.name || [p.surname?.toUpperCase(), p.given].filter(Boolean).join(', ');
@@ -145,7 +152,7 @@ function reqHTML(r) {
     <div class="rq-head">
       <div><div class="rq-fac">${esc(HOSPITAL_INFO.name)}</div>
         <div class="rq-doc">Diagnostic Imaging Requisition</div></div>
-      <div class="rq-acc">${row('Accession', e.accession)}${row('Ordered', e.ordered)}
+      <div class="rq-acc">${row('Accession', ex?.accession || e.accession)}${row('Ordered', e.ordered)}
         <div class="rq-pri pri-${esc(String(e.priority || 'Routine').toLowerCase())}">${esc(e.priority || 'Routine')}</div></div>
     </div>
     <div class="rq-grid">
@@ -163,9 +170,9 @@ function reqHTML(r) {
         ${row('Phone', d.phone)}${row('Fax', d.fax)}${row('Billing #', d.billing)}${row('cc', d.cc && typeof d.cc === 'object' ? [d.cc.name, d.cc.clinic].filter(Boolean).join(', ') : d.cc)}</div>
     </div>
     <div class="rq-box rq-exam"><div class="rq-bt">Examination requested</div>
-      ${(r.exams || []).map((x) => `<div class="rq-ex">${esc(x.name)}</div>`).join('')}
+      <div class="rq-ex">${esc(ex?.name)}</div>
       ${r.request ? `<div class="rq-req">${esc(r.request)}</div>` : ''}</div>
-    <div class="rq-box"><div class="rq-bt">Reason for exam</div><div class="rq-q">${esc(r.question)}</div></div>
+    <div class="rq-box"><div class="rq-bt">Reason for exam</div><div class="rq-q">${esc(ex?.question || r.question)}</div></div>
     <div class="rq-box"><div class="rq-bt">Clinical history</div><div class="rq-hx">${esc(r.history)}</div></div>
     <div class="rq-grid">
       <div class="rq-box"><div class="rq-bt">Safety</div>${row('Allergies', list(p.allergies) || 'NKDA')}${row('Pregnancy', preg)}</div>
@@ -241,7 +248,8 @@ function orderWhy(o) {
   switch (t.key) {
     case 'room': return `The room changes ${mine} time${mine === 1 ? '' : 's'}; ${best} ${best === 1 ? 'is' : 'are'} enough. Take every view in one room before moving to the next.`;
     case 'posture': return `The patient changes position ${mine} times; ${best} ${best === 1 ? 'is' : 'are'} enough. Group the views taken in the same position.`;
-    case 'rot': return `The patient (or the limb) turns ${mine}° in all; ${best}° is enough. Turn progressively in one direction (PA, oblique, lateral).`;
+    case 'rot': return `The patient (or the limb) is turned ${mine} times; ${best} ${best === 1 ? 'is' : 'are'} enough. Take every view in one position before turning.`;
+    case 'turn': return `The turns add up to ${mine}°; ${best}° is enough. Turn progressively in one direction (PA, oblique, lateral).`;
     case 'angle': return `The tube is re-angled ${mine}° in all; ${best}° is enough. Take the views at one central-ray angle together.`;
     case 'travel': return `The centring moves ${mine} cm along the patient; ${best} cm is enough. Work along the anatomy, not back and forth.`;
     default: return `The field changes ${mine} cm in all; ${best} cm is enough. Take similar fields together.`;
@@ -249,6 +257,7 @@ function orderWhy(o) {
 }
 
 function wireWork(el) {
+  el.querySelectorAll('.ptr-ord').forEach((b) => b.onclick = () => { P.order = +b.dataset.ord; render(); });
   el.querySelectorAll('.ptr-reg').forEach((b) => b.onclick = () => { P.region = P.region === b.dataset.reg ? null : b.dataset.reg; render(); });
   el.querySelectorAll('.ptr-view').forEach((b) => b.onclick = () => {
     const v = b.dataset.v, i = P.list.indexOf(v);
