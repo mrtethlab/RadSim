@@ -16,7 +16,8 @@
    dynamic programme's local choice is the global one), which is quick for the 1-12 views a
    requisition has.
 
-   view: { name, room, posture, rot (deg), cc (deg, + caudal), site: [x, z] (cm), coll: [w, l] (cm) }
+   view: { name, room ('wall' | 'table' | 'detector'), posture, rot (deg), cc (deg, + caudal),
+           site: [x, z] (cm), coll: [w, l] (cm) }
    ============================================================================ */
 
 export const TIERS = [
@@ -24,6 +25,7 @@ export const TIERS = [
   { key: 'posture', label: 'Patient position changes', unit: '' },
   { key: 'rot', label: 'Patient or limb turns', unit: '' },
   { key: 'angle', label: 'Tube re-angling', unit: '°' },
+  { key: 'receptor', label: 'Receptor changes', unit: '' },
   { key: 'travel', label: 'Anatomy travel', unit: ' cm' },
   { key: 'coll', label: 'Collimation changes', unit: ' cm' },
   { key: 'turn', label: 'Turning, in all', unit: '°' },
@@ -41,14 +43,22 @@ const turn = (a, b) => { const d = Math.abs(a - b) % 360; return Math.min(d, 360
    a few degrees. The degrees break the last ties (PA, oblique, lateral rather than PA, lateral,
    oblique). */
 const TURN_MIN = 10;                          // a smaller change is the same position, adjusted
+/* THE ROOM is where the patient is: standing at the wall stand, or on the table (or a stretcher
+   beside it). The table's bucky and a free detector laid on the tabletop or stood beside the leg
+   are one room: the patient does not move between them, the radiographer swaps the receptor.
+   That swap is priced below every movement of the patient and the tube, so a leg on a stretcher
+   has its APs taken along the limb (ankle, tib/fib, knee, femur: centring and collimation only)
+   before it is turned, whichever receptor each one wants. */
+const place = (r) => (r === 'wall' ? 'wall' : 'table');
 export function stepCost(a, b) {
-  const room = a.room !== b.room ? 1 : 0, posture = a.posture !== b.posture ? 1 : 0;
+  const room = place(a.room) !== place(b.room) ? 1 : 0, posture = a.posture !== b.posture ? 1 : 0;
   const deg = room || posture ? 0 : turn(a.rot || 0, b.rot || 0);
   return [
     room,
     posture,
     deg >= TURN_MIN ? 1 : 0,
     Math.abs((a.cc || 0) - (b.cc || 0)),
+    !room && a.room !== b.room ? 1 : 0,
     a.site && b.site ? Math.hypot(a.site[0] - b.site[0], a.site[1] - b.site[1]) : 0,
     a.coll && b.coll ? Math.abs(a.coll[0] - b.coll[0]) + Math.abs(a.coll[1] - b.coll[1]) : 0,
     deg,
@@ -140,8 +150,9 @@ export function stepChanges(a, b) {
   const c = stepCost(a, b), out = [];
   if (c[0]) out.push({ tier: 0, text: `room: ${a.room} → ${b.room}` });
   if (c[1]) out.push({ tier: 1, text: `position: ${a.posture} → ${b.posture}` });
-  if (c[2]) out.push({ tier: 2, text: `turn ${Math.round(c[6])}°` });
+  if (c[2]) out.push({ tier: 2, text: `turn ${Math.round(c[7])}°` });
   if (c[3] >= 1) out.push({ tier: 3, text: `tube ${Math.round(c[3])}°` });
+  if (c[4]) out.push({ tier: 4, text: `receptor: ${a.room} → ${b.room}` });
   return out;
 }
 

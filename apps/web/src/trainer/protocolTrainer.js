@@ -251,6 +251,7 @@ function orderWhy(o) {
     case 'rot': return `The patient (or the limb) is turned ${mine} times; ${best} ${best === 1 ? 'is' : 'are'} enough. Take every view in one position before turning.`;
     case 'turn': return `The turns add up to ${mine}°; ${best}° is enough. Turn progressively in one direction (PA, oblique, lateral).`;
     case 'angle': return `The tube is re-angled ${mine}° in all; ${best}° is enough. Take the views at one central-ray angle together.`;
+    case 'receptor': return `The receptor is swapped ${mine} times (bucky and free detector); ${best} ${best === 1 ? 'is' : 'are'} enough. Take the views on one receptor together where the patient need not move.`;
     case 'travel': return `The centring moves ${mine} cm along the patient; ${best} cm is enough. Work along the anatomy, not back and forth.`;
     default: return `The field changes ${mine} cm in all; ${best} cm is enough. Take similar fields together.`;
   }

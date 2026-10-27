@@ -8,16 +8,19 @@ const V = (name, room, posture, rot = 0, cc = 0, site = [0, 0], coll = [20, 20])
 
 test('a step costs each tier, the turn the short way round', () => {
   const c = stepCost(V('a', 'wall', 'erect', 135, 15, [0, 0]), V('b', 'wall', 'erect', -135, -15, [3, 4]));
-  assert.deepEqual(c.slice(0, 5), [0, 0, 1, 30, 5]);
-  assert.equal(c[6], 90);
+  assert.deepEqual(c.slice(0, 6), [0, 0, 1, 30, 0, 5]);
+  assert.equal(c[7], 90);
   assert.equal(stepCost(V('a', 'wall', 'erect', 0), V('b', 'wall', 'erect', 5))[2], 0);   // adjusted, not turned
   assert.equal(stepCost(V('a', 'wall', 'erect'), V('b', 'table', 'supine'))[0], 1);
+  // the bucky and a detector on the tabletop are one room: a receptor swap
+  const t = stepCost(V('a', 'table', 'supine'), V('b', 'detector', 'supine'));
+  assert.equal(t[0], 0); assert.equal(t[4], 1);
 });
 
 test('one room change fewer beats any amount of turning', () => {
-  assert.equal(compareCost([0, 5, 9, 0, 0, 0, 900], [1, 0, 0, 0, 0, 0, 0]), -1);
-  assert.equal(compareCost([0, 1, 0, 0, 0, 0, 0], [0, 0, 4, 90, 500, 99, 400]), 1);
-  assert.equal(compareCost([0, 0, 1, 0, 0, 0, 10], [0, 0, 1, 0, 0, 0, 10 + 1e-9]), 0);
+  assert.equal(compareCost([0, 5, 9, 0, 0, 0, 0, 900], [1, 0, 0, 0, 0, 0, 0, 0]), -1);
+  assert.equal(compareCost([0, 1, 0, 0, 0, 0, 0, 0], [0, 0, 4, 90, 3, 500, 99, 400]), 1);
+  assert.equal(compareCost([0, 0, 1, 0, 0, 0, 0, 10], [0, 0, 1, 0, 0, 0, 0, 10 + 1e-9]), 0);
 });
 
 test('the best order groups the rooms, then turns progressively', () => {
@@ -96,4 +99,22 @@ test('a leg on a stretcher: every view at one rotation along the limb before it 
   // and along the limb within each rotation: ankle, tib, knee (or back)
   const at = (n) => names.indexOf(n);
   assert.ok(Math.abs(at('AP tib') - at('AP ankle')) === 1 && Math.abs(at('AP tib') - at('AP knee')) === 1, names.join());
+});
+
+test('the fall: APs along the leg whatever receptor each takes, then each turn once', async () => {
+  const P = (await import('../src/data/protocols.json', { with: { type: 'json' } })).default;
+  const proj = (n) => P.groups.flatMap((g) => g.regions.flatMap((r) => r.projections)).find((p) => p.proj === n);
+  const names = ['Mortise ankle', 'External oblique ankle', 'Lateral ankle', 'AP tibia/fibula', 'Lateral tibia/fibula',
+    'AP knee', 'Internal oblique knee', 'External oblique knee', 'Cross-table lateral knee', 'Femur pasting', 'Lateral femur pasting'];
+  const views = names.map((n) => ({ name: n, ...VIEW_META[n], cc: proj(n).pose?.cc || 0, coll: proj(n).coll }));
+  const j = judgeOrder(views);
+  const order = j.bestOrder.map((i) => names[i]);
+  assert.equal(j.best[0], 0, order.join());               // all on the table or stretcher
+  assert.equal(j.best[1], 0, order.join());               // supine throughout
+  // one rotation group at a time: the turns are the distinct rotations less one
+  const rots = new Set(views.map((v) => v.rot));
+  assert.equal(j.best[2], rots.size - 1, order.join());
+  // and the straight-leg views (AP tib, AP knee, cross-table knee, AP femur) consecutive
+  const at = ['AP tibia/fibula', 'AP knee', 'Cross-table lateral knee', 'Femur pasting'].map((n) => order.indexOf(n)).sort((a, b) => a - b);
+  assert.equal(at[3] - at[0], 3, order.join());
 });
