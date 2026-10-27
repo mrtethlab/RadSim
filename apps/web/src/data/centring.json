@@ -106,6 +106,14 @@
    "how": "the bone behind the ankle and below the medial malleolus, its centroid: the body of the calcaneus",
    "guide": "Lateral calcaneus: CR perpendicular to a point 2.5 cm inferior to the medial malleolus (the calcaneal body); axial (plantodorsal) calcaneus: CR 40 degrees cephalad to the long axis of the foot (Bontrager)",
    "confidence": "medium"
+  },
+  "legMid": {
+   "x": -2.56,
+   "y": -5.31,
+   "z": -22.22,
+   "how": "midway between the knee joint and the tibiotalar joint (-5.3 / -39.1), the centre of the tibia and fibula's section there",
+   "guide": "AP, AP obliques and lateral tibia/fibula: CR perpendicular to the mid-point of the leg, both joints on the receptor (Bontrager; Radiopaedia)",
+   "confidence": "medium"
   }
  },
  "upperextremity": {
@@ -141,6 +149,22 @@
    "z": -10.27,
    "how": "midway between the bodies of C7 and T1: the cervicothoracic junction",
    "guide": "Swimmers lateral (cervicothoracic): CR to C7-T1, about 2.5 cm above the jugular notch (Bontrager; Radiopaedia)",
+   "confidence": "high"
+  },
+  "clavicleR": {
+   "x": 9.5,
+   "y": 3.21,
+   "z": -13.14,
+   "how": "the right clavicle half way along it (9.5 cm right of the midline): the centroid of the topmost bone in front of the vertebral bodies (top at z -12.2)",
+   "guide": "AP and AP axial clavicle: CR to the mid-clavicle (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "eam": {
+   "x": 0.57,
+   "y": 1.38,
+   "z": 3.78,
+   "how": "midway between the ear canals: the air each side enclosed by tissue within 1.2 cm, beside and above the mastoid tip",
+   "guide": "Lateral soft-tissue neck (adenoids): CR to the EAM, the nasopharynx in the field (Radiopaedia)",
    "confidence": "high"
   }
  },
@@ -202,6 +226,14 @@
    "how": "T7 (as above) on the midcoronal plane: halfway between the front and back of the body at the midline",
    "guide": "Lateral chest: CR to the midcoronal plane at T7 (Bontrager; Radiopaedia)",
    "confidence": "medium"
+  },
+  "ribsR": {
+   "x": 6.68,
+   "y": -1.7,
+   "z": 2.4,
+   "how": "midway between the midsagittal plane and the right lateral margin of the ribs (13.4 cm) at T7, on the midcoronal plane",
+   "guide": "Ribs above the diaphragm, PA and AP obliques: CR midway between the midsagittal plane and the lateral margin of the affected side, at T7 (Bontrager)",
+   "confidence": "medium"
   }
  },
  "chestabdopelvis": {
@@ -251,6 +283,22 @@
    "z": 16.9,
    "how": "T7 (the centre of the lung fields), midsagittal, at the middle of the depth of the vertebral column from z 3.9 to 26.4: front of the bodies y -3.4, spinous tips y -13.2 (largest vertebra in a 6 cm slab, every 1 cm)",
    "guide": "Lateral thoracic spine: CR to T7, centred on the vertebral column; collimate long and narrow to the column (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "sacrum": {
+   "x": 0.0,
+   "y": -7.46,
+   "z": -19.17,
+   "how": "the sacrum: the centroid of the bone within 4 cm of the midline from S1 (z -16.2, 5 cm below the crests) to the coccyx (3.5 cm above its tip)",
+   "guide": "AP axial sacrum: CR 15 degrees cephalad, entering 5 cm superior to the symphysis pubis; lateral sacrum: CR to the sacrum, 8-10 cm posterior to the ASIS (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "coccyx": {
+   "x": 0.0,
+   "y": -10.57,
+   "z": -27.21,
+   "how": "the coccyx: the centroid of the midline bone behind the pelvis in the 3.5 cm above its tip (z -29.3)",
+   "guide": "AP axial coccyx: CR 10 degrees caudad, entering 5 cm superior to the symphysis pubis (Bontrager; Radiopaedia)",
    "confidence": "medium"
   }
  },
