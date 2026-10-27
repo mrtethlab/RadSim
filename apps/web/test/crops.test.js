@@ -23,7 +23,10 @@ test('the foot takes the ankle and the foot points of the lower extremity, shift
   // what lies above the box stays the leg's
   for (const k of ['patella', 'tibialTuberosity']) assert.equal(d.palpation.foot[k], undefined);
   for (const k of ['knee', 'hip', 'femur']) assert.equal(d.landmarks.foot[k], undefined);
-  assert.deepEqual(Object.keys(d.centring.foot).sort(), Object.keys(read('centring').lowerextremity).sort());
+  // (the textbook points in the box: the mid-leg of the tibia/fibula views lies above it)
+  const inBox = Object.entries(read('centring').lowerextremity).filter(([, p]) => p.z >= c.z[0] && p.z <= c.z[1]).map(([k]) => k);
+  assert.ok(inBox.length >= 6 && !inBox.includes('legMid'), inBox.join());
+  assert.deepEqual(Object.keys(d.centring.foot).sort(), inBox.sort());
   // the source is left as it was
   assert.deepEqual(d.joints.lowerextremity, read('joints').lowerextremity);
 });

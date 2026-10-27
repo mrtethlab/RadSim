@@ -3516,7 +3516,12 @@ function applyPose(pose){
   const loc = rest && poseLoc(rest);
   if (loc) {
     const w = applyMat3(objMat(), loc);                            // where the landmark sits after the roll
-    const ox = -w[0], oz = -w[2];
+    const ox = -w[0];
+    let oz = -w[2];
+    // (pose.through: an angled central ray aimed THROUGH the point, as the Coyle elbow's 45 degrees
+    // toward the shoulder is: the ray crosses the receptor's centre, so at the point's height above
+    // the receptor it is that height times the angle's tangent along the table)
+    if (pose.through && S.angCC) oz += (restHeight() + S.objOff.y + w[1]) * Math.tan(S.angCC * Math.PI / 180);
     const xlim = S.mode === 'xray' && S.room === 'table' ? TABLE_X_LIMIT : OFF_LIMIT;
     S.objOff.x = Math.max(-xlim, Math.min(xlim, ox));
     S.objOff.z = Math.max(-OFF_LIMIT_Z, Math.min(OFF_LIMIT_Z, oz));
