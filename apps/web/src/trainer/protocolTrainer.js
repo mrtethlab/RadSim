@@ -104,11 +104,19 @@ const PART_DEFAULT = {
   'Chest': ['wall', 'erect', [0, 125]], 'Abdomen / Pelvis': ['table', 'supine', [0, 95]],
   'Spine': ['table', 'supine', [0, 120]], 'Head': ['table', 'supine', [0, 165]], 'Long length': ['wall', 'erect', [0, 90]],
 };
+/* A patient who came on a stretcher neither stands at the wall stand nor sits at the flat bucky:
+   those views are taken where they lie, on a free detector. */
+function whereTaken(m, part) {
+  const d = PART_DEFAULT[part] || ['table', 'supine', [0, 100]];
+  let room = m?.room || d[0], posture = m?.posture || d[1];
+  if (P?.req?.patient?.mobility === 'stretcher' && (room === 'wall' || room === 'seated')) { room = 'detector'; posture = 'supine'; }
+  return { room, posture, site: m?.site || d[2] };
+}
 function orderView(name) {
   const f = findProj(name), m = VIEW_META[name];
-  const d = PART_DEFAULT[f?.part] || ['table', 'supine', [0, 100]];
-  return { name, room: m?.room || d[0], posture: m?.posture || d[1], rot: m ? m.rot : (f?.p.pose?.roll || 0), xt: !!m?.xt,
-    cc: f?.p.pose?.cc || 0, site: m?.site || d[2], coll: f?.p.coll || null };
+  const w = whereTaken(m, f?.part);
+  return { name, room: w.room, posture: w.posture, rot: m ? m.rot : (f?.p.pose?.roll || 0), xt: !!m?.xt,
+    cc: f?.p.pose?.cc || 0, site: w.site, coll: f?.p.coll || null };
 }
 
 /* ---------------------------------------------------------------- rendering */
@@ -378,11 +386,13 @@ async function expose(name) {
     if (p.pose.roll) p.pose.roll = -p.pose.roll;
     if (/R$/.test(p.pose.centre || '') && H.hasCentre(p.subject, p.pose.centre.slice(0, -1) + 'L')) p.pose.centre = p.pose.centre.slice(0, -1) + 'L';
   }
-  if (meta?.room) H.setRoom(meta.room);
+  const room = whereTaken(meta, f.part).room;
+  // (a pasting study needs its tracking bucky, wherever the patient is)
+  H.setRoom(f.p.paste && (room === 'detector' || room === 'seated') ? 'table' : room);
   const res = H.setResolution('film');
   try {
     await apply(p, f.part);
-    return await filmOf(name, p, line, side, meta);
+    return await filmOf(name, p, line, side, whereTaken(meta, f.part));
   } finally { H.setResolution(res); }
 }
 async function filmOf(name, p, line, side, meta) {
