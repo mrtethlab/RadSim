@@ -89,7 +89,9 @@ function startView(vi) {
   renderPanel('Loading the patient…');
   const p = H.findProtocol(view.proto[0], view.proto[1]);
   if (!p) { renderPanel('This view has no protocol.'); return; }
-  H.applyProtocol(p, view.proto[0], () => {
+  // (marked on centring by moving the patient: never standing at the wall stand, where the tube
+  // moves instead)
+  H.applyProtocol(p.room === 'wall' ? { ...p, room: 'table' } : p, view.proto[0], () => {
     if (!T || T.series.views[T.vi] !== view) return;
     const S = H.S;
     // the required anatomy, from this patient's own volume

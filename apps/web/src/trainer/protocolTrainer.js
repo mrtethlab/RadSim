@@ -388,7 +388,7 @@ async function expose(name) {
   }
   const room = whereTaken(meta, f.part).room;
   // (a pasting study needs its tracking bucky, wherever the patient is)
-  H.setRoom(f.p.paste && (room === 'detector' || room === 'seated') ? 'table' : room);
+  p.room = f.p.paste && (room === 'detector' || room === 'seated') ? 'table' : room;
   const res = H.setResolution('film');
   try {
     await apply(p, f.part);

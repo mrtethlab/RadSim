@@ -3603,6 +3603,9 @@ function fitMa(){
   const maEl=$('ma'); if(maEl) maEl.value=nearestMaIdx();
 }
 function applyProtocol(p,part,after){
+  // the set-up the projection is taken in (the AP clavicle standing at the wall stand, the hand
+  // seated at the flat bucky): first, as it decides the distances the SID is held to
+  if(p.room && S.mode==='xray' && S.room!==p.room) setRoom(p.room);
   S.protocol={proj:p.proj, part};
   S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas; fitMa();
   applyAecPreset(p.aec);
@@ -3686,8 +3689,7 @@ if (import.meta.env?.DEV) window.__protocol = (proj) => new Promise((done) => {
   applyProtocol(findProtocol(g.part, proj), g.part, done);
 });
 function applyPose(pose){
-  const note = $('protocolPose');
-  if (!pose) { if (note) note.textContent = ''; return; }
+  if (!pose) return;
   // (tilt: the limb raised off the table about the cross axis, + knee down; a foot taken sole-flat
   // raises the leg as a flexed knee does: -59 with the ankle plantarflexed 30 lays this one flat)
   S.objRot = { x: pose.tilt || 0, y: 0, z: pose.roll || 0 };
@@ -3695,7 +3697,6 @@ function applyPose(pose){
   S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg
   prepareJointVolume();                                     // its pose, made while the room is set
   S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
-  let clamped = false;
   S.objOff.x = 0; S.objOff.z = 0;
   // where the landmark is once the joints are bent (an AP foot plantarflexes its foot 80 degrees,
   // and its 3rd metatarsal goes 8 cm down the table with it)
@@ -3712,7 +3713,6 @@ function applyPose(pose){
     const xlim = S.mode === 'xray' && S.room === 'table' ? TABLE_X_LIMIT : OFF_LIMIT;
     S.objOff.x = Math.max(-xlim, Math.min(xlim, ox));
     S.objOff.z = Math.max(-OFF_LIMIT_Z, Math.min(OFF_LIMIT_Z, oz));
-    clamped = S.objOff.x !== ox || S.objOff.z !== oz;
   }
   // the controls show what the protocol did, so the operator can see and change it
   const setSl = (id, v, label) => { const el = $(id); if (el) el.value = v; const t = $(id + 'v'); if (t) t.textContent = label; };
@@ -3725,19 +3725,17 @@ function applyPose(pose){
   if (standing()) {
     standKey = '';
     S.objOff.z = wallStandZ();
-    S.tubeZ = clampWallTube(loc ? applyMat3(objMat(), loc)[2] + S.objOff.z : S.objOff.z);
+    // (an angled ray aimed through the point, as lying down: the tube goes the other way, by the
+    // point's height above the receptor times the angle's tangent — the AP axial clavicle's 25
+    // degrees cephalad, mid-clavicle)
+    const w = loc ? applyMat3(objMat(), loc) : [0, 0, 0];
+    const lead = pose.through && S.angCC ? (restHeight() + S.objOff.y + w[1]) * Math.tan(S.angCC * Math.PI / 180) : 0;
+    S.tubeZ = clampWallTube(w[2] + S.objOff.z - lead);
     S.bucky.z = S.tubeZ;
     syncCentringUI();
   }
   const cc = $('angCC'); if (cc) cc.value = S.angCC;
   updateGeomReadouts();
-  if (note) {
-    const bits = [];
-    if (pose.fidelity === 'approx') bits.push('<b>Approximate view.</b> ' + pose.note);
-    if (clamped) bits.push('Centring limited by the table travel — the landmark is not quite under the central ray.');
-    note.innerHTML = bits.join(' ');
-    note.classList.toggle('show', bits.length > 0);
-  }
 }
 /* READ THE CHART BY THICKNESS. Trunk, spine and skull entries say what adult they are written
    for (p.cm); the patient is measured along the central ray, as with calipers, and the mAs is
@@ -3753,13 +3751,6 @@ function applyCaliper(p){
   S.mas=nearestStation(p.mas*r.factor, masSteps); fitMa();
   const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
   refreshReadouts();
-  const note=$('protocolPose');
-  if(note){
-    const line=`Patient measures <b>${r.t.toFixed(0)} cm</b> along the central ray; the chart is written for `
-      +`${p.cm} cm. mAs ${p.mas} &rarr; <b>${S.mas}</b> (&times;${r.factor<10?r.factor.toFixed(1):r.factor.toFixed(0)}) at ${S.kv} kVp.`;
-    note.innerHTML=(note.innerHTML?note.innerHTML+'<br>':'')+line;
-    note.classList.add('show');
-  }
 }
 function openProtocolPopup(){
   const pop=$('protoPop'), body=$('protoPopBody'); if(!pop||!body) return;

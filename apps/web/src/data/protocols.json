@@ -10,6 +10,7 @@
           "projections": [
             {
               "proj": "PA fingers",
+              "room": "seated",
               "kv": 55,
               "mas": 1.0,
               "grid": false,
@@ -33,6 +34,7 @@
             },
             {
               "proj": "Lateral finger",
+              "room": "seated",
               "kv": 57,
               "mas": 4.0,
               "grid": false,
@@ -61,6 +63,7 @@
           "projections": [
             {
               "proj": "PA hand",
+              "room": "seated",
               "kv": 55,
               "mas": 1.0,
               "grid": false,
@@ -84,6 +87,7 @@
             },
             {
               "proj": "Oblique hand",
+              "room": "seated",
               "kv": 57,
               "mas": 1.0,
               "grid": false,
@@ -107,6 +111,7 @@
             },
             {
               "proj": "Lateral hand",
+              "room": "seated",
               "kv": 58,
               "mas": 3.2,
               "grid": false,
@@ -130,6 +135,7 @@
             },
             {
               "proj": "Fan lateral hand",
+              "room": "seated",
               "kv": 58,
               "mas": 1.6,
               "grid": false,
@@ -159,6 +165,7 @@
             },
             {
               "proj": "Ballcatcher hands (Norgaard)",
+              "room": "seated",
               "kv": 57,
               "mas": 1,
               "grid": false,
@@ -175,7 +182,7 @@
               "orient": "portrait",
               "subject": "hand",
               "pose": {
-                "roll": 135,
+                "roll": 155,
                 "cc": 0,
                 "centre": "mcp3Joint",
                 "joints": {
@@ -194,6 +201,7 @@
           "projections": [
             {
               "proj": "PA wrist",
+              "room": "seated",
               "kv": 58,
               "mas": 1.25,
               "grid": false,
@@ -217,6 +225,7 @@
             },
             {
               "proj": "Oblique wrist",
+              "room": "seated",
               "kv": 60,
               "mas": 1.6,
               "grid": false,
@@ -240,6 +249,7 @@
             },
             {
               "proj": "Lateral wrist",
+              "room": "seated",
               "kv": 60,
               "mas": 3.2,
               "grid": false,
@@ -263,6 +273,7 @@
             },
             {
               "proj": "External oblique wrist",
+              "room": "seated",
               "kv": 60,
               "mas": 1.6,
               "grid": false,
@@ -279,21 +290,22 @@
               "orient": "portrait",
               "subject": "hand",
               "pose": {
-                "roll": 135,
+                "roll": 150,
                 "cc": 0,
                 "centre": "midcarpal"
               }
             },
             {
               "proj": "Scaphoid view wrist",
+              "room": "seated",
               "kv": 58,
-              "mas": 1.25,
+              "mas": 2,
               "grid": false,
               "lut": "hand",
               "sid": 100,
               "coll": [
-                10,
-                13
+                4.5,
+                6.5
               ],
               "det": [
                 25,
@@ -303,7 +315,7 @@
               "subject": "hand",
               "pose": {
                 "roll": 0,
-                "cc": 15,
+                "cc": 20,
                 "centre": "scaphoid",
                 "through": true,
                 "joints": {
@@ -318,6 +330,7 @@
           "projections": [
             {
               "proj": "AP forearm",
+              "room": "seated",
               "kv": 62,
               "mas": 1.6,
               "grid": false,
@@ -342,6 +355,7 @@
             },
             {
               "proj": "Lateral forearm",
+              "room": "seated",
               "kv": 64,
               "mas": 1.6,
               "grid": false,
@@ -375,6 +389,7 @@
           "projections": [
             {
               "proj": "AP elbow",
+              "room": "seated",
               "kv": 64,
               "mas": 2.0,
               "grid": false,
@@ -399,6 +414,7 @@
             },
             {
               "proj": "Internal oblique elbow",
+              "room": "seated",
               "kv": 64,
               "mas": 2,
               "grid": false,
@@ -426,6 +442,7 @@
             },
             {
               "proj": "External oblique elbow",
+              "room": "seated",
               "kv": 64,
               "mas": 2,
               "grid": false,
@@ -450,6 +467,7 @@
             },
             {
               "proj": "Lateral elbow",
+              "room": "seated",
               "kv": 66,
               "mas": 2.0,
               "grid": false,
@@ -478,6 +496,7 @@
             },
             {
               "proj": "Radial head lateral elbow",
+              "room": "seated",
               "kv": 68,
               "mas": 3.2,
               "grid": false,
@@ -512,6 +531,7 @@
           "projections": [
             {
               "proj": "AP humerus",
+              "room": "wall",
               "kv": 70,
               "mas": 1.6,
               "grid": false,
@@ -536,6 +556,7 @@
             },
             {
               "proj": "Lateral humerus",
+              "room": "wall",
               "kv": 72,
               "mas": 1.6,
               "grid": false,
@@ -552,10 +573,13 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": 86,
+                "roll": 142,
                 "cc": 0,
                 "centre": "humerus",
-                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
+                "note": "The scapular-Y position with the elbow flexed 90 degrees: the humerus in a true lateral beside the chest, the whole bone from the shoulder to the elbow.",
+                "joints": {
+                  "elbow.flex": 90
+                }
               }
             }
           ]
@@ -565,6 +589,7 @@
           "projections": [
             {
               "proj": "AP shoulder internal rotation",
+              "room": "wall",
               "kv": 72,
               "mas": 6.4,
               "grid": true,
@@ -591,6 +616,7 @@
             },
             {
               "proj": "AP shoulder external rotation",
+              "room": "wall",
               "kv": 72,
               "mas": 6.4,
               "grid": true,
@@ -616,6 +642,7 @@
             },
             {
               "proj": "AP shoulder neutral rotation",
+              "room": "wall",
               "kv": 72,
               "mas": 6.4,
               "grid": true,
@@ -642,6 +669,7 @@
             },
             {
               "proj": "Grashey shoulder (glenoid AP oblique)",
+              "room": "wall",
               "kv": 75,
               "mas": 6.4,
               "grid": true,
@@ -666,6 +694,7 @@
             },
             {
               "proj": "Y view shoulder",
+              "room": "wall",
               "kv": 80,
               "mas": 4,
               "grid": true,
@@ -683,15 +712,16 @@
               "orient": "portrait",
               "subject": "upperextremity",
               "pose": {
-                "roll": -122,
+                "roll": 142,
                 "cc": 0,
                 "centre": "shoulder",
                 "fidelity": "approx",
-                "note": "A PA oblique, the affected side to the receptor, turned until the beam lies in the plane of the scapula: measured on this model's scapula, 32 degrees off coronal, so 58 degrees from the PA. The model's chest wall ends a hand's breadth below the axilla (the flat lower edge), and its scapula at the crop."
+                "note": "A PA oblique with the beam in the plane of the scapula, so the scapula is seen edge-on as a Y: set on this model's own film at 142 degrees, where the Y forms best. The model's chest wall ends a hand's breadth below the axilla (the flat lower edge), and its scapula at the crop."
               }
             },
             {
               "proj": "Axial shoulder (inferosuperior)",
+              "room": "detector",
               "kv": 72,
               "mas": 10,
               "grid": true,
@@ -721,6 +751,7 @@
             },
             {
               "proj": "Axial shoulder (superoinferior)",
+              "room": "seated",
               "kv": 72,
               "mas": 10,
               "grid": true,
@@ -755,6 +786,7 @@
           "projections": [
             {
               "proj": "AP clavicle",
+              "room": "wall",
               "kv": 70,
               "mas": 16,
               "grid": true,
@@ -779,6 +811,7 @@
             },
             {
               "proj": "AP axial clavicle",
+              "room": "wall",
               "kv": 70,
               "mas": 12.5,
               "grid": true,
@@ -814,6 +847,7 @@
           "projections": [
             {
               "proj": "AP toes",
+              "room": "detector",
               "kv": 55,
               "mas": 1.6,
               "grid": false,
@@ -841,6 +875,7 @@
             },
             {
               "proj": "Oblique toes",
+              "room": "detector",
               "kv": 55,
               "mas": 1.6,
               "grid": false,
@@ -868,26 +903,27 @@
             },
             {
               "proj": "AP foot",
+              "room": "detector",
               "kv": 60,
-              "mas": 2.0,
+              "mas": 1.6,
               "grid": false,
-              "lut": "extremity",
+              "lut": "footEq",
               "sid": 100,
               "coll": [
-                15,
-                20
+                17,
+                34
               ],
               "det": [
-                25,
-                30
+                35,
+                43
               ],
               "orient": "portrait",
               "subject": "foot",
               "pose": {
                 "roll": 0,
                 "tilt": -59,
-                "cc": 10,
-                "centre": "mt3Base",
+                "cc": -15,
+                "centre": "medialCuneiform",
                 "joints": {
                   "ankle.flex": -30
                 }
@@ -895,18 +931,19 @@
             },
             {
               "proj": "Oblique foot",
+              "room": "detector",
               "kv": 60,
               "mas": 1.6,
               "grid": false,
-              "lut": "extremity",
+              "lut": "footEq",
               "sid": 100,
               "coll": [
-                15,
-                20
+                19,
+                34
               ],
               "det": [
-                25,
-                30
+                35,
+                43
               ],
               "orient": "portrait",
               "subject": "foot",
@@ -914,7 +951,7 @@
                 "roll": 30,
                 "tilt": -59,
                 "cc": 0,
-                "centre": "mt3Base",
+                "centre": "medialCuneiform",
                 "joints": {
                   "ankle.flex": -30
                 }
@@ -922,18 +959,19 @@
             },
             {
               "proj": "Lateral foot",
+              "room": "detector",
               "kv": 62,
-              "mas": 2.0,
+              "mas": 1.6,
               "grid": false,
-              "lut": "limb",
+              "lut": "footEq",
               "sid": 100,
               "coll": [
-                22,
-                14
+                30,
+                17
               ],
               "det": [
-                25,
-                30
+                35,
+                43
               ],
               "orient": "landscape",
               "subject": "foot",
@@ -953,8 +991,9 @@
           "projections": [
             {
               "proj": "Axial calcaneus",
+              "room": "detector",
               "kv": 70,
-              "mas": 4.0,
+              "mas": 2.5,
               "grid": false,
               "lut": "ankle",
               "sid": 100,
@@ -970,7 +1009,7 @@
               "subject": "foot",
               "pose": {
                 "roll": 0,
-                "cc": 40,
+                "cc": -40,
                 "centre": "calcaneus",
                 "joints": {
                   "ankle.flex": 0
@@ -979,6 +1018,7 @@
             },
             {
               "proj": "Lateral calcaneus",
+              "room": "detector",
               "kv": 60,
               "mas": 2.5,
               "grid": false,
@@ -1010,6 +1050,7 @@
           "projections": [
             {
               "proj": "AP ankle",
+              "room": "detector",
               "kv": 63,
               "mas": 4.0,
               "grid": false,
@@ -1036,6 +1077,7 @@
             },
             {
               "proj": "Mortise ankle",
+              "room": "detector",
               "kv": 64,
               "mas": 4.0,
               "grid": false,
@@ -1062,6 +1104,7 @@
             },
             {
               "proj": "External oblique ankle",
+              "room": "detector",
               "kv": 64,
               "mas": 3.2,
               "grid": false,
@@ -1088,6 +1131,7 @@
             },
             {
               "proj": "Lateral ankle",
+              "room": "detector",
               "kv": 65,
               "mas": 2.0,
               "grid": false,
@@ -1119,6 +1163,7 @@
           "projections": [
             {
               "proj": "AP tibia/fibula",
+              "room": "detector",
               "kv": 66,
               "mas": 2.5,
               "grid": false,
@@ -1143,6 +1188,7 @@
             },
             {
               "proj": "Internal oblique tibia/fibula",
+              "room": "detector",
               "kv": 66,
               "mas": 2.5,
               "grid": false,
@@ -1167,6 +1213,7 @@
             },
             {
               "proj": "External oblique tibia/fibula",
+              "room": "detector",
               "kv": 66,
               "mas": 2,
               "grid": false,
@@ -1191,6 +1238,7 @@
             },
             {
               "proj": "Lateral tibia/fibula",
+              "room": "detector",
               "kv": 66,
               "mas": 2.5,
               "grid": false,
@@ -1220,6 +1268,7 @@
           "projections": [
             {
               "proj": "AP knee",
+              "room": "detector",
               "kv": 68,
               "mas": 8,
               "grid": true,
@@ -1245,6 +1294,7 @@
             },
             {
               "proj": "Internal oblique knee",
+              "room": "detector",
               "kv": 68,
               "mas": 8,
               "grid": true,
@@ -1270,6 +1320,7 @@
             },
             {
               "proj": "External oblique knee",
+              "room": "detector",
               "kv": 68,
               "mas": 8,
               "grid": true,
@@ -1295,6 +1346,7 @@
             },
             {
               "proj": "Lateral knee",
+              "room": "table",
               "kv": 70,
               "mas": 10,
               "grid": true,
@@ -1323,6 +1375,7 @@
             },
             {
               "proj": "Cross-table lateral knee",
+              "room": "detector",
               "kv": 65,
               "mas": 5,
               "grid": false,
@@ -1347,6 +1400,7 @@
             },
             {
               "proj": "AP knee standing",
+              "room": "wall",
               "kv": 70,
               "mas": 8,
               "grid": true,
@@ -1373,6 +1427,7 @@
             },
             {
               "proj": "Lateral knee standing",
+              "room": "wall",
               "kv": 72,
               "mas": 10,
               "grid": true,
@@ -1402,6 +1457,7 @@
             },
             {
               "proj": "Skyline knee",
+              "room": "seated",
               "kv": 65,
               "mas": 10,
               "grid": false,
@@ -1431,6 +1487,7 @@
             },
             {
               "proj": "Rosenberg knee (PA 45° flexion)",
+              "room": "wall",
               "kv": 70,
               "mas": 8,
               "grid": true,
@@ -1449,14 +1506,15 @@
               "subject": "lowerextremity",
               "pose": {
                 "roll": 157,
-                "cc": 10,
+                "cc": 15,
                 "centre": "knee",
                 "through": true,
                 "joints": {
                   "knee.flex": 45
                 },
                 "fidelity": "approx",
-                "note": "Standing PA with the knee flexed 45 degrees, weight-bearing; this model lies unloaded. This leg rests turned in (z035's feet lay toes in): the rolls are measured on the bone, the AP's bringing the patella midline over the intercondylar notch (23 degrees out), the lateral's laying the axis through the condyles along the beam, so they superimpose."
+                "note": "Standing PA at the wall stand, the knee flexed 45 degrees with the thigh and leg each leaning about 22 degrees from upright, so the front of the knee rests against the receptor; the central ray 15 degrees caudad, parallel to the tibial plateau, through the knee. Weight-bearing: this model lies unloaded.",
+                "tilt": 22
               }
             }
           ]
@@ -1466,6 +1524,7 @@
           "projections": [
             {
               "proj": "AP femur",
+              "room": "table",
               "kv": 75,
               "mas": 6.4,
               "grid": true,
@@ -1491,6 +1550,7 @@
             },
             {
               "proj": "Lateral femur",
+              "room": "table",
               "kv": 77,
               "mas": 8,
               "grid": true,
@@ -1526,6 +1586,7 @@
           "projections": [
             {
               "proj": "PA chest",
+              "room": "wall",
               "kv": 120,
               "mas": 2.5,
               "cm": 22,
@@ -1534,14 +1595,14 @@
               "lut": "chest",
               "sid": 180,
               "coll": [
-                35,
-                42
+                41,
+                35
               ],
               "det": [
-                43,
+                35,
                 43
               ],
-              "orient": "portrait",
+              "orient": "landscape",
               "subject": "chest",
               "pose": {
                 "roll": 180,
@@ -1551,6 +1612,7 @@
             },
             {
               "proj": "PA chest expiration",
+              "room": "wall",
               "kv": 120,
               "mas": 2.5,
               "cm": 22,
@@ -1559,14 +1621,14 @@
               "lut": "chest",
               "sid": 180,
               "coll": [
-                35,
-                42
+                41,
+                35
               ],
               "det": [
-                43,
+                35,
                 43
               ],
-              "orient": "portrait",
+              "orient": "landscape",
               "subject": "chest",
               "pose": {
                 "roll": 180,
@@ -1578,6 +1640,7 @@
             },
             {
               "proj": "Lateral chest",
+              "room": "wall",
               "kv": 120,
               "mas": 6.4,
               "cm": 30,
@@ -1603,21 +1666,22 @@
             },
             {
               "proj": "AP chest (portable)",
+              "room": "detector",
               "kv": 90,
-              "mas": 1.0,
+              "mas": 0.63,
               "cm": 22,
               "grid": false,
               "lut": "chest",
               "sid": 100,
               "coll": [
-                35,
-                42
+                41,
+                35
               ],
               "det": [
-                43,
+                35,
                 43
               ],
-              "orient": "portrait",
+              "orient": "landscape",
               "subject": "chest",
               "pose": {
                 "roll": 0,
@@ -1632,6 +1696,7 @@
           "projections": [
             {
               "proj": "Anterior oblique ribs",
+              "room": "wall",
               "kv": 75,
               "mas": 8,
               "grid": true,
@@ -1657,6 +1722,7 @@
             },
             {
               "proj": "Posterior oblique ribs",
+              "room": "wall",
               "kv": 75,
               "mas": 8,
               "grid": true,
@@ -1687,16 +1753,17 @@
           "projections": [
             {
               "proj": "AP chest (child)",
+              "room": "wall",
               "kv": 85,
-              "mas": 6.4,
+              "mas": 8,
               "cm": 18,
               "grid": true,
               "aec": "lr",
               "lut": "chest",
               "sid": 150,
               "coll": [
-                30,
-                33
+                25,
+                22
               ],
               "det": [
                 35,
@@ -1712,16 +1779,17 @@
             },
             {
               "proj": "Lateral chest (child)",
+              "room": "wall",
               "kv": 90,
-              "mas": 12.5,
+              "mas": 40,
               "cm": 35,
               "grid": true,
               "aec": "c",
               "lut": "chest",
               "sid": 150,
               "coll": [
-                26,
-                33
+                22,
+                24
               ],
               "det": [
                 35,
@@ -1749,6 +1817,7 @@
           "projections": [
             {
               "proj": "AP abdomen (KUB)",
+              "room": "table",
               "kv": 80,
               "mas": 32,
               "cm": 22,
@@ -1774,6 +1843,7 @@
             },
             {
               "proj": "Upright abdomen",
+              "room": "wall",
               "kv": 80,
               "mas": 25,
               "cm": 22,
@@ -1804,6 +1874,7 @@
           "projections": [
             {
               "proj": "AP pelvis",
+              "room": "table",
               "kv": 80,
               "mas": 25,
               "cm": 21,
@@ -1830,6 +1901,7 @@
             },
             {
               "proj": "AP pelvis (no leg rotation)",
+              "room": "table",
               "kv": 80,
               "mas": 25,
               "cm": 21,
@@ -1857,6 +1929,7 @@
             },
             {
               "proj": "Judet RPO pelvis",
+              "room": "table",
               "kv": 80,
               "mas": 40,
               "cm": 24,
@@ -1882,6 +1955,7 @@
             },
             {
               "proj": "Judet LPO pelvis",
+              "room": "table",
               "kv": 80,
               "mas": 40,
               "cm": 24,
@@ -1907,6 +1981,7 @@
             },
             {
               "proj": "Inlet pelvis",
+              "room": "table",
               "kv": 85,
               "mas": 80,
               "cm": 28,
@@ -1934,6 +2009,7 @@
             },
             {
               "proj": "Outlet pelvis",
+              "room": "table",
               "kv": 85,
               "mas": 80,
               "cm": 24,
@@ -1966,6 +2042,7 @@
           "projections": [
             {
               "proj": "AP hip",
+              "room": "table",
               "kv": 80,
               "mas": 25,
               "cm": 16,
@@ -1992,6 +2069,7 @@
             },
             {
               "proj": "AP hip (no leg rotation)",
+              "room": "table",
               "kv": 80,
               "mas": 25,
               "cm": 16,
@@ -2019,6 +2097,7 @@
             },
             {
               "proj": "Frog-leg lateral hip",
+              "room": "table",
               "kv": 80,
               "mas": 25,
               "cm": 16,
@@ -2047,6 +2126,7 @@
             },
             {
               "proj": "Roll-up lateral hip (Lauenstein)",
+              "room": "table",
               "kv": 80,
               "mas": 32,
               "cm": 18,
@@ -2075,6 +2155,7 @@
             },
             {
               "proj": "Cross-table lateral hip",
+              "room": "detector",
               "kv": 85,
               "mas": 50,
               "cm": 19,
@@ -2108,6 +2189,7 @@
           "projections": [
             {
               "proj": "AP axial sacrum / SI joints",
+              "room": "table",
               "kv": 80,
               "mas": 64,
               "cm": 21,
@@ -2134,6 +2216,7 @@
             },
             {
               "proj": "AP axial coccyx",
+              "room": "table",
               "kv": 80,
               "mas": 50,
               "cm": 22,
@@ -2160,6 +2243,7 @@
             },
             {
               "proj": "Lateral sacrum / coccyx",
+              "room": "table",
               "kv": 100,
               "mas": 125,
               "cm": 30,
@@ -2190,6 +2274,7 @@
           "projections": [
             {
               "proj": "AP abdomen (child)",
+              "room": "table",
               "kv": 80,
               "mas": 32,
               "cm": 19,
@@ -2215,6 +2300,7 @@
             },
             {
               "proj": "AP pelvis (child)",
+              "room": "table",
               "kv": 80,
               "mas": 25,
               "cm": 18,
@@ -2250,6 +2336,7 @@
           "projections": [
             {
               "proj": "AP cervical",
+              "room": "wall",
               "kv": 75,
               "mas": 25,
               "cm": 13,
@@ -2275,6 +2362,7 @@
             },
             {
               "proj": "Lateral cervical",
+              "room": "wall",
               "kv": 78,
               "mas": 50,
               "grid": true,
@@ -2299,6 +2387,7 @@
             },
             {
               "proj": "Lateral cervical flexion",
+              "room": "wall",
               "kv": 78,
               "mas": 50,
               "grid": true,
@@ -2326,6 +2415,7 @@
             },
             {
               "proj": "Lateral cervical extension",
+              "room": "wall",
               "kv": 78,
               "mas": 40,
               "grid": true,
@@ -2353,6 +2443,7 @@
             },
             {
               "proj": "AP open mouth",
+              "room": "wall",
               "kv": 75,
               "mas": 20,
               "cm": 13,
@@ -2382,6 +2473,7 @@
             },
             {
               "proj": "Oblique cervical",
+              "room": "wall",
               "kv": 76,
               "mas": 50,
               "grid": true,
@@ -2406,6 +2498,7 @@
             },
             {
               "proj": "RAO cervical",
+              "room": "wall",
               "kv": 76,
               "mas": 64,
               "grid": true,
@@ -2434,6 +2527,7 @@
             },
             {
               "proj": "LAO cervical",
+              "room": "wall",
               "kv": 76,
               "mas": 64,
               "grid": true,
@@ -2462,6 +2556,7 @@
             },
             {
               "proj": "Swimmers lateral",
+              "room": "table",
               "kv": 85,
               "mas": 40.0,
               "grid": true,
@@ -2493,6 +2588,7 @@
           "projections": [
             {
               "proj": "Lateral soft-tissue neck (adenoids)",
+              "room": "wall",
               "kv": 65,
               "mas": 20,
               "grid": false,
@@ -2519,6 +2615,7 @@
             },
             {
               "proj": "Lateral soft-tissue neck (epiglottis)",
+              "room": "wall",
               "kv": 70,
               "mas": 25,
               "grid": false,
@@ -2550,6 +2647,7 @@
           "projections": [
             {
               "proj": "AP thoracic",
+              "room": "table",
               "kv": 80,
               "mas": 32,
               "cm": 23,
@@ -2575,6 +2673,7 @@
             },
             {
               "proj": "Lateral thoracic",
+              "room": "table",
               "kv": 85,
               "mas": 100,
               "cm": 32,
@@ -2605,6 +2704,7 @@
           "projections": [
             {
               "proj": "AP lumbar",
+              "room": "table",
               "kv": 82,
               "mas": 50,
               "cm": 22,
@@ -2630,6 +2730,7 @@
             },
             {
               "proj": "Lateral lumbar",
+              "room": "table",
               "kv": 100,
               "mas": 125,
               "cm": 30,
@@ -2665,6 +2766,7 @@
           "projections": [
             {
               "proj": "AP skull",
+              "room": "wall",
               "kv": 80,
               "mas": 20,
               "cm": 19,
@@ -2690,6 +2792,7 @@
             },
             {
               "proj": "PA skull",
+              "room": "wall",
               "kv": 80,
               "mas": 20,
               "cm": 19,
@@ -2715,6 +2818,7 @@
             },
             {
               "proj": "PA axial skull (Caldwell)",
+              "room": "wall",
               "kv": 80,
               "mas": 20,
               "cm": 19,
@@ -2740,6 +2844,7 @@
             },
             {
               "proj": "AP axial skull (Towne)",
+              "room": "wall",
               "kv": 80,
               "mas": 25,
               "cm": 19,
@@ -2765,6 +2870,7 @@
             },
             {
               "proj": "Lateral skull",
+              "room": "wall",
               "kv": 78,
               "mas": 12.5,
               "cm": 15,
@@ -2796,6 +2902,7 @@
           "projections": [
             {
               "proj": "PA axial sinuses (Caldwell)",
+              "room": "wall",
               "kv": 75,
               "mas": 32,
               "cm": 19,
@@ -2821,6 +2928,7 @@
             },
             {
               "proj": "Parietoacanthial sinuses (Waters)",
+              "room": "wall",
               "kv": 80,
               "mas": 32,
               "cm": 18,
@@ -2847,6 +2955,7 @@
             },
             {
               "proj": "Lateral sinuses",
+              "room": "wall",
               "kv": 75,
               "mas": 20,
               "cm": 13,
@@ -2878,6 +2987,7 @@
           "projections": [
             {
               "proj": "Parietoacanthial facial bones (Waters)",
+              "room": "wall",
               "kv": 80,
               "mas": 25,
               "cm": 18,
@@ -2904,6 +3014,7 @@
             },
             {
               "proj": "Lateral facial bones",
+              "room": "wall",
               "kv": 75,
               "mas": 16,
               "cm": 13,
@@ -2935,6 +3046,7 @@
           "projections": [
             {
               "proj": "AP skull (child)",
+              "room": "wall",
               "kv": 75,
               "mas": 20,
               "cm": 16,
@@ -2960,6 +3072,7 @@
             },
             {
               "proj": "Lateral skull (child)",
+              "room": "wall",
               "kv": 73,
               "mas": 12.5,
               "cm": 13,
@@ -2995,6 +3108,7 @@
           "projections": [
             {
               "proj": "Leg length study",
+              "room": "wall",
               "kv": 80,
               "mas": 16,
               "grid": true,
@@ -3026,6 +3140,7 @@
             },
             {
               "proj": "Scoliosis study",
+              "room": "wall",
               "kv": 100,
               "mas": 100,
               "grid": true,
@@ -3057,6 +3172,7 @@
             },
             {
               "proj": "Femur pasting",
+              "room": "table",
               "kv": 75,
               "mas": 32,
               "grid": true,
@@ -3088,6 +3204,7 @@
             },
             {
               "proj": "Lateral femur pasting",
+              "room": "table",
               "kv": 77,
               "mas": 40,
               "grid": true,

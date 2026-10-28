@@ -31,6 +31,12 @@ test('every projection carries a pose, and every centring landmark exists for it
   }
 });
 
+test('the lateral humerus is the scapular Y with the elbow bent a right angle', () => {
+  const y = all.find((p) => p.proj === 'Y view shoulder').pose, h = all.find((p) => p.proj === 'Lateral humerus').pose;
+  assert.equal(h.roll, y.roll);
+  assert.equal(h.joints['elbow.flex'], 90);
+});
+
 test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
   // the arm (z053) rests 4 degrees off the anatomical position: its views are rolled by what the epicondyles
   // measure (data/palpation.json), AP laying them parallel to the receptor and the lateral standing
@@ -41,14 +47,16 @@ test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
   const deg = (v) => Math.atan2(v[1], v[0]) * 180 / Math.PI;
   for (const p of all) {
     const r = Math.abs(p.pose.roll % 360);
-    // (the shoulder views keep the patient supine: they are about the girdle, not the elbow)
-    if (p.subject === 'upperextremity' && !/shoulder/.test(p.proj)) {
+    // (the shoulder views keep the patient supine: they are about the girdle, not the elbow; the
+    // lateral humerus is taken in the scapular-Y position, checked below)
+    if (p.subject === 'upperextremity' && !/shoulder/.test(p.proj) && p.proj !== 'Lateral humerus') {
       if (/^AP /.test(p.proj)) assert.ok(Math.abs(deg(turned(p.pose.roll))) < 3, `${p.proj}: epicondyles ${deg(turned(p.pose.roll)).toFixed(1)} deg off parallel`);
       if (/^Lateral/.test(p.proj)) assert.ok(Math.abs(deg(turned(p.pose.roll)) - 90) < 3, `${p.proj}: lateral epicondyle not on top`);
       continue;
     }
     // (the leg rests turned in: its knee, leg and femur views are rolled by the bone, checked below)
     if (p.subject === 'lowerextremity' && /knee|femur|tibia/.test(p.proj)) continue;
+    if (p.proj === 'Lateral humerus') continue;
     if (/^Lateral/.test(p.proj) || /^Swimmers/.test(p.proj)) assert.equal(r, 90, p.proj);
     if (/^AP /.test(p.proj)) assert.equal(r, 0, p.proj);
     if (/^PA /.test(p.proj) && p.subject !== 'hand') assert.equal(r, 180, `${p.proj}: body subjects rest AP, so PA is a half turn`);
