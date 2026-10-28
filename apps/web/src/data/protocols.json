@@ -2057,7 +2057,7 @@
               "proj": "AP hip",
               "room": "table",
               "kv": 80,
-              "mas": 16,
+              "mas": 20,
               "cm": 16,
               "grid": true,
               "aec": "c",
@@ -2084,7 +2084,7 @@
               "proj": "AP hip (no leg rotation)",
               "room": "table",
               "kv": 80,
-              "mas": 16,
+              "mas": 20,
               "cm": 16,
               "grid": true,
               "aec": "c",
@@ -2132,16 +2132,19 @@
                 "roll": 0,
                 "cc": 0,
                 "centre": "femoralHeadR",
-                "legs": -45,
-                "fidelity": "approx",
-                "note": "This model's legs end at the upper thigh and turn only about their long axes (the leg rotation): the hip cannot flex or abduct. The femur is turned out as far as it goes in place of the frog-leg's flexion and abduction."
+                "joints": {
+                  "hipR.abd": 45,
+                  "hipR.flex": 30,
+                  "hipR.rot": -30
+                },
+                "note": "The hip abducted 45 degrees, flexed and turned out, as the frog-leg has it. This model's thighs end mid-thigh: there is no knee to bend (the frog-leg's 30-40 degrees), and the leg below the field is not on the film."
               }
             },
             {
               "proj": "Roll-up lateral hip (Lauenstein)",
               "room": "table",
               "kv": 80,
-              "mas": 32,
+              "mas": 16,
               "cm": 18,
               "grid": true,
               "aec": "c",
@@ -2161,9 +2164,12 @@
                 "roll": -45,
                 "cc": 0,
                 "centre": "femoralHeadR",
-                "legs": -45,
-                "fidelity": "approx",
-                "note": "This model's legs end at the upper thigh and turn only about their long axes (the leg rotation): the hip cannot flex or abduct. The patient rolls 45 degrees onto the hip and the femur is turned out as far as it goes, laying its lateral surface toward the table."
+                "joints": {
+                  "hipR.abd": 45,
+                  "hipR.flex": 45,
+                  "hipR.rot": 0
+                },
+                "note": "The patient rolls 45 degrees onto the hip, which is flexed and abducted 45 degrees so the thigh lies on the table on its lateral surface. This model's thighs end mid-thigh: there is no knee to bend."
               }
             },
             {

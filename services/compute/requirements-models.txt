@@ -156,4 +156,5 @@ TotalSegmentator>=2.4
 #   $B -m app.build_skin chestabdopelvis && $B -m app.build_bone_mesh chestabdopelvis && $B -m app.build_gi_mesh
 #   $B -m app.build_anim_images ct && $B -m app.build_anim_images
 #   (from the repo root) $B tools/measure_landmarks.py chestabdopelvis, then measure_palpation.py and
-#   measure_centring.py with the same argument
+#   measure_centring.py with the same argument, and $B tools/measure_joints.py hips (its hip joints'
+#   weight grids are cut from the grafted volume)

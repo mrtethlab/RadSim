@@ -303,13 +303,30 @@ test('the hospital views turn the way their names say', () => {
   assert.equal(pose('AP hip').centre, 'femoralHeadR');
 });
 
+test('the frog-leg and the roll-up lateral bend the hip (the chest/abdomen/pelvis\'s hip joints), and say the knee is not there', () => {
+  const pose = (proj) => all.find((p) => p.proj === proj).pose;
+  const frog = pose('Frog-leg lateral hip'), roll = pose('Roll-up lateral hip (Lauenstein)');
+  // the frog-leg: abducted about 45 degrees, flexed, turned out; the hip film is true, so not approximate
+  const j = frog.joints;
+  assert.ok(j['hipR.abd'] >= 40 && j['hipR.abd'] <= 50, `abducted ${j['hipR.abd']}`);
+  assert.ok(j['hipR.flex'] > 0 && j['hipR.rot'] < 0, 'flexed and turned out');
+  assert.ok(!frog.legs, 'the joints turn the femur, not the leg rotation as well');
+  assert.ok(/knee/.test(frog.note), 'the note says there is no knee to bend');
+  // the roll-up: onto the hip, the thigh flexed and abducted to lie on the table
+  assert.ok(roll.roll < 0 && roll.joints['hipR.flex'] > 0 && roll.joints['hipR.abd'] > 0);
+  for (const p of [frog, roll]) assert.notEqual(p.fidelity, 'approx');
+  const js = JSON.parse(readFileSync(new URL('../src/data/joints.json', import.meta.url), 'utf8')).chestabdopelvis;
+  const keys = Object.values(js).flatMap((jt) => jt.motions.map((m) => m.key));
+  for (const k of [...Object.keys(j), ...Object.keys(roll.joints)]) assert.ok(keys.includes(k), `${k} is a motion of the model`);
+});
+
 test('an angled ray is aimed through its point only when there is an angle', () => {
   for (const p of all.filter((x) => x.pose.through)) assert.ok(p.pose.cc, `${p.proj}: through without an angle`);
   for (const n of ['Radial head lateral elbow', 'Inlet pelvis', 'Outlet pelvis', 'AP axial clavicle']) assert.ok(all.find((p) => p.proj === n).pose.through, n);
 });
 
 test('the views a rigid model cannot make are marked approximate', () => {
-  for (const n of ['Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)', 'Y view shoulder', 'Frog-leg lateral hip', 'Roll-up lateral hip (Lauenstein)', 'Cross-table lateral hip',
+  for (const n of ['Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)', 'Y view shoulder', 'Cross-table lateral hip',
     'AP knee standing', 'Lateral knee standing', 'Skyline knee', 'Rosenberg knee (PA 45° flexion)', 'PA chest expiration'])
     assert.equal(all.find((p) => p.proj === n).pose.fidelity, 'approx', n);
   // the arm rests in the anatomical position (epicondyles parallel to the receptor): its AP shoulder is the external rotation,
