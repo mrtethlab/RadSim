@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { buildCarm, buildTower, setReceptor, CARM } from '../../../carm.js';
 import { std, mesh, setOpacity } from '../../kit/stage.js';
 import { fanBeam, fieldOutline } from './util.js';
+import { capMeshFrame } from '../capFrame.js';
 
 export const OEC = { SID: 99, SRC_ISO: 60, FIELD: 23 };      // fluoro.js's OEC geometry
 export const FLOOR_Y = -90;
@@ -71,6 +72,7 @@ export async function buildSuite(api) {
   ]);
   const add = (m, f) => {
     if (!m) return null;
+    capMeshFrame(m);
     m.scale.setScalar(0.1);
     m.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); f(o); } });
     patient.add(m); return m;

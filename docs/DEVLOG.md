@@ -6,9 +6,68 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-28
+
+### Protocol polish — PR pending
+This PR carries the elbow section below, and these:
+- **Rooms:** each protocol names its room (`room` in protocols.json, the same as the Protocol Trainer's view rooms), and selecting it sets that room first. The AP clavicle stands at the wall, the hand sits at the flat bucky, the Rosenberg stands at the wall. The two trainers keep their own rooms.
+- **The orange note under Select protocol is gone:** the approximate-view note, the centring limit and the caliper line.
+- **At the wall stand an angled ray aimed through its point** moves the tube, not the patient. The AP axial clavicle's 25 degrees cephalad comes back to mid-clavicle.
+- **Shoulder:** the Y view is rolled 142 degrees, as set by eye. The lateral humerus is taken in the Y position with the elbow bent 90 degrees.
+- **Hand and wrist:**
+  - Scaphoid: 20 degrees toward the elbow, collimated 4.5 x 6.5 cm to the scaphoid.
+  - Ballcatcher: 20 degrees more oblique (roll 155), for the 1st MCP joint.
+  - External oblique wrist: 15 degrees less oblique, for the pisiform-triquetrum joint.
+- **Foot:**
+  - AP foot: 15 degrees cephalad.
+  - AP and oblique foot: toes to the calcaneus and the distal tib/fib, on 35 x 43.
+  - Lateral foot: toes to the heel's soft tissue.
+  - All three use an equalised display (`footEq`) so the hindfoot is not white.
+  - Axial calcaneus: 40 degrees cephalad.
+- **Rosenberg:** at the wall stand, the leg tilted 22 degrees so the front of the knee rests on the receptor, 15 degrees caudad along the plateau.
+- **Chest:** adult PA, PA expiration and portable AP on 35 x 43 landscape, collimated 41 x 35. The child's AP and lateral are collimated to the lungs.
+- **Skull:**
+  - The lateral is centred on the whole head (it cut off the face and mandible), and all five skull views use a 24 x 30 field.
+  - The Caldwells and Towne are aimed through their points.
+  - The skull display is equalised on the anatomy alone, so the AP and PA show the vault, orbits and petrous ridges.
+  - The child's skull centring point is re-measured.
+- **Chest/abdomen/pelvis model:**
+  - Its CT ends at the femoral necks, so both proximal thighs were grafted from the lower-extremity model, registered to its femurs (`build_cap_thighs.py`): 75 slices, 15 cm.
+  - Landmarks and meshes are re-measured, the GI and contrast data are unchanged above the seam, and the films are cropped back to their anatomy.
+  - Leg rotation now turns about the femur's own axis.
+  - The cross-table lateral hip raises the other leg (`pose.lift`).
+  - The pelvis, hip, lumbar and scoliosis techniques are recalibrated to DI about 0.
+  - **The seam no longer reads as a fracture.** The graft eased the donor's femur onto the CAP's and dithered them over 16 mm, so the cortex jogged and the canal changed density in a band (150 HU in 8 mm). Now the CAP's last sections are carried down its own shaft, narrowing as they came, and the bone's outline, the cortex's and the canal's are morphed into the donor's by their signed distances over 7 cm (50 HU in 8 mm). The soft tissue's outline is blended over 10 cm. Above the seam the CAP is unchanged, voxel for voxel, so the GI and contrast data stand.
+  - **Hip joints.** Each hip is a field joint about the femoral head (a sphere fitted where it faces the acetabulum): the femur and thigh turn whole, the pelvis and the other leg stay. Motions: rotation, abduction and flexion. The joint's own grid is at the model's voxels, the rest of that side at every other one (`field.outer`). The leg rotation (`pose.legs`, the Legs slider) now drives the hips' rotations, so the femur is not turned twice.
+  - **Frog-leg lateral hip:** 45 degrees of abduction, 30 of flexion, 30 external; no longer approximate (the thighs end mid-thigh, so there is no knee to bend). **Lauenstein:** rolled 45, the hip flexed and abducted 45, so the thigh lies on the table. DI 0.0 and 0.3; the AP hips raised to 20 mAs (DI 0.3).
+- **Judet obliques:** centred midway between the femoral heads (a new `acetabula` centring point), so the acetabula and proximal femurs are on the film. They use an equalised display windowed on the anatomy (`pelvisObl`) and are exposed to DI 0.
+- **The Protocol Trainer's films** are drawn through the window of their own exposure. They had been drawn through the viewer's curve, seeded from whatever image the room last hung, and came out white or faint.
+- **Exposures** recalibrated wherever a change moved them.
+- **CT scanners rebuilt** (`ctModel.js`; the old builders are kept, unwired, in `ctRigLegacy.js`):
+  - GE Optima CT660: a white face dished round the bore with a slim grey lip, a blue-grey body and a dark plinth, the blue gantry LCD in its tapering module, round keypads with the live timer, the Optima and GE badges. The table is a white cradle and pad on a dark tapered pedestal, with a handle at its foot.
+  - Canon Aquilion Precision: a round drum on two ear stands with a light blue-grey ring round its face, angled panels with the live read-out and lit blue keys, the crown LCD, red indicator lights. The table stands on a white bellows column.
+  - The tube and detector arc turn inside the housing, in a dark cavity behind a translucent window in the bore. They used to swing in the bore beside the patient.
+  - The table body now rises and falls with the couch top. The AP and Lat PoV buttons hide the housing at once.
+  - About 58,000 triangles a machine, down from about 400,000.
+- Checked in the room and the trainer, film by film.
+
 ## 2026-10-27
 
-### Protocol Trainer — PR pending
+### The elbow turns round the trochlea — PR pending (protocol polish)
+- **The problem:** the elbow bent at a plane 1.5 cm below the epicondyles, which cut through the radial head and the coronoid. Points in the crease took part of the turn, so both were torn off their bones and pivoted about the crease, and the lateral elbow (90 degrees) showed the forearm and humerus fused, with no joint space.
+- **Flexion is a field joint** (`tools/measure_joints.py elbow_field`, `upperextremity.elboww.bin`):
+  - The radius, ulna and every bone below them take the whole turn, the humerus none, and the soft tissue the blend of the bones nearest it.
+  - The grid is the elbow alone, on the model's own 1 mm voxels. Each side's bone, and the cartilage and capsule within 3 mm of it on its own side of the joint space, is pinned to its piece's share.
+  - Past the grid, whatever lies past a plane through the axis turns whole (`field.beyond`). This covers the forearm and hand wherever the roll and the wrist carry them.
+  - The axis is fitted to the motion. A cylinder fitted to the trochlea and capitulum misses them by 3 mm, and turned about it the coronoid ran into the humerus by 50 degrees. So the fit is the line about which the forearm's joint surfaces keep their gap to the humerus from 13 to 143 degrees. It runs through (0.70, -3.36, 2.56), along (0.98, -0.18, 0.08), 15 degrees off the epicondyles' line.
+  - The angle is anatomical: 0 is the forearm in line with the humerus. This arm rests 33 degrees flexed (measured on the shafts). So a lateral elbow's 90 is now a true 90; it was 123.
+  - Straight, the notch no longer stays round the trochlea about any one line: the olecranon meets its fossa. So the forearm glides 5 mm off the humerus over the last 33 degrees (`m.glide0`). In the posed volume the gap between the forearm's bone and the humerus's, at its 0.5th percentile, is 4.7 mm as scanned, 3.1 mm at 0 and 3.7 mm at 90.
+- **The forearm's roll** (pronation) stays a plain joint just below it (`forearm`), spread along the forearm as before. A field's roll would be one plain turn of everything.
+- **AP elbow, both obliques, AP forearm and AP humerus** now straighten the elbow (`elbow.flex` 0). They were taken at the 33 degrees the arm was scanned in.
+- **Bone mesh:** a rigid field (`field.rigid`: the shoulder and the elbow) gives a bone vertex the whole turn or none, read just inside the bone at rest. The shoulder's bone mesh no longer stretches tenfold at 90 degrees of abduction. A joint that only rolls no longer cuts a ring out of the ulna.
+- Checked in the room: AP, oblique, lateral and radial-head elbows, the humerus and forearm views, the skin and bone meshes from 0 to 140 degrees and with the shoulder abducted. Tests pin the coronoid and radial head to their distance from the axis from 0 to 140 degrees and every forearm bone to the full turn. They also keep all but 1 % of the joint surfaces 1.5 mm or more off the humerus up to 90 degrees.
+
+### Protocol Trainer — [#90](https://github.com/mrtethlab/RadSim/pull/90)
 A second trainer in the X-ray card. The existing Trainer is renamed **Positioning Trainer**.
 - **The requisition** (`trainer/requisition.js`, `trainer/cases.js`) is a fully detailed, seeded and fictional form:
   - the patient's demographics, health card, allergies, medications and pregnancy status;

@@ -67,6 +67,16 @@ head up.
 Volume axes: x toward the patient's right, y anterior, z toward the head."""
 CT_CUTS = {'abd': 166, 'chest': 236, 'pelvis': 24, 'shoulder': 340}
 CT_SLAB = (252, 204)                  # z from, z to (inclusive, head first): 49 slices
+# the CAP grew 15 cm of thigh at its foot (build_cap_thighs.ADD_SLICES): the films were laid out on
+# the volume above it, and every z here counts from where it began (anim/films/capFrame.js)
+CAP_FOOT = 75
+
+
+def _cap(h):
+    """the CAP's materials (z, y, x) from where the films' volume began"""
+    nx, ny, nz = h['dims']
+    mat = np.fromfile(MODELS / 'chestabdopelvis' / 'chestabdopelvis.mat.bin', dtype=np.uint8).reshape(nz, ny, nx)
+    return mat[CAP_FOOT:]
 
 
 def _save_ids(a, path):
@@ -78,8 +88,8 @@ def build_ct():
     from PIL import Image
     name = 'chestabdopelvis'
     h = json.loads((MODELS / name / f'{name}.model.json').read_text(encoding='utf-8'))
-    nx, ny, nz = h['dims']
-    mat = np.fromfile(MODELS / name / f'{name}.mat.bin', dtype=np.uint8).reshape(nz, ny, nx)
+    mat = _cap(h)
+    nz, ny, nx = mat.shape
     OUT.mkdir(parents=True, exist_ok=True)
     ax = lambda z: mat[z][::-1, ::-1]                       # rows anterior first, columns right first
     for k, z in CT_CUTS.items():
@@ -147,9 +157,9 @@ def build_cap(width=240):
     from PIL import Image
     name = 'chestabdopelvis'
     h = json.loads((MODELS / name / f'{name}.model.json').read_text(encoding='utf-8'))
-    nx, ny, nz = h['dims']
     s = float(h['spacing'][0]) / 10.0
-    mat = np.fromfile(MODELS / name / f'{name}.mat.bin', dtype=np.uint8).reshape(nz, ny, nx)
+    mat = _cap(h)
+    nz, ny, nx = mat.shape
     lut = np.full(256, 0.22, np.float32)
     for k, v in MU.items():
         lut[k] = v

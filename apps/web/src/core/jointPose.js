@@ -83,6 +83,16 @@ function mul3(a, b) {
    it, each cervical vertebra less, C7 and the shoulders none, the soft tissue between them a smooth
    blend — no plane through the neck can tell the jaw (in front of C1-C3) from the spine. Its rolls
    are plain rotations (no exactness to keep: the inverse is solved, fieldInverse).
+   A RIGID field (field.rigid) gives its bones the whole turn or none (forwardBone snaps them).
+   Past its grid a field turns nothing, or, with field.beyond ({ c, d }: a plane), whatever lies past
+   the plane (d toward the moving side) turns whole. The elbow is one: its grid holds the elbow
+   alone, at the model's own voxels, fine enough to part the humerus from the radius and ulna across
+   a joint space of a few millimetres, and the forearm and hand past it, wherever the forearm's roll
+   and the wrist have carried them, turn whole (the grid's own faces agree with the plane).
+   A field may carry an OUTER grid (field.outer: a coarser grid round its own, read where its own does
+   not reach, and nothing turning past it). The hips do: the femoral head lies a voxel or two from
+   the acetabulum and the lesser trochanter from the ischium, so the joint's grid is the model's own
+   voxels, and the rest of the leg's side of the body, the thigh to the flank, every other voxel.
    A plain joint may carry a RIDER (j.rider: a weight grid as a field's, a centre c and a share):
    a piece of the patient that turns with the joint, about its own centre. The patella is one:
    drawn down the femur's groove by the patellar tendon, it turns about the centre of the femoral
@@ -95,7 +105,11 @@ function mul3(a, b) {
    translation carried with the same share as the turn, growing as the square of the motion's
    fraction of its range. The jaw is one: past the first part of opening, a pure hinge at the
    condyles, the condyles slide forward onto the articular eminences, so the chin drops rather
-   than swinging back into the throat.
+   than swinging back into the throat. And toward the start of its range from where the model
+   rests (m.glide0: cm at the range's start), the same way: the elbow is one. This arm's trochlear
+   notch is not round the trochlea about any one line past 20 degrees short of straight (its
+   olecranon met the fossa, its coronoid the trochlea), so as it straightens the forearm glides a
+   few millimetres down off the humerus and the joint space stays open.
    A DIGIT's joints (j.digit: which digit, 1 the thumb to 5 the little finger) are field joints too,
    listed last in their chain, each digit's proximal first (a finger's MCP, PIP, DIP; the thumb's
    CMC, MCP, IP), with one motion each, driven together by the digit's curl (motionAngle). Their
@@ -136,9 +150,10 @@ export function compileJoint(j, angles) {
     if (!T) return null;
     const g = [0, 0, 0];
     for (const m of j.motions) {
-      if (!m.glide) continue;
-      const f = Math.max(0, Math.min(1, (motionAngle(angles, m) - (m.rest || 0)) / (m.range[1] - (m.rest || 0))));
-      for (let i = 0; i < 3; i++) g[i] += m.glide[i] * f * f;
+      const a = motionAngle(angles, m), r0 = m.rest || 0;
+      const glide = (v, f) => { f = Math.max(0, Math.min(1, f)); for (let i = 0; i < 3; i++) g[i] += v[i] * f * f; };
+      if (m.glide) glide(m.glide, (a - r0) / (m.range[1] - r0));
+      if (m.glide0 && a < r0) glide(m.glide0, (r0 - a) / (r0 - m.range[0]));
     }
     const J = { c: j.c, d: j.distal, b: j.blend, n, T, tw: 0, sp: 0, R2: Infinity, wf: field, g,
       ins: [0, 0, 0], bis: [0, 0, 1], bisL: 1 };                  // (no crook: the field decides)
@@ -225,10 +240,14 @@ export function fieldWeight(F, p) {
   const w = fieldValue(F, p);
   return F.band === undefined ? w : Math.max(0, Math.min(1, 3 * w - F.band));
 }
+// a field's share past its grid (field.beyond): whole past the plane, none short of it
+function pastPlane(B, p) {
+  return (p[0] - B.c[0]) * B.d[0] + (p[1] - B.c[1]) * B.d[1] + (p[2] - B.c[2]) * B.d[2] > 0 ? 1 : 0;
+}
 function fieldValue(F, p) {
   const gx = (p[0] - F.origin[0]) / F.sp, gy = (p[1] - F.origin[1]) / F.sp, gz = (p[2] - F.origin[2]) / F.sp;
   const [nx, ny, nz] = F.dims;
-  if (!(gx >= 0 && gy >= 0 && gz >= 0 && gx <= nx - 1 && gy <= ny - 1 && gz <= nz - 1)) return 0;
+  if (!(gx >= 0 && gy >= 0 && gz >= 0 && gx <= nx - 1 && gy <= ny - 1 && gz <= nz - 1)) return F.outer ? fieldValue(F.outer, p) : F.beyond ? pastPlane(F.beyond, p) : 0;
   const i = Math.min(nx - 2, Math.floor(gx)), j = Math.min(ny - 2, Math.floor(gy)), k = Math.min(nz - 2, Math.floor(gz));
   const fx = gx - i, fy = gy - j, fz = gz - k, D = F.data, row = nx, sl = nx * ny;
   const o = (k * ny + j) * nx + i;
@@ -266,14 +285,15 @@ function fieldInverse(q, J) {
   }
   return out;
 }
+// a point turned by a field joint, at its share w
+function fieldTurn(p, J, w) {
+  if (!w) return p;
+  const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, w * J.T), g = J.g || [0, 0, 0];
+  return [J.c[0] + r[0] + w * g[0], J.c[1] + r[1] + w * g[1], J.c[2] + r[2] + w * g[2]];
+}
 // rest: the point before the chain moved it (a digit's joint reads its share there)
 function forwardOne(p, J, rest = p) {
-  if (J.wf) {
-    const w = fieldWeight(J.wf, J.dg ? rest : p);
-    if (!w) return p;
-    const r = rotate([p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], J.n, w * J.T), g = J.g || [0, 0, 0];
-    return [J.c[0] + r[0] + w * g[0], J.c[1] + r[1] + w * g[1], J.c[2] + r[2] + w * g[2]];
-  }
+  if (J.wf) return fieldTurn(p, J, fieldWeight(J.wf, J.dg ? rest : p));
   if (J.rd && J.T) { const w = fieldWeight(J.rd, p); if (w > 0) return riderBlend(p, J, w, plainOne(p, J)); }
   return plainOne(p, J);
 }
@@ -372,26 +392,36 @@ function boneDigit(p, J, rest) {
 }
 function boneOne(p, J, rest) {
   if (J.dg) return boneDigit(p, J, rest);
-  if (J.wf) return forwardOne(p, J);
+  // (a field's share read inside the bone at rest: the elbow's grid gives the radius and ulna the
+  // whole turn, but a radial neck the forearm's roll has carried a few millimetres round would read
+  // the soft tissue beside it. A RIGID field's bones turn whole or not at all, as its grid has them
+  // (the shoulder, the elbow): a vertex whose point inside missed the bone, by a smoothed normal,
+  // and read the blend of the cartilage beside it took a part of the turn and stretched the bone)
+  if (J.wf) {
+    const w = fieldWeight(J.wf, rest);
+    return fieldTurn(p, J, J.wf.rigid ? +(w >= BONE_SNAP) : w);
+  }
   if (J.rd && J.T) { const w = fieldWeight(J.rd, p); if (w > 0) return riderBlend(p, J, w, bonePlain(p, J)); }
   return bonePlain(p, J);
 }
-// at: where a digit's share is read, a point just inside the bone the rest point p bounds (a mesh
+// at: where a field's share is read, a point just inside the bone the rest point p bounds (a mesh
 // vertex sits on the bone's surface, where the share blends into the joint space beside it)
 export function forwardBone(p, cc, at = p) {
   let q = p;
   for (let i = cc.length - 1; i >= 0; i--) q = boneOne(q, cc[i], at);
   return q;
 }
-// which rigid piece a rest point is on: one bit per plain joint (past its plane, within its limb)
-// and per digit joint (its snapped share). A triangle of the bone mesh with corners on two pieces
-// would stretch across the bent joint.
+// which rigid piece a rest point is on: one bit per bent plain joint (past its plane, within its
+// limb) and per field joint (its snapped share). A triangle of the bone mesh with corners on two
+// pieces would stretch across the bent joint. (A joint that only rolls turns its limb smoothly
+// along its length: no piece of it parts from the next, and the forearm's roll, its plane through
+// the radial head, cut a ring out of the bone there.)
 export function boneSide(p, cc, at = p) {
   let k = 0;
   for (let i = 0; i < cc.length; i++) {
     const J = cc[i];
-    if (J.dg) { if (fieldWeight(J.wf, at) >= BONE_SNAP) k |= 1 << i; continue; }
-    if (J.wf) continue;
+    if (J.wf) { if (fieldWeight(J.wf, at) >= BONE_SNAP) k |= 1 << i; continue; }
+    if (!J.T) continue;
     const d = [p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]], s = dot(d, J.d);
     if (s >= 0 && inLimb(d, J, s)) k |= 1 << i;
   }
@@ -943,7 +973,7 @@ export function posePlan(vm, flips, chain, angles, pre = null) {
      voxel by voxel through all fifteen of them, and the plan's rows took seconds). (Before, every
      voxel of a 100 M voxel leg paid the joint tests: most of a pose's time.) */
   const rowWise = cc.every((J) => J.R2 === Infinity);
-  const fbox = cc.map((J) => J.wf && { lo: J.wf.origin, hi: J.wf.origin.map((o, a) => o + (J.wf.dims[a] - 1) * J.wf.sp) });
+  const fbox = cc.map((J) => { const F = J.wf && (J.wf.outer || J.wf); return F && { lo: F.origin, hi: F.origin.map((o, a) => o + (F.dims[a] - 1) * F.sp) }; });
   const ax = sg[0] * sp[0], bx = -sg[0] * Cx * sp[0];            // x = bx + ax i
   const N0 = N[0];
   // the i in [0, N0) where A + B i > 0, as [lo, hi)
@@ -971,13 +1001,21 @@ export function posePlan(vm, flips, chain, angles, pre = null) {
             if (J.wf) {
               // a field joint vacates what it moves: where its share is not 0, within its grid (a
               // digit's first joint's: the ones beyond it move only what it moves)
-              const F = fbox[n], tol = J.dg ? DIGIT_TOL : 0;
+              const F = fbox[n], tol = J.dg ? DIGIT_TOL : 0, B = J.wf.beyond;
               if (J.dg && J !== runs.find((D) => D[0].dg === J.dg)[0]) continue;
-              if (y < F.lo[1] || y > F.hi[1] || z < F.lo[2] || z > F.hi[2]) continue;
-              const f0 = (F.lo[0] - bx) / ax, f1 = (F.hi[0] - bx) / ax;
-              const i1 = Math.min(N0 - 1, Math.floor(Math.max(f0, f1)));
-              for (let i = Math.max(0, Math.ceil(Math.min(f0, f1))); i <= i1; i++) {
-                if (out[row + i] && fieldWeight(J.wf, [bx + ax * i, y, z]) > tol) out[row + i] = 0;
+              let i0 = N0, i1 = -1;
+              if (!(y < F.lo[1] || y > F.hi[1] || z < F.lo[2] || z > F.hi[2])) {
+                const f0 = (F.lo[0] - bx) / ax, f1 = (F.hi[0] - bx) / ax;
+                i0 = Math.max(0, Math.ceil(Math.min(f0, f1))); i1 = Math.min(N0 - 1, Math.floor(Math.max(f0, f1)));
+                for (let i = i0; i <= i1; i++) {
+                  if (out[row + i] && fieldWeight(J.wf, [bx + ax * i, y, z]) > tol) out[row + i] = 0;
+                }
+              }
+              // and past its grid, what lies past its plane (field.beyond: the forearm, the hand)
+              if (B) {
+                const [a, b] = lin((bx - B.c[0]) * B.d[0] + (y - B.c[1]) * B.d[1] + (z - B.c[2]) * B.d[2], ax * B.d[0]);
+                if (i1 < i0) out.fill(0, row + a, row + b);
+                else { if (a < i0) out.fill(0, row + a, row + Math.min(b, i0)); if (b > i1 + 1) out.fill(0, row + Math.max(a, i1 + 1), row + b); }
               }
               continue;
             }

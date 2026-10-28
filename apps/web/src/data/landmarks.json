@@ -130,7 +130,7 @@
       "x": 0.0,
       "y": 0.0,
       "frame": "world",
-      "z": -12.7,
+      "z": -5.2,
       "how": "iliac crest (= L4/L5), from the DXA landmark finder",
       "confidence": "high"
     },
@@ -138,7 +138,7 @@
       "x": 0.0,
       "y": 0.0,
       "frame": "world",
-      "z": -7.7,
+      "z": -0.2,
       "how": "5 cm above the crest, to include the diaphragm",
       "confidence": "medium"
     },
@@ -146,15 +146,15 @@
       "x": 0.0,
       "y": 0.0,
       "frame": "world",
-      "z": -23.65,
-      "how": "midway between the ASIS (-20.0 / -15.8, mean -17.9) and the pubic symphysis (-29.4)",
+      "z": -16.15,
+      "how": "midway between the ASIS (-12.5 / -8.3, mean -10.4) and the pubic symphysis (-21.9)",
       "confidence": "high"
     },
     "lumbar": {
       "x": 0.0,
       "y": -4.3,
       "frame": "world",
-      "z": -7.3,
+      "z": 0.2,
       "how": "L3: crest (L4/L5) + 1.5 x the measured 3.6 cm lumbar period; AP depth = centre of the vertebral body",
       "confidence": "high"
     },
@@ -162,14 +162,14 @@
       "x": 0.0,
       "y": -7.1,
       "frame": "world",
-      "z": 15.5,
+      "z": 23.0,
       "how": "T7: L1 + six thoracic bodies at ~2.6 cm (estimated, not measured); AP depth = centre of the vertebral body",
       "confidence": "low"
     },
     "femoralHeadL": {
       "x": -8.8,
       "y": -1.7,
-      "z": -26.6,
+      "z": -19.1,
       "frame": "volume",
       "r": 2.2,
       "anteriorY": 1,
@@ -179,7 +179,7 @@
     "femoralHeadR": {
       "x": 8.9,
       "y": -2.8,
-      "z": -27.2,
+      "z": -19.7,
       "frame": "volume",
       "r": 2.2,
       "anteriorY": 1,

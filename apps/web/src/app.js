@@ -2,6 +2,7 @@
 // film rendering and UI wiring. The reusable physics engine lives in ./core,
 // the hand phantom in ./phantom/hand.js (both stay CT/model-ready).
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Spectrum } from './core/spectrum.js';
 import { Phantom } from './core/phantom.js';
 import { AttenuationEngine } from './core/engine.js';
@@ -10,7 +11,7 @@ import { Sound } from './audio/sound.js';
 import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
-import { segmentFemur, poseFemurs } from './core/limbPose.js';
+import { segmentFemur, poseFemurs, raiseLeg } from './core/limbPose.js';
 import { PATHOLOGY, makeCtx, stampPathology, undoPathology } from './core/pathology.js';
 import { axisToward, forwardChain, forwardCompiled, forwardSkin, forwardBone, boneSide, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
@@ -34,11 +35,11 @@ import centringData from './data/centring.json';
 import palpationData from './data/palpation.json';
 import cropData from './data/crops.json';
 import { applyCrops } from './core/crops.js';
-import { boxBlurMasked, latitudeImage } from './core/equalise.js';
+import { boxBlurMasked, latitudeImage, equalisedSignal } from './core/equalise.js';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
-import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
+import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctApplyPov, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
@@ -493,9 +494,9 @@ async function setSubject(sub){
      entry to a room, or from a room that picks its own patient — and a room that prepares
      per-subject state (fluoro's pulse workers) has to hear about it either way. Fired only
      once the volume is in place and the scene has been synced around it. */
-  syncLegRotUI();
   S.lastDose=null; S.doseLog=[]; updateDoseReadout();   // a new patient starts a new dose record
   S.joints={}; renderJointUI();                         // and with their joints straight
+  syncLegRotUI();
   S.lastMarker=null;
   window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
@@ -635,11 +636,12 @@ function applyVoxelMeshTransform(grp){
 const chainCache={};
 /* A FIELD joint (the neck) carries its weights in a grid beside the model (fieldData, loaded with
    the subject by loadJointFields); until the grid is in, the joint is not offered. A joint's RIDER
-   (the knee's patella) has a grid too; until it is in, the joint bends without it. */
+   (the knee's patella) has a grid too; until it is in, the joint bends without it. A field's OUTER
+   grid (the hips': the leg's side of the body round the joint's own) is the field's: both or neither. */
 const fieldData={};
 async function loadJointFields(subject){
   const js=jointData[subject]; if(!js) return;
-  for(const f of Object.values(js).flatMap(j=>[j.field?.file, j.rider?.file])){
+  for(const f of Object.values(js).flatMap(j=>[j.field?.file, j.field?.outer?.file, j.rider?.file])){
     const k=subject+'/'+f;
     if(!f || fieldData[k]) continue;
     try {
@@ -653,8 +655,10 @@ function jointChain(subject){
   const js=jointData[subject];
   if(!js){ chainCache[subject]=null; return null; }
   // proximal first, as joints.json lists them
-  const ch=Object.values(js).filter(j=>!j.field || fieldData[subject+'/'+j.field.file]).map(j=>({ ...j,
-    ...(j.field ? { field: { ...j.field, data: fieldData[subject+'/'+j.field.file] } } : {}),
+  const got=(F)=>!F || fieldData[subject+'/'+F.file];
+  const ch=Object.values(js).filter(j=>got(j.field) && got(j.field?.outer)).map(j=>({ ...j,
+    ...(j.field ? { field: { ...j.field, data: fieldData[subject+'/'+j.field.file],
+      ...(j.field.outer ? { outer: { ...j.field.outer, data: fieldData[subject+'/'+j.field.outer.file] } } : {}) } } : {}),
     ...(j.rider ? { rider: { ...j.rider, data: fieldData[subject+'/'+j.rider.file] || null } } : {}),
     motions: j.motions.map(m=>({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
   return chainCache[subject]=ch.length ? ch : null;
@@ -1055,6 +1059,7 @@ function renderJointUI(){
   host.querySelectorAll('.jointSl').forEach(el=>el.addEventListener('input',()=>{
     S.joints[el.dataset.key]=+el.value;
     const t=$('jv_'+el.dataset.key.replace('.','_')); if(t) t.textContent=el.value+el.dataset.unit;
+    if(legMotions().some(m=>m.key===el.dataset.key)) syncLegRotUI();   // (the Legs slider shows the hips' turn)
     jointMoved();
   }));
 }
@@ -1121,6 +1126,7 @@ const S = {
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
   legRot:0,                    // both legs turned about the femoral heads, deg (+ internal) — core/limbPose.js
+  legLift:null,                // 'L' | 'R': that leg raised out of a cross-table beam (core/limbPose.js raiseLeg)
   boneView:false,              // the room shows the bones alone (display only: the image is the whole patient)
   joints:{},                   // bent joints of the current subject, deg by motion key — core/jointPose.js
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
@@ -1228,7 +1234,7 @@ const S = {
        // the volume rather than by eye: this fan crosses ~1550 samples of liver and
        // ~580 of gallbladder, so the reference organ and a fluid-filled structure are
        // both in frame — which is the view that teaches enhancement.
-       px:0.80, pz:0.44,     // probe seat, as a fraction of the volume's x and z
+       px:0.80, pz:0.537,    // probe seat, as a fraction of the volume's x and z (0.44 before the CAP's thighs)
        rot:0, tilt:0,        // scan plane: 0 = transverse, 90 = sagittal; tilt rocks it
        // TGC: six per-depth gain offsets in dB, near (0) to far (5). They ADD to the
        // machine's baseline ramp, so centred is a uniform image and pushing them apart
@@ -1505,18 +1511,55 @@ function femoralHeads(sub){
   const set=landmarkData[sub]; const L=set?.femoralHeadL, R=set?.femoralHeadR;
   return L && R ? [L,R] : null;
 }
-function posedVolume(vm, deg){
-  if(!deg || !vm.data) return null;
+function legLiftNow(){ return S.mode==='xray' ? S.legLift : null; }
+function posedVolume(vm, deg, lift=null){
+  if((!deg && !lift) || !vm.data) return null;
   const heads=femoralHeads(S.subject);
   if(!heads) return null;
   if(!vm._femurs) vm._femurs=heads.map(h=>segmentFemur(vm, h));
-  if(vm._posed?.deg!==deg) vm._posed={ deg, data: poseFemurs(vm, vm._femurs, deg, heads[0].anteriorY||1) };
+  const key=deg+'|'+(lift||'');
+  if(vm._posed?.key!==key){
+    const data=poseFemurs(vm, vm._femurs, deg, heads[0].anteriorY||1);
+    if(lift) raiseLeg(vm, data, heads, lift);
+    vm._posed={ key, data };
+  }
   return vm._posed.data;
+}
+/* HIP JOINTS. A subject whose hips are joints (joints.json: the chest/abdomen/pelvis's, field joints
+   about each femoral head) turns its legs with them: the rotations the leg rotation drives (m.legs)
+   are set from it, a protocol's pose.legs and the Legs slider alike, and S.legRot stays 0 there, so
+   the femurs are never turned twice (here by core/limbPose.js, and again by the joints). The DXA's
+   foot brace still turns the femur alone (dxa.js). */
+function legMotions(sub=S.subject){
+  const ch=jointChain(sub);
+  return ch ? ch.flatMap(j=>j.motions.filter(m=>m.legs)) : [];
+}
+function setLegs(deg){
+  const ms=legMotions();
+  if(!ms.length){ S.legRot=deg; return; }
+  S.legRot=0;
+  for(const m of ms) S.joints[m.key]=deg;
+}
+function legsNow(){
+  const ms=legMotions();
+  return ms.length ? Math.round(S.joints[ms[0].key] ?? 0) : S.legRot;
+}
+// the other leg raised out of a cross-table beam, on the joints' posed volume (it keeps the volume's
+// centre: core/jointPose.js pads it evenly), once per pose
+function liftPosed(vm, posed, lift){
+  const heads=femoralHeads(S.subject);
+  if(!heads || !posed?.data) return posed;
+  if(posed._lift?.side!==lift){
+    const data=raiseLeg({ dims:posed.dims, vs:vm.vs }, new Uint8Array(posed.data), heads, lift);
+    posed._lift={ side:lift, vol:{ data, dims:posed.dims, pad:posed.pad, box:posed.box } };
+  }
+  return posed._lift.vol;
 }
 function syncLegRotUI(){
   const row=$('legRotRow'); if(row) row.hidden=!femoralHeads(S.subject);
-  const el=$('legRot'); if(el) el.value=S.legRot;
-  const v=$('legRotV'); if(v) v.textContent=legRotLabel(S.legRot);
+  const d=legsNow();
+  const el=$('legRot'); if(el) el.value=d;
+  const v=$('legRotV'); if(v) v.textContent=legRotLabel(d);
 }
 const legRotLabel=(d)=> d===0 ? '0°' : d>0 ? `${d}° in` : `${-d}° out`;
 /* The occupied part of a posed volume ({ data, dims } in the model's data order), once per pose:
@@ -1560,7 +1603,8 @@ function buildPhantom(){
   // real geometric unsharpness, because the divergent rays do the rest.
   const cy = S.mode==='ct' ? S.ct.patientY : restHeight() + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z-BK().z;
-  let posed = jointPosedVolume(vm) || posedVolume(vm, legRotNow()), centre=[cx,cy,cz];
+  let posed = jointPosedVolume(vm), centre=[cx,cy,cz];
+  posed = posed ? (legLiftNow() ? liftPosed(vm, posed, legLiftNow()) : posed) : posedVolume(vm, legRotNow(), legLiftNow());
   // a posed volume is padded evenly round its centre, as far as the bent part reaches either way
   // (an arm abducted 90 degrees: 1228 x 430 x 755 voxels, 26 s of ray casting at a film's matrix);
   // the ray caster is given only the voxels that hold anything, and the centre moved to match
@@ -2173,7 +2217,7 @@ let aecSkinKey='';
 const aecRay=new THREE.Raycaster();
 function aecOnSkin(on){
   const cells=three.aecCellMeshes, g=three.aecGroup;
-  const key=on ? JSON.stringify([S.objOff, S.objRot, S.bucky, S.subject, S.aecCells, S.joints, S.legRot]) : '';
+  const key=on ? JSON.stringify([S.objOff, S.objRot, S.bucky, S.subject, S.aecCells, S.joints, S.legRot, S.legLift]) : '';
   if(key===aecSkinKey) return;
   aecSkinKey=key;
   for(const [k,p] of Object.entries(AEC_CELLS)){
@@ -2475,6 +2519,7 @@ function setCameraView(m){
 /* CT camera perspective: 'ap' (top) | 'lat' (90° around the bore). */
 function setCTPov(p){
   S.ct.pov=p;
+  ctApplyPov();                                  // the housing in Orbit, the bare bore ring in AP / Lat
   const seg=$('camSegCt'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.cam===p));
 }
 /* Show the right thing in the small DR monitor for the current mode. X-ray shows
@@ -2575,10 +2620,11 @@ function bind(){
       if(ax==='y') syncOidUI();
     });
   }
-  $('legRot')?.addEventListener('input',e=>{ S.legRot=parseInt(e.target.value);
-    syncLegRotUI(); resetPrep(); syncScene(); });
+  $('legRot')?.addEventListener('input',e=>{ setLegs(parseInt(e.target.value));
+    syncLegRotUI();
+    if(legMotions().length){ renderJointUI(); jointMoved(); } else { resetPrep(); syncScene(); } });
   $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0,y:0};
-    S.legRot=0; syncLegRotUI(); S.joints={}; renderJointUI();
+    S.legRot=0; S.legLift=null; syncLegRotUI(); S.joints={}; renderJointUI();
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
     syncOidUI();
@@ -3168,7 +3214,7 @@ async function computeRadiograph(opts={}){
   const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
   if(dry){
     const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
-    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,voiMask,nx), EI, plain: S.lut?.detail===false,
+    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,voiMask,nx,mask), voi:voiMask, EI, plain: S.lut?.detail===false,
              rightAtPlusX: objMat()[0] > -0.5, detW, detH };
   }
   S.lastMarker=sideMarkerVerdict(mkStamp); S.lastMarkerStamp=mkStamp;
@@ -3254,8 +3300,9 @@ function renderRadiograph(target,entry,opts){
   // cached: the Protocol Trainer hangs films at full quality, not as thumbnails)
   const full=!entry || !!opts?.processed;
   const lat=full && S.lut?.latitude;
+  const voi=lat?.voi ? (entry? entry.voi : S.voi) : null;      // (the patient's own pixels, for a latitude that asks)
   const baseArr=(enhOn && full)? (entry ? processImage(sig,nx,ny,mask,mx) : activeProcessed(sig,nx,ny,mask,mx))
-    : lat ? (entry ? latitudeImage(sig,nx,ny,mask,mx,lat) : activeLatitude(sig,nx,ny,mask,mx,lat)) : null;
+    : lat ? (entry ? latitudeImage(sig,nx,ny,mask,mx,lat,voi) : activeLatitude(sig,nx,ny,mask,mx,lat,voi)) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -3363,10 +3410,15 @@ function drawFilm(){
   updateXrayHistogram();
 }
 
-/* Automatic rescaling (DR auto-ranging): core/displayWindow.js. */
-function computeRescale(sig,mask,nx){
+/* Automatic rescaling (DR auto-ranging): core/displayWindow.js. A latitude that takes the patient's
+   own pixels (the skull's) is windowed on the equalised tones it shows (core/equalise.js). */
+function computeRescale(sig,mask,nx,field){
   const _t=(typeof window!=='undefined'&&window.__tune)||{};
-  return computeRescaleCore(sig, mask, S.lut, _t, nx);
+  const lat=S.lut?.latitude;
+  if(!(lat?.voi && field && nx)) return computeRescaleCore(sig, mask, S.lut, _t, nx);
+  // (on the tone scale the film is drawn on: the field's brightest pixel, not the anatomy's)
+  let mx=0; for(let k=0;k<sig.length;k++) if(field[k]&&sig[k]>mx) mx=sig[k];
+  return computeRescaleCore(equalisedSignal(sig, nx, sig.length/nx, field, mask, lat), mask, S.lut, _t, nx, mx);
 }
 
 /* ---- DR-style detail (edge) enhancement ------------------------------------
@@ -3402,8 +3454,8 @@ function activeProcessed(sig,nx,ny,mask,mx){
   if(!S._proc || S._proc.sig!==sig) S._proc={sig, data:processImage(sig,nx,ny,mask,mx)};
   return S._proc.data;
 }
-function activeLatitude(sig,nx,ny,mask,mx,lat){
-  if(!S._lat || S._lat.sig!==sig || S._lat.lat!==lat) S._lat={sig, lat, data:latitudeImage(sig,nx,ny,mask,mx,lat)};
+function activeLatitude(sig,nx,ny,mask,mx,lat,voi){
+  if(!S._lat || S._lat.sig!==sig || S._lat.lat!==lat) S._lat={sig, lat, data:latitudeImage(sig,nx,ny,mask,mx,lat,voi)};
   return S._lat.data;
 }
 /* Apply auto-rescale (VOI stretch) to a base tone, using the given window. */
@@ -3603,6 +3655,9 @@ function fitMa(){
   const maEl=$('ma'); if(maEl) maEl.value=nearestMaIdx();
 }
 function applyProtocol(p,part,after){
+  // the set-up the projection is taken in (the AP clavicle standing at the wall stand, the hand
+  // seated at the flat bucky): first, as it decides the distances the SID is held to
+  if(p.room && S.mode==='xray' && S.room!==p.room) setRoom(p.room);
   S.protocol={proj:p.proj, part};
   S.kv=Math.max(40,Math.min(120,p.kv)); S.mas=p.mas; fitMa();
   applyAecPreset(p.aec);
@@ -3686,16 +3741,19 @@ if (import.meta.env?.DEV) window.__protocol = (proj) => new Promise((done) => {
   applyProtocol(findProtocol(g.part, proj), g.part, done);
 });
 function applyPose(pose){
-  const note = $('protocolPose');
-  if (!pose) { if (note) note.textContent = ''; return; }
+  if (!pose) return;
   // (tilt: the limb raised off the table about the cross axis, + knee down; a foot taken sole-flat
   // raises the leg as a flexed knee does: -59 with the ankle plantarflexed 30 lays this one flat)
   S.objRot = { x: pose.tilt || 0, y: 0, z: pose.roll || 0 };
-  S.legRot = pose.legs || 0; syncLegRotUI();
-  S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg
+  S.legLift = pose.lift || null;                            // the other leg out of a cross-table beam
+  S.joints = { ...(pose.joints || {}) };                    // e.g. a lateral elbow flexed 90 deg
+  // the legs turned at the hips: the hip joints' rotations where the subject has them (unless the
+  // pose sets them itself), the femurs alone where it has only its femoral heads
+  setLegs(pose.legs || 0);
+  for(const [k, v] of Object.entries(pose.joints || {})) S.joints[k]=v;
+  syncLegRotUI(); renderJointUI();
   prepareJointVolume();                                     // its pose, made while the room is set
   S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
-  let clamped = false;
   S.objOff.x = 0; S.objOff.z = 0;
   // where the landmark is once the joints are bent (an AP foot plantarflexes its foot 80 degrees,
   // and its 3rd metatarsal goes 8 cm down the table with it)
@@ -3712,7 +3770,6 @@ function applyPose(pose){
     const xlim = S.mode === 'xray' && S.room === 'table' ? TABLE_X_LIMIT : OFF_LIMIT;
     S.objOff.x = Math.max(-xlim, Math.min(xlim, ox));
     S.objOff.z = Math.max(-OFF_LIMIT_Z, Math.min(OFF_LIMIT_Z, oz));
-    clamped = S.objOff.x !== ox || S.objOff.z !== oz;
   }
   // the controls show what the protocol did, so the operator can see and change it
   const setSl = (id, v, label) => { const el = $(id); if (el) el.value = v; const t = $(id + 'v'); if (t) t.textContent = label; };
@@ -3725,19 +3782,17 @@ function applyPose(pose){
   if (standing()) {
     standKey = '';
     S.objOff.z = wallStandZ();
-    S.tubeZ = clampWallTube(loc ? applyMat3(objMat(), loc)[2] + S.objOff.z : S.objOff.z);
+    // (an angled ray aimed through the point, as lying down: the tube goes the other way, by the
+    // point's height above the receptor times the angle's tangent — the AP axial clavicle's 25
+    // degrees cephalad, mid-clavicle)
+    const w = loc ? applyMat3(objMat(), loc) : [0, 0, 0];
+    const lead = pose.through && S.angCC ? (restHeight() + S.objOff.y + w[1]) * Math.tan(S.angCC * Math.PI / 180) : 0;
+    S.tubeZ = clampWallTube(w[2] + S.objOff.z - lead);
     S.bucky.z = S.tubeZ;
     syncCentringUI();
   }
   const cc = $('angCC'); if (cc) cc.value = S.angCC;
   updateGeomReadouts();
-  if (note) {
-    const bits = [];
-    if (pose.fidelity === 'approx') bits.push('<b>Approximate view.</b> ' + pose.note);
-    if (clamped) bits.push('Centring limited by the table travel — the landmark is not quite under the central ray.');
-    note.innerHTML = bits.join(' ');
-    note.classList.toggle('show', bits.length > 0);
-  }
 }
 /* READ THE CHART BY THICKNESS. Trunk, spine and skull entries say what adult they are written
    for (p.cm); the patient is measured along the central ray, as with calipers, and the mAs is
@@ -3753,13 +3808,6 @@ function applyCaliper(p){
   S.mas=nearestStation(p.mas*r.factor, masSteps); fitMa();
   const masEl=$('mas'); if(masEl) masEl.value=nearestMasIdx();
   refreshReadouts();
-  const note=$('protocolPose');
-  if(note){
-    const line=`Patient measures <b>${r.t.toFixed(0)} cm</b> along the central ray; the chart is written for `
-      +`${p.cm} cm. mAs ${p.mas} &rarr; <b>${S.mas}</b> (&times;${r.factor<10?r.factor.toFixed(1):r.factor.toFixed(0)}) at ${S.kv} kVp.`;
-    note.innerHTML=(note.innerHTML?note.innerHTML+'<br>':'')+line;
-    note.classList.add('show');
-  }
 }
 function openProtocolPopup(){
   const pop=$('protoPop'), body=$('protoPopBody'); if(!pop||!body) return;
@@ -3856,10 +3904,10 @@ function buildMeta(spec){
 /* ---- image history: keep the last 10 exposures, reviewable on the Image view ---- */
 const IMG_HISTORY_MAX=10;
 function pushImage(signal,nx,ny,mask,meta,voi,extra){
-  const rescale=computeRescale(signal,voi||mask,nx);   // auto-rescale VOI window, fixed at capture
+  const rescale=computeRescale(signal,voi||mask,nx,mask);   // auto-rescale VOI window, fixed at capture
   // where the patient's RIGHT side lies after the roll, kept with the image so an older film
   // still hangs correctly when reviewed after the patient has been turned (see renderRadiograph)
-  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, plain: S.lut?.detail===false, rightAtPlusX: objMat()[0] > -0.5,
+  S.imgHistory.push({sig:signal, nx, ny, mask, voi:voi||mask, subject:S.subject, meta, rescale, plain: S.lut?.detail===false, rightAtPlusX: objMat()[0] > -0.5,
                      detW:S.detW, detH:S.detH, ...(extra||{})});
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
@@ -3930,7 +3978,7 @@ function setActiveImage(idx){
   if(!S.imgHistory.length){ S.histIdx=-1; S.hasImage=false; return; }
   idx=Math.max(0,Math.min(S.imgHistory.length-1,idx));
   const e=S.imgHistory[idx];
-  S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
+  S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask; S.voi=e.voi;
   S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true; S.imgPlain=!!e.plain;
   S.imgRightAtPlusX=e.rightAtPlusX!==false;
   S.imgRuler=e.ruler||null;
@@ -4794,7 +4842,7 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   setInterval(tabActivity, 250);
   // CT mode lives in its own module; give it the handles it needs from the app glue.
-  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); protocolTrainerOnMode(m); if(m!=='xray') clearPathology(); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
+  initCT({ THREE, RoundedBoxGeometry, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); protocolTrainerOnMode(m); if(m!=='xray') clearPathology(); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
            setSubject: (s) => setSubject(s),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
@@ -4925,8 +4973,10 @@ window.addEventListener('load',()=>{
     setMarker: (side) => setSideMarker(side, false),
     setResolution: (res) => { const was=S.resolution; S.resolution=res; applyDet(); return was; },
     exposeDry: () => computeRadiograph({ dry:true }),
-    renderFilm: (target, entry) => { const r=S.imgRot, fh=S.flipH, fv=S.flipV; S.imgRot=0; S.flipH=false; S.flipV=false;
-      try { renderRadiograph(target, entry, { processed:true }); } finally { S.imgRot=r; S.flipH=fh; S.flipV=fv; } },
+    // (each film through the window of its own exposure: S.curve is the viewer's curve, seeded from
+    // the last image the room hung, and a film drawn through it came out white or faint)
+    renderFilm: (target, entry) => { const r=S.imgRot, fh=S.flipH, fv=S.flipV, cv=S.curve; S.imgRot=0; S.flipH=false; S.flipV=false; S.curve=null;
+      try { renderRadiograph(target, entry, { processed:true }); } finally { S.imgRot=r; S.flipH=fh; S.flipV=fv; S.curve=cv; } },
     setPathology, clearPathology });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

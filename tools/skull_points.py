@@ -19,7 +19,9 @@ y = anterior, z = superior; measure_palpation.py), cm from the volume centre, as
 - the acanthion (the anterior nasal spine): below the aperture, where the profile comes forward
   again, its most anterior point within 2.5 cm;
 - the inion: the most posterior point of the midline bone at or above the canals' level;
-- the mastoid tips: the lowest bone behind the canal on each side, within 3.5 cm of it.
+- the mastoid tips: the lowest bone behind the canal on each side, within 3.5 cm of it;
+- the vertex, the highest bone; the menton, the mandible's lowest bone (3 cm or more in front of the
+  canals, clear of the spine).
 """
 import json, pathlib
 import numpy as np
@@ -151,6 +153,14 @@ def points():
     out['zygoma'][0] = out['earMid'][0]
     br = np.argwhere(np.isin(v, [10, 4]))
     out['cranium'] = cm(*br.mean(0))
+    # the vertex (the highest bone) and the mandible's lowest bone (3 cm or more in front of the canals,
+    # clear of the spine; this CT ends through the mandible's body, so it is the volume's floor)
+    zb = np.nonzero(bone.any((1, 2)))[0]
+    out['vertex'] = cm(zb.max(), mid[1], xc)
+    fr = bone[:, :max(1, int(mid[1] - 30 / sp)), :]
+    zm = np.nonzero(fr.any((1, 2)))[0].min()
+    k = np.argwhere(fr[zm]).mean(0)
+    out['menton'] = cm(zm, k[0], k[1])
     # the mastoid tips: the lowest bone behind each canal and lateral of it, within 3.5 cm
     for side, e in (('R', ears['R']), ('L', ears['L'])):
         r = int(35 / sp)

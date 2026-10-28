@@ -1979,9 +1979,6 @@ body.mode-fluoro .scr2{display:block}
 .slinfo .slroi-warn{color:#ff9a6a; font-style:italic}
 
 /* the note under the protocol chip: shown only for approximate views or limited centring */
-.protopose{display:none; margin:4px 0 2px; font-size:10.5px; line-height:1.35; color:#ffb070}
-.protopose.show{display:block}
-.protopose b{color:#ffcf9a}
 
 /* ---- ultrasound: presets and calipers ------------------------------------------------- */
 #usPresetSeg{display:grid; grid-template-columns:repeat(3,1fr); gap:3px; margin-bottom:6px}

@@ -378,7 +378,7 @@ def head_neck():
 # x-ray mode uses — crest, femoral heads, and a lumbar period of 3.6 cm from the level finder.
 # They are carried here rather than re-derived so the two modes cannot disagree.
 CAP_FROM_DXA = {
-    'crest': -12.7, 'femoralHeads': -25.7, 'lumbarPeriod': 3.6,
+    'crest': -5.2, 'femoralHeads': -18.2, 'lumbarPeriod': 3.6,
 }
 
 
@@ -542,6 +542,9 @@ def main(only=None):
                       'already in the x-ray world frame. Re-run the tool after rebuilding a model.')}
     for name, fn in MEASURE.items():
         out[name] = fn() if (not only or name in only) else old[name]
+    for name, lm in old.items():                 # (the child's: tools/measure_pediatric.py writes them)
+        if name not in out:
+            out[name] = lm
     OUT.write_text(json.dumps(out, indent=2) + '\n', encoding='utf-8')
     for model, lm in out.items():
         if model.startswith('_') or (only and model not in only):

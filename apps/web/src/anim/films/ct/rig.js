@@ -7,8 +7,10 @@
    top. The patient lies supine, head first into the bore (toward -z): their right at -x. */
 import * as THREE from 'three';
 import { buildCTRig } from '../../../ct.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { std, mesh, beamCone, glowMat, setOpacity } from '../../kit/stage.js';
 import { buildTubeInsert } from '../xray/tube.js';
+import { capMeshFrame } from '../capFrame.js';
 
 export const ZP = -10;                 // the scan plane (z), mid-gantry
 export const ZL = 32;                  // the external lasers' plane, in front of the gantry
@@ -21,9 +23,10 @@ export const PZ = -4.4;                // the patient's centre on the couch (cou
 
 export async function buildSets(api) {
   const { scene } = api;
-  const rig = buildCTRig(THREE);
+  const rig = buildCTRig(THREE, RoundedBoxGeometry);
   const ISO_Y = rig.ISO_Y, FLOOR_Y = rig.FLOOR_Y;
   const COUCH_Y = ISO_Y - BACK;        // the couch top with the patient's centre at the isocentre
+  rig.setCouchTop(COUCH_Y);            // the table body under it (couchBase-local, lifted with it below)
   const room = new THREE.Group(); scene.add(room);
   room.add(rig.gantry, rig.couch, rig.couchBase);
   rig.spin.visible = false; rig.ring.visible = false;
@@ -46,6 +49,7 @@ export async function buildSets(api) {
   const giMat = std(0xc88a6a, 0.55, 0.0);
   const parts = {};
   const load = (name, mat) => api.loadGlb(`models/chestabdopelvis/chestabdopelvis_${name}.glb`).then((g) => {
+    capMeshFrame(g);
     g.scale.set(-0.1, 0.1, -0.1);
     g.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); o.material = mat; o.castShadow = true; o.receiveShadow = true; } });
     pat.add(g); parts[name] = g;

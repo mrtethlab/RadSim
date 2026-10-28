@@ -10,8 +10,9 @@
    subject sits in the middle of a film with a thick body around it. A lateral spine needs it: a
    strip of thin tissue down the back edge of the field (15 % of a 20 cm lateral lumbar) pinned
    the window's dark end, and the column was squeezed into the top 5 % of the grey scale. */
-export function computeRescale(sig, mask, lut = null, _t = {}, nx = 0) {
-  let mx=0; for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; mx=mx||1;
+export function computeRescale(sig, mask, lut = null, _t = {}, nx = 0, mxRef = 0) {
+  // (mxRef: the tone scale's reference, the field's brightest pixel, when the caller has it)
+  let mx=mxRef; if(!mx){ for(let k=0;k<sig.length;k++) if(mask[k]&&sig[k]>mx) mx=sig[k]; } mx=mx||1;
   let inVoi = null;
   if (lut && lut.voiCore && nx) {
     const ny = sig.length / nx; let x0 = nx, x1 = -1, y0 = ny, y1 = -1;

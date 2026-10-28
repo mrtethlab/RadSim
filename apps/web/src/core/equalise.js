@@ -27,15 +27,33 @@ export function boxBlurMasked(src,mask,nx,ny,r){
    the matrix (about 3.5 cm on a 30 cm receptor), the blur over the ANATOMY only, so the raw beam
    beside the skin is not averaged in and leaves no halo; the anatomy's mean tone is kept, so the
    window found on the raw signal still sits on it. No band is boosted: the limb films' plain
-   tones (no rim, no sheen) stay plain. */
-export function latitudeImage(sig,nx,ny,mask,mx,{r=0.12,k=0.5}={}){
+   tones (no rim, no sheen) stay plain.
+   voi: the patient's own pixels (the display window's values of interest, judged from the primary
+   against the open beam), for a LUT whose latitude asks for them (voi: true). The anatomy is
+   otherwise whatever is short of 0.95 of the brightest pixel, and the raw beam beside an AP skull
+   lies at 0.80-0.99 of it, beside an angled Towne at 0.45-0.95: taken for anatomy, the air went
+   into the blur and the mean, and the Towne came out black inside the rim of its vault. */
+export function latitudeImage(sig,nx,ny,mask,mx,{r=0.12,k=0.5}={},voi=null){
   const a=40, denom=Math.log(1+a), base=new Float32Array(nx*ny), anat=new Uint8Array(nx*ny), cut=mx*0.95;
   let sum=0, n=0;
   for(let i=0;i<sig.length;i++){ if(!mask[i]) continue; base[i]=1-Math.log(1+a*sig[i]/mx)/denom;
-    if(sig[i]<cut){ anat[i]=1; sum+=base[i]; n++; } }
+    if(voi ? voi[i] : sig[i]<cut){ anat[i]=1; sum+=base[i]; n++; } }
   if(!n) return base;
   const R=Math.max(1,Math.round(r*Math.max(nx,ny)/2));            // two passes of a box: near a gaussian
   const B=boxBlurMasked(boxBlurMasked(base,anat,nx,ny,R),anat,nx,ny,R), m=sum/n;
   for(let i=0;i<base.length;i++) if(anat[i]) base[i]-=k*(B[i]-m);
   return base;
+}
+
+/* The signal the equalised film shows: latitudeImage's tones taken back through the log, so the
+   display window (core/displayWindow.js) can be found on them, as DR finds its values of interest
+   after its frequency processing. A skull windowed on its raw tones kept the window the vault and
+   the face span together, and the equalised anatomy sat in a light, flat band (its median at 0.7-0.8
+   of the grey scale on the skull views). */
+export function equalisedSignal(sig,nx,ny,mask,voi,lat){
+  let mx=0; for(let i=0;i<sig.length;i++) if(mask[i]&&sig[i]>mx) mx=sig[i];
+  if(!mx) return sig;
+  const a=40, denom=Math.log(1+a), base=latitudeImage(sig,nx,ny,mask,mx,lat,voi), out=new Float32Array(sig.length);
+  for(let i=0;i<sig.length;i++) if(mask[i]) out[i]=mx*(Math.exp((1-base[i])*denom)-1)/a;
+  return out;
 }

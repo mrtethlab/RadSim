@@ -31,6 +31,12 @@ test('every projection carries a pose, and every centring landmark exists for it
   }
 });
 
+test('the lateral humerus is the scapular Y with the elbow bent a right angle', () => {
+  const y = all.find((p) => p.proj === 'Y view shoulder').pose, h = all.find((p) => p.proj === 'Lateral humerus').pose;
+  assert.equal(h.roll, y.roll);
+  assert.equal(h.joints['elbow.flex'], 90);
+});
+
 test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
   // the arm (z053) rests 4 degrees off the anatomical position: its views are rolled by what the epicondyles
   // measure (data/palpation.json), AP laying them parallel to the receptor and the lateral standing
@@ -41,14 +47,16 @@ test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
   const deg = (v) => Math.atan2(v[1], v[0]) * 180 / Math.PI;
   for (const p of all) {
     const r = Math.abs(p.pose.roll % 360);
-    // (the shoulder views keep the patient supine: they are about the girdle, not the elbow)
-    if (p.subject === 'upperextremity' && !/shoulder/.test(p.proj)) {
+    // (the shoulder views keep the patient supine: they are about the girdle, not the elbow; the
+    // lateral humerus is taken in the scapular-Y position, checked below)
+    if (p.subject === 'upperextremity' && !/shoulder/.test(p.proj) && p.proj !== 'Lateral humerus') {
       if (/^AP /.test(p.proj)) assert.ok(Math.abs(deg(turned(p.pose.roll))) < 3, `${p.proj}: epicondyles ${deg(turned(p.pose.roll)).toFixed(1)} deg off parallel`);
       if (/^Lateral/.test(p.proj)) assert.ok(Math.abs(deg(turned(p.pose.roll)) - 90) < 3, `${p.proj}: lateral epicondyle not on top`);
       continue;
     }
     // (the leg rests turned in: its knee, leg and femur views are rolled by the bone, checked below)
     if (p.subject === 'lowerextremity' && /knee|femur|tibia/.test(p.proj)) continue;
+    if (p.proj === 'Lateral humerus') continue;
     if (/^Lateral/.test(p.proj) || /^Swimmers/.test(p.proj)) assert.equal(r, 90, p.proj);
     if (/^AP /.test(p.proj)) assert.equal(r, 0, p.proj);
     if (/^PA /.test(p.proj) && p.subject !== 'hand') assert.equal(r, 180, `${p.proj}: body subjects rest AP, so PA is a half turn`);
@@ -93,11 +101,13 @@ test('landmarks sit where the traced phantom confirmed them (cm from the volume 
   // malleolar bulge it was read from took in the hindfoot of a foot at 90 degrees and sat 4 cm
   // low, on the calcaneus (-43.4); it is now the tibiotalar joint, the first joint sheet down the
   // tibia's axis (z -39.25 on the sheet profile; the subtalar is the next, at -41.9), checked on
-  // sagittal and coronal slices of the materials and on bone projections)
+  // sagittal and coronal slices of the materials and on bone projections; the trunk's 15 cm of
+  // grafted thigh, services/compute/app/build_cap_thighs.py, moved its centre 7.5 cm down: its
+  // pelvis was -23.65 and its crest -12.7 before, the anatomy unchanged)
   const pinned = {
     'lowerextremity.knee': -5.4, 'lowerextremity.ankle': -39.15, 'upperextremity.elbow': 1.88,
-    'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
-    'chestabdopelvis.kub': -12.7,
+    'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -16.15,
+    'chestabdopelvis.kub': -5.2,
   };
   for (const [k, z] of Object.entries(pinned)) {
     const [m, n] = k.split('.');
@@ -216,12 +226,24 @@ test('the skull, sinus and facial views load the Skull, angled to the OML and ce
   assert.equal(pose('AP axial skull (Towne)').cc, 30);
   assert.equal(pose('Parietoacanthial sinuses (Waters)').tilt, 53);
   for (const p of head.filter((x) => /^Lateral/.test(x.proj))) assert.equal(p.pose.tilt, 7, p.proj);
-  // the points in anatomical order: the acanthion below the nasion, the ear canals behind both, the
-  // lateral skull's point 5 cm above them
+  // the points in anatomical order: the acanthion below the nasion, the ear canals behind both; the
+  // lateral skull's point the middle of the whole head, in front of the ear canals and near their level
+  // (5 cm above them, Bontrager's point for the cranium, left the frontal bone and the mandible off)
   const c = centring.skull;
   assert.ok(c.acanthion.z < c.nasion.z - 3, `acanthion ${c.acanthion.z} vs nasion ${c.nasion.z}`);
   assert.ok(c.eam.y < c.nasion.y - 7 && c.eam.y < c.zygoma.y && c.zygoma.y < c.nasion.y, 'front to back: nasion, zygoma, ear canals');
-  assert.ok(Math.abs(c.latSkull.z - c.eam.z - 5) < 0.01);
+  assert.ok(c.latSkull.y > c.eam.y + 1 && c.latSkull.y < c.zygoma.y && Math.abs(c.latSkull.z - c.eam.z) < 1.5,
+    `lateral skull point ${c.latSkull.y}, ${c.latSkull.z} vs EAM ${c.eam.y}, ${c.eam.z}`);
+  // every skull view takes the whole skull: a 24 x 30 field on the 25 x 30 receptor, its long side down
+  // the head; the angled views aimed through their point (the Caldwell exits the nasion, the Towne
+  // crosses the EAM to the foramen magnum)
+  for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'Lateral skull']) {
+    const p = all.find((x) => x.proj === proj);
+    assert.deepEqual([p.coll, p.det, p.orient], [[24, 30], [25, 30], 'portrait'], proj);
+  }
+  for (const proj of ['PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'PA axial sinuses (Caldwell)']) assert.equal(pose(proj).through, true, proj);
+  // the child's views centre the middle of its whole skull, below the cranium's centre (the landmark)
+  assert.ok(centring.pediatric.skull.z < landmarks.pediatric.skull.z - 3, `${centring.pediatric.skull.z} vs ${landmarks.pediatric.skull.z}`);
   // the cervical spine stays on the head and neck model
   for (const p of all.filter((x) => /cervical|open mouth|Swimmers/i.test(x.proj))) assert.equal(p.subject, 'headneck', p.proj);
 });
@@ -281,13 +303,30 @@ test('the hospital views turn the way their names say', () => {
   assert.equal(pose('AP hip').centre, 'femoralHeadR');
 });
 
+test('the frog-leg and the roll-up lateral bend the hip (the chest/abdomen/pelvis\'s hip joints), and say the knee is not there', () => {
+  const pose = (proj) => all.find((p) => p.proj === proj).pose;
+  const frog = pose('Frog-leg lateral hip'), roll = pose('Roll-up lateral hip (Lauenstein)');
+  // the frog-leg: abducted about 45 degrees, flexed, turned out; the hip film is true, so not approximate
+  const j = frog.joints;
+  assert.ok(j['hipR.abd'] >= 40 && j['hipR.abd'] <= 50, `abducted ${j['hipR.abd']}`);
+  assert.ok(j['hipR.flex'] > 0 && j['hipR.rot'] < 0, 'flexed and turned out');
+  assert.ok(!frog.legs, 'the joints turn the femur, not the leg rotation as well');
+  assert.ok(/knee/.test(frog.note), 'the note says there is no knee to bend');
+  // the roll-up: onto the hip, the thigh flexed and abducted to lie on the table
+  assert.ok(roll.roll < 0 && roll.joints['hipR.flex'] > 0 && roll.joints['hipR.abd'] > 0);
+  for (const p of [frog, roll]) assert.notEqual(p.fidelity, 'approx');
+  const js = JSON.parse(readFileSync(new URL('../src/data/joints.json', import.meta.url), 'utf8')).chestabdopelvis;
+  const keys = Object.values(js).flatMap((jt) => jt.motions.map((m) => m.key));
+  for (const k of [...Object.keys(j), ...Object.keys(roll.joints)]) assert.ok(keys.includes(k), `${k} is a motion of the model`);
+});
+
 test('an angled ray is aimed through its point only when there is an angle', () => {
   for (const p of all.filter((x) => x.pose.through)) assert.ok(p.pose.cc, `${p.proj}: through without an angle`);
   for (const n of ['Radial head lateral elbow', 'Inlet pelvis', 'Outlet pelvis', 'AP axial clavicle']) assert.ok(all.find((p) => p.proj === n).pose.through, n);
 });
 
 test('the views a rigid model cannot make are marked approximate', () => {
-  for (const n of ['Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)', 'Y view shoulder', 'Frog-leg lateral hip', 'Roll-up lateral hip (Lauenstein)', 'Cross-table lateral hip',
+  for (const n of ['Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)', 'Y view shoulder', 'Cross-table lateral hip',
     'AP knee standing', 'Lateral knee standing', 'Skyline knee', 'Rosenberg knee (PA 45° flexion)', 'PA chest expiration'])
     assert.equal(all.find((p) => p.proj === n).pose.fidelity, 'approx', n);
   // the arm rests in the anatomical position (epicondyles parallel to the receptor): its AP shoulder is the external rotation,

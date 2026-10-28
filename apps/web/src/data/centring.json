@@ -203,10 +203,10 @@
   },
   "latSkull": {
    "x": 0.36,
-   "y": -1.16,
-   "z": 4.0,
-   "how": "5 cm superior to the midpoint of the ear canals",
-   "guide": "Lateral skull: CR perpendicular to a point 5 cm (2 in) superior to the EAM, IOML parallel to the transverse axis of the IR (Bontrager; Radiopaedia)",
+   "y": 0.75,
+   "z": -0.36,
+   "how": "the middle of the head: halfway between the glabella and the inion, and between the vertex and the mandible's lowest bone, on the midline",
+   "guide": "Lateral skull: CR perpendicular to the middle of the head, about 2 cm in front of the EAM, so the vertex, frontal bone, occiput and mandible are all on the film (Bontrager centres the cranium alone 5 cm (2 in) above the EAM); IOML parallel to the transverse axis of the IR (Bontrager; Radiopaedia)",
    "confidence": "high"
   },
   "zygoma": {
@@ -248,15 +248,15 @@
   "T7": {
    "x": 0.0,
    "y": -7.1,
-   "z": 16.9,
-   "how": "T7: the centre of the lung fields (z 0.9 to 32.9), on the midsagittal plane, at the depth of the vertebral bodies; 9 cm below the jugular notch gives 19.1",
+   "z": 24.4,
+   "how": "T7: the centre of the lung fields (z 8.4 to 40.4), on the midsagittal plane, at the depth of the vertebral bodies; 9 cm below the jugular notch gives 26.6",
    "guide": "PA chest: CR to the midsagittal plane at T7, the centre of the lung fields; AP thoracic spine: CR to T7, 8-10 cm below the jugular notch (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "T7mc": {
    "x": 0.0,
    "y": -1.5,
-   "z": 16.9,
+   "z": 24.4,
    "how": "T7 (as above) on the midcoronal plane: halfway between the front and back of the body at the midline",
    "guide": "Lateral chest: CR to the midcoronal plane at T7 (Bontrager; Radiopaedia)",
    "confidence": "medium"
@@ -264,7 +264,7 @@
   "crest": {
    "x": 0.0,
    "y": -4.3,
-   "z": -11.2,
+   "z": -3.8,
    "how": "the level of the iliac crests (mean of the two measured crests), midsagittal, at the depth of the vertebral bodies",
    "guide": "AP lumbar spine (35 x 43 cm): CR to the level of the iliac crest, L4-L5 (Bontrager; Radiopaedia)",
    "confidence": "medium"
@@ -272,7 +272,7 @@
   "crestMc": {
    "x": 0.0,
    "y": -0.1,
-   "z": -11.2,
+   "z": -3.8,
    "how": "the level of the iliac crests on the midcoronal plane",
    "guide": "Lateral lumbar spine (35 x 43 cm): CR to the level of the iliac crest (L4-L5), centred to the midcoronal plane (Bontrager)",
    "confidence": "medium"
@@ -280,33 +280,41 @@
   "crestCol": {
    "x": 0.0,
    "y": -6.9,
-   "z": -11.2,
-   "how": "the level of the iliac crests (L4-L5), midsagittal, at the middle of the depth of the vertebral column from z -15.7 to 1.8: front of the bodies y -1.8, spinous tips y -12.0 (largest vertebra in a 6 cm slab, every 1 cm)",
+   "z": -3.8,
+   "how": "the level of the iliac crests (L4-L5), midsagittal, at the middle of the depth of the vertebral column from z -8.3 to 9.2: front of the bodies y -1.8, spinous tips y -12.0 (largest vertebra in a 6 cm slab, every 1 cm)",
    "guide": "Lateral lumbar spine: CR to the level of the iliac crest (L4-L5), centred on the vertebral column (the midcoronal plane on an average adult); collimate to about 20 cm wide, 1\" beyond the bodies and spinous processes (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "T7col": {
    "x": 0.0,
    "y": -8.3,
-   "z": 16.9,
-   "how": "T7 (the centre of the lung fields), midsagittal, at the middle of the depth of the vertebral column from z 3.9 to 26.4: front of the bodies y -3.4, spinous tips y -13.2 (largest vertebra in a 6 cm slab, every 1 cm)",
+   "z": 24.4,
+   "how": "T7 (the centre of the lung fields), midsagittal, at the middle of the depth of the vertebral column from z 11.4 to 33.9: front of the bodies y -3.4, spinous tips y -13.2 (largest vertebra in a 6 cm slab, every 1 cm)",
    "guide": "Lateral thoracic spine: CR to T7, centred on the vertebral column; collimate long and narrow to the column (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "sacrum": {
    "x": 0.0,
    "y": -7.46,
-   "z": -19.17,
-   "how": "the sacrum: the centroid of the bone within 4 cm of the midline from S1 (z -16.2, 5 cm below the crests) to the coccyx (3.5 cm above its tip)",
+   "z": -11.67,
+   "how": "the sacrum: the centroid of the bone within 4 cm of the midline from S1 (z -8.8, 5 cm below the crests) to the coccyx (3.5 cm above its tip)",
    "guide": "AP axial sacrum: CR 15 degrees cephalad, entering 5 cm superior to the symphysis pubis; lateral sacrum: CR to the sacrum, 8-10 cm posterior to the ASIS (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "coccyx": {
    "x": 0.0,
    "y": -10.57,
-   "z": -27.21,
-   "how": "the coccyx: the centroid of the midline bone behind the pelvis in the 3.5 cm above its tip (z -29.3)",
+   "z": -19.71,
+   "how": "the coccyx: the centroid of the midline bone behind the pelvis in the 3.5 cm above its tip (z -21.8)",
    "guide": "AP axial coccyx: CR 10 degrees caudad, entering 5 cm superior to the symphysis pubis (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "acetabula": {
+   "x": 0.0,
+   "y": 0.0,
+   "z": -19.4,
+   "how": "midway between the two femoral heads (data/landmarks.json femoralHeadL/R, z -19.1 and -19.7), on the midsagittal plane",
+   "guide": "Judet obliques: CR to the acetabula, about 5 cm distal to the ASIS, both hips and the proximal femurs on the film (Bontrager; Radiopaedia)",
    "confidence": "medium"
   }
  },
@@ -385,10 +393,10 @@
   },
   "skull": {
    "x": 0.82,
-   "y": 0.41,
-   "z": 65.53,
-   "how": "the centre of the cranium (as the landmark)",
-   "guide": "AP / lateral skull: CR to the centre of the skull (the glabella / 2 cm above the EAM) (Bontrager; Radiopaedia)",
+   "y": 0.75,
+   "z": 60.67,
+   "how": "the middle of the skull label: halfway between the vertex (70.0) and the mandible (51.4), and between its front and back, on the cranium's midline",
+   "guide": "AP / lateral skull: CR to the middle of the head, so the whole skull, vertex to mandible, is on the film (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "pelvis": {

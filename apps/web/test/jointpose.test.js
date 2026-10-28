@@ -1,7 +1,9 @@
 // Joint posing: bending a rigid CT at a joint, for the volume, the mesh and the landmarks alike.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, posePlan, poseChunk, compileChain, forwardCompiled, forwardSkin, planSample, mergeSample, planOcc, growOcc, foldSpan, foldRange, motionAngle } from '../src/core/jointPose.js';
+import { readFileSync } from 'node:fs';
+import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, posePlan, poseChunk, compileChain, forwardCompiled, forwardSkin, forwardBone, fieldWeight, planSample, mergeSample, planOcc, growOcc, foldSpan, foldRange, motionAngle } from '../src/core/jointPose.js';
+import { segmentFemur } from '../src/core/limbPose.js';
 
 const near = (a, b, t = 1e-9) => Math.abs(a - b) <= t;
 // a wrist at the origin, the hand along +z; ulnar deviation turns the hand toward -x
@@ -531,5 +533,283 @@ test('the pose pool makes the very volume of curled and extended digits one work
     let diff = 0;
     for (let i = 0; i < whole.data.length; i++) if (pooled.data[i] !== whole.data[i]) diff++;
     assert.equal(diff, 0, `${n} workers: ${diff} voxels differ`);
+  }
+});
+
+/* ---- a field with a plane past its grid (field.beyond): the elbow's ----
+   a forearm rod along -z from an elbow at the origin, flexing toward +y; the grid holds only the
+   elbow (|z| <= 3), its weight rising from 0 above to 1 below; past it, what lies below the plane
+   z = 0 (d = -z) turns whole */
+const elbowGrid = (() => {
+  const dims = [9, 9, 7], sp = 1, origin = [-4, -4, -3], data = new Uint8Array(dims[0] * dims[1] * dims[2]);
+  for (let k = 0; k < dims[2]; k++) data.fill(Math.round(Math.max(0, Math.min(1, (2 - (origin[2] + k)) / 4)) * 255), k * 81, (k + 1) * 81);
+  return { dims, sp, origin, data, beyond: { c: [0, 0, 0], d: [0, 0, -1] } };
+})();
+const fieldElbow = { c: [0, 0, 0], distal: [0, 0, -1], blend: 0, field: elbowGrid,
+  motions: [{ key: 'flex', axis: axisToward([0, 0, -1], [0, 1, 0]) }] };
+
+test('past its grid a field turns what lies past its plane whole, and nothing short of it', () => {
+  assert.deepEqual(forwardChain([0, 0, 10], [fieldElbow], { flex: 90 }), [0, 0, 10], 'the arm above stays');
+  const hand = forwardChain([0.5, 0, -20], [fieldElbow], { flex: 90 });
+  assert.ok(near(hand[0], 0.5, 1e-9) && near(hand[1], 20, 1e-9) && near(hand[2], 0, 1e-9), `the hand, far past the grid, turned whole: ${hand}`);
+  for (const p of [[0, 0, -20], [1, 1, -2.5], [0, 0, 0.5], [0, -1, 8]]) {
+    const q = forwardChain(p, [fieldElbow], { flex: 70 });
+    const back = preimagesChain(q, [fieldElbow], { flex: 70 });
+    assert.ok(back.some((b) => Math.hypot(b[0] - p[0], b[1] - p[1], b[2] - p[2]) < 0.02), `rest point of ${p}: ${JSON.stringify(back)}`);
+  }
+});
+
+test('a volume posed by a field with a plane past its grid carries the whole forearm, made whole or in parts', () => {
+  const nx = 5, ny = 5, nz = 41, data = new Uint8Array(nx * ny * nz);
+  for (let k = 0; k < nz; k++) for (let j = 1; j <= 3; j++) for (let i = 1; i <= 3; i++) data[(k * ny + j) * nx + i] = 7;
+  const vm = { dims: [nx, ny, nz], spacingMM: [10, 10, 10], data };
+  const r = poseVolume(vm, [false, false, false], [fieldElbow], { flex: 90 });
+  const [Nx, Ny, Nz] = r.dims;
+  const at = (x, y, z) => r.data[((Math.round(z + (Nz - 1) / 2)) * Ny + Math.round(y + (Ny - 1) / 2)) * Nx + Math.round(x + (Nx - 1) / 2)];
+  assert.equal(at(0, 15, 0), 7, 'the forearm, past the grid, in front of the elbow');
+  assert.equal(at(0, 0, -15), 0, 'and gone from where it was');
+  assert.equal(at(0, 0, 15), 7, 'the arm above where it was');
+  const pooled = posePooledHere(vm, [false, false, false], [fieldElbow], { flex: 90 }, 3);
+  let diff = 0;
+  for (let i = 0; i < r.data.length; i++) if (pooled.data[i] !== r.data[i]) diff++;
+  assert.equal(diff, 0, `${diff} voxels differ`);
+});
+
+/* ---- the arm model's elbow (data/joints.json, tools/measure_joints.py elbow_field) ----
+   flexion a field joint about the line through the trochlea and capitulum: the radius and ulna turn
+   whole about it, the humerus not at all; the forearm's roll a plain joint below it */
+const ARM = (() => {
+  const dir = new URL('../public/models/upperextremity/', import.meta.url);
+  const js = JSON.parse(readFileSync(new URL('../src/data/joints.json', import.meta.url), 'utf8')).upperextremity;
+  const chain = Object.values(js).map((j) => ({ ...j,
+    ...(j.field ? { field: { ...j.field, data: new Uint8Array(readFileSync(new URL(j.field.file, dir))) } } : {}),
+    motions: j.motions.map((m) => ({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
+  const hdr = JSON.parse(readFileSync(new URL('upperextremity.model.json', dir), 'utf8'));
+  const vol = new Uint8Array(readFileSync(new URL('upperextremity.mat.bin', dir)));
+  // the bone voxels within 4 cm of the elbow's centre (the rest frame: the volume's x and y
+  // flipped), each side's by the grid's own share, which must be whole or none on bone (every bone
+  // pinned to its piece's share)
+  const [nx, ny, nz] = hdr.dims, sp = hdr.spacing[0] / 10;
+  const E = chain.find((j) => j.motions.some((m) => m.key === 'elbow.flex')), roll = chain.find((j) => j.motions.some((m) => m.key === 'elbow.roll'));
+  const fore = [], hum = [], mixed = [];
+  for (let k = 0; k < nz; k++) {
+    const z = (k - (nz - 1) / 2) * sp;
+    if (Math.abs(z - E.c[2]) > 4) continue;
+    for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+      const v = vol[(k * ny + j) * nx + i];
+      if (v !== 17 && v !== 18) continue;
+      const p = [-(i - (nx - 1) / 2) * sp, -(j - (ny - 1) / 2) * sp, z];
+      if (Math.hypot(p[0] - E.c[0], p[1] - E.c[1], p[2] - E.c[2]) > 4) continue;
+      const w = fieldWeight(E.field, p);
+      (w === 1 ? fore : w === 0 ? hum : mixed).push(p);
+    }
+  }
+  return { chain, E, roll, fore, hum, mixed, flex: E.motions[0] };
+})();
+// p turned about the line through c along unit n by a (radians), and moved by g
+const turnAbout = (p, c, n, a, g = [0, 0, 0]) => { const r = rotate([p[0] - c[0], p[1] - c[1], p[2] - c[2]], n, a); return [c[0] + r[0] + g[0], c[1] + r[1] + g[1], c[2] + r[2] + g[2]]; };
+// the elbow's glide as it straightens past where the arm rests (m.glide0, as the square of the way)
+const glideAt = (m, deg) => { const f = deg < m.rest ? ((m.rest - deg) / (m.rest - m.range[0])) ** 2 : 0; return (m.glide0 || [0, 0, 0]).map((v) => v * f); };
+
+test("the elbow's grid gives the radius and ulna the whole turn and the humerus none, bone by bone", () => {
+  const { fore, hum, mixed, E } = ARM;
+  assert.ok(fore.length > 10000 && hum.length > 10000, `forearm ${fore.length}, humerus ${hum.length} bone voxels by the joint`);
+  assert.equal(mixed.length, 0, `bone with a part of the turn: ${JSON.stringify(mixed.slice(0, 3))}`);
+  // each on its own side: along the forearm, no forearm bone far up the humerus, no humerus bone down the forearm
+  const s = (p) => (p[0] - E.c[0]) * E.distal[0] + (p[1] - E.c[1]) * E.distal[1] + (p[2] - E.c[2]) * E.distal[2];
+  assert.ok(fore.every((p) => s(p) > -2), 'forearm bone above the joint');
+  assert.ok(hum.every((p) => s(p) < 1.5), 'humerus bone below it');
+});
+
+test('the coronoid and radial head turn round the trochlea and capitulum, whole, from straight to 140 degrees', () => {
+  const { chain, E, roll, fore, hum, flex } = ARM, c = E.c, n = flex.axis;
+  // the forearm's joint surfaces: the coronoid (in front of the axis, on the ulna's side), the radial
+  // head (lateral, below it), and every forearm bone voxel within 2.5 cm of the centre with them
+  const lat = Math.sign(roll.motions[0].toward[0]);
+  const near25 = fore.filter((p) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < 2.5);
+  const coronoid = near25.filter((p) => p[1] > c[1] + 0.3 && lat * (p[0] - c[0]) < 0);
+  const radialHead = near25.filter((p) => lat * (p[0] - c[0]) > 1.2);
+  assert.ok(coronoid.length > 50 && radialHead.length > 50, `coronoid ${coronoid.length}, radial head ${radialHead.length}`);
+  for (let deg = 0; deg <= 140; deg += 10) {
+    const T = (deg - flex.rest) * Math.PI / 180, cc = compileChain(chain, { 'elbow.flex': deg }), g = glideAt(flex, deg);
+    // (the centre glides with the forearm the last stretch to straight)
+    const o = [c[0] + g[0], c[1] + g[1], c[2] + g[2]];
+    for (const p of [...coronoid, ...radialHead, ...near25.filter((_, i) => i % 7 === 0)]) {
+      const q = forwardCompiled(p, cc), b = forwardBone(p, cc), want = turnAbout(p, c, n, T, g);
+      const d0 = Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]), d1 = Math.hypot(q[0] - o[0], q[1] - o[1], q[2] - o[2]);
+      assert.ok(Math.abs(d1 - d0) < 1e-9, `${deg} deg: ${p} kept ${d0} from the centre, not ${d1}`);
+      assert.ok(Math.hypot(q[0] - want[0], q[1] - want[1], q[2] - want[2]) < 1e-9, `${deg} deg: ${p} turned by the full angle`);
+      assert.ok(Math.hypot(b[0] - want[0], b[1] - want[1], b[2] - want[2]) < 1e-9, `${deg} deg: the bone mesh's ${p} too`);
+    }
+    for (const p of hum.filter((_, i) => i % 11 === 0)) assert.deepEqual(forwardCompiled(p, cc), p, `${deg} deg: the humerus stays`);
+  }
+});
+
+test('every forearm bone point turns by the full angle, the hand past the grid too, after the forearm\'s roll', () => {
+  const { chain, E, roll, fore, flex } = ARM, c = E.c;
+  // down the forearm to the wrist, along its axis (past the elbow's grid: its plane decides)
+  const far = [6, 12, 20, 28].map((s) => [c[0] + s * E.distal[0], c[1] + s * E.distal[1], c[2] + s * E.distal[2]]);
+  for (const angles of [{ 'elbow.flex': 90 }, { 'elbow.flex': 140, 'elbow.roll': -180 }, { 'elbow.flex': 0, 'elbow.roll': -90 }]) {
+    const T = (angles['elbow.flex'] - flex.rest) * Math.PI / 180;
+    const cc = compileChain(chain, angles), rolled = compileChain([roll], angles);
+    for (const p of [...fore.filter((_, i) => i % 13 === 0), ...far]) {
+      const r = rolled.length ? forwardCompiled(p, rolled) : p;                   // the roll, then the bend
+      const want = turnAbout(r, c, flex.axis, T, glideAt(flex, angles['elbow.flex'])), q = forwardCompiled(p, cc);
+      assert.ok(Math.hypot(q[0] - want[0], q[1] - want[1], q[2] - want[2]) < 1e-9, `${JSON.stringify(angles)}: ${p}`);
+    }
+  }
+});
+
+test("the joint space stays open as the elbow bends: the forearm's joint surfaces keep off the humerus", () => {
+  const { chain, E, fore, hum } = ARM, c = E.c;
+  // the humerus's bone as 1 mm cells; whether a point has humerus bone within r cm
+  const cell = (v) => Math.round(v * 10) + 2000, key = (i, j, k) => (i * 4096 + j) * 4096 + k;
+  const H = new Set(hum.map((p) => key(cell(p[0]), cell(p[1]), cell(p[2]))));
+  const within = (q, r) => {
+    const [i, j, k] = q.map(cell), R = Math.ceil(r * 10);
+    for (let a = -R; a <= R; a++) for (let b = -R; b <= R; b++) for (let d = -R; d <= R; d++)
+      if (a * a + b * b + d * d <= r * r * 100 && H.has(key(i + a, j + b, k + d))) return true;
+    return false;
+  };
+  // the forearm's joint surfaces: its bone within 8 mm of the humerus's as scanned (the trochlear
+  // notch, the radial head's fovea, the tips of the olecranon and coronoid)
+  const surf = fore.filter((p) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) < 3 && within(p, 0.8));
+  assert.ok(surf.length > 500, `${surf.length} points on the forearm's joint surfaces`);
+  assert.ok(!surf.some((p) => within(p, 0.3)), 'as scanned, 3 mm apart or more');
+  for (const deg of [0, 15, 30, 60, 90, 120]) {
+    const cc = compileChain(chain, { 'elbow.flex': deg });
+    const close = surf.filter((p) => within(forwardCompiled(p, cc), 0.15)).length;
+    // (deep in flexion the coronoid's tip comes into its fossa: a few points of it)
+    assert.ok(close / surf.length < (deg > 90 ? 0.03 : 0.01), `${deg} deg: ${close} of ${surf.length} within 1.5 mm of the humerus`);
+  }
+});
+
+/* ---- the chest/abdomen/pelvis's hips (data/joints.json, tools/measure_joints.py hip_fields) ----
+   a field joint a side about the femoral head's centre: the femur (its grafted shaft too) and the
+   thigh turn whole, the pelvis and the other leg not at all */
+const CAP = (() => {
+  const dir = new URL('../public/models/chestabdopelvis/', import.meta.url);
+  const js = JSON.parse(readFileSync(new URL('../src/data/joints.json', import.meta.url), 'utf8')).chestabdopelvis;
+  const chain = Object.values(js).map((j) => ({ ...j,
+    field: { ...j.field, data: new Uint8Array(readFileSync(new URL(j.field.file, dir))),
+      outer: { ...j.field.outer, data: new Uint8Array(readFileSync(new URL(j.field.outer.file, dir))) } },
+    motions: j.motions.map((m) => ({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
+  const hdr = JSON.parse(readFileSync(new URL('chestabdopelvis.model.json', dir), 'utf8'));
+  const data = new Uint8Array(readFileSync(new URL('chestabdopelvis.mat.bin', dir)));
+  const lm = JSON.parse(readFileSync(new URL('../src/data/landmarks.json', import.meta.url), 'utf8')).chestabdopelvis;
+  const [nx, ny, nz] = hdr.dims, vs = hdr.spacing.map((s) => s / 10);
+  // the rest frame is the volume's own (the model lies rolled 180 degrees: its flips cancel)
+  const at = (i, j, k) => [(i - (nx - 1) / 2) * vs[0], (j - (ny - 1) / 2) * vs[1], (k - (nz - 1) / 2) * vs[2]];
+  const femur = (h) => {
+    const f = segmentFemur({ dims: [nx, ny, nz], vs, data }, h), pts = [];
+    for (let k = 0; k < f.box.bz; k++) for (let j = 0; j < f.box.by; j++) for (let i = 0; i < f.box.bx; i++)
+      if (f.mask[(k * f.box.by + j) * f.box.bx + i]) pts.push(at(f.box.i0 + i, j, k));
+    return pts;
+  };
+  const R = chain.find((j) => j.motions.some((m) => m.key === 'hipR.abd')), L = chain.find((j) => j.motions.some((m) => m.key === 'hipL.abd'));
+  // (core/limbPose.js gives the shell between the head and the acetabulum, 2.25 to 3 cm from its centre,
+  // to whichever side reaches it first: the segmentation's labels part them there; the shell turns
+  // into itself about the centre whatever its share, and is asked only that)
+  const off = (J) => (p) => { const d = Math.hypot(p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]); return d < 2 || d > 3; };
+  const femAll = [femur(lm.femoralHeadR), femur(lm.femoralHeadL)];
+  const femR = femAll[0].filter(off(R)), femL = femAll[1].filter(off(L)), shell = [...femAll[0].filter((p) => !off(R)(p)), ...femAll[1].filter((p) => !off(L)(p))];
+  // the rest of the skeleton within 8 cm of either head: the pelvis, its pieces of bone of a few cm3
+  // or more (not the specks of an enhanced vessel or a phlebolith, bone-dense but no bone, which the
+  // soft tissue carries)
+  const inF = new Set(femAll.flat().map((p) => p.join()));
+  const idx = (i, j, k) => (k * ny + j) * nx + i, seen = new Uint8Array(nx * ny * nz), pelvis = [];
+  const k0 = Math.round((Math.min(R.c[2], L.c[2]) - 9) / vs[2] + (nz - 1) / 2), k1 = Math.round((Math.max(R.c[2], L.c[2]) + 9) / vs[2] + (nz - 1) / 2);
+  const isPelvis = (i, j, k) => { const v = data[idx(i, j, k)]; return (v === 17 || v === 18) && !inF.has(at(i, j, k).join()); };
+  for (let k = k0; k <= k1; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    if (seen[idx(i, j, k)] || !isPelvis(i, j, k)) continue;
+    const piece = [[i, j, k]], q = [[i, j, k]];
+    seen[idx(i, j, k)] = 1;
+    while (q.length) {
+      const [a, b, d] = q.pop();
+      for (const [u, v, w] of [[a - 1, b, d], [a + 1, b, d], [a, b - 1, d], [a, b + 1, d], [a, b, d - 1], [a, b, d + 1]]) {
+        if (u < 0 || v < 0 || w < k0 || u >= nx || v >= ny || w > k1 || seen[idx(u, v, w)] || !isPelvis(u, v, w)) continue;
+        seen[idx(u, v, w)] = 1; piece.push([u, v, w]); q.push([u, v, w]);
+      }
+    }
+    if (piece.length < 500) continue;
+    for (const [a, b, d] of piece) {
+      // (its cortex: the femoral vein and the iliac arteries, enhanced, lie along the pelvis as dense
+      // as its marrow, and no label pins them: the soft tissue carries them)
+      if (data[idx(a, b, d)] !== 18) continue;
+      const p = at(a, b, d), r = [R.c, L.c].map((c) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]));
+      if (Math.min(...r) < 8 && Math.min(...r) > 3) pelvis.push(p);
+    }
+  }
+  return { chain, R, L, femR, femL, shell, pelvis, data, dims: [nx, ny, nz], at };
+})();
+const near0 = (a, b, t = 1e-9) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < t;
+
+test("each hip's grid gives its femur the whole turn and the pelvis and the other femur none, bone by bone", () => {
+  const { R, L, femR, femL, pelvis } = CAP;
+  for (const [J, own, other] of [[R, femR, femL], [L, femL, femR]]) {
+    // the proximal femur to the volume's foot, the grafted shaft with it: one piece, weighing 1
+    assert.ok(own.length > 30000, `${J.label}: ${own.length} femur voxels`);
+    const part = own.filter((p) => fieldWeight(J.field, p) !== 1);
+    assert.equal(part.length, 0, `${J.label}: femur bone with a part of the turn: ${JSON.stringify(part.slice(0, 3))}`);
+    assert.ok(other.every((p) => fieldWeight(J.field, p) === 0), `${J.label}: the other femur moves`);
+    // the pelvis (and what else is bone-dense round the joint: an enhanced vessel, a phlebolith,
+    // which no label pins) stays
+    const moved = pelvis.filter((p) => fieldWeight(J.field, p) > 0.01);
+    // (measured: 1 and 74 of 24 000, by more than a percent of the turn: a calcified iliac artery, the
+    // rim of the acetabulum where the labels stop short of it)
+    assert.ok(moved.length < 0.005 * pelvis.length, `${J.label}: ${moved.length} of ${pelvis.length} pelvic bone voxels move`);
+  }
+});
+
+test('the frog-leg turns the femur whole about its head: the head stays in its socket, the pelvis and the other leg stay', () => {
+  const { chain, R, femR, femL, shell, pelvis } = CAP;
+  const angles = { 'hipR.abd': 45, 'hipR.flex': 30, 'hipR.rot': -30 };
+  const cc = compileChain(chain, angles), J = compileChain([R], angles)[0], c = R.c;
+  assert.ok(J.T > 0.6, `the turn ${(J.T * 180 / Math.PI).toFixed(0)} degrees`);
+  for (const p of femR.filter((_, i) => i % 7 === 0)) {
+    const q = forwardCompiled(p, cc), b = forwardBone(p, cc), want = turnAbout(p, c, J.n, J.T);
+    assert.ok(near0(q, want), `${p} turned by the whole turn`);
+    assert.ok(near0(b, want), `the bone mesh's ${p} too`);
+  }
+  for (const p of femL.filter((_, i) => i % 11 === 0)) assert.deepEqual(forwardCompiled(p, cc), p, 'the other leg stays');
+  const shifted = pelvis.filter((p) => !near0(forwardCompiled(p, cc), p, 0.02));
+  assert.ok(shifted.length < 0.005 * pelvis.length, `${shifted.length} of ${pelvis.length} pelvic bone voxels move`);
+  // the joint space turns into itself: every point round the head keeps its distance from the centre
+  for (const p of [...shell, ...pelvis].filter((q) => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 3.5)) {
+    const q = forwardCompiled(p, cc);
+    assert.ok(Math.abs(Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) - Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2])) < 1e-9, `${p} kept its distance`);
+  }
+  // abducted 45 degrees from the trunk's long axis (the motions are anatomical: the femur's mechanical
+  // axis, as it rests, abducted and flexed by `rest`)
+  const d = R.distal, t = rotate(d, J.n, J.T), s = Math.sign(c[0]);
+  assert.ok(Math.abs(Math.asin(s * t[0]) * 180 / Math.PI - 45) < 1, `abducted ${(Math.asin(s * t[0]) * 180 / Math.PI).toFixed(1)} degrees`);
+  assert.ok(t[1] > 0.3, 'and flexed: the knee up off the table');
+});
+
+test('the thigh well away from the joint turns whole; the far side of the body, nothing', () => {
+  const { R, L, data, dims, at } = CAP;
+  for (const J of [R, L]) {
+    const s = Math.sign(J.c[0]), mid = (R.c[0] + L.c[0]) / 2;
+    let thigh = 0, part = 0, far = 0;
+    for (let k = 0; k < dims[2]; k += 2) for (let j = 0; j < dims[1]; j += 2) for (let i = 0; i < dims[0]; i += 2) {
+      if (!data[(k * dims[1] + j) * dims[0] + i]) continue;
+      const p = at(i, j, k), w = fieldWeight(J.field, p);
+      if (p[2] < J.c[2] - 14 && s * (p[0] - mid) > 3) { thigh++; if (w !== 1) part++; }
+      if (s * (p[0] - mid) < -3 || p[2] > J.c[2] + 12) far += w > 0;
+    }
+    assert.ok(thigh > 10000 && part === 0, `${J.label}: ${part} of ${thigh} thigh points below the buttock with a part of the turn`);
+    assert.equal(far, 0, `${J.label}: points past the midline or above the crest turn`);
+  }
+});
+
+test('the leg rotation is the hips\': internal rotation brings each greater trochanter forward', () => {
+  const { chain, R, L, femR, femL } = CAP;
+  for (const [J, fem] of [[R, femR], [L, femL]]) {
+    const rot = J.motions.find((m) => m.legs);
+    assert.ok(rot && rot.roll && rot.pos === 'internal', `${J.label}: a rotation the leg rotation drives`);
+    const s = Math.sign(J.c[0]);
+    const gt = fem.filter((p) => s * (p[0] - J.c[0]) > 3.5 && p[2] > J.c[2] - 2 && p[2] < J.c[2] + 0.5);
+    const y = (deg) => { const cc = compileChain(chain, { [rot.key]: deg }); return gt.reduce((a, p) => a + forwardCompiled(p, cc)[1], 0) / gt.length; };
+    assert.ok(gt.length > 100 && y(20) > y(0) + 0.5 && y(-20) < y(0) - 0.5, `${J.label}: out ${y(-20).toFixed(2)} / neutral ${y(0).toFixed(2)} / in ${y(20).toFixed(2)}`);
   }
 });

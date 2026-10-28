@@ -148,3 +148,13 @@ TotalSegmentator>=2.4
 #        --title "Chest / abdomen / pelvis" --region chestabdopelvis --spacing 2.0
 #   $B -m app.build_vessels --model ../../apps/web/public/models/chestabdopelvis --name chestabdopelvis
 # then generate the shipped preset timeline and declare it in the .model.json as "contrast".
+# s1379 stops at the lesser trochanters: 15 cm of proximal thigh are grafted at the CAP's foot from
+# the shipped lower extremity (app/build_cap_thighs.py; it keeps the volume as the passes above left
+# it in data/cap the first time, and grafts onto that), then everything on the grid is made again:
+#   $B -m app.build_cap_thighs all
+#   $B -m app.build_gi --model ../../apps/web/public/models/chestabdopelvis --name chestabdopelvis
+#   $B -m app.build_skin chestabdopelvis && $B -m app.build_bone_mesh chestabdopelvis && $B -m app.build_gi_mesh
+#   $B -m app.build_anim_images ct && $B -m app.build_anim_images
+#   (from the repo root) $B tools/measure_landmarks.py chestabdopelvis, then measure_palpation.py and
+#   measure_centring.py with the same argument, and $B tools/measure_joints.py hips (its hip joints'
+#   weight grids are cut from the grafted volume)

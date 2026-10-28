@@ -8,6 +8,7 @@ import { buildRoom, TABLE_FLOOR } from '../../../room.js';
 import { std, mesh, canvasPlane } from '../../kit/stage.js';
 import { buildProbe, R0 } from './probe.js';
 import { fanMap, paintFan } from './bmode.js';
+import { capMeshFrame } from '../capFrame.js';
 
 export const TABLE_TOP = 5;           // the tabletop's height (room.js ROOM_GAP.table)
 
@@ -27,6 +28,7 @@ export async function buildScanRoom(api, V, seat) {
   const clip = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);       // the cut along the scan plane (set below)
   const prep = (g, mat) => {
     if (!g) return null;
+    capMeshFrame(g);
     g.scale.setScalar(0.1); g.position.set(V.ex / 2, V.ey / 2, V.ez / 2);
     g.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); o.material = mat; o.castShadow = true; o.receiveShadow = true; } });
     body.add(g);

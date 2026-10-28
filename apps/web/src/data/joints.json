@@ -986,7 +986,8 @@
      -22.0,
      -26.0,
      -36.0
-    ]
+    ],
+    "rigid": true
    },
    "how": "the glenohumeral joint, a field joint: the centre of the humeral head (a 2.3 cm sphere fitted where it faces the glenoid); the humerus and the arm below it turn, the scapula, clavicle and chest wall stay",
    "motions": [
@@ -1031,6 +1032,76 @@
   "elbow": {
    "label": "Elbow",
    "c": [
+    0.7,
+    -3.36,
+    2.56
+   ],
+   "distal": [
+    0.278,
+    0.163,
+    -0.947
+   ],
+   "blend": 0,
+   "field": {
+    "file": "upperextremity.elboww.bin",
+    "dims": [
+     108,
+     99,
+     135
+    ],
+    "sp": 0.1,
+    "origin": [
+     -4.55,
+     -8.45,
+     -2.9
+    ],
+    "rigid": true,
+    "beyond": {
+     "c": [
+      0.7,
+      -3.36,
+      2.56
+     ],
+     "d": [
+      0.278,
+      0.163,
+      -0.947
+     ]
+    }
+   },
+   "how": "the humero-ulnar and radiocapitellar joints, a field joint: about the line through the trochlea and capitulum the forearm turns on with its joint space kept open (fitted to the motion); the radius, ulna and all below them turn whole, the humerus not at all, the soft tissue between them blended",
+   "motions": [
+    {
+     "key": "elbow.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "from": [
+      0.131,
+      0.28,
+      -0.951
+     ],
+     "toward": [
+      0.148,
+      0.943,
+      0.298
+     ],
+     "range": [
+      0,
+      140
+     ],
+     "rest": 33.3,
+     "glide0": [
+      0.058,
+      -0.161,
+      -0.461
+     ]
+    }
+   ]
+  },
+  "forearm": {
+   "label": "Elbow",
+   "c": [
     0.65,
     -4.05,
     0.45
@@ -1042,23 +1113,8 @@
    ],
    "blend": 1.5,
    "spread": 19.0,
-   "how": "the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon; the forearm pronates over its 19.0 cm",
+   "how": "the forearm's pronation and supination, about its axis from 1.5 cm distal of the midpoint of the measured epicondyles; it pronates over its 19.0 cm",
    "motions": [
-    {
-     "key": "elbow.flex",
-     "label": "Flexion",
-     "neg": "extension",
-     "pos": "flexion",
-     "toward": [
-      -0.067,
-      0.998,
-      -0.0
-     ],
-     "range": [
-      0,
-      140
-     ]
-    },
     {
      "key": "elbow.roll",
      "label": "Forearm rotation",
@@ -1435,6 +1491,208 @@
       1.2,
       -0.4
      ]
+    }
+   ]
+  }
+ },
+ "chestabdopelvis": {
+  "hipR": {
+   "label": "Right hip",
+   "c": [
+    9.02,
+    -2.86,
+    -19.75
+   ],
+   "distal": [
+    0.088,
+    0.218,
+    -0.972
+   ],
+   "blend": 0,
+   "field": {
+    "file": "chestabdopelvis.hipRw.bin",
+    "dims": [
+     71,
+     71,
+     81
+    ],
+    "sp": 0.2,
+    "origin": [
+     2.0,
+     -9.8,
+     -29.8
+    ],
+    "rigid": true,
+    "outer": {
+     "file": "chestabdopelvis.hipRo.bin",
+     "dims": [
+      63,
+      85,
+      91
+     ],
+     "sp": 0.4,
+     "origin": [
+      -3.6,
+      -16.8,
+      -43.4
+     ]
+    }
+   },
+   "how": "the right hip, a field joint: about the centre of the femoral head (a 2.4 cm sphere fitted where it faces the acetabulum); the femur and the thigh turn whole, the pelvis and the other leg stay, the soft tissue between them blended. The thigh ends mid-thigh: no knee to bend",
+   "motions": [
+    {
+     "key": "hipR.rot",
+     "label": "Rotation",
+     "neg": "external",
+     "pos": "internal",
+     "roll": true,
+     "legs": true,
+     "from": [
+      -0.02,
+      0.976,
+      0.217
+     ],
+     "toward": [
+      -0.996,
+      0.019,
+      -0.086
+     ],
+     "range": [
+      -60,
+      40
+     ]
+    },
+    {
+     "key": "hipR.abd",
+     "label": "Abduction",
+     "neg": "adduction",
+     "pos": "abduction",
+     "toward": [
+      0.996,
+      -0.019,
+      0.086
+     ],
+     "range": [
+      -20,
+      60
+     ],
+     "rest": 5.2
+    },
+    {
+     "key": "hipR.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "toward": [
+      -0.02,
+      0.976,
+      0.217
+     ],
+     "range": [
+      -10,
+      90
+     ],
+     "rest": 12.6
+    }
+   ]
+  },
+  "hipL": {
+   "label": "Left hip",
+   "c": [
+    -8.92,
+    -1.73,
+    -19.14
+   ],
+   "distal": [
+    -0.052,
+    0.202,
+    -0.978
+   ],
+   "blend": 0,
+   "field": {
+    "file": "chestabdopelvis.hipLw.bin",
+    "dims": [
+     71,
+     71,
+     81
+    ],
+    "sp": 0.2,
+    "origin": [
+     -16.0,
+     -8.8,
+     -29.2
+    ],
+    "rigid": true,
+    "outer": {
+     "file": "chestabdopelvis.hipLo.bin",
+     "dims": [
+      63,
+      85,
+      93
+     ],
+     "sp": 0.4,
+     "origin": [
+      -21.2,
+      -16.8,
+      -43.4
+     ]
+    }
+   },
+   "how": "the left hip, a field joint: about the centre of the femoral head (a 2.4 cm sphere fitted where it faces the acetabulum); the femur and the thigh turn whole, the pelvis and the other leg stay, the soft tissue between them blended. The thigh ends mid-thigh: no knee to bend",
+   "motions": [
+    {
+     "key": "hipL.rot",
+     "label": "Rotation",
+     "neg": "external",
+     "pos": "internal",
+     "roll": true,
+     "legs": true,
+     "from": [
+      0.011,
+      0.979,
+      0.202
+     ],
+     "toward": [
+      0.999,
+      0.01,
+      -0.051
+     ],
+     "range": [
+      -60,
+      40
+     ]
+    },
+    {
+     "key": "hipL.abd",
+     "label": "Abduction",
+     "neg": "adduction",
+     "pos": "abduction",
+     "toward": [
+      -0.999,
+      -0.01,
+      0.051
+     ],
+     "range": [
+      -20,
+      60
+     ],
+     "rest": 3.0
+    },
+    {
+     "key": "hipL.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "toward": [
+      0.011,
+      0.979,
+      0.202
+     ],
+     "range": [
+      -10,
+      90
+     ],
+     "rest": 11.7
     }
    ]
   }
