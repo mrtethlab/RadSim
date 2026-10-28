@@ -25,6 +25,7 @@ export async function buildSets(api) {
   const rig = buildCTRig(THREE);
   const ISO_Y = rig.ISO_Y, FLOOR_Y = rig.FLOOR_Y;
   const COUCH_Y = ISO_Y - BACK;        // the couch top with the patient's centre at the isocentre
+  rig.setCouchTop(COUCH_Y);            // the table body under it (couchBase-local, lifted with it below)
   const room = new THREE.Group(); scene.add(room);
   room.add(rig.gantry, rig.couch, rig.couchBase);
   rig.spin.visible = false; rig.ring.visible = false;
