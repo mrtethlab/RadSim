@@ -172,3 +172,20 @@ export function poseFemurs({ dims, vs, data }, femurs, internalDeg, anteriorY = 
   }
   return out;
 }
+
+/* THE OTHER LEG RAISED. A cross-table lateral hip is taken with the leg not being examined flexed
+   up and held out of the beam, which runs in under it from the inner thigh. This volume's thighs
+   lie straight on the table, so that thigh is taken out below the gluteal fold (RAISE_BELOW under
+   its femoral head; the buttock stays), on its side of the midline, in `out` (a posed copy). */
+const RAISE_BELOW = 9;   // cm under the head's centre: the fold, at the ischial tuberosity
+const RAISE_MID = 1.5;   // cm off the midline the perineum is kept
+export function raiseLeg({ dims, vs }, out, heads, side) {
+  const [nx, ny, nz] = dims;
+  const h = side === 'L' ? heads[0] : heads[1], s = Math.sign(h.x) || 1, mid = (heads[0].x + heads[1].x) / 2;
+  const kc = Math.min(nz, Math.round((h.z - RAISE_BELOW) / vs[2] + (nz - 1) / 2));
+  for (let i = 0; i < nx; i++) {
+    if (s * ((i - (nx - 1) / 2) * vs[0] - mid) <= RAISE_MID) continue;
+    for (let k = 0; k < kc; k++) for (let j = 0; j < ny; j++) out[(k * ny + j) * nx + i] = 0;
+  }
+  return out;
+}

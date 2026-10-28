@@ -10,7 +10,7 @@ import { Sound } from './audio/sound.js';
 import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
-import { segmentFemur, poseFemurs } from './core/limbPose.js';
+import { segmentFemur, poseFemurs, raiseLeg } from './core/limbPose.js';
 import { PATHOLOGY, makeCtx, stampPathology, undoPathology } from './core/pathology.js';
 import { axisToward, forwardChain, forwardCompiled, forwardSkin, forwardBone, boneSide, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
@@ -1121,6 +1121,7 @@ const S = {
   objRot:{x:0,y:0,z:0},        // generic object rotate/tilt (deg) — applies to any subject
   objOff:{x:0,z:0,y:0},        // x-ray object offset (cm): x cross / z long axis / y lift off the receptor
   legRot:0,                    // both legs turned about the femoral heads, deg (+ internal) — core/limbPose.js
+  legLift:null,                // 'L' | 'R': that leg raised out of a cross-table beam (core/limbPose.js raiseLeg)
   boneView:false,              // the room shows the bones alone (display only: the image is the whole patient)
   joints:{},                   // bent joints of the current subject, deg by motion key — core/jointPose.js
   collX:15, collZ:19, kv:55, mas:2.0, ma:100, prepped:false, exposing:false, hasImage:false,
@@ -1505,12 +1506,18 @@ function femoralHeads(sub){
   const set=landmarkData[sub]; const L=set?.femoralHeadL, R=set?.femoralHeadR;
   return L && R ? [L,R] : null;
 }
-function posedVolume(vm, deg){
-  if(!deg || !vm.data) return null;
+function legLiftNow(){ return S.mode==='xray' ? S.legLift : null; }
+function posedVolume(vm, deg, lift=null){
+  if((!deg && !lift) || !vm.data) return null;
   const heads=femoralHeads(S.subject);
   if(!heads) return null;
   if(!vm._femurs) vm._femurs=heads.map(h=>segmentFemur(vm, h));
-  if(vm._posed?.deg!==deg) vm._posed={ deg, data: poseFemurs(vm, vm._femurs, deg, heads[0].anteriorY||1) };
+  const key=deg+'|'+(lift||'');
+  if(vm._posed?.key!==key){
+    const data=poseFemurs(vm, vm._femurs, deg, heads[0].anteriorY||1);
+    if(lift) raiseLeg(vm, data, heads, lift);
+    vm._posed={ key, data };
+  }
   return vm._posed.data;
 }
 function syncLegRotUI(){
@@ -1560,7 +1567,7 @@ function buildPhantom(){
   // real geometric unsharpness, because the divergent rays do the rest.
   const cy = S.mode==='ct' ? S.ct.patientY : restHeight() + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z-BK().z;
-  let posed = jointPosedVolume(vm) || posedVolume(vm, legRotNow()), centre=[cx,cy,cz];
+  let posed = jointPosedVolume(vm) || posedVolume(vm, legRotNow(), legLiftNow()), centre=[cx,cy,cz];
   // a posed volume is padded evenly round its centre, as far as the bent part reaches either way
   // (an arm abducted 90 degrees: 1228 x 430 x 755 voxels, 26 s of ray casting at a film's matrix);
   // the ray caster is given only the voxels that hold anything, and the centre moved to match
@@ -2173,7 +2180,7 @@ let aecSkinKey='';
 const aecRay=new THREE.Raycaster();
 function aecOnSkin(on){
   const cells=three.aecCellMeshes, g=three.aecGroup;
-  const key=on ? JSON.stringify([S.objOff, S.objRot, S.bucky, S.subject, S.aecCells, S.joints, S.legRot]) : '';
+  const key=on ? JSON.stringify([S.objOff, S.objRot, S.bucky, S.subject, S.aecCells, S.joints, S.legRot, S.legLift]) : '';
   if(key===aecSkinKey) return;
   aecSkinKey=key;
   for(const [k,p] of Object.entries(AEC_CELLS)){
@@ -2578,7 +2585,7 @@ function bind(){
   $('legRot')?.addEventListener('input',e=>{ S.legRot=parseInt(e.target.value);
     syncLegRotUI(); resetPrep(); syncScene(); });
   $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0,y:0};
-    S.legRot=0; syncLegRotUI(); S.joints={}; renderJointUI();
+    S.legRot=0; S.legLift=null; syncLegRotUI(); S.joints={}; renderJointUI();
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
     for(const [id,ax] of offAxes){ if($(id)){ $(id).value=0; $(id+'v').textContent='0 cm'; } }
     syncOidUI();
@@ -3692,6 +3699,7 @@ function applyPose(pose){
   // raises the leg as a flexed knee does: -59 with the ankle plantarflexed 30 lays this one flat)
   S.objRot = { x: pose.tilt || 0, y: 0, z: pose.roll || 0 };
   S.legRot = pose.legs || 0; syncLegRotUI();
+  S.legLift = pose.lift || null;                            // the other leg out of a cross-table beam
   S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg
   prepareJointVolume();                                     // its pose, made while the room is set
   S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;

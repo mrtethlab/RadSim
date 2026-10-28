@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { segmentFemur, poseFemurs } from '../src/core/limbPose.js';
+import { segmentFemur, poseFemurs, raiseLeg } from '../src/core/limbPose.js';
 
 const lm = JSON.parse(readFileSync(new URL('../src/data/landmarks.json', import.meta.url), 'utf8')).chestabdopelvis;
 const hdr = JSON.parse(readFileSync(new URL('../public/models/chestabdopelvis/chestabdopelvis.model.json', import.meta.url), 'utf8'));
@@ -128,4 +128,25 @@ test('the AP pelvis protocol turns the legs in 15 degrees', () => {
   const ap = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections)).find((p) => p.proj === 'AP pelvis');
   assert.equal(ap.pose.legs, 15);
   assert.ok(lm.femoralHeadL.x < 0 && lm.femoralHeadR.x > 0, 'patient right is +x in this volume (the liver is)');
+});
+
+test('a cross-table lateral hip raises the other leg: its thigh leaves the beam, nothing else does', () => {
+  const protocols = JSON.parse(readFileSync(new URL('../src/data/protocols.json', import.meta.url), 'utf8'));
+  const xt = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections)).find((p) => p.proj === 'Cross-table lateral hip');
+  assert.equal(xt.pose.lift, 'L', 'the right hip is filmed, the left leg raised');
+  const out = raiseLeg(M, new Uint8Array(data), [HL, HR], 'L');
+  let gone = 0, goneRight = 0, goneHigh = 0, leftThigh = 0;
+  const mid = (HL.x + HR.x) / 2;
+  for (let k = 0; k < nz; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const p = (k * ny + j) * nx + i;
+    if (Z(k) < HL.z - 12 && X(i) < mid - 3 && data[p]) leftThigh++;
+    if (data[p] === out[p]) continue;
+    gone++;
+    if (X(i) > mid) goneRight++;
+    if (Z(k) > HL.z - 8.9) goneHigh++;
+  }
+  assert.ok(leftThigh > 0, 'this volume has a left thigh to raise');
+  assert.ok(gone > 0.9 * leftThigh, `${gone} voxels out of the beam (the thigh below 12 cm: ${leftThigh})`);
+  assert.equal(goneRight, 0, 'the right leg stays');
+  assert.equal(goneHigh, 0, 'the buttock and pelvis stay');
 });

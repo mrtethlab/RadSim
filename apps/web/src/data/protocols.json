@@ -1775,7 +1775,7 @@
             {
               "proj": "Upright abdomen",
               "kv": 80,
-              "mas": 25,
+              "mas": 32,
               "cm": 22,
               "grid": true,
               "aec": "lrc",
@@ -1883,7 +1883,7 @@
             {
               "proj": "Judet LPO pelvis",
               "kv": 80,
-              "mas": 40,
+              "mas": 50,
               "cm": 24,
               "grid": true,
               "aec": "lrc",
@@ -1907,7 +1907,7 @@
             },
             {
               "proj": "Inlet pelvis",
-              "kv": 85,
+              "kv": 95,
               "mas": 80,
               "cm": 28,
               "grid": true,
@@ -1935,7 +1935,7 @@
             {
               "proj": "Outlet pelvis",
               "kv": 85,
-              "mas": 80,
+              "mas": 100,
               "cm": 24,
               "grid": true,
               "aec": "lrc",
@@ -1967,7 +1967,7 @@
             {
               "proj": "AP hip",
               "kv": 80,
-              "mas": 25,
+              "mas": 16,
               "cm": 16,
               "grid": true,
               "aec": "c",
@@ -1993,7 +1993,7 @@
             {
               "proj": "AP hip (no leg rotation)",
               "kv": 80,
-              "mas": 25,
+              "mas": 16,
               "cm": 16,
               "grid": true,
               "aec": "c",
@@ -2020,7 +2020,7 @@
             {
               "proj": "Frog-leg lateral hip",
               "kv": 80,
-              "mas": 25,
+              "mas": 20,
               "cm": 16,
               "grid": true,
               "aec": "c",
@@ -2076,7 +2076,7 @@
             {
               "proj": "Cross-table lateral hip",
               "kv": 85,
-              "mas": 50,
+              "mas": 32,
               "cm": 19,
               "grid": true,
               "aec": "c",
@@ -2097,8 +2097,9 @@
                 "cc": -45,
                 "centre": "femoralHeadR",
                 "through": true,
+                "lift": "L",
                 "fidelity": "approx",
-                "note": "The beam runs horizontally from the inner thigh, perpendicular to the femoral neck (45 degrees to the long axis), to a receptor at the hip; here the patient lies on the hip instead, under a vertical beam. The other leg is raised out of the field on a patient; this model's legs end at the upper thigh."
+                "note": "The beam runs horizontally from the inner thigh, perpendicular to the femoral neck (45 degrees to the long axis), to a receptor at the hip; here the patient lies on the hip instead, under a vertical beam. The other leg is raised out of the field: this model's left thigh is taken away below the gluteal fold."
               }
             }
           ]
@@ -2135,7 +2136,7 @@
             {
               "proj": "AP axial coccyx",
               "kv": 80,
-              "mas": 50,
+              "mas": 64,
               "cm": 22,
               "grid": true,
               "aec": "c",
@@ -2160,7 +2161,7 @@
             },
             {
               "proj": "Lateral sacrum / coccyx",
-              "kv": 100,
+              "kv": 110,
               "mas": 125,
               "cm": 30,
               "grid": true,
@@ -2630,7 +2631,7 @@
             },
             {
               "proj": "Lateral lumbar",
-              "kv": 100,
+              "kv": 105,
               "mas": 125,
               "cm": 30,
               "grid": true,
@@ -3027,7 +3028,7 @@
             {
               "proj": "Scoliosis study",
               "kv": 100,
-              "mas": 100,
+              "mas": 250,
               "grid": true,
               "aec": "c",
               "lut": "pasteSpine",
