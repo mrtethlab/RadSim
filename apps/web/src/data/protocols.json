@@ -337,6 +337,9 @@
                 "roll": -4,
                 "cc": 0,
                 "centre": "forearm",
+                "joints": {
+                  "elbow.flex": 0
+                },
                 "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
@@ -394,6 +397,9 @@
                 "roll": -4,
                 "cc": 0,
                 "centre": "elbowJoint",
+                "joints": {
+                  "elbow.flex": 0
+                },
                 "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
@@ -419,6 +425,7 @@
                 "cc": 0,
                 "centre": "elbowJoint",
                 "joints": {
+                  "elbow.flex": 0,
                   "elbow.roll": -160
                 },
                 "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
@@ -445,6 +452,9 @@
                 "roll": -49,
                 "cc": 0,
                 "centre": "elbowJoint",
+                "joints": {
+                  "elbow.flex": 0
+                },
                 "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },
@@ -531,6 +541,9 @@
                 "roll": -4,
                 "cc": 0,
                 "centre": "humerus",
+                "joints": {
+                  "elbow.flex": 0
+                },
                 "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json)."
               }
             },

@@ -8,6 +8,20 @@ handoff document and is not committed.)
 
 ## 2026-10-27
 
+### The elbow turns round the trochlea — PR pending
+- **The problem:** the elbow bent at a plane 1.5 cm below the epicondyles, which cut through the radial head and the coronoid. Points in the crease took part of the turn, so both were torn off their bones and pivoted about the crease, and the lateral elbow (90 degrees) showed the forearm and humerus fused, with no joint space.
+- **Flexion is a field joint** (`tools/measure_joints.py elbow_field`, `upperextremity.elboww.bin`):
+  - The radius, ulna and every bone below them take the whole turn, the humerus none, and the soft tissue the blend of the bones nearest it.
+  - The grid is the elbow alone, on the model's own 1 mm voxels. Each side's bone, and the cartilage and capsule within 3 mm of it on its own side of the joint space, is pinned to its piece's share.
+  - Past the grid, whatever lies past a plane through the axis turns whole (`field.beyond`). This covers the forearm and hand wherever the roll and the wrist carry them.
+  - The axis is fitted to the motion. A cylinder fitted to the trochlea and capitulum misses them by 3 mm, and turned about it the coronoid ran into the humerus by 50 degrees. So the fit is the line about which the forearm's joint surfaces keep their gap to the humerus from 13 to 143 degrees. It runs through (0.70, -3.36, 2.56), along (0.98, -0.18, 0.08), 15 degrees off the epicondyles' line.
+  - The angle is anatomical: 0 is the forearm in line with the humerus. This arm rests 33 degrees flexed (measured on the shafts). So a lateral elbow's 90 is now a true 90; it was 123.
+  - Straight, the notch no longer stays round the trochlea about any one line: the olecranon meets its fossa. So the forearm glides 5 mm off the humerus over the last 33 degrees (`m.glide0`). In the posed volume the gap between the forearm's bone and the humerus's, at its 0.5th percentile, is 4.7 mm as scanned, 3.1 mm at 0 and 3.7 mm at 90.
+- **The forearm's roll** (pronation) stays a plain joint just below it (`forearm`), spread along the forearm as before. A field's roll would be one plain turn of everything.
+- **AP elbow, both obliques, AP forearm and AP humerus** now straighten the elbow (`elbow.flex` 0). They were taken at the 33 degrees the arm was scanned in.
+- **Bone mesh:** a rigid field (`field.rigid`: the shoulder and the elbow) gives a bone vertex the whole turn or none, read just inside the bone at rest. The shoulder's bone mesh no longer stretches tenfold at 90 degrees of abduction. A joint that only rolls no longer cuts a ring out of the ulna.
+- Checked in the room: AP, oblique, lateral and radial-head elbows, the humerus and forearm views, the skin and bone meshes from 0 to 140 degrees and with the shoulder abducted. Tests pin the coronoid and radial head to their distance from the axis from 0 to 140 degrees and every forearm bone to the full turn. They also keep all but 1 % of the joint surfaces 1.5 mm or more off the humerus up to 90 degrees.
+
 ### Protocol Trainer — PR pending
 A second trainer in the X-ray card. The existing Trainer is renamed **Positioning Trainer**.
 - **The requisition** (`trainer/requisition.js`, `trainer/cases.js`) is a fully detailed, seeded and fictional form:
