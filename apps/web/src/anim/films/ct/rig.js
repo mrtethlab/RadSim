@@ -7,6 +7,7 @@
    top. The patient lies supine, head first into the bore (toward -z): their right at -x. */
 import * as THREE from 'three';
 import { buildCTRig } from '../../../ct.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { std, mesh, beamCone, glowMat, setOpacity } from '../../kit/stage.js';
 import { buildTubeInsert } from '../xray/tube.js';
 import { capMeshFrame } from '../capFrame.js';
@@ -22,7 +23,7 @@ export const PZ = -4.4;                // the patient's centre on the couch (cou
 
 export async function buildSets(api) {
   const { scene } = api;
-  const rig = buildCTRig(THREE);
+  const rig = buildCTRig(THREE, RoundedBoxGeometry);
   const ISO_Y = rig.ISO_Y, FLOOR_Y = rig.FLOOR_Y;
   const COUCH_Y = ISO_Y - BACK;        // the couch top with the patient's centre at the isocentre
   rig.setCouchTop(COUCH_Y);            // the table body under it (couchBase-local, lifted with it below)

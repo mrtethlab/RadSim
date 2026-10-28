@@ -15,7 +15,7 @@ import { buildConcLUT, NS as CONTRAST_NS, groupFireTime, afterGroupTime } from '
 import { Sound } from './audio/sound.js';
 import { groupDose, monitorDose, effectiveMAs, effectiveDose, ssdeFactor, waterEqDiameterCm, doseCheck, DOSE_CHECK } from './core/ctDose.js';
 import { roiStats } from './core/ctRoi.js';
-import { buildGantryModel, buildCouchModel } from './ctModel.js';
+import { buildGantryModel, buildCouchModel, useThree } from './ctModel.js';
 
 let ctx = null;
 let couch = null, gantry = null, gantrySpin = null;  // couch pallet (moves) + gantry ring (static) + rotor (turns while scanning, inside the shell)
@@ -125,6 +125,7 @@ const SYM = {
 };
 
 export function initCT(context) {
+  useThree(context.THREE, context.RoundedBoxGeometry);
   ctx = context;
   window.addEventListener('radsim:subject', () => fitSfovToSubject());
   buildCTScene();
@@ -266,7 +267,8 @@ function rebuildCTModel() {
    fresh groups, the module's own rig (and its live screens) left exactly as they were. The film
    positions it itself (couchBase at z 82, the couch top at local y 0, the bore centre at ISO_Y)
    and raises the table body to its couch with rig.setCouchTop(y). */
-export function buildCTRig(THREE) {
+export function buildCTRig(THREE, RoundedBoxGeometry) {
+  useThree(THREE, RoundedBoxGeometry);
   const keep = { gantry, couch, couchBase, gantrySpin, gantryShell, boreFrameRing, liveScr, setRotorBeam, setCouchTop };
   const rig = { gantry: new THREE.Group(), couch: new THREE.Group(), couchBase: new THREE.Group() };
   gantry = rig.gantry; couch = rig.couch; couchBase = rig.couchBase;

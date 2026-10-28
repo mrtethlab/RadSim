@@ -2,6 +2,7 @@
 // film rendering and UI wiring. The reusable physics engine lives in ./core,
 // the hand phantom in ./phantom/hand.js (both stay CT/model-ready).
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { Spectrum } from './core/spectrum.js';
 import { Phantom } from './core/phantom.js';
 import { AttenuationEngine } from './core/engine.js';
@@ -4841,7 +4842,7 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   setInterval(tabActivity, 250);
   // CT mode lives in its own module; give it the handles it needs from the app glue.
-  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); protocolTrainerOnMode(m); if(m!=='xray') clearPathology(); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
+  initCT({ THREE, RoundedBoxGeometry, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); protocolTrainerOnMode(m); if(m!=='xray') clearPathology(); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
            setSubject: (s) => setSubject(s),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,

@@ -25,8 +25,10 @@
                        LCD read-outs and lit blue keys, the LCD screen at the crown, red
                        indicator lights; the couch on a white bellows column.
    The brand names are drawn as canvas text; no artwork is copied. */
-import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+// three.js is handed in (useThree, from ct.js's initCT and buildCTRig), not imported: ct.js is
+// loaded by the unit tests, which run without the browser's packages installed
+let THREE = null, RoundedBoxGeometry = null;
+export function useThree(T, RBG) { if (T) THREE = T; if (RBG) RoundedBoxGeometry = RBG; }
 
 export const Z_WIN_F = 3, Z_WIN_B = -17;                       // the bore window's front and back (z)
 const ROTOR_Z = (Z_WIN_F + Z_WIN_B) / 2;                       // the rotor's plane, mid-window
