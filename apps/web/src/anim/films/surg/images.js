@@ -184,5 +184,5 @@ export async function loadSurgImages({ regions = null, crops = null } = {}) {
     return [x + c / r.n * size, y + w / r.n * size];
   };
 
-  return { man, tissue, regions: R, crops: C, path, image, toScreen, blit, onBlit, project: (name, o, t, p) => project(R[name], o, t, p), v3 };
+  return { man, tissue, regions: R, crops: C, path, image, toScreen, blit, onBlit, offscreen: toOff, project: (name, o, t, p) => project(R[name], o, t, p), v3 };
 }

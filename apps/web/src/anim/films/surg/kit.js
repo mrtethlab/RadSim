@@ -186,7 +186,26 @@ export async function buildKit(api, { patient = 'child', region = patient === 'a
   K.frameOf = (o = K.carm.pose.orbital, t = K.carm.pose.tilt) => nearestFrame(SI.regions[K.region], o, t);
 
   // ---- the monitor
-  let last = null;
+  let last = null, inset = null, insetFrame = 0;
+  function crisp(px, L, x, y, size, a) {
+    const host = px.cv.parentElement; if (!host) return;
+    if (!inset || inset.parentElement !== host) {
+      inset = document.createElement('canvas'); inset.className = 'surg-inset';
+      host.insertBefore(inset, px.cv);
+    }
+    const k = px.cv.clientHeight / px.H, dpr = devicePixelRatio || 1;
+    const w = Math.round(size * k * dpr);
+    if (inset.width !== w) { inset.width = w; inset.height = w; }
+    Object.assign(inset.style, { left: `${x * k}px`, top: `${y * k}px`, width: `${size * k}px`, height: `${size * k}px`, opacity: a, display: 'block' });
+    const g = inset.getContext('2d');
+    g.fillStyle = '#04060a'; g.fillRect(0, 0, w, w);
+    const off = SI.offscreen(L.lum, L.n, [4, 6, 9]);
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(off, 0, 0, w, w);
+    // hidden again on the first frame no step draws it
+    const f = ++insetFrame;
+    requestAnimationFrame(() => requestAnimationFrame(() => { if (f === insetFrame && inset) inset.style.display = 'none'; }));
+  }
   K.monitor = {
     show({ needles = [], blobs = [], seed = 1, label = null, orbital = K.carm.pose.orbital, tilt = K.carm.pose.tilt, region = K.region } = {}) {
       const n = SI.regions[region].n;
@@ -197,11 +216,14 @@ export async function buildKit(api, { patient = 'child', region = patient === 'a
     dark() { SI.toScreen(U.tower.live, null, 0); last = null; },
     spot(label = null) { if (last) SI.toScreen(U.tower.ref, last.lum, last.n, { label }); },
     clearRef() { SI.toScreen(U.tower.ref, null, 0); },
+    /* The image is drawn at the screen's own resolution on a canvas under the 8-bit layer (the
+       layer's 200 rows would block the vertebrae up); the layer draws only its frame, so marks
+       on the image (api.mark at at(p)) land on top of it. */
     blit(px, x, y, size, { a = 1 } = {}) {
       if (!last) return () => null;
-      px.rect(x - 2, y - 2, size + 4, size + 4, 'black', a); px.frame(x - 2, y - 2, size + 4, size + 4, 'dkgrey', a);
+      px.frame(x - 2, y - 2, size + 4, size + 4, 'dkgrey', a);
       api.keepOut([x - 2, y - 2, size + 4, size + 4]);
-      SI.blit(px, last.lum, last.n, x, y, size, { a });
+      crisp(px, last, x, y, size, a);
       const L = last;
       return (p) => SI.onBlit(L.region, L.orbital, L.tilt, p, x, y, size);
     },

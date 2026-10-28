@@ -8,7 +8,7 @@ handoff document and is not committed.)
 
 ## 2026-10-28
 
-### Order of Operations Trainer — PR pending
+### Order of Operations Trainer — PR #92
 A drill for the department's Method of Operation (`trainer/moo.js`: the eleven steps and their sub-steps, each with the ideas an answer must name), on the X-ray card beside the Protocol Trainer.
 - **Questions** (`core/mooQuiz.js`): a step by its number and its number by its wording; what comes after and before; every sub-step of a step, in order; a sub-step's successor; a key term blanked; 21 situations ("the patient walks in carrying a bag..."); the steps or sub-steps to put in order; the whole routine from memory.
 - **Marking** is by idea, not wording: a step is right when every one of its ideas is named (synonyms, a keyboard slip and word endings forgiven; IR, LMP, 3 exact). "Check the order" without the history is wrong. A wrong typed step is typed again correctly before the next question.
