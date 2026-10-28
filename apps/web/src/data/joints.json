@@ -986,7 +986,8 @@
      -22.0,
      -26.0,
      -36.0
-    ]
+    ],
+    "rigid": true
    },
    "how": "the glenohumeral joint, a field joint: the centre of the humeral head (a 2.3 cm sphere fitted where it faces the glenoid); the humerus and the arm below it turn, the scapula, clavicle and chest wall stay",
    "motions": [
@@ -1031,6 +1032,76 @@
   "elbow": {
    "label": "Elbow",
    "c": [
+    0.7,
+    -3.36,
+    2.56
+   ],
+   "distal": [
+    0.278,
+    0.163,
+    -0.947
+   ],
+   "blend": 0,
+   "field": {
+    "file": "upperextremity.elboww.bin",
+    "dims": [
+     108,
+     99,
+     135
+    ],
+    "sp": 0.1,
+    "origin": [
+     -4.55,
+     -8.45,
+     -2.9
+    ],
+    "rigid": true,
+    "beyond": {
+     "c": [
+      0.7,
+      -3.36,
+      2.56
+     ],
+     "d": [
+      0.278,
+      0.163,
+      -0.947
+     ]
+    }
+   },
+   "how": "the humero-ulnar and radiocapitellar joints, a field joint: about the line through the trochlea and capitulum the forearm turns on with its joint space kept open (fitted to the motion); the radius, ulna and all below them turn whole, the humerus not at all, the soft tissue between them blended",
+   "motions": [
+    {
+     "key": "elbow.flex",
+     "label": "Flexion",
+     "neg": "extension",
+     "pos": "flexion",
+     "from": [
+      0.131,
+      0.28,
+      -0.951
+     ],
+     "toward": [
+      0.148,
+      0.943,
+      0.298
+     ],
+     "range": [
+      0,
+      140
+     ],
+     "rest": 33.3,
+     "glide0": [
+      0.058,
+      -0.161,
+      -0.461
+     ]
+    }
+   ]
+  },
+  "forearm": {
+   "label": "Elbow",
+   "c": [
     0.65,
     -4.05,
     0.45
@@ -1042,23 +1113,8 @@
    ],
    "blend": 1.5,
    "spread": 19.0,
-   "how": "the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon; the forearm pronates over its 19.0 cm",
+   "how": "the forearm's pronation and supination, about its axis from 1.5 cm distal of the midpoint of the measured epicondyles; it pronates over its 19.0 cm",
    "motions": [
-    {
-     "key": "elbow.flex",
-     "label": "Flexion",
-     "neg": "extension",
-     "pos": "flexion",
-     "toward": [
-      -0.067,
-      0.998,
-      -0.0
-     ],
-     "range": [
-      0,
-      140
-     ]
-    },
     {
      "key": "elbow.roll",
      "label": "Forearm rotation",

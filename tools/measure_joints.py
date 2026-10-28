@@ -12,7 +12,7 @@ z = superior; on the hand y = dorsal, z = toward the fingertips).
 Centres of rotation, from the anatomy rather than the bone surface:
 - wrist: the head of the capitate (the wrist's instant centre for both flexion and deviation),
   about 1.2 cm distal of the radiocarpal joint on the line of the 3rd metacarpal;
-- elbow: the trochlea/capitulum axis, 1.5 cm distal of the widest span of the epicondyles;
+- elbow: the trochlea/capitulum axis, fitted to the motion (below);
 - knee: the measured joint space between the condyles and the plateau;
 - ankle: midway between the malleoli (the talocrural axis passes just below their tips).
 
@@ -31,6 +31,17 @@ everything below none; the soft tissue between takes the weights of the bones ne
 (a soft minimum of the distances) and smoothed. Its rotation is about C4, 1 cm behind the body
 (the facets), with the neck's own axis from C7-T1 to C1-C2. Needs the head CT's labels and nibabel
 (the compute venv: services/compute/.venv).
+
+THE ELBOW's flexion is a FIELD joint (elbow_field): bent at a plane through the joint, the radial
+head and the coronoid, which reach above any such plane, were torn off their bones and turned about
+the plane's crease. The radius, ulna and every bone below them take the whole turn, the humerus none,
+the soft tissue the blend of the bones nearest it, on a grid of the model's own voxels so the 4 mm
+joint space parts the two sides cleanly. Its axis is fitted to the motion: the line the forearm's
+joint surfaces turn about with their gap to the humerus kept open through the range. Its angle is
+anatomical (0 the forearm in line with the humerus; this arm rests 33 degrees flexed). The
+forearm's roll stays a plain joint just below it ('forearm'), spread along the forearm as before.
+
+    python tools/measure_joints.py elbow     # the arm below the shoulder alone
 
 THE SHOULDER is a FIELD joint too (shoulder_field): the arm model carries the shoulder girdle and
 a slab of the chest wall beside the arm, and no plane through the shoulder parts the humerus from
@@ -258,7 +269,8 @@ def shoulder_field(name='upperextremity'):
     print(f'shoulder: head centre {c.round(2)}, radius {r:.2f} cm from {len(S)} surface voxels; '
           f'arm pieces {len(arm_ids)}; grid {dims.tolist()}')
     return {'label': 'Shoulder', 'c': [round(float(x), 2) for x in c], 'distal': d.round(3).tolist(), 'blend': 0,
-            'field': {'file': f'{name}.shoulderw.bin', 'dims': dims.tolist(), 'sp': SHOULDER_SP, 'origin': o.round(4).tolist()},
+            'field': {'file': f'{name}.shoulderw.bin', 'dims': dims.tolist(), 'sp': SHOULDER_SP, 'origin': o.round(4).tolist(),
+                      'rigid': True},
             'how': f'the glenohumeral joint, a field joint: the centre of the humeral head (a {r:.1f} cm sphere fitted where it '
                    'faces the glenoid); the humerus and the arm below it turn, the scapula, clavicle and chest wall stay',
             'motions': [
@@ -267,6 +279,150 @@ def shoulder_field(name='upperextremity'):
                 {'key': 'shoulder.abd', 'label': 'Abduction', 'neg': 'adduction', 'pos': 'abduction',
                  'toward': lat.round(3).tolist(), 'range': [0, 120]},
             ]}
+
+
+# THE ELBOW (see the module's notes). Its grid is the elbow alone, on the model's own voxels: the
+# humerus and the radius and ulna stand 4 mm apart across the joint space, and each side's bone and
+# what lies within ELBOW_PIN of it must read its own share exactly (a bone mesh vertex reads it 0.7
+# mm inside; the volume reads it at a voxel's centre), so the blend between them is a millimetre or
+# two of the joint space's middle. Past the grid, the forearm's side of a plane through the axis
+# turns whole (field.beyond): the forearm and hand wherever the roll and the wrist carry them.
+ELBOW_POW = 3                # the inverse-distance blend's power
+ELBOW_SIGMA = 0.2            # cm, its smoothing
+ELBOW_PIN = (0.3, 0.1)       # cm: within this of its own bone and this nearer it than the other side's
+                             # bone, tissue (the cartilage, the capsule) turns as its bone does
+ELBOW_UP = (3.0, 6.0)        # cm up the humerus from the axis: the soft tissue's share falls to none
+ELBOW_DOWN = (1.5, 3.5)      # cm down the forearm: and rises to the whole turn (the roll starts past it)
+ELBOW_FIT = (100.0, 0.3, 0.8, (-20, 110))   # the axis fit: closing's weight, the gap (cm) it guards,
+                             # the articular surface (cm from the humerus), the turns tried (degrees)
+
+
+def rot_about(P, c, n, a):
+    """points turned about the line through c along unit n, by a radians"""
+    v = P - c
+    return c + v * np.cos(a) + np.cross(n, v) * np.sin(a) + np.outer(v @ n, n) * (1 - np.cos(a))
+
+
+def elbow_field(fore, ant, name='upperextremity'):
+    """The elbow's flexion as a field joint: its centre and axis, its rest flexion, the weight grid
+    (written beside the model) and the motion. fore: the forearm's axis (distal), ant: the way
+    flexion carries it."""
+    from scipy.optimize import minimize
+    V = Vol(name)
+    bone = np.isin(V.v, [17, 18] + list(range(54, 62)))
+    lab, n = ndi.label(bone)
+    pa = PALP[name]
+    me, le = (np.array([pa[k]['x'], pa[k]['y'], pa[k]['z']]) for k in ('medialEpicondyle', 'lateralEpicondyle'))
+    P = np.stack(V.coords(bone), 1); L = lab[bone]
+    # the humerus: the piece that is the arm's bone a hand's breadth above the epicondyles
+    mid = (me + le) / 2
+    sl = np.abs(P[:, 2] - mid[2] - 8) < 2
+    hum = int(np.bincount(L[sl]).argmax())
+    H = P[L == hum]
+    # the shafts' axes (distal), well away from the joint
+    def shaft(Q):
+        m = Q.mean(0); a = np.linalg.svd(Q - m, full_matrices=False)[2][0]
+        return a if a[2] < 0 else -a
+    ha = shaft(H[(H[:, 2] > mid[2] + 6) & (H[:, 2] < mid[2] + 22)])
+    # the moving part: every other piece whose middle lies below the epicondyles, along the humerus
+    # (the radius and ulna, the carpals, any loose fragment, however small); the girdle stays
+    ids = [i for i in range(1, n + 1) if i != hum]
+    cen = ndi.center_of_mass(bone, lab, ids)
+    cm = lambda k: np.array([(k[2] - (V.n[0] - 1) / 2) * V.sp[0], (k[1] - (V.n[1] - 1) / 2) * V.sp[1], (k[0] - (V.n[2] - 1) / 2) * V.sp[2]])
+    moving = {i for i, k in zip(ids, cen) if (cm(k) - mid) @ ha > 0}
+    Fm = np.isin(L, list(moving)); F = P[Fm]
+    fa = shaft(F[(F[:, 2] < mid[2] - 5) & (F[:, 2] > mid[2] - 20)])
+    # THE AXIS: the line the forearm turns about with its joint surfaces kept off the humerus's.
+    # The trochlea and capitulum are not a cylinder on this CT (a circle fitted to either side of the
+    # joint misses it by 3 mm, and turned about one, the coronoid ran into the humerus by 50 degrees),
+    # so the line is fitted to the motion itself: the forearm's articular surface (within ELBOW_FIT[2]
+    # of the humerus) turned through the range, its gap to the humerus kept as it is at rest, and its
+    # closing under ELBOW_FIT[1] weighed heavily. Started at the epicondylar axis through the circle
+    # the humerus's articular surface fits.
+    tH = cKDTree(H)
+    d0 = tH.query(F, distance_upper_bound=3.0)[0]
+    A, dA = F[d0 < ELBOW_FIT[2]], d0[d0 < ELBOW_FIT[2]]
+    ea = (le - me) / np.linalg.norm(le - me)
+    S = H[cKDTree(F).query(H, distance_upper_bound=3.0)[0] < ELBOW_FIT[2]]
+    e1 = perp([0, 0, 1], ea); e2 = np.cross(ea, e1)
+    u, v = S @ e1, S @ e2
+    s_ = np.linalg.lstsq(np.c_[2 * u, 2 * v, np.ones(len(u))], u * u + v * v, rcond=None)[0]
+    c0 = s_[0] * e1 + s_[1] * e2 + (S @ ea).mean() * ea
+    x0 = A.mean(0)[0]
+    def axis(x):
+        k = np.array([1.0, x[2], x[3]]); k /= np.linalg.norm(k)
+        return k if np.cross(k, fa) @ ant > 0 else -k
+    angs = np.radians(np.arange(ELBOW_FIT[3][0], ELBOW_FIT[3][1] + 1, 10))
+    def cost(x):
+        c = np.array([x0, x[0], x[1]]); k = axis(x); s = t = 0.0
+        for a in angs:
+            d = tH.query(rot_about(A, c, k, a), distance_upper_bound=3)[0]
+            s += np.mean(np.maximum(0, ELBOW_FIT[1] - d) ** 2); t += np.mean((d - dA) ** 2)
+        return (ELBOW_FIT[0] * s + t) / len(angs)
+    c0x = c0 + (x0 - c0[0]) / ea[0] * ea
+    r = minimize(cost, np.r_[c0x[1], c0x[2], ea[1] / ea[0], ea[2] / ea[0]], method='Nelder-Mead',
+                 options=dict(maxiter=800, xatol=1e-3, fatol=1e-7))
+    k = axis(r.x)
+    c = np.array([x0, r.x[0], r.x[1]])
+    c = c + ((A.mean(0) - c) @ k) * k                    # its centre: level with the joint's middle
+    # how far the elbow rests flexed: the forearm's shaft from the humerus's, about the axis
+    rest = round(angle_about(perp(ha, k), perp(fa, k), k), 1)
+    # STRAIGHT. No one line keeps the notch round the trochlea the last 20 degrees to straight (the
+    # olecranon meets its fossa, the coronoid the trochlea), so there the forearm glides as well
+    # (glide0, at 0): the translation that, with the turn, keeps the joint space as the fit does
+    E0 = rot_about(A, c, k, np.radians(-rest))
+    def open0(t):
+        d = tH.query(E0 + t, distance_upper_bound=3)[0]
+        return ELBOW_FIT[0] * np.mean(np.maximum(0, ELBOW_FIT[1] - d) ** 2) + np.mean((d - dA) ** 2)
+    g0 = minimize(open0, np.zeros(3), method='Nelder-Mead', options=dict(xatol=1e-3, fatol=1e-8)).x
+    for deg in (0, 90, 140):
+        f = max(0.0, (rest - deg) / rest) ** 2
+        d = tH.query(rot_about(A, c, k, np.radians(deg - rest)) + f * g0, distance_upper_bound=3)[0]
+        print(f'  elbow flexed {deg:3d} deg: the articular gap {np.percentile(d, 1) * 10:.1f} mm at its 1st percentile, '
+              f'{np.mean(d - dA) * 10:+.1f} mm on average from rest')
+    # THE GRID: the model's own voxels, over the tissue where the share is not yet settled
+    T = V.v > 0
+    k_, j_, i_ = np.nonzero(T)
+    Q = np.stack([(i_ - (V.n[0] - 1) / 2) * V.sp[0], (j_ - (V.n[1] - 1) / 2) * V.sp[1], (k_ - (V.n[2] - 1) / 2) * V.sp[2]], 1)
+    th, sf = (Q - c) @ -ha, (Q - c) @ fore
+    near = (th < ELBOW_UP[1] + 0.5) & (sf < ELBOW_DOWN[1] + 0.5)
+    lo = np.array([i_[near].min(), j_[near].min(), k_[near].min()]) - 2
+    hi = np.array([i_[near].max(), j_[near].max(), k_[near].max()]) + 2
+    lo = np.maximum(lo, 0); hi = np.minimum(hi, V.n - 1)
+    box = (slice(lo[2], hi[2] + 1), slice(lo[1], hi[1] + 1), slice(lo[0], hi[0] + 1))
+    sp = float(V.sp[0])
+    o = (lo - (V.n - 1) / 2) * V.sp
+    dims = hi - lo + 1
+    labb = lab[box]
+    Am = np.isin(labb, list(moving)); Tm = (labb > 0) & ~Am
+    da = ndi.distance_transform_edt(~Am, sampling=sp) + 1e-3
+    dt = ndi.distance_transform_edt(~Tm, sampling=sp) + 1e-3
+    W = dt ** ELBOW_POW / (dt ** ELBOW_POW + da ** ELBOW_POW)
+    W = ndi.gaussian_filter(W, ELBOW_SIGMA / sp)
+    gz, gy, gx = np.meshgrid(*(o[a] + np.arange(dims[a]) * sp for a in (2, 1, 0)), indexing='ij')
+    G = np.stack([gx, gy, gz], -1) - c
+    smooth = lambda t: t * t * (3 - 2 * t)
+    up = smooth(np.clip((G @ -ha - ELBOW_UP[0]) / (ELBOW_UP[1] - ELBOW_UP[0]), 0, 1))
+    down = smooth(np.clip((G @ np.asarray(fore) - ELBOW_DOWN[0]) / (ELBOW_DOWN[1] - ELBOW_DOWN[0]), 0, 1))
+    W = down + (1 - down) * (1 - up) * W
+    W = np.where(W < 0.02, 0, np.where(W > 0.98, 1, W))
+    W[(da <= ELBOW_PIN[0]) & (da + ELBOW_PIN[1] <= dt)] = 1.0
+    W[(dt <= ELBOW_PIN[0]) & (dt + ELBOW_PIN[1] <= da)] = 0.0
+    q = np.round(W * 255).astype(np.uint8)
+    (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f'{name}.elboww.bin').write_bytes(q.tobytes())
+    # the motion's axis as the app makes it: from x toward = k
+    fr = perp(fa, k); tw = np.cross(k, fr)
+    print(f'elbow: axis through {c.round(2)} along {k.round(3)} ({np.degrees(np.arccos(abs(k @ ea))):.0f} deg off the '
+          f'epicondyles\' line); rests flexed {rest} deg; moving pieces {len(moving)}; grid {dims.tolist()}')
+    return {'label': 'Elbow', 'c': [round(float(x), 2) for x in c], 'distal': list(fore), 'blend': 0,
+            'field': {'file': f'{name}.elboww.bin', 'dims': dims.tolist(), 'sp': sp, 'origin': o.round(4).tolist(), 'rigid': True,
+                      'beyond': {'c': [round(float(x), 2) for x in c], 'd': list(fore)}},
+            'how': 'the humero-ulnar and radiocapitellar joints, a field joint: about the line through the trochlea and '
+                   'capitulum the forearm turns on with its joint space kept open (fitted to the motion); the radius, ulna '
+                   'and all below them turn whole, the humerus not at all, the soft tissue between them blended',
+            'motions': [{'key': 'elbow.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion',
+                         'from': fr.round(3).tolist(), 'toward': tw.round(3).tolist(), 'range': [0, 140], 'rest': rest,
+                         'glide0': g0.round(3).tolist()}]}
 
 
 # THE JAW, a second field joint on the head: the mandible hinged at its condyles, so the open-mouth
@@ -852,6 +1008,52 @@ def solve_thumb(V, piece, J, pieces, curls):
     return best.x
 
 
+def arm_joints():
+    """The arm's joints below the shoulder: the elbow's flexion, the forearm's roll, the wrist's
+    deviation (forearm positioning)."""
+    V = Vol('upperextremity').main_bone()
+    el, wr = lm('upperextremity', 'elbow'), lm('upperextremity', 'wrist')
+    pa = PALP['upperextremity']
+    me, le = (np.array([pa[k]['x'], pa[k]['y'], pa[k]['z']]) for k in ('medialEpicondyle', 'lateralEpicondyle'))
+    mid = (me + le) / 2
+    ec = np.array([mid[0], mid[1], el[2] - 1.5])                 # the trochlea / capitulum axis
+    fore = np.array(wr) - ec                                      # the forearm's axis, elbow to wrist
+    fore = (fore / np.linalg.norm(fore)).round(3).tolist()
+    # flexion carries the forearm forward: away from the olecranon, whichever way this arm is turned
+    ant = (-np.array(pa['olecranon']['dir'])).round(3).tolist()
+    # No limb cylinder ('radius') on any joint: the old arm lay against the flank and the old leg
+    # touched the other one, so a joint could move only what lay near its own axis; the rebuilt
+    # models (build_limbs.py) carry one limb alone, and a broad hand outside the 6 cm cylinder
+    # stayed behind while its neighbours moved: the skin stretched into a rod.
+    # pronation and supination: about the forearm, anterior toward lateral is supination (the radius
+    # comes round to lie beside the ulna); its rest is where the radius lies now, 3 cm above the wrist
+    fa = np.array(fore)
+    lat = perp(le - me, fa)
+    antp = perp(ant, fa)
+    rad = radial_dir(V, wr[2] + 3.0)
+    sup = round(angle_about(lat, perp(rad, fa), np.cross(antp, lat) / np.linalg.norm(np.cross(antp, lat))), 1) if rad is not None else 0.0
+    # the forearm is fully turned 4 cm above the wrist, where the radius is found (3 cm above it)
+    spread = round(float(np.linalg.norm(np.array(wr) - ec)) - 4.0, 1)
+    roll = lambda key, label, rng, rest=None: dict({'key': key, 'label': label, 'neg': 'pronation', 'pos': 'supination', 'roll': True,
+                                                 'from': antp.round(3).tolist(), 'toward': lat.round(3).tolist(), 'range': rng},
+                                                **({'rest': rest} if rest else {}))
+    # the elbow bends as a field joint (elbow_field); the forearm's roll is a plain joint just below
+    # it, spread along the forearm as before (a field's roll is one plain turn of all it moves)
+    arm = {'elbow': elbow_field(fore, np.array(ant)), 'forearm': {
+        'label': 'Elbow', 'c': [round(float(c), 2) for c in ec],
+        'distal': fore, 'blend': 1.5, 'spread': spread,
+        'how': f'the forearm\'s pronation and supination, about its axis from 1.5 cm distal of the midpoint of the measured epicondyles; it pronates over its {spread} cm',
+        'motions': [roll('elbow.roll', 'Forearm rotation', [-180, 10], sup)]}}
+    if rad is not None:
+        arm['wrist'] = {
+            'label': 'Wrist', 'c': [round(float(wr[0]), 2), round(float(wr[1]), 2), round(float(wr[2] + 0.5), 2)],
+            'distal': [0, 0, -1], 'blend': 1.0,
+            'how': 'the carpus, 0.5 cm proximal of the carpal landmark; ulnar deviation toward the ulna, measured from the radius 3 cm above',
+            'motions': [{'key': 'wrist.dev', 'label': 'Deviation', 'neg': 'radial', 'pos': 'ulnar', 'toward': (-rad).round(3).tolist(), 'range': [-20, 35]},
+                        roll('wrist.roll', 'Hand roll', [-30, 30])]}
+    return arm
+
+
 def main():
     out = {'_about': __doc__.strip().splitlines()[0]}
     if sys.argv[1:] == ['shoulder']:
@@ -861,6 +1063,13 @@ def main():
         old['upperextremity'] = {'shoulder': shoulder_field(), **arm}
         OUT.write_text(json.dumps(old, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
         print('wrote the shoulder to', OUT)
+        return
+    if sys.argv[1:] == ['elbow']:
+        # the arm below the shoulder alone: the elbow, the forearm's roll and the wrist
+        old = json.loads(OUT.read_text(encoding='utf-8'))
+        old['upperextremity'] = {'shoulder': old['upperextremity']['shoulder'], **arm_joints()}
+        OUT.write_text(json.dumps(old, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+        print('wrote the elbow to', OUT)
         return
     # ---- the hand: the wrist
     rs, m3 = PALP['hand']['radialStyloid'], CENT['hand']['mcp3Joint']
@@ -891,47 +1100,7 @@ def main():
         OUT.write_text(json.dumps(old, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
         print('wrote the hand to', OUT)
         return
-    # ---- the arm: elbow, and the wrist's deviation (forearm positioning)
-    V = Vol('upperextremity').main_bone()
-    el, wr = lm('upperextremity', 'elbow'), lm('upperextremity', 'wrist')
-    pa = PALP['upperextremity']
-    me, le = (np.array([pa[k]['x'], pa[k]['y'], pa[k]['z']]) for k in ('medialEpicondyle', 'lateralEpicondyle'))
-    mid = (me + le) / 2
-    ec = np.array([mid[0], mid[1], el[2] - 1.5])                 # the trochlea / capitulum axis
-    fore = np.array(wr) - ec                                      # the forearm's axis, elbow to wrist
-    fore = (fore / np.linalg.norm(fore)).round(3).tolist()
-    # flexion carries the forearm forward: away from the olecranon, whichever way this arm is turned
-    ant = (-np.array(pa['olecranon']['dir'])).round(3).tolist()
-    # No limb cylinder ('radius') on any joint: the old arm lay against the flank and the old leg
-    # touched the other one, so a joint could move only what lay near its own axis; the rebuilt
-    # models (build_limbs.py) carry one limb alone, and a broad hand outside the 6 cm cylinder
-    # stayed behind while its neighbours moved: the skin stretched into a rod.
-    # pronation and supination: about the forearm, anterior toward lateral is supination (the radius
-    # comes round to lie beside the ulna); its rest is where the radius lies now, 3 cm above the wrist
-    fa = np.array(fore)
-    lat = perp(le - me, fa)
-    antp = perp(ant, fa)
-    rad = radial_dir(V, wr[2] + 3.0)
-    sup = round(angle_about(lat, perp(rad, fa), np.cross(antp, lat) / np.linalg.norm(np.cross(antp, lat))), 1) if rad is not None else 0.0
-    # the forearm is fully turned 4 cm above the wrist, where the radius is found (3 cm above it)
-    spread = round(float(np.linalg.norm(np.array(wr) - ec)) - 4.0, 1)
-    roll = lambda key, label, rng, rest=None: dict({'key': key, 'label': label, 'neg': 'pronation', 'pos': 'supination', 'roll': True,
-                                                 'from': antp.round(3).tolist(), 'toward': lat.round(3).tolist(), 'range': rng},
-                                                **({'rest': rest} if rest else {}))
-    arm = {'shoulder': shoulder_field(), 'elbow': {
-        'label': 'Elbow', 'c': [round(float(c), 2) for c in ec],
-        'distal': fore, 'blend': 1.5, 'spread': spread,
-        'how': f'the trochlea/capitulum axis: 1.5 cm distal of the midpoint of the measured epicondyles; flexion away from the olecranon; the forearm pronates over its {spread} cm',
-        'motions': [{'key': 'elbow.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': ant, 'range': [0, 140]},
-                    roll('elbow.roll', 'Forearm rotation', [-180, 10], sup)]}}
-    if rad is not None:
-        arm['wrist'] = {
-            'label': 'Wrist', 'c': [round(float(wr[0]), 2), round(float(wr[1]), 2), round(float(wr[2] + 0.5), 2)],
-            'distal': [0, 0, -1], 'blend': 1.0,
-            'how': 'the carpus, 0.5 cm proximal of the carpal landmark; ulnar deviation toward the ulna, measured from the radius 3 cm above',
-            'motions': [{'key': 'wrist.dev', 'label': 'Deviation', 'neg': 'radial', 'pos': 'ulnar', 'toward': (-rad).round(3).tolist(), 'range': [-20, 35]},
-                        roll('wrist.roll', 'Hand roll', [-30, 30])]}
-    out['upperextremity'] = arm
+    out['upperextremity'] = {'shoulder': shoulder_field(), **arm_joints()}
     # ---- the leg: knee and ankle
     kn = lm('lowerextremity', 'knee')
     im = CENT['lowerextremity']['intermalleolar']
