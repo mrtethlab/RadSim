@@ -19,13 +19,16 @@
    side reaches it first. Any voxel misassigned in that shell is harmless: the shell is a
    sphere about the pivot, so whatever is in it only turns within it.
 
-   The volume ends a few centimetres below the lesser trochanter, so there is no knee to define
-   the mechanical axis; a vertical axis through the head is used in its place (the mechanical
-   axis runs within a few degrees of vertical). The thigh's soft tissue is not turned — it is
-   close to a cylinder about that axis — and the space the femur leaves is filled with muscle.
+   The volume ends a third of the way down the femur, so there is no knee to define the
+   mechanical axis; the line from the shaft's centre at the volume's foot up through the head's
+   centre is used in its place. It is not vertical: this patient lay with the hips a little
+   flexed (on a knee cushion, as for a CT), the shaft running forward as it goes down, and
+   turned about a vertical axis the lower shaft swung sideways through the thigh. The thigh's
+   soft tissue is not turned — it is close to a cylinder about that axis — and the space the
+   femur leaves is filled with muscle.
 
    Measured on the AP projection of the left femur alone (test/limbpose.test.js): the lesser
-   trochanter stands 2.0 cm proud of the shaft at 30 degrees external rotation, 1.2 cm in
+   trochanter stands 2.4 cm proud of the shaft at 30 degrees external rotation, 1.6 cm in
    neutral, 1.0 cm at 15 internal and 0.8 cm at 25 internal — the textbook sign that the
    rotation is right. */
 
@@ -35,6 +38,7 @@ const R_HEAD = 2.25;   // cm: bone inside this is femoral head
 const R_CUT = 3.0;     // cm: removing this ball separates femur from pelvis
 const REACH = 19;      // cm from the midline: the box the femur is looked for in
 const ABOVE = 6;       // cm above the head centre: top of that box
+const AXIS_FOOT = 3;   // cm: the shaft's centre over the volume's lowest this much sets the axis
 
 /* Find one femur. head = { x, y, z } in cm from the volume centre (voxel centres sit at
    (i - (n - 1) / 2) * vs). Returns a box-local mask plus what posing needs, or null when the
@@ -95,15 +99,30 @@ export function segmentFemur({ dims, vs, data }, head, boneIds = BONE_IDS) {
   }
   while (h < t) { const p = q[h++], L = lab[p]; nb(p, (r) => { if (cls[r] === 3 && !lab[r]) { lab[r] = L; q[t++] = r; } }); }
   const mask = new Uint8Array(n);
-  let count = 0, r2max = 0;
+  let count = 0;
+  // the axis: from the shaft's centre in the volume's lowest AXIS_FOOT cm up through the head
+  const kf = Math.max(1, Math.round(AXIS_FOOT / vs[2]));
+  let fx = 0, fy = 0, fz = 0, fn = 0;
   for (let p = 0; p < n; p++) {
     if (lab[p] !== 1) continue;
     mask[p] = 1; count++;
-    const i = p % bx, j = ((p / bx) | 0) % by;
-    const dx = cx(i0 + i) - head.x, dy = cy(j) - head.y;
-    if (dx * dx + dy * dy > r2max) r2max = dx * dx + dy * dy;
+    const k = (p / sz) | 0;
+    if (k < kf) { fx += cx(i0 + p % bx); fy += cy(((p / bx) | 0) % by); fz += cz(k); fn++; }
   }
-  return { head, side: s, box: { i0, bx, by, bz }, mask, count, rmax: Math.sqrt(r2max) };
+  let axis = [0, 0, 1];
+  if (fn) {
+    const a = [head.x - fx / fn, head.y - fy / fn, head.z - fz / fn], l = Math.hypot(...a);
+    axis = a.map((v) => v / l);
+  }
+  // how far the femur reaches from it
+  let r2max = 0;
+  for (let p = 0; p < n; p++) {
+    if (!mask[p]) continue;
+    const dx = cx(i0 + p % bx) - head.x, dy = cy(((p / bx) | 0) % by) - head.y, dz = cz((p / sz) | 0) - head.z;
+    const t = dx * axis[0] + dy * axis[1] + dz * axis[2];
+    r2max = Math.max(r2max, dx * dx + dy * dy + dz * dz - t * t);
+  }
+  return { head, side: s, box: { i0, bx, by, bz }, mask, count, axis, rmax: Math.sqrt(r2max) };
 }
 
 /* Turn femurs by `internalDeg` (positive = internal rotation, the hip positioning; negative =
@@ -123,20 +142,30 @@ export function poseFemurs({ dims, vs, data }, femurs, internalDeg, anteriorY = 
     for (let k = 0; k < bz; k++) for (let j = 0; j < by; j++) for (let i = 0; i < bx; i++) {
       if (mask[(k * by + j) * bx + i]) out[(k * ny + j) * nx + i0 + i] = fillId;
     }
-    const hx = head.x / vs[0] + (nx - 1) / 2, hy = head.y / vs[1] + (ny - 1) / 2;   // head column, voxel units
-    const rx = Math.ceil(f.rmax / vs[0]) + 1, ry = Math.ceil(f.rmax / vs[1]) + 1;
-    const a0 = Math.max(0, Math.floor(hx - rx)), a1 = Math.min(nx - 1, Math.ceil(hx + rx));
-    const b0 = Math.max(0, Math.floor(hy - ry)), b1 = Math.min(ny - 1, Math.ceil(hy + ry));
+    // about the femur's own axis through the head (Rodrigues), destination -> source
+    const u = f.axis || [0, 0, 1];
+    const R = [0, 1, 2].map((r) => [0, 1, 2].map((q) => {
+      const K = [[0, -u[2], u[1]], [u[2], 0, -u[0]], [-u[1], u[0], 0]][r][q];
+      return (r === q ? c : 0) + s * K + (1 - c) * u[r] * u[q];
+    }));
+    const X = (i) => (i - (nx - 1) / 2) * vs[0], Y = (j) => (j - (ny - 1) / 2) * vs[1], Z = (k) => (k - (nz - 1) / 2) * vs[2];
+    const half = f.rmax / Math.max(0.2, Math.abs(u[2]));            // the femur's reach in a slice
     for (let k = 0; k < bz; k++) {
+      const z = Z(k) - head.z, t = z / u[2];
+      const ax = head.x + u[0] * t, ay = head.y + u[1] * t;            // the axis in this slice
+      const a0 = Math.max(0, Math.floor((ax - half) / vs[0] + (nx - 1) / 2) - 1), a1 = Math.min(nx - 1, Math.ceil((ax + half) / vs[0] + (nx - 1) / 2) + 1);
+      const b0 = Math.max(0, Math.floor((ay - half) / vs[1] + (ny - 1) / 2) - 1), b1 = Math.min(ny - 1, Math.ceil((ay + half) / vs[1] + (ny - 1) / 2) + 1);
       for (let j = b0; j <= b1; j++) {
-        const y = (j - hy) * vs[1];
+        const y = Y(j) - head.y;
         for (let i = a0; i <= a1; i++) {
-          const x = (i - hx) * vs[0];
-          const si = Math.round((x * c - y * s) / vs[0] + hx), sj = Math.round((x * s + y * c) / vs[1] + hy);
+          const x = X(i) - head.x;
+          const si = Math.round((R[0][0] * x + R[0][1] * y + R[0][2] * z + head.x) / vs[0] + (nx - 1) / 2);
+          const sj = Math.round((R[1][0] * x + R[1][1] * y + R[1][2] * z + head.y) / vs[1] + (ny - 1) / 2);
+          const sk = Math.round((R[2][0] * x + R[2][1] * y + R[2][2] * z + head.z) / vs[2] + (nz - 1) / 2);
           const li = si - i0;
-          if (li < 0 || li >= bx || sj < 0 || sj >= by) continue;
-          if (!mask[(k * by + sj) * bx + li]) continue;
-          out[(k * ny + j) * nx + i] = data[(k * ny + sj) * nx + si];
+          if (li < 0 || li >= bx || sj < 0 || sj >= by || sk < 0 || sk >= bz) continue;
+          if (!mask[(sk * by + sj) * bx + li]) continue;
+          out[(k * ny + j) * nx + i] = data[(sk * ny + sj) * nx + si];
         }
       }
     }

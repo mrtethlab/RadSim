@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { atom, electron, keVColor, tungstenSpectrum, curvePlot } from '../../kit/micro.js';
 import { std, mesh, rayLines, setOpacity, beamCone } from '../../kit/stage.js';
 import { Materials } from '../../../core/materials.js';
+import { capMeshFrame } from '../capFrame.js';
 
 const SID = 100;
 
@@ -103,7 +104,7 @@ export async function patient(api, S) {
     api.loadGlb('models/chestabdopelvis/chestabdopelvis_gi.glb').catch(() => null),
   ]).then(([skin, bone, gut]) => {
     // (the meshes ship without normals, as the app finds them: app.js computes them on load)
-    const add = (g, f) => { if (!g) return; g.scale.setScalar(0.1); g.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); f(o); } }); abdoBody.add(g); };
+    const add = (g, f) => { if (!g) return; capMeshFrame(g); g.scale.setScalar(0.1); g.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); f(o); } }); abdoBody.add(g); };
     add(skin, (o) => { o.material = new THREE.MeshStandardMaterial({ color: 0xd8a080, transparent: true, opacity: 0.16, depthWrite: false, roughness: 0.6, side: THREE.DoubleSide }); });
     add(bone, (o) => { o.material = std(0xe8e0c8, 0.5, 0.05); });
     add(gut, (o) => {

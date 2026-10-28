@@ -474,6 +474,9 @@ def main(only=None):
         out[name] = fn()
         for k, v in out[name].items():
             print(f'{name:16s} {k:18s} ({v["x"]:7.2f} {v["y"]:7.2f} {v["z"]:7.2f})  {v["how"][:70]}')
+    for name, pts in old.items():                # (the child's points: tools/measure_pediatric.py writes them)
+        if name not in out:
+            out[name] = pts
     OUT.write_text(json.dumps(out, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
     print('wrote', OUT)
 

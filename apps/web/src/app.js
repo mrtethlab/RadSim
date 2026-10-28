@@ -1228,7 +1228,7 @@ const S = {
        // the volume rather than by eye: this fan crosses ~1550 samples of liver and
        // ~580 of gallbladder, so the reference organ and a fluid-filled structure are
        // both in frame — which is the view that teaches enhancement.
-       px:0.80, pz:0.44,     // probe seat, as a fraction of the volume's x and z
+       px:0.80, pz:0.537,    // probe seat, as a fraction of the volume's x and z (0.44 before the CAP's thighs)
        rot:0, tilt:0,        // scan plane: 0 = transverse, 90 = sagittal; tilt rocks it
        // TGC: six per-depth gain offsets in dB, near (0) to far (5). They ADD to the
        // machine's baseline ramp, so centred is a uniform image and pushing them apart

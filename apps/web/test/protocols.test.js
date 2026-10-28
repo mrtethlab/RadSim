@@ -93,11 +93,13 @@ test('landmarks sit where the traced phantom confirmed them (cm from the volume 
   // malleolar bulge it was read from took in the hindfoot of a foot at 90 degrees and sat 4 cm
   // low, on the calcaneus (-43.4); it is now the tibiotalar joint, the first joint sheet down the
   // tibia's axis (z -39.25 on the sheet profile; the subtalar is the next, at -41.9), checked on
-  // sagittal and coronal slices of the materials and on bone projections)
+  // sagittal and coronal slices of the materials and on bone projections; the trunk's 15 cm of
+  // grafted thigh, services/compute/app/build_cap_thighs.py, moved its centre 7.5 cm down: its
+  // pelvis was -23.65 and its crest -12.7 before, the anatomy unchanged)
   const pinned = {
     'lowerextremity.knee': -5.4, 'lowerextremity.ankle': -39.15, 'upperextremity.elbow': 1.88,
-    'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -23.65,
-    'chestabdopelvis.kub': -12.7,
+    'upperextremity.forearm': -9.07, 'hand.wrist': -3.25, 'hand.hand': 3.55, 'chestabdopelvis.pelvis': -16.15,
+    'chestabdopelvis.kub': -5.2,
   };
   for (const [k, z] of Object.entries(pinned)) {
     const [m, n] = k.split('.');

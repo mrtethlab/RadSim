@@ -24,6 +24,7 @@ import { AttenuationEngine } from '../../../core/engine.js';
 import { Spectrum } from '../../../core/spectrum.js';
 import { acousticOf } from '../../../core/acoustics.js';
 import { rng } from '../../pixel.js';
+import { capVolumeFrame } from '../capFrame.js';
 
 export const NAME = 'chestabdopelvis';
 export const SLICE = 145;              // the full-resolution slice the film works on: both kidneys, the aorta, the liver's tip
@@ -43,7 +44,9 @@ export const hex = (id) => { const [r, g, b] = RGB[id]; return `rgb(${r},${g},${
 export const huOfId = (id) => { const m = LIST.find((q) => q.id === id); return m && m.hu != null ? m.hu : 3000; };
 
 export async function loadData() {
-  const vm = await loadVoxelModel(import.meta.env.BASE_URL + 'models/' + NAME, NAME);
+  // (from where the volume began when the film was laid out: capFrame.js)
+  const all = await loadVoxelModel(import.meta.env.BASE_URL + 'models/' + NAME, NAME);
+  const vm = { ...all, ...capVolumeFrame(all.data, all.dims) };
   const [nx, ny, nz] = vm.dims, sp = vm.spacingMM[0], data = vm.data;
   const D = { nx, ny, nz, sp, data, vm };
   D.at = (x, y, z) => data[x + nx * (y + ny * z)];

@@ -203,7 +203,8 @@ export const HOLDER_LEAN = Math.atan2(HOLDER.W / 2, HOLDER.H);
 
 /* THE LEGS, as phantoms: semi-transparent, drawn from each thigh's cut end (stumps: room cm,
    { p: [x, y, z], r }) in one of two poses, along the patient's long axis (`down`: the unit
-   vector toward the feet, in the room):
+   vector toward the feet, in the room). The volume's thighs end 23 cm below the hips (a third of
+   the femur: build_cap_thighs.py), the knee KNEE_RUN further on:
      'block'   the hips and knees flexed over the knee block (blockZ: the block's near face)
      'holder'  straight along the table, the feet up and turned in against the foot holder */
 const SKIN = () => new THREE.MeshStandardMaterial({ color: 0xe2b496, roughness: 0.7, emissive: 0x5a3a28, transparent: true, opacity: 0.55, depthWrite: false });
@@ -217,6 +218,7 @@ function limb(a, b, r0, r1, mat) {
   const grp = new THREE.Group(); grp.add(m, cap(A, r0), cap(B, r1));
   return grp;
 }
+const KNEE_RUN = 21;                     // cm from the stump to the knee, the leg straight
 export function buildLegs(stumps, pose, down, opts = {}) {
   const mat = SKIN();
   const g = new THREE.Group();
@@ -241,7 +243,7 @@ export function buildLegs(stumps, pose, down, opts = {}) {
       const out = side.clone().multiplyScalar(s);                   // away from the midline
       if (!opts.holderAt) {
         // no holder: the feet up, falling a little outward as they do at rest
-        const knee = P.clone().addScaledVector(d, 36).setY(6.3);
+        const knee = P.clone().addScaledVector(d, KNEE_RUN).setY(6.3);
         const ankle = knee.clone().addScaledVector(d, 40).setY(4.2);
         const heel = ankle.clone().addScaledVector(d, 3).setY(3.2);
         const toe = heel.clone().add(new THREE.Vector3(0, 19, 0).addScaledVector(out, 7));
@@ -257,7 +259,7 @@ export function buildLegs(stumps, pose, down, opts = {}) {
       const up = new THREE.Vector3(0, Math.cos(lean), 0).addScaledVector(out, -Math.sin(lean));
       const heel = at.clone().addScaledVector(out, HOLDER.W / 2).addScaledVector(nrm, FOOT_R).setY(FOOT_R);
       const ankle = heel.clone().addScaledVector(d, -5).setY(4.4);
-      const knee = P.clone().addScaledVector(d, 36).setY(6.3);
+      const knee = P.clone().addScaledVector(d, KNEE_RUN).setY(6.3);
       knee.addScaledVector(out, out.dot(ankle.clone().sub(knee)) * 0.4);
       g.add(limb(P.toArray(), knee.toArray(), r, 6.3, mat));
       g.add(limb(knee.toArray(), ankle.toArray(), 6.1, 3.9, mat));

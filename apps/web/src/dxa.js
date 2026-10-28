@@ -1856,7 +1856,7 @@ export function dxaApplyMode(on) {
 // module is tested in node without it)
 let R3 = null, room = null, laser = null, block = null, holder = null, legs = null, legsKey = '';
 const TABLE_LEN_CM = 263;            // the table's length (dxaRoom.js LUNAR.LEN)
-const HOLDER_AT = 82;                 // cm from the thighs' stumps to the foot holder: the heels
+const HOLDER_AT = 67;                 // cm from the thighs' stumps to the foot holder: the heels
 export function dxaSyncScene() {
   if (!ctx || !room) return;
   const on = ctx.S.mode === 'dxa';
@@ -1905,8 +1905,8 @@ let stumpsFor = null, stumpsRest = null;
 function thighStumps(vm) {
   // the volume's INFERIOR end (the landmarks know which way is up), a couple of centimetres in:
   // the tissue lateral of the midline on each side is a thigh, its centroid and radius the
-  // stump the phantom leg is drawn from (rest frame, cm). The pelvis volume ends below the
-  // buttocks with the thighs still joined across the perineum, so they are split at the midline.
+  // stump the phantom leg is drawn from (rest frame, cm). The volume ends a third of the way down
+  // the thighs; where they touch they are split at the midline.
   if (stumpsFor === vm && stumpsRest) return stumpsRest;
   stumpsFor = vm; stumpsRest = null;
   if (!vm?.data) return null;
