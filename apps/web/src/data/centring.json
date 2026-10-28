@@ -308,6 +308,14 @@
    "how": "the coccyx: the centroid of the midline bone behind the pelvis in the 3.5 cm above its tip (z -21.8)",
    "guide": "AP axial coccyx: CR 10 degrees caudad, entering 5 cm superior to the symphysis pubis (Bontrager; Radiopaedia)",
    "confidence": "medium"
+  },
+  "acetabula": {
+   "x": 0.0,
+   "y": 0.0,
+   "z": -19.4,
+   "how": "midway between the two femoral heads (data/landmarks.json femoralHeadL/R, z -19.1 and -19.7), on the midsagittal plane",
+   "guide": "Judet obliques: CR to the acetabula, about 5 cm distal to the ASIS, both hips and the proximal femurs on the film (Bontrager; Radiopaedia)",
+   "confidence": "medium"
   }
  },
  "pediatric": {

@@ -1944,11 +1944,11 @@
               "proj": "Judet RPO pelvis",
               "room": "table",
               "kv": 80,
-              "mas": 40,
+              "mas": 80,
               "cm": 24,
               "grid": true,
               "aec": "lrc",
-              "lut": "bone",
+              "lut": "pelvisObl",
               "sid": 100,
               "coll": [
                 43,
@@ -1963,18 +1963,18 @@
               "pose": {
                 "roll": -45,
                 "cc": 0,
-                "centre": "pelvis"
+                "centre": "acetabula"
               }
             },
             {
               "proj": "Judet LPO pelvis",
               "room": "table",
               "kv": 80,
-              "mas": 50,
+              "mas": 80,
               "cm": 24,
               "grid": true,
               "aec": "lrc",
-              "lut": "bone",
+              "lut": "pelvisObl",
               "sid": 100,
               "coll": [
                 43,
@@ -1989,7 +1989,7 @@
               "pose": {
                 "roll": 45,
                 "cc": 0,
-                "centre": "pelvis"
+                "centre": "acetabula"
               }
             },
             {

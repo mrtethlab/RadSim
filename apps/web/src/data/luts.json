@@ -17,6 +17,7 @@
     "pasteLimb":  { "label": "Long length · limb (equalised)", "sigmoid": true, "center": 0.55, "width": 0.55, "clipHi": 0.0005, "clipLo": 0.15, "hiPad": 0.3, "detail": false, "latitude": { "r": 0.12, "k": 0.6 } },
     "pasteSpine": { "label": "Long length · spine (equalised)", "sigmoid": true, "center": 0.53, "width": 0.85, "latitude": { "r": 0.12, "k": 0.6 } },
     "shoulderObl": { "label": "Shoulder · oblique (equalised)", "sigmoid": true, "center": 0.53, "width": 0.8, "latitude": { "r": 0.12, "k": 0.7 } },
-    "footEq": { "label": "Foot · toes to heel (equalised)", "sigmoid": true, "center": 0.4, "width": 0.6, "latitude": { "r": 0.1, "k": 0.75 } }
+    "footEq": { "label": "Foot · toes to heel (equalised)", "sigmoid": true, "center": 0.4, "width": 0.6, "latitude": { "r": 0.1, "k": 0.75 } },
+    "pelvisObl": { "label": "Pelvis · oblique (equalised)", "sigmoid": true, "center": 0.72, "width": 0.62, "clipLo": 0.1, "latitude": { "r": 0.12, "k": 0.7, "voi": true } }
   }
 }
