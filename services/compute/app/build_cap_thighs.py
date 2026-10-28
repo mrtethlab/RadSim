@@ -18,12 +18,14 @@ right leg, 30 F, VSD; CC BY-NC 3.0), mirrored for the left, as build_pediatric g
   neck, trochanters and the 3 cm of shaft the scan has, by a trimmed ICP from a start that sets the
   heads on each other and the leg along the body; the scale comes out of the fit;
 - at the seam the donor's femur is eased onto the CAP's last cross-section, the offset fading over
-  EASE_MM down the shaft, so the cortex runs on without a step and no bone is doubled (the CAP's femur
-  stops at the seam, the donor's starts under it);
-- the skin: the CAP's last outline (one blob: the thighs joined by the buttocks and the perineum)
-  turns into the donor's two thighs over BAND_MM, through a blend of their signed distances; the soft
-  tissue inside is dithered from the CAP's last slice to the donor's over the same band; a new skin
-  is laid on the graft.
+  EASE_MM down the shaft, and the CAP's femur is morphed into it over MORPH_MM: its outline, its
+  cortex and its canal, each carried down the CAP's own shaft and blended into the donor's by their
+  signed distances, so the cortex runs on without a step or a band and no bone is doubled (the CAP's
+  femur stops at the seam, the donor's starts under it; see THE FEMUR'S SEAM below);
+- the skin: the CAP's last outline (one blob: the thighs joined by the buttocks and the perineum),
+  carried down tapering as it came, turns into the donor's two thighs over BAND_MM, through a blend
+  of their signed distances; the soft tissue inside is dithered from the CAP's lowest slices to the
+  donor's over the same band; a new skin is laid on the graft.
 Everything above the seam is the CAP's as it was, voxel for voxel: the vessels', the gut's and the
 joints' voxels keep their raster order, so the arclength files are unchanged. The volume grows
 ADD_SLICES slices at its foot (z index 0 is inferior), which moves every point of the old volume
@@ -50,7 +52,7 @@ NAME = 'chestabdopelvis'
 SP = 2.0
 ADD_SLICES = 75            # 15 cm at 2 mm
 SEAM = 3                   # the CAP's lowest whole slice (seam_slice): the graft replaces the ones under it
-BAND_MM = 40.0             # the CAP's last outline into the donor's two thighs
+BAND_MM = 100.0            # the CAP's last outline into the donor's two thighs
 EASE_MM = 60.0             # the donor femur's offset onto the CAP's at the seam, fading down the shaft
 WORK = DATA / 'cap'
 PRE = WORK / f'{NAME}.pregraft.mat.bin'
@@ -116,6 +118,14 @@ def filled(mask):
     for k in np.nonzero(mask.any((1, 2)))[0]:
         out[k] = ndi.binary_fill_holes(ndi.binary_closing(mask[k], iterations=2) | mask[k])
     return ndi.binary_fill_holes(out | mask)
+
+
+def cortex(fem, m):
+    """a femur's cortex as two surfaces: its outline (the periosteal surface: the cortical bone
+    filled) and its canal (the endosteal: inside that, not cortical). (The bone's own outline, a
+    rim of partial voxels round the cortex read as trabecular, is the third: filled(fem).)"""
+    peri = filled(fem & (m == CORTICAL))
+    return peri, peri & (m != CORTICAL)
 
 
 def pts(mask, sp, k0=0):
@@ -190,7 +200,22 @@ def fit():
 
 
 SOFT_OK = [FAT, MUSCLE, SOFT]
-FEMUR_MM = 16.0            # the CAP's last femur section into the donor's femur
+# THE FEMUR'S SEAM. The first graft eased the donor's femur onto the CAP's last section and dithered
+# one into the other over 16 mm: on a film the cortex jogged and the marrow changed density in a
+# band, like an impacted fracture. Now the CAP's last sections are carried down along its own shaft
+# (not straight down the table: the shaft runs forward as it goes down), narrowing as they came
+# down (carried as they were, the shaft ran on wide and then narrowed all at once), and the femur's
+# surfaces, the periosteal (the cortex's outline) and the endosteal (its canal), with the rim of
+# partial voxels round them, are morphed from the CAP's into the donor's by a blend of their signed
+# distances over MORPH_MM. The cortex is what lies between them: its thickness and both its contours
+# run on from one femur into the other without a step, and the canal's content (the CAP's is all
+# trabecular at 2 mm, the donor's half trabecular and half marrow) is dithered across the same
+# length, a gradient, not a band.
+MORPH_MM = 70.0
+AXIS_SL = 6                # the CAP's shaft axis: its sections' centres over this many slices above the seam
+FIT_SL = 4                 # the CAP's sections carried down: their taper, over this many
+TAPER_MM = 10.0            # and how far below the seam it fades
+REFL_SL = 10               # the CAP's soft tissue carried down: its lowest slices, reflected back and forth
 
 
 def soft(m):
@@ -226,21 +251,54 @@ def compose():
     P = np.stack([X, Y, Z], -1)
     zs = seam * SP
     w_b = smoothstep((zs - Z) / BAND_MM)                      # 0 at the seam: the CAP's outline; 1: the donor's
-    w_f = smoothstep((zs - Z) / FEMUR_MM)
+    w_f = smoothstep((zs - Z) / MORPH_MM)                     # and its femur's
     w_e = smoothstep((Z - (zs - EASE_MM)) / EASE_MM)          # 1 at the seam: the donor femur on the CAP's
-    # the CAP's last slice, carried down
+    def carry(mask, a):
+        """a CAP surface (a mask) carried down into the graft as a signed distance: its seam section's,
+        slid down the axis a (mm a mm, z 1) to the graft's points, going on tapering at the rate its
+        lowest FIT_SL sections taper (a least-squares slope of their distances), that rate fading
+        over TAPER_MM below the seam (so the surface leaves the seam with the slope it came down with,
+        and a flare does not run on: the subtrochanteric femur narrows fast and then stops)"""
+        h = np.arange(FIT_SL) * SP
+        d = []
+        for k in range(seam, seam + FIT_SL):
+            t = k * SP - Z                                     # up the axis to slice k
+            idx = np.stack([(Y + a[1] * t) / SP, (X + a[0] * t) / SP])
+            d.append(ndi.map_coordinates(sdf(mask[k], SP), idx, order=1, mode='nearest'))
+        d = np.stack(d)
+        slope = np.tensordot(h - h.mean(), d - d.mean(0), 1) / ((h - h.mean()) ** 2).sum()
+        below = TAPER_MM * (1 - np.exp(-(zs - Z) / TAPER_MM))
+        return (d[0] - slope * below).astype(np.float32)
+    # the CAP's outline, carried down
     c2 = mat[seam]
+    body = np.zeros_like(mat[:seam + FIT_SL], bool)
+    for k in range(seam, seam + FIT_SL):
+        body[k] = ndi.binary_fill_holes(mat[k] > 0)
+    sdf_c = carry(body, (0.0, 0.0, 1.0))
+    # its femurs' sections, carried down along each shaft: the bone's outline, the cortex's and the
+    # canal's (cortex())
     cfem = cap_femurs(mat)
-    cf2 = filled(cfem['right'])[seam] | filled(cfem['left'])[seam]
-    sdf_c = np.broadcast_to(sdf(ndi.binary_fill_holes(c2 > 0), SP), Z.shape)
-    sdf_cf = np.broadcast_to(sdf(cf2, SP), Z.shape)
-    # its soft tissue across the band: the CAP's own slices above the seam, reflected in it (the last
-    # slice carried down draws its fat and muscle out into streaks)
-    refl = np.clip(2 * seam - kk, seam, nz - 1)
+    sdf_cap = [np.full(Z.shape, 1e9, np.float32) for _ in range(3)]
+    for side in ('right', 'left'):
+        out_ = filled(cfem[side])
+        surf = (out_,) + cortex(out_, mat)
+        ks = np.arange(seam, seam + AXIS_SL)
+        cen = np.array([ndi.center_of_mass(out_[k]) for k in ks])          # (j, i) per slice
+        a = np.array([np.polyfit(ks * SP, cen[:, 1] * SP, 1)[0], np.polyfit(ks * SP, cen[:, 0] * SP, 1)[0], 1.0])
+        log(f'{side}: the CAP\'s shaft at the seam {np.degrees(np.arctan(np.hypot(a[0], a[1]))):.1f} deg off the table\'s '
+            f'long axis (x {a[0]:+.2f}, y {a[1]:+.2f} mm a mm); its sections, bone, cortex and canal, '
+            f'{[int(m[seam].sum()) for m in surf]} voxels')
+        sdf_cap = [np.minimum(d, carry(m, a)) for d, m in zip(sdf_cap, surf)]
+    # its soft tissue across the band: the CAP's own lowest slices, reflected back and forth in them
+    # (the last slice carried down draws its fat and muscle out into streaks; reflected once through
+    # the seam, a long band reached up into the pelvis)
+    ping = (seam - 1 - kk) % (2 * REFL_SL)
+    refl = seam + np.where(ping < REFL_SL, ping, 2 * REFL_SL - 1 - ping)
     m_c = np.where(mat[refl] > 0, mat[refl], c2[None])
     # the donor, cropped to what the graft reaches, its distances in the CAP's mm
     best = np.full(Z.shape, 1e9, np.float32)
-    sd_f = np.full(Z.shape, 1e9, np.float32)
+    sdf_don = [np.full(Z.shape, 1e9, np.float32) for _ in range(3)]
+    dsurf = (dfem,) + cortex(dfem, dmat)
     m_d = np.zeros(Z.shape, np.uint8)
     for side in ('right', 'left'):
         f = fitd[side]
@@ -250,10 +308,11 @@ def compose():
         kq = q[..., 2] / leg['sp']
         k0, k1 = max(0, int(kq.min()) - 4), min(dmat.shape[0], int(kq.max()) + 5)
         sb = sdf(ndi.binary_fill_holes(dmat[k0:k1] > 0), leg['sp']) / s
-        sf = sdf(dfem[k0:k1], leg['sp']) / s
         idx = np.stack([kq - k0, q[..., 1] / leg['sp'], q[..., 0] / leg['sp']])
         d_b = map_coordinates(sb, idx, order=1, cval=50.0).astype(np.float32)
-        d_f = map_coordinates(sf, idx, order=1, cval=50.0).astype(np.float32)
+        for a_, m in enumerate(dsurf):
+            d = map_coordinates(sdf(m[k0:k1], leg['sp']) / s, idx, order=1, cval=50.0).astype(np.float32)
+            sdf_don[a_] = np.minimum(sdf_don[a_], d)
         ni = np.round(idx).astype(int)
         ok = np.all([(ni[a] >= 0) & (ni[a] < sb.shape[a]) for a in range(3)], 0)
         md = np.zeros(Z.shape, np.uint8)
@@ -261,17 +320,22 @@ def compose():
         mine = d_b < best
         best[mine] = d_b[mine]
         m_d[mine] = md[mine]
-        sd_f = np.minimum(sd_f, d_f)
         log(f'{side}: donor slices {k0}-{k1} for the graft')
     env = (1 - w_b) * sdf_c + w_b * best < 0
-    fem = ((1 - w_f) * sdf_cf + w_f * sd_f < 0) & env
+    # (where the CAP's one outline parts into two thighs, the blend can leave a pocket of air closed in
+    # by the perineum in front and the buttocks behind: tissue)
+    env = np.stack([ndi.binary_fill_holes(e) for e in env])
+    fem, peri, canal = (((1 - w_f) * c + w_f * d < 0) & env for c, d in zip(sdf_cap, sdf_don))
+    fem |= peri
+    canal &= peri
     u = np.random.default_rng(7).random(Z.shape)
-    # inside the femur: the CAP's last section or the donor's, dithered across FEMUR_MM; elsewhere the
-    # CAP's soft tissue or the donor's, dithered across BAND_MM
-    fc, fd = marrow(m_c), marrow(m_d)
-    in_cf, in_df = sdf_cf < 0, sd_f < 0
-    take_d = np.where(in_cf & in_df, u < w_f, in_df)
-    bone = np.where(take_d, fd, np.where(in_cf, fc, TRABECULAR))
+    # the cortex: inside its outline, outside its canal; round it the rim of partial voxels; in the
+    # canal, the CAP's trabecular bone or the donor's marrow, dithered across MORPH_MM (the donor's,
+    # where it has bone, as trabecular: the cortex is the morph's); elsewhere the CAP's soft tissue
+    # or the donor's, dithered across BAND_MM
+    fd = marrow(m_d)
+    fd[fd == CORTICAL] = TRABECULAR
+    bone = np.where(canal, np.where(u < w_f, fd, TRABECULAR), np.where(peri, CORTICAL, TRABECULAR))
     sc, sd = soft(m_c), soft(m_d)
     take_d = np.where((sc > 0) & (sd > 0), u < w_b, sd > 0)
     tissue = np.where(take_d, sd, sc)
@@ -301,10 +365,11 @@ def check(new, G):
     sizes = sorted(ndi.sum(bone, lab, range(1, n + 1)))
     log(f'check: {holes} air voxels enclosed in the body over the graft; {n} bone pieces from the foot to 4 cm '
         f'over the seam, the two largest {[int(v) for v in sizes[-2:]]} voxels, the rest {int(sum(sizes[:-2]))}')
-    for k in (G - 8, G - 4, G - 2, G - 1, G, G + 2):
+    for k in (G - 30, G - 20, G - 12, G - 8, G - 4, G - 2, G - 1, G, G + 2, G + 4):
         a = body[k].sum() * SP * SP / 100
         b = np.isin(new[k], [TRABECULAR, CORTICAL]).sum() * SP * SP / 100
-        log(f'   slice {k}: body {a:.0f} cm2, bone {b:.1f} cm2')
+        c = (new[k] == CORTICAL).sum() * SP * SP / 100
+        log(f'   slice {k}: body {a:.0f} cm2, bone {b:.1f} cm2, of it cortex {c:.1f}')
 
 
 def write(new):
@@ -329,3 +394,7 @@ def main(what='all'):
         np.save(WORK / 'grafted.npy', new)
 
 
+
+
+if __name__ == '__main__':
+    main(sys.argv[1] if len(sys.argv) > 1 else 'all')

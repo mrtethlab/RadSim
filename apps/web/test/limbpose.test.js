@@ -150,3 +150,95 @@ test('a cross-table lateral hip raises the other leg: its thigh leaves the beam,
   assert.equal(goneRight, 0, 'the right leg stays');
   assert.equal(goneHigh, 0, 'the buttock and pelvis stay');
 });
+
+/* THE GRAFT'S SEAM (services/compute/app/build_cap_thighs.py). The CAP's CT stops below the lesser
+   trochanters and the thighs under it are grafted; at the seam the femur is morphed from the CAP's
+   into the donor's. A radiographer read the first graft as an impacted fracture: the canal's
+   content (the CAP's all trabecular, the donor's half marrow) changed in a band a few millimetres
+   tall, and the cortex jogged. Down each femur slice by slice from 12 mm above the seam: the one
+   bone piece runs on, its outline and its cortex change by no more than they do a slice apart
+   elsewhere, and the canal's mean density changes gradually (measured: at most 50 HU in 8 mm; the
+   first graft's 165 HU). */
+const SEAM_K = 78;                                   // the graft's rows: 75 new slices and the CAP's 3 bad ones
+const HU = new Float32Array(256);
+for (const m of hdr.materials) HU[m.id] = m.hu ?? 0;
+function femurSections(h) {
+  const out = [];
+  let ci = Math.round(h.x / vs[0] + (nx - 1) / 2), cj = Math.round(h.y / vs[1] + (ny - 1) / 2);
+  for (let k = SEAM_K + 6; k > SEAM_K - 40; k--) {
+    // the largest bone piece (4-connected, in this slice) within 8 voxels of the last section's centre
+    const at = (i, j) => data[(k * ny + j) * nx + i];
+    const lab = new Uint8Array(nx * ny);
+    let best = Infinity, top = 0;
+    const flood = (seed, L) => {
+      const q = [seed], s = { L, si: 0, sj: 0, n: 0, cort: 0, i0: nx, i1: 0, j0: ny, j1: 0 };
+      lab[seed] = L;
+      while (q.length) {
+        const p = q.pop(), i = p % nx, j = (p / nx) | 0;
+        s.si += i; s.sj += j; s.n++; if (at(i, j) === 18) s.cort++;
+        s.i0 = Math.min(s.i0, i); s.i1 = Math.max(s.i1, i); s.j0 = Math.min(s.j0, j); s.j1 = Math.max(s.j1, j);
+        for (const [a, b] of [[i - 1, j], [i + 1, j], [i, j - 1], [i, j + 1]]) {
+          if (a < 0 || b < 0 || a >= nx || b >= ny || lab[b * nx + a] || !isBone(at(a, b))) continue;
+          lab[b * nx + a] = L; q.push(b * nx + a);
+        }
+      }
+      return s;
+    };
+    let P = null, L = 0;
+    for (let j = Math.max(0, cj - 8); j <= Math.min(ny - 1, cj + 8); j++) for (let i = Math.max(0, ci - 8); i <= Math.min(nx - 1, ci + 8); i++) {
+      if (!isBone(at(i, j))) continue;
+      best = Math.min(best, (i - ci) ** 2 + (j - cj) ** 2);
+      if (lab[j * nx + i] || L === 255) continue;
+      const s = flood(j * nx + i, ++L);
+      if (s.n > top) { top = s.n; P = s; }
+    }
+    if (!P) { out.push({ k, gap: Infinity }); continue; }
+    const { si, sj, n, cort, i0, i1, j0, j1 } = P;
+    ci = Math.round(si / n); cj = Math.round(sj / n);
+    // what a wall closes in: the voxels of the box no flood from its edge reaches through the rest
+    // (the outline: the piece's; the canal: its cortex's, the non-cortical voxels it closes in)
+    const bw = i1 - i0 + 3, bh = j1 - j0 + 3;
+    const inside = (wall) => {
+      const seen = new Uint8Array(bw * bh), f = [0];
+      seen[0] = 1;
+      while (f.length) {
+        const p = f.pop(), a = p % bw, b = (p / bw) | 0;
+        for (const [u, v] of [[a - 1, b], [a + 1, b], [a, b - 1], [a, b + 1]]) {
+          if (u < 0 || v < 0 || u >= bw || v >= bh || seen[v * bw + u] || wall(u + i0 - 1, v + j0 - 1)) continue;
+          seen[v * bw + u] = 1; f.push(v * bw + u);
+        }
+      }
+      return seen;
+    };
+    const ok = (i, j) => i >= 0 && j >= 0 && i < nx && j < ny;
+    const mine = (i, j) => ok(i, j) && lab[j * nx + i] === P.L;
+    const outl = inside(mine), can = inside((i, j) => mine(i, j) && at(i, j) === 18);
+    let hu = 0, cn = 0, area = 0;
+    for (let b = 1; b < bh - 1; b++) for (let a = 1; a < bw - 1; a++) {
+      const v = at(a + i0 - 1, b + j0 - 1);
+      if (!outl[b * bw + a]) area++;
+      if (!can[b * bw + a] && v !== 18) { hu += HU[v]; cn++; }
+    }
+    // (a canal the cortex does not close, at 2 mm, is not measured)
+    out.push({ k, n, cort, area, canal: cn ? hu / cn : NaN, gap: Math.sqrt(best) });
+  }
+  return out;
+}
+
+test('the grafted femur runs on through the seam: no step in its outline or cortex, no band in its canal', () => {
+  for (const h of [HL, HR]) {
+    const S = femurSections(h), side = h.x < 0 ? 'left' : 'right';
+    for (let s = 1; s < S.length; s++) {
+      const a = S[s - 1], b = S[s];
+      assert.ok(b.gap < 3, `${side} slice ${b.k}: the femur runs on (its nearest bone ${b.gap.toFixed(1)} voxels off)`);
+      assert.ok(Math.abs(b.area - a.area) / a.area < 0.08, `${side} slice ${b.k}: outline ${a.area} -> ${b.area} voxels`);
+      assert.ok(Math.abs(b.cort - a.cort) / a.cort < 0.1, `${side} slice ${b.k}: cortex ${a.cort} -> ${b.cort} voxels`);
+    }
+    let worst = 0;
+    for (let s = 4; s < 30; s++) {
+      if (Number.isNaN(S[s].canal) || Number.isNaN(S[s - 4].canal)) continue;
+      worst = Math.max(worst, Math.abs(S[s].canal - S[s - 4].canal));
+    }
+    assert.ok(worst < 80, `${side}: the canal's density changes ${worst.toFixed(0)} HU in 8 mm across the seam`);
+  }
+});
