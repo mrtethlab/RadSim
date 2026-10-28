@@ -13,7 +13,10 @@ import { muOverBins } from './voxelPhantom.js';
 export const AttenuationEngine = (()=>{
   async function project(cfg, onProgress){
     const {phantom, source, detCenter, detU, detV, nx, ny, pxU, pxV,
-           spectrum, I0, onRow} = cfg;
+           spectrum, I0, onRow, need} = cfg;
+    // need (optional, a Uint8Array a cell): only these cells are traced, the rest read 0 — the
+    // collimated field and whatever else reads the dose (the AEC's chambers). A tight field over a
+    // big posed volume was paying for every ray of the receptor.
     const dose = new Float32Array(nx*ny);
     const bins = spectrum.bins, nb = bins.length;
     // A voxel phantom (imported chest, etc.) carries many materials; an analytic
@@ -28,6 +31,7 @@ export const AttenuationEngine = (()=>{
     for(let j=0;j<ny;j++){
       const cv=(j-halfV)*pxV;
       for(let i=0;i<nx;i++){
+        if(need && !need[j*nx+i]) continue;
         const cu=(i-halfU)*pxU;
         // detector cell world position
         const px=detCenter[0]+detU[0]*cu+detV[0]*cv;

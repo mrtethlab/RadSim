@@ -39,6 +39,9 @@ export function trainerOnMode(mode) {
 
 function openTrainer() {
   H.applyMode('xray');
+  // the series are marked on centring by moving the patient, which a patient standing on the floor
+  // at the wall stand is not (app.js STAND): they are taken lying on the table
+  if (H.S.room === 'wall') H.setRoom('table');
   T = { series: null, vi: 0, step: 'position', results: [], req: null, busy: false };
   document.body.classList.add('trainer');
   showCompare(false);
@@ -58,7 +61,7 @@ function closeTrainer() {
 function renderChooser() {
   const col = $('trainerCol');
   col.innerHTML = `
-    <div class="tr-head"><div class="tr-title">Trainer</div>
+    <div class="tr-head"><div class="tr-title">Positioning Trainer</div>
       <button class="tr-x" id="trHome" title="Back to the home screen">&times;</button></div>
     <div class="tr-intro">Pick a series. Each view is set up in order (position, centre,
       collimate), then exposed and marked against the criteria an instructor uses. The film

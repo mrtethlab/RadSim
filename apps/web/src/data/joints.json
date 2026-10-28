@@ -961,6 +961,73 @@
   }
  },
  "upperextremity": {
+  "shoulder": {
+   "label": "Shoulder",
+   "c": [
+    0.21,
+    1.5,
+    28.61
+   ],
+   "distal": [
+    0.015,
+    -0.193,
+    -0.981
+   ],
+   "blend": 0,
+   "field": {
+    "file": "upperextremity.shoulderw.bin",
+    "dims": [
+     104,
+     111,
+     121
+    ],
+    "sp": 0.6,
+    "origin": [
+     -22.0,
+     -26.0,
+     -36.0
+    ]
+   },
+   "how": "the glenohumeral joint, a field joint: the centre of the humeral head (a 2.3 cm sphere fitted where it faces the glenoid); the humerus and the arm below it turn, the scapula, clavicle and chest wall stay",
+   "motions": [
+    {
+     "key": "shoulder.rot",
+     "label": "Rotation",
+     "neg": "external",
+     "pos": "internal",
+     "roll": true,
+     "from": [
+      0.003,
+      0.981,
+      -0.193
+     ],
+     "toward": [
+      -1.0,
+      -0.003,
+      -0.015
+     ],
+     "range": [
+      -60,
+      90
+     ]
+    },
+    {
+     "key": "shoulder.abd",
+     "label": "Abduction",
+     "neg": "adduction",
+     "pos": "abduction",
+     "toward": [
+      1.0,
+      0.003,
+      0.015
+     ],
+     "range": [
+      0,
+      120
+     ]
+    }
+   ]
+  },
   "elbow": {
    "label": "Elbow",
    "c": [

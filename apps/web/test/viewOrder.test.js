@@ -1,0 +1,126 @@
+// View order: the priority of the tiers, and the best order found exactly.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { stepCost, orderCost, bestOrder, judgeOrder, compareCost, TIERS } from '../src/core/viewOrder.js';
+import { HOSPITAL, VIEW_META } from '../src/trainer/hospitalProtocols.js';
+
+const V = (name, room, posture, rot = 0, cc = 0, site = [0, 0], coll = [20, 20], xt = false) => ({ name, room, posture, rot, cc, site, coll, xt });
+const tier = (key) => TIERS.findIndex((t) => t.key === key);
+
+test('a step costs each tier, the turn the short way round', () => {
+  const c = stepCost(V('a', 'wall', 'erect', 135, 15, [0, 0]), V('b', 'wall', 'erect', -135, -15, [3, 4]));
+  assert.deepEqual(c, [0, 1, 30, 5, 0, 90]);
+  assert.equal(stepCost(V('a', 'wall', 'erect', 0), V('b', 'wall', 'erect', 5))[tier('moves')], 0);   // adjusted, not turned
+  assert.equal(stepCost(V('a', 'wall', 'erect'), V('b', 'table', 'supine'))[tier('room')], 1);
+  // every set-up is a room: the table's bucky and a free detector, the wall stand and the seated bucky
+  assert.equal(stepCost(V('a', 'table', 'supine'), V('b', 'detector', 'supine'))[tier('room')], 1);
+  assert.equal(stepCost(V('a', 'wall', 'seated'), V('b', 'seated', 'seated'))[tier('room')], 1);
+  // a change of room is not also counted as moves
+  assert.equal(stepCost(V('a', 'wall', 'erect', 90), V('b', 'table', 'supine', 0))[tier('moves')], 0);
+  // the receptor stood beside the leg for a horizontal beam is a move; the patient sitting up and turning, two
+  assert.equal(stepCost(V('a', 'detector', 'supine'), V('b', 'detector', 'supine', 0, 0, [0, 0], [20, 20], true))[tier('moves')], 1);
+  assert.equal(stepCost(V('a', 'table', 'supine', 0), V('b', 'table', 'lateral', 90))[tier('moves')], 1);
+});
+
+test('one room change fewer beats any number of moves; one move fewer, any adjustment', () => {
+  assert.equal(compareCost([0, 9, 0, 0, 0, 900], [1, 0, 0, 0, 0, 0]), -1);
+  assert.equal(compareCost([0, 1, 0, 0, 0, 0], [0, 0, 90, 500, 99, 400]), 1);
+  assert.equal(compareCost([0, 1, 0, 0, 0, 10], [0, 1, 0, 0, 0, 10 + 1e-9]), 0);
+});
+
+test('the best order groups the rooms, then turns progressively', () => {
+  // chest PA (wall), KUB (table), upright abdomen (wall), chest lateral (wall)
+  const views = [V('PA', 'wall', 'erect', 180), V('KUB', 'table', 'supine', 0), V('Erect AXR', 'wall', 'erect', 0), V('LAT', 'wall', 'erect', 90)];
+  const j = judgeOrder(views);
+  assert.equal(j.efficient, false);
+  assert.equal(j.tier, 0);                                    // it loses on rooms first
+  const names = j.bestOrder.map((i) => views[i].name);
+  assert.equal(j.best[0], 1);                                 // one room change
+  assert.ok(names[0] === 'KUB' || names[names.length - 1] === 'KUB');
+  // the wall views turn 180 -> 90 -> 0 (or back), not 180 -> 0 -> 90
+  const wall = names.filter((n) => n !== 'KUB');
+  assert.ok(wall.join() === 'PA,LAT,Erect AXR' || wall.join() === 'Erect AXR,LAT,PA', wall.join());
+});
+
+test('a best order is judged efficient, and kept as given', () => {
+  const views = [V('PA', 'detector', 'seated', 0), V('OBL', 'detector', 'seated', 45), V('LAT', 'detector', 'seated', 90)];
+  const j = judgeOrder(views);
+  assert.equal(j.efficient, true);
+  assert.deepEqual(j.bestOrder, [0, 1, 2]);
+  const k = judgeOrder([views[0], views[2], views[1]]);
+  assert.equal(k.efficient, false);
+  assert.equal(TIERS[k.tier].key, 'turn');                  // two moves either way; 90 degrees more of them
+});
+
+test('the exact search matches brute force on random series', () => {
+  let s = 7; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const rooms = ['wall', 'table', 'detector'], postures = ['erect', 'supine', 'seated', 'lateral'];
+  const perms = (a) => a.length <= 1 ? [a] : a.flatMap((x, i) => perms([...a.slice(0, i), ...a.slice(i + 1)]).map((p) => [x, ...p]));
+  for (let trial = 0; trial < 30; trial++) {
+    const n = 2 + Math.floor(r() * 5);
+    const views = Array.from({ length: n }, (_, i) => V('v' + i, rooms[Math.floor(r() * 3)], postures[Math.floor(r() * 4)],
+      Math.round(r() * 4) * 45, Math.round(r() * 2) * 15, [r() * 30, r() * 100], [10 + r() * 20, 10 + r() * 20]));
+    let best = null;
+    for (const p of perms(views.map((_, i) => i))) {
+      const c = orderCost(p.map((i) => views[i])).total;
+      if (!best || compareCost(c, best) < 0) best = c;
+    }
+    const got = orderCost(bestOrder(views).map((i) => views[i])).total;
+    assert.equal(compareCost(got, best), 0, `trial ${trial}`);
+  }
+});
+
+test('every hospital view has where-and-how metadata', () => {
+  for (const line of HOSPITAL) {
+    for (const v of [...line.views, ...(line.either || []).flatMap((e) => e.of)]) {
+      const m = VIEW_META[v];
+      assert.ok(m, `${line.id}: no VIEW_META for ${v}`);
+      assert.ok(['wall', 'table', 'detector', 'seated'].includes(m.room), v);
+      assert.ok(Array.isArray(m.site), v);
+    }
+  }
+});
+
+test('a long worklist is improved, never made worse', () => {
+  let s = 3; const r = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const rooms = ['wall', 'table', 'detector'];
+  const views = Array.from({ length: 16 }, (_, i) => V('v' + i, rooms[Math.floor(r() * 3)], 'supine',
+    Math.round(r() * 4) * 45, 0, [r() * 30, r() * 100]));
+  const ord = bestOrder(views);
+  assert.deepEqual(ord.slice().sort((a, b) => a - b), views.map((_, i) => i));
+  const got = orderCost(ord.map((i) => views[i])).total, given = orderCost(views).total;
+  assert.ok(compareCost(got, given) <= 0);
+  assert.ok(got[0] <= 2, `room changes ${got[0]}`);          // three rooms: two changes at best
+});
+
+test('a leg on a stretcher: every view at one rotation along the limb before it is turned', () => {
+  const L = (name, rot, site) => V(name, 'detector', 'supine', rot, 0, [10, site], [20, 30]);
+  const views = [L('AP ankle', 0, 8), L('AP knee', 0, 50), L('Lat ankle', 90, 8), L('Lat knee', 90, 50), L('AP tib', 0, 30), L('Lat tib', 90, 30)];
+  const j = judgeOrder(views);
+  const names = j.bestOrder.map((i) => views[i].name);
+  assert.equal(j.best[tier('moves')], 1, names.join());     // one turn
+  const aps = names.slice(0, 3).every((n) => n.startsWith('AP')) || names.slice(3).every((n) => n.startsWith('AP'));
+  assert.ok(aps, names.join());
+  // and along the limb within each rotation: ankle, tib, knee (or back)
+  const at = (n) => names.indexOf(n);
+  assert.ok(Math.abs(at('AP tib') - at('AP ankle')) === 1 && Math.abs(at('AP tib') - at('AP knee')) === 1, names.join());
+});
+
+test('the fall: everything the tube alone can reach together, then each move once', async () => {
+  const P = (await import('../src/data/protocols.json', { with: { type: 'json' } })).default;
+  const proj = (n) => P.groups.flatMap((g) => g.regions.flatMap((r) => r.projections)).find((p) => p.proj === n);
+  const names = ['Mortise ankle', 'External oblique ankle', 'Lateral ankle', 'AP tibia/fibula', 'Lateral tibia/fibula',
+    'AP knee', 'Internal oblique knee', 'External oblique knee', 'Cross-table lateral knee', 'Femur pasting', 'Lateral femur pasting'];
+  const views = names.map((n) => ({ name: n, ...VIEW_META[n], cc: proj(n).pose?.cc || 0, coll: proj(n).coll }));
+  const j = judgeOrder(views);
+  const order = j.bestOrder.map((i) => names[i]);
+  assert.equal(j.best[tier('room')], 1, order.join());      // the stretcher's detector, then the table for the pasting
+  // in each room one turn per rotation group less one, and the receptor stood beside the knee once
+  const turns = ['detector', 'table'].reduce((n, r) => n + new Set(views.filter((v) => v.room === r).map((v) => v.rot)).size - 1, 0);
+  assert.equal(j.best[tier('moves')], turns + 1, order.join());
+  // the straight-leg views on the detector (AP tib, AP knee, cross-table knee) one after another
+  const at = ['AP tibia/fibula', 'AP knee', 'Cross-table lateral knee'].map((n) => order.indexOf(n)).sort((a, b) => a - b);
+  assert.equal(at[2] - at[0], 2, order.join());
+  // and the department's listed order (each exam in turn) is not the best
+  assert.equal(judgeOrder(views).efficient, false);
+});

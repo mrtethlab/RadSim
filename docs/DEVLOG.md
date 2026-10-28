@@ -6,6 +6,55 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-27
+
+### Protocol Trainer — PR pending
+A second trainer in the X-ray card. The existing Trainer is renamed **Positioning Trainer**.
+- **The requisition** (`trainer/requisition.js`, `trainer/cases.js`) is a fully detailed, seeded and fictional form:
+  - the patient's demographics, health card, allergies, medications and pregnancy status;
+  - the encounter (outpatient, inpatient bed, ED), priority and accession;
+  - the referring physician, their office and the cc;
+  - the exams requested, the reason for exam and a full clinical history.
+  - There are 93 case templates. 20 of them carry several orders: the same patient and physician, each order with its own accession and reason for exam, up to four (a fall: ankle, tib/fib, knee, femur). They show as tabs above the form, and the series is planned across all of them. At least one case covers each line of the department's protocol list.
+- **The worklist:** the student picks anatomy and views from the room's own chart. Each line of the hospital list is now a distinct projection: 49 were added to protocols.json, for 113 in all. Views a rigid model cannot truly make are marked approx.
+- **Marking** (`trainer/hospitalProtocols.js`, `core/viewOrder.js`):
+  - Protocol: missing views and views not needed. Combined lines share views (sacrum with SI joints), and either/or slots accept either view (SI or IS axial).
+  - Order: priced lexicographically in three levels of cost:
+    1. room changes between the four set-ups;
+    2. moves of the patient (posture, or a turn of the body or limb, each counted once) or of the receptor around them (stood beside the leg for a horizontal beam);
+    3. adjustments at the tube alone (re-angling, re-centring along the anatomy, re-collimating).
+    The last ties go to the fewer degrees turned. So a leg on a stretcher has every view that needs only the tube adjusted taken together, along the limb, before it is moved.
+    A patient who came on a stretcher neither stands nor sits: their wall-stand and seated views are taken on the stretcher with a free detector, in the marking and in the films. The best order is found exactly by Held-Karp over subsets, up to 13 views; past that, the given order is improved by moves and reversals.
+- **Rooms (the x-ray room too):**
+  - A fourth set-up, **seated**: the wall stand's bucky turned flat at a seated patient's elbow height, with a stool beside it. It is used for the finger, hand, wrist, scaphoid, forearm and elbow views, and, with the bucky tilted, for the superoinferior axial shoulder and the seated Merchant skyline.
+  - **At the wall stand the patient stands on the floor.** The legs and whole bodies stand on their lowest point. The partial models stand at a 170 cm adult's heights: femoral heads 90 cm, T7 127, C4 147, nasion 160, a hanging elbow 105. The tube and bucky ride the column to the anatomy (25-180 cm), and the patient's up/down offset is locked. A protocol takes the tube to its landmark. A room change keeps the anatomy under the central ray. The Positioning Trainer, which marks centring by moving the patient, opens on the table.
+- **The shoulder (the x-ray room too):**
+  - The arm model has a shoulder joint: a weight-field joint like the neck's, centred on the humeral head. The head is a 2.3 cm sphere fitted where it faces the glenoid. The humerus and the arm below it turn; the scapula, clavicle and chest wall stay.
+  - Its motions are rotation (internal +) and abduction, on sliders in the positioning panel.
+  - The AP shoulders in internal (90 degrees) and neutral (45 degrees) rotation are now true views.
+  - Both axials abduct the arm 90 degrees, with the body's long axis along the beam: supine and up through the axilla, or seated and down over the receptor.
+    - The central ray runs along the glenoid's face. The face is measured on this model (a plane fitted to the scapula beside the head): 15 degrees medial or toward the elbow, and 13 degrees AP. So the joint space opens.
+    - They are centred on a measured glenohumeral joint line, collimated 10 x 10 cm off the ribs, and exposed to DI about 0 with the equalised table.
+  - The inferosuperior is taken on the free detector: a pose tilted onto the beam is shown there as the receptor standing against the top of the shoulder, with the tube level at the feet' side and the patient supine (the physics frame turned back by the tilt).
+  - The superoinferior hangs turned over, so both axials hang anterior up. The marker sits on that side: as it reads for the inferosuperior, reversed (pronated) for the superoinferior.
+  - The joint's weights: every arm piece counts as arm, however small (a speck by the elbow counted as chest wall tore the abducted arm's skin into spikes). The arm below the axilla takes the whole turn. Each bone takes its own piece's share exactly.
+  - The scapular Y is a 58 degree PA oblique, measured so the beam lies in the plane of this model's scapula (it was rolled 45 degrees the wrong way). It has an equalised display table.
+  - The arm model's chest-wall slab was solid muscle and fat where the source has lung. It whited the Y out, so when the model loads, the tissue inside the ribs' arc is made lung (`core/thoraxFill.js`). Every shoulder film now shows lung and ribs medially.
+- **Ray casting, all films:**
+  - Only the rays the collimated field (and any active AEC chamber) needs are cast.
+  - The ray caster gets only the part of the volume the beam crosses (`VoxelPhantom.cropTo`: the edge rays clipped to the box, and the box's corners inside the beam; tested ray for ray against the whole volume).
+  - A posed volume is first cut to what it holds, and the crop is laid out with the beam's main direction as its fastest axis.
+  - An axial shoulder's ray cast went from 26 s to 1.2 s.
+- **Films:** each chosen view is applied as the sandbox applies it, then exposed dry at an 800×1000 matrix with full processing. Films for a left limb are mirrored, and each carries a burned-in marker.
+- **Pathology** (`core/pathology.js`) is stamped into the loaded volume for the exposure and put back exactly. The physics decides what each view shows:
+  - the scaphoid waist line is clearest on the scaphoid view;
+  - air-fluid levels appear on the erect abdomen only;
+  - the pneumothorax is larger on expiration.
+  - Lesions the model's resolution or crop cannot show are never drawn; those requisitions come out normal.
+- Checked in the app on the scaphoid follow-up, pneumothorax, obstruction, shoulder trauma and four-order fall cases, and at phone width. 346 tests pass.
+
+---
+
 ## 2026-10-25
 
 ### October uplifts — [#89](https://github.com/mrtethlab/RadSim/pull/89)

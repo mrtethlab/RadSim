@@ -148,7 +148,7 @@ test('the console says the CR angle the way the main panel does', () => {
 test('the pasting protocols: wall/table studies at 43 cm, on subjects that reach their landmarks', () => {
   const protocols = JSON.parse(readFileSync(new URL('../src/data/protocols.json', import.meta.url), 'utf8'));
   const paste = protocols.groups.flatMap((g) => g.regions.flatMap((r) => r.projections)).filter((p) => p.paste);
-  assert.deepEqual(paste.map((p) => p.proj).sort(), ['Femur pasting', 'Leg length study', 'Scoliosis study']);
+  assert.deepEqual(paste.map((p) => p.proj).sort(), ['Femur pasting', 'Lateral femur pasting', 'Leg length study', 'Scoliosis study']);
   for (const p of paste) {
     assert.equal(p.coll[1], 43, `${p.proj}: the field length is a whole receptor`);
     assert.deepEqual(p.det, [43, 43]);
@@ -158,5 +158,7 @@ test('the pasting protocols: wall/table studies at 43 cm, on subjects that reach
   const by = Object.fromEntries(paste.map((p) => [p.proj, p]));
   assert.equal(by['Leg length study'].subject, 'lowerextremity');
   assert.equal(by['Femur pasting'].subject, 'lowerextremity');
+  assert.equal(by['Lateral femur pasting'].subject, 'lowerextremity');
+  assert.deepEqual(by['Lateral femur pasting'].paste, by['Femur pasting'].paste, 'the lateral pastes the same length');
   assert.equal(by['Scoliosis study'].pose.roll, 180, 'a scoliosis series is taken PA');
 });

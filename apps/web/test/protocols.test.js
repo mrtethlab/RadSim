@@ -5,6 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { applyCrops } from '../src/core/crops.js';
+import { HOSPITAL, VIEW_META } from '../src/trainer/hospitalProtocols.js';
 
 const load = (p) => JSON.parse(readFileSync(new URL(p, import.meta.url), 'utf8'));
 const protocols = load('../src/data/protocols.json');
@@ -18,7 +19,7 @@ const BROWSER_SUBJECTS = new Set(['hand', 'chest', 'skull', 'headneck', 'chestab
   'wholebody', 'pediatric', 'metalphantom', 'linepair', 'breast', 'breastdense', 'acrphantom']);
 
 test('every projection names a subject the browser can actually load', () => {
-  assert.equal(all.length, 64);           // (47, the 3 pasting studies, the 8 skull views, the 6 child views)
+  assert.equal(all.length, 113);          // (47, the 3 pasting studies, the 8 skull views, the 6 child views, the hospital table's 49)
   for (const p of all) assert.ok(BROWSER_SUBJECTS.has(p.subject), `${p.proj}: subject ${p.subject}`);
 });
 
@@ -46,8 +47,8 @@ test('views named lateral are rolled a quarter turn; AP and PA are not', () => {
       if (/^Lateral/.test(p.proj)) assert.ok(Math.abs(deg(turned(p.pose.roll)) - 90) < 3, `${p.proj}: lateral epicondyle not on top`);
       continue;
     }
-    // (the leg rests turned in: its knee and femur views are rolled by the bone, checked below)
-    if (p.subject === 'lowerextremity' && /knee|femur/.test(p.proj)) continue;
+    // (the leg rests turned in: its knee, leg and femur views are rolled by the bone, checked below)
+    if (p.subject === 'lowerextremity' && /knee|femur|tibia/.test(p.proj)) continue;
     if (/^Lateral/.test(p.proj) || /^Swimmers/.test(p.proj)) assert.equal(r, 90, p.proj);
     if (/^AP /.test(p.proj)) assert.equal(r, 0, p.proj);
     if (/^PA /.test(p.proj) && p.subject !== 'hand') assert.equal(r, 180, `${p.proj}: body subjects rest AP, so PA is a half turn`);
@@ -223,4 +224,109 @@ test('the skull, sinus and facial views load the Skull, angled to the OML and ce
   assert.ok(Math.abs(c.latSkull.z - c.eam.z - 5) < 0.01);
   // the cervical spine stays on the head and neck model
   for (const p of all.filter((x) => /cervical|open mouth|Swimmers/i.test(x.proj))) assert.equal(p.subject, 'headneck', p.proj);
+});
+
+test('every view in the hospital protocol table is a projection of its own, by exactly that name', () => {
+  // the Protocol Trainer's answer key (src/trainer/hospitalProtocols.js) makes its films with these
+  const names = all.map((p) => p.proj);
+  assert.equal(new Set(names).size, names.length, 'projection names are unique across the chart');
+  const want = new Set(Object.keys(VIEW_META));
+  for (const line of HOSPITAL) {
+    for (const v of line.views) want.add(v);
+    for (const e of line.either || []) for (const v of e.of) want.add(v);
+  }
+  for (const v of want) assert.ok(names.includes(v), `${v}: not in protocols.json`);
+  // the shoulder's views are each their own entry, the rotations included
+  for (const v of ['AP shoulder internal rotation', 'AP shoulder external rotation', 'AP shoulder neutral rotation',
+    'Grashey shoulder (glenoid AP oblique)', 'Y view shoulder', 'Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)',
+    'AP hip (no leg rotation)', 'AP pelvis (no leg rotation)'])
+    assert.ok(names.includes(v), v);
+  assert.ok(!names.includes('AP shoulder'), 'renamed: AP shoulder internal rotation');
+});
+
+test('the hospital views turn the way their names say', () => {
+  const pose = (proj) => all.find((p) => p.proj === proj).pose;
+  // the leg rests turned in 23 degrees: its obliques are 45 either side of its AP, its lateral the knee's
+  const ap = pose('AP knee').roll;
+  assert.equal(pose('AP tibia/fibula').roll, ap);
+  for (const part of ['tibia/fibula', 'knee']) {
+    assert.equal(pose(`Internal oblique ${part}`).roll, ap + 45, part);
+    assert.equal(pose(`External oblique ${part}`).roll, ap - 45, part);
+  }
+  assert.equal(pose('Lateral tibia/fibula').roll, pose('Lateral knee').roll);
+  assert.equal(pose('Lateral femur pasting').roll, pose('Lateral femur').roll);
+  // the elbow obliques as the Positioning Trainer has them (trainer/series.js): medial with the hand pronated
+  assert.equal(pose('Internal oblique elbow').roll, 41);
+  assert.ok(pose('Internal oblique elbow').joints['elbow.roll'] <= -140);
+  assert.equal(pose('External oblique elbow').roll, -49);
+  // +roll lifts the patient's right: RPO and RAO are negative, LPO and LAO positive, an anterior
+  // oblique a half turn from the posterior one it projects like
+  assert.ok(pose('Judet RPO pelvis').roll < 0 && pose('Judet LPO pelvis').roll > 0);
+  assert.equal(pose('RAO cervical').roll, -135);
+  assert.equal(pose('LAO cervical').roll, 135);
+  assert.ok(pose('RAO cervical').cc > 0 && pose('LAO cervical').cc > 0, 'anterior obliques angle caudad');
+  // the ribs are written for the right: anterior = PA oblique, affected side away (LAO); posterior =
+  // AP oblique, affected side toward the receptor (RPO)
+  assert.equal(pose('Anterior oblique ribs').roll, 135);
+  assert.equal(pose('Posterior oblique ribs').roll, -45);
+  assert.ok(pose('Grashey shoulder (glenoid AP oblique)').roll < 0, 'Grashey: the affected (right) side back');
+  // inlet caudad, outlet and sacrum cephalad, coccyx caudad (negative = cephalic)
+  assert.ok(pose('Inlet pelvis').cc >= 40 && pose('Outlet pelvis').cc <= -40);
+  assert.ok(pose('AP axial sacrum / SI joints').cc < 0 && pose('AP axial coccyx').cc > 0);
+  assert.ok(pose('AP axial clavicle').cc < 0);
+  // the routine hip and pelvis turn the legs in; the trauma views leave them
+  assert.equal(pose('AP hip').legs, 15);
+  assert.equal(pose('AP hip (no leg rotation)').legs || 0, 0);
+  assert.equal(pose('AP pelvis (no leg rotation)').legs || 0, 0);
+  assert.equal(pose('AP hip').centre, 'femoralHeadR');
+});
+
+test('an angled ray is aimed through its point only when there is an angle', () => {
+  for (const p of all.filter((x) => x.pose.through)) assert.ok(p.pose.cc, `${p.proj}: through without an angle`);
+  for (const n of ['Radial head lateral elbow', 'Inlet pelvis', 'Outlet pelvis', 'AP axial clavicle']) assert.ok(all.find((p) => p.proj === n).pose.through, n);
+});
+
+test('the views a rigid model cannot make are marked approximate', () => {
+  for (const n of ['Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)', 'Y view shoulder', 'Frog-leg lateral hip', 'Roll-up lateral hip (Lauenstein)', 'Cross-table lateral hip',
+    'AP knee standing', 'Lateral knee standing', 'Skyline knee', 'Rosenberg knee (PA 45° flexion)', 'PA chest expiration'])
+    assert.equal(all.find((p) => p.proj === n).pose.fidelity, 'approx', n);
+  // the arm rests in the anatomical position (epicondyles parallel to the receptor): its AP shoulder is the external rotation,
+  // and the shoulder joint turns the humerus in for the neutral and internal rotations
+  const sh = (n) => all.find((p) => p.proj === n).pose;
+  for (const n of ['AP shoulder external rotation', 'AP shoulder neutral rotation', 'AP shoulder internal rotation']) assert.notEqual(sh(n).fidelity, 'approx', n);
+  assert.equal(sh('AP shoulder external rotation').joints?.['shoulder.rot'] || 0, 0);
+  assert.equal(sh('AP shoulder neutral rotation').joints['shoulder.rot'], 45);
+  assert.equal(sh('AP shoulder internal rotation').joints['shoulder.rot'], 90);
+  // the axials abduct the arm 70-90 degrees and lay the body's long axis along the beam
+  for (const n of ['Axial shoulder (inferosuperior)', 'Axial shoulder (superoinferior)']) {
+    const a = sh(n).joints['shoulder.abd'];
+    assert.ok(a >= 70 && a <= 90, `${n}: abducted ${a}`);
+    assert.equal(Math.abs(sh(n).tilt), 90, n);
+  }
+  assert.equal(Math.sign(sh('Axial shoulder (inferosuperior)').tilt), -Math.sign(sh('Axial shoulder (superoinferior)').tilt));
+});
+
+test('the hospital views centre on measured, sourced points', () => {
+  const want = { 'AP tibia/fibula': 'legMid', 'AP clavicle': 'clavicleR', 'Lateral soft-tissue neck (adenoids)': 'eam',
+    'Lateral soft-tissue neck (epiglottis)': 'C4', 'AP axial sacrum / SI joints': 'sacrum', 'AP axial coccyx': 'coccyx',
+    'Anterior oblique ribs': 'ribsR', 'Posterior oblique ribs': 'ribsR' };
+  for (const [proj, c] of Object.entries(want)) {
+    const p = all.find((x) => x.proj === proj);
+    assert.equal(p.pose.centre, c, proj);
+    assert.ok(/Bontrager|Radiopaedia/.test(centring[p.subject][c].guide), `${proj}: a sourced guideline`);
+  }
+  // in anatomical order: the mid-leg between the knee and the ankle, the coccyx below the sacrum and
+  // behind it, the clavicle on the right at the root of the neck, the ear canals above C1-C2, the ribs' point right
+  const L = landmarks.lowerextremity, c = centring;
+  assert.ok(c.lowerextremity.legMid.z < L.knee.z && c.lowerextremity.legMid.z > L.ankle.z);
+  assert.ok(c.chestabdopelvis.coccyx.z < c.chestabdopelvis.sacrum.z && c.chestabdopelvis.coccyx.y < c.chestabdopelvis.sacrum.y);
+  assert.ok(c.headneck.clavicleR.x > 5 && c.headneck.clavicleR.z < c.headneck.C7T1.z);
+  assert.ok(c.headneck.eam.z > c.headneck.C1C2.z);
+  assert.ok(c.chest.ribsR.x > 4);
+  // the soft-tissue neck: the adenoids close at 100 cm, the epiglottis at 180; both low kV, no grid
+  const st = all.filter((p) => /soft-tissue neck/.test(p.proj));
+  assert.equal(st.length, 2);
+  for (const p of st) { assert.equal(p.lut, 'softtissue'); assert.equal(p.grid, false); assert.ok(p.kv <= 75, p.proj); }
+  assert.equal(st.find((p) => /adenoids/.test(p.proj)).sid, 100);
+  assert.equal(st.find((p) => /epiglottis/.test(p.proj)).sid, 180);
 });

@@ -11,12 +11,15 @@ import { loadModelUrl } from './model/loader.js';
 import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs } from './core/limbPose.js';
+import { PATHOLOGY, makeCtx, stampPathology, undoPathology } from './core/pathology.js';
 import { axisToward, forwardChain, forwardCompiled, forwardSkin, forwardBone, boneSide, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
 import { initSideMarker, sideMarkerSync, sideMarkerPointer, stampSideMarker, sideMarkerVerdict, setSideMarker } from './sideMarker.js';
 import { initTrainer, trainerOnMode } from './trainer/trainer.js';
+import { initProtocolTrainer, protocolTrainerOnMode } from './trainer/protocolTrainer.js';
+import { fillThoraxLung } from './core/thoraxFill.js';
 import { initPalpation, palpationSync, setPalpated, palpationList, clearPalpation, palpatedKeys } from './trainer/palpate.js';
 import { patientPrimary, MISSED } from './core/scatter.js';
 import { computeRescale as computeRescaleCore } from './core/displayWindow.js';
@@ -42,7 +45,7 @@ import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from '
 import { initMammo, mammoApplyMode, mammoSyncScene, mammoImageToBay } from './mammo.js';
 import { initUS, usApplyMode, usSyncScene, usImageToBay, usPointer } from './ultrasound.js';
 import { initIV, ivApplyMode, ivSyncScene, ivPointer, ivWheel } from './iv.js';
-import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR } from './room.js';
+import { buildRoom, buildTubeHead, ROOM_GAP, TABLE_FLOOR, WALL_FLOOR, SEATED_FLOOR } from './room.js';
 import { initDXA, dxaApplyMode, dxaSyncScene, dxaImageToBay, dxaReportToBay, dxaMirror } from './dxa.js';
 import { initDxaExam, dxaExamMode } from './dxaExam.js';
 import { initPasting, pastingSelect, pastingActive, pastingArmed, pastingBlocked, pastingStart, pastingRelease,
@@ -424,6 +427,8 @@ async function setSubject(sub){
     S.subjectLoading=true;   // guards CT START/exposure until the swap completes
     try{
       vm=await loadVoxelModel(import.meta.env.BASE_URL+'models/'+sub, sub);
+      // the arm's chest-wall slab is solid where the source had lung (core/thoraxFill.js)
+      if(sub==='upperextremity' && vm.data) fillThoraxLung({ data:vm.data, dims:vm.dims, spacingMM:vm.spacingMM });
       await loadJointFields(sub);
       S.voxelCache[sub]=vm;
       if(vm.meshUrl){
@@ -449,6 +454,7 @@ async function setSubject(sub){
     finally{ if(req===subjectReq) S.subjectLoading=false; }
   }
   if(req!==subjectReq) return;          // a newer request has been made: this one is only cached
+  if(patho && patho.vm!==vm) clearPathology();   // the last patient's lesion goes with them
   S.voxelModel=vm; S.subject=sub;
   syncBoneViewUI();                     // (bones only carries over to the next model that has bone)
   if(S.boneView) ensureBoneMesh(sub).then(()=>{ if(S.subject===sub){ applyPhotoSkin(); syncScene(); } });
@@ -806,6 +812,60 @@ function jointPosedVolume(vm){
   if(!poseCache(vm).has(key)){ if(S.mode==='fluoro') return null; keepPose(vm, key, poseVolume(vm, voxelFlips(), ch, S.joints)); }
   return poseCache(vm).get(key);
 }
+/* ---- PATHOLOGY (core/pathology.js) ------------------------------------------------------------
+   The Protocol Trainer's patient may have a fracture, an effusion, a stone: it is stamped into the
+   loaded volume (vm.data) for the films and taken out again, exactly, afterwards. Everything made
+   FROM vm.data has to go with it, or a film would show the patient as they were: the posed volumes
+   (the joint pose cache, the leg rotation's femurs and their pose), the pose workers' copies of
+   the model, and the skin the patient is rested on the receptor by. A pose still being made in a
+   worker was made from the volume as it was, so it is waited for first and only then thrown away
+   with the rest: let it land after, and an unstamped pose would sit in the cache.
+   One lesion at a time; a new one takes the last one out first. It belongs to the x-ray room and
+   to one patient, so a change of either takes it out. */
+let patho=null;                                    // { vm, id, opts, undo }
+let pathoChain=Promise.resolve();
+// the x-ray room's flips for a subject (voxelFlips() as it is in the x-ray room, whatever the mode)
+function xrayFlips(sub){ const f=[true,true,false]; if(ROLLED_180.has(sub)){ f[0]=!f[0]; f[1]=!f[1]; } return f; }
+async function settlePoses(vm){
+  while(vm?._jpending?.size) await Promise.all([...vm._jpending.values()]);
+}
+function dropDerived(vm){
+  vm._jcache=null; vm._posed=null; vm._femurs=null;
+  for(const w of (posePool||[])){ w._modelKey=null; w._planFor=null; }
+  if(restFor===vm) restFor=null;
+}
+// queued, so a set and a clear asked for together run in the order asked
+const pathoQueue=(fn)=>(pathoChain=pathoChain.then(fn, fn));
+async function takeOutPathology(){
+  if(!patho) return;
+  const { vm, undo }=patho;
+  await settlePoses(vm);
+  undoPathology(vm, undo); dropDerived(vm);
+  patho=null;
+}
+function setPathology(id, opts={}){
+  return pathoQueue(async ()=>{
+    const P=PATHOLOGY[id];
+    if(!P) throw new Error(`unknown pathology: ${id}`);
+    const vm=S.voxelModel;
+    if(!vm?.data || S.subject!==P.subject) throw new Error(`${id} is drawn on ${P.subject}; the subject is ${S.subject}`);
+    await takeOutPathology();
+    if(P.available===false && !opts.force) return { id, available:false, why:P.why };
+    await settlePoses(vm);
+    const ctx=makeCtx(S.subject, vm, { landmarks:landmarkData[S.subject]||{}, centring:centringData[S.subject]||{},
+      joints:jointData[S.subject]||{}, flips:xrayFlips(S.subject) });
+    const undo=stampPathology(vm, id, ctx, opts);
+    dropDerived(vm);
+    patho={ vm, id, opts:{ ...opts }, undo };
+    return { id, available:true, ms:Math.round(undo.ms), voxels:undo.idx.length, info:undo.info };
+  });
+}
+function clearPathology(){ return pathoQueue(takeOutPathology); }
+window.radsimPathology={
+  set:setPathology, clear:clearPathology,
+  list:()=>Object.entries(PATHOLOGY).map(([id, p])=>({ id, subject:p.subject, label:p.label, available:p.available!==false, ...(p.why ? { why:p.why } : {}) })),
+  current:()=>patho ? { id:patho.id, opts:{ ...patho.opts }, subject:S.subject, voxels:patho.undo.idx.length, ms:Math.round(patho.undo.ms) } : null,
+};
 /* REST ON THE TABLE. A patient lies on the receptor whichever way they are turned. The model
    used to stand at half its unrotated depth, so a lateral, an oblique or a tilt sank part of it
    below the receptor plane, where the tracer stops counting: a lateral lost its dependent side,
@@ -836,6 +896,46 @@ function skinSample(vm){
    (the tabletop, the wall stand's cover: ROOM_GAP, real object-to-image distance), plus the
    lift slider. Every consumer (the physics, the scene, the trainer) reads it from here. */
 function receptorGap(){ return S.mode==='xray' ? (ROOM_GAP[S.room]||0) : 0; }
+/* STANDING AT THE WALL. A patient at the wall stand stands on the floor: the part of them that
+   is lowest (a foot, for a leg or a whole body) is on it, and where the model is only part of a
+   body it is at the height that part has on a standing adult (a 170 cm one: the femoral heads 90 cm
+   up, T7 127, C4 147, the nasion 160, the elbow of a hanging arm 105). The patient does not go up
+   and down to the receptor: the bucky rides the column to the anatomy, with the tube (S.tubeZ,
+   which the bucky follows). Only the body models stand; a phantom or a hand at the wall is placed
+   by hand, as before. */
+const STAND={ lowerextremity:{ floor:true }, foot:{ floor:true }, pediatric:{ floor:true }, wholebody:{ floor:true },
+  chestabdopelvis:{ lm:'femoralHeadR', h:90 }, chest:{ lm:'T7', h:127 }, headneck:{ lm:'C4', h:147 },
+  skull:{ lm:'nasion', h:160 }, upperextremity:{ lm:'elbowJoint', h:105 } };
+// the tube's (and the bucky's) travel up and down the wall stand: the receptor centre from 25 to
+// 180 cm above the floor
+const WALL_TUBE=[WALL_FLOOR+25, 50];
+const clampWallTube=(z)=>Math.max(WALL_TUBE[0], Math.min(WALL_TUBE[1], z));
+function standing(){ return S.mode==='xray' && S.room==='wall' && !!STAND[S.subject] && !!S.voxelModel; }
+let standKey='', standZ=0;
+function wallStandZ(){
+  const st=STAND[S.subject], vm=S.voxelModel, ch=jointsActive();
+  const key=S.subject+'|'+JSON.stringify(S.objRot)+(ch?JSON.stringify(S.joints):'');
+  if(key===standKey) return standZ;
+  const R=objMat();
+  let z=S.objOff.z;
+  if(st.floor){
+    if(!vm.data) return z;
+    if(restFor!==vm){ restPts=skinSample(vm); restFor=vm; restKey=''; }
+    const cc=ch ? compileChain(ch, S.joints) : null;
+    let lo=Infinity;
+    for(let i=0;i<restPts.length;i+=3){
+      const q=cc ? forwardCompiled([restPts[i],restPts[i+1],restPts[i+2]], cc) : [restPts[i],restPts[i+1],restPts[i+2]];
+      const h=R[6]*q[0]+R[7]*q[1]+R[8]*q[2];
+      if(h<lo) lo=h;
+    }
+    if(Number.isFinite(lo)) z=WALL_FLOOR-lo;
+  } else {
+    const rest=landmarkLocal(S.subject, st.lm);
+    if(rest){ const w=applyMat3(R, poseLoc(rest)); z=WALL_FLOOR+st.h-w[2]; }
+  }
+  standKey=key; standZ=z;
+  return z;
+}
 function restHeight(){ return restHeightOnReceptor() + receptorGap(); }
 function restHeightOnReceptor(){
   const vm=S.voxelModel;
@@ -1237,7 +1337,8 @@ const S = {
 // 'quick' is a fast draft preview at the sim's original coarse matrix (~1 mm
 // pixels — not a real DR resolution) so a voxel-body exposure returns in well
 // under a second; low/std/high are true modern DR matrices (~100 µm pixels).
-const RES_MAP={ quick:[320,400], low:[2000,2450], std:[2500,3070], high:[3500,4300] };
+// (film: the Protocol Trainer's films, read as films rather than previews, in a few seconds each)
+const RES_MAP={ quick:[320,400], film:[800,1000], low:[2000,2450], std:[2500,3070], high:[3500,4300] };
 const masSteps=[0.5,0.63,0.8,1.0,1.25,1.6,2.0,2.5,3.2,4.0,5.0,6.4,8.0,10,12.5,16,20,25,32,40,50,64,80,100,125,160,200,250,320,400,500,600];
 
 /* ---- AEC (automatic exposure control) ----
@@ -1418,6 +1519,33 @@ function syncLegRotUI(){
   const v=$('legRotV'); if(v) v.textContent=legRotLabel(S.legRot);
 }
 const legRotLabel=(d)=> d===0 ? '0°' : d>0 ? `${d}° in` : `${-d}° out`;
+/* The occupied part of a posed volume ({ data, dims } in the model's data order), once per pose:
+   { data, dims, off } with off the cropped grid's centre from the full grid's, cm, in data order
+   (flips are applied by the caller, as the phantom applies them to its indices). */
+function cropPosed(posed, vm){
+  if(posed._crop!==undefined) return posed._crop;
+  const [nx,ny,nz]=posed.dims, d=posed.data, sp=vm.spacingMM.map(v=>v/10);
+  let x0=nx, x1=-1, y0=ny, y1=-1, z0=nz, z1=-1;
+  for(let z=0;z<nz;z++) for(let y=0;y<ny;y++){
+    const o=(z*ny+y)*nx;
+    let a=-1, b=-1;
+    for(let x=0;x<nx;x++) if(d[o+x]){ a=x; break; }
+    if(a<0) continue;
+    for(let x=nx-1;x>=a;x--) if(d[o+x]){ b=x; break; }
+    if(a<x0) x0=a; if(b>x1) x1=b; if(y<y0) y0=y; if(y>y1) y1=y; if(z<z0) z0=z; if(z>z1) z1=z;
+  }
+  if(x1<0) return (posed._crop=null);
+  const m=[x1-x0+1, y1-y0+1, z1-z0+1];
+  // not worth a copy unless it saves a quarter
+  if(m[0]*m[1]*m[2] > 0.75*nx*ny*nz) return (posed._crop=null);
+  const out=new Uint8Array(m[0]*m[1]*m[2]);
+  for(let z=0;z<m[2];z++) for(let y=0;y<m[1];y++){
+    const src=((z+z0)*ny+(y+y0))*nx+x0;
+    out.set(d.subarray(src, src+m[0]), (z*m[1]+y)*m[0]);
+  }
+  const off=[[x0,m[0],nx],[y0,m[1],ny],[z0,m[2],nz]].map(([a0,n,N],i)=>(a0+(n-1)/2-(N-1)/2)*sp[i]);
+  return (posed._crop={ data:out, dims:m, off });
+}
 function buildPhantom(){
   // Return a VoxelPhantom centred at the CT patient offset (couch position / table
   // height) or the x-ray object offset, so scout + recon sweep the real anatomy.
@@ -1425,13 +1553,23 @@ function buildPhantom(){
   const R=objMat();
   const vm=S.voxelModel;
   if(!vm) return new Phantom();          // nothing loaded yet (first frames during boot)
+  if(standing()) S.objOff.z=wallStandZ();
   const cx = S.mode==='ct' ? S.ct.patient.x : S.objOff.x-BK().x;
   // x-ray: the object rests on the receptor plus the height offset — which is where OID
   // comes from. Lifting it moves the anatomy toward the source: real magnification and
   // real geometric unsharpness, because the divergent rays do the rest.
   const cy = S.mode==='ct' ? S.ct.patientY : restHeight() + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z-BK().z;
-  const ph = vm.makePhantom([cx,cy,cz], voxelFlips(), R, jointPosedVolume(vm) || posedVolume(vm, legRotNow()));
+  let posed = jointPosedVolume(vm) || posedVolume(vm, legRotNow()), centre=[cx,cy,cz];
+  // a posed volume is padded evenly round its centre, as far as the bent part reaches either way
+  // (an arm abducted 90 degrees: 1228 x 430 x 755 voxels, 26 s of ray casting at a film's matrix);
+  // the ray caster is given only the voxels that hold anything, and the centre moved to match
+  const crop = posed?.dims ? cropPosed(posed, vm) : null;
+  if(crop){
+    const f=voxelFlips(), o=crop.off.map((v,i)=>f[i] ? -v : v), w=applyMat3(R, o);
+    posed=crop; centre=[cx+w[0], cy+w[1], cz+w[2]];
+  }
+  const ph = vm.makePhantom(centre, voxelFlips(), R, posed);
   applyContrast(ph);
   applyBarium(ph);
   return ph;
@@ -1958,6 +2096,7 @@ window.radsimContrast={
 /* Update 3D transforms to match state (tube position, hand pose, collimator light). */
 function syncScene(){
   if(!three.tube) return;
+  if(standing()) S.objOff.z=wallStandZ();       // (standing on the floor at the wall stand)
   if(!buckyRaf) buckyFollow();                  // (a protocol, a reset or a room change moved the tube)
   roomFrame();                                  // the physics frame into the room (upright at the wall)
   // The voxel model is placed by ctSyncScene in CT mode; in x-ray it rests on the receptor.
@@ -2122,7 +2261,7 @@ const WALL_Q=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().se
    the bucky's offset (BK). Their places in the room do not change; only the receptor moves under
    them. A free plate, and every other mode, has no bucky: BK is zero. */
 const B0={x:0,z:0};
-function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }
+function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S.bucky : B0; }   // (the seated bucky is tilted flat, and stays put)
 const BUCKY_SPEED=30;                       // cm/s, the motor's
 const COLL_ROT_DETENT=5;                    // deg: the collimator clicks into square within this of 0
 const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider
@@ -2147,9 +2286,17 @@ function buckyFollow(){
   };
   buckyRaf=requestAnimationFrame(step);
 }
+/* A HORIZONTAL BEAM on the free detector. The physics frame never changes (the beam down onto the
+   receptor), so a patient whose long axis runs along the beam (tilted 90 degrees: an
+   inferosuperior axial shoulder) stands on their head in it. On the free detector that pose is shown
+   as it is taken: the patient lies supine, and the receptor stands against the top of the shoulder
+   with the tube level at the feet' side, the frame turned back by the tilt. */
+const HB_TILT=80;
+const hbQ=new THREE.Quaternion(), HB_AXIS=new THREE.Vector3(1,0,0);
+function horizontalBeam(){ return S.mode==='xray' && S.room==='detector' && Math.abs(S.objRot.x)>=HB_TILT; }
 function roomFrame(){
   const wall=S.mode==='xray' && S.room==='wall';
-  three.rig.quaternion.copy(wall ? WALL_Q : new THREE.Quaternion());
+  three.rig.quaternion.copy(wall ? WALL_Q : horizontalBeam() ? hbQ.setFromAxisAngle(HB_AXIS, -S.objRot.x*Math.PI/180) : new THREE.Quaternion());
   const B=BK();
   three.rig.position.set(B.x,0,B.z).applyQuaternion(three.rig.quaternion);
   three.rig.updateMatrixWorld(true);
@@ -2161,11 +2308,17 @@ function roomSync(){
   const room=S.mode==='xray' ? S.room : null;
   r.table.visible=room==='table';
   r.wall.visible=room==='wall';
-  r.floor.visible=room==='table' || room==='wall';
-  r.floor.position.y=room==='wall' ? WALL_FLOOR : TABLE_FLOOR;
+  r.seated.visible=room==='seated';
+  r.floor.visible=room==='table' || room==='wall' || room==='seated';
+  r.floor.position.y=roomFloor(room);
   // the receptor sits inside the bucky (under the tabletop, behind the cover): its outline,
   // the AEC chambers and the hang arrow are shown on the surface the patient touches
-  if(room==='table' || room==='wall') three.det.visible=false;
+  if(room==='table' || room==='wall' || room==='seated') three.det.visible=false;
+  // the tube travels the column's length at the wall; elsewhere a few centimetres either way
+  const tz=$('tubeZ'), tr=room==='wall' ? WALL_TUBE : [-18, 18];
+  if(tz && +tz.min!==tr[0]){ tz.min=tr[0]; tz.max=tr[1]; tz.value=S.tubeZ; }
+  // a patient standing on the floor is not moved up and down: the bucky is
+  const oz=$('objOffZ'); if(oz) oz.disabled=standing();
   // at the table the top floats on its base only so far across: the cross offset stops at 21 cm
   const ox=$('objOffX'), xlim=room==='table' ? TABLE_X_LIMIT : OFF_LIMIT;
   if(ox && +ox.max!==xlim){ ox.min=-xlim; ox.max=xlim; }
@@ -2186,21 +2339,28 @@ function roomSync(){
   r.column.visible=S.mode==='xray' && three.tube.visible;
   if(r.column.visible){
     three.tube.updateMatrixWorld(true);
-    r.placeColumn(three.collLCD.mount.getWorldPosition(new THREE.Vector3()), room==='wall' ? WALL_FLOOR : TABLE_FLOOR);
+    r.placeColumn(three.collLCD.mount.getWorldPosition(new THREE.Vector3()), roomFloor(room));
   }
 }
-const ROOM_SID={ table:100, wall:180, detector:100 };
+const roomFloor=(room)=>room==='wall' ? WALL_FLOOR : room==='seated' ? SEATED_FLOOR : TABLE_FLOOR;
+const ROOM_SID={ table:100, wall:180, detector:100, seated:100 };
 // how far the tube can be from the receptor in each set-up: the ceiling column over the table
 // stops at 130 cm; at the wall stand and over a free plate it reaches 210
-const SID_MIN=80, ROOM_SID_MAX={ table:130, wall:210, detector:210 };
+const SID_MIN=80, ROOM_SID_MAX={ table:130, wall:210, detector:210, seated:150 };
 function clampSid(v){ return Math.max(SID_MIN, Math.min(ROOM_SID_MAX[S.room]||210, v)); }
 const GRID_FOCI=[115, 180];
 function gridFocusFor(sid){ return GRID_FOCI.reduce((a,b)=>Math.abs(b-sid)<Math.abs(a-sid)?b:a); }
-const ROOM_ORBIT={ table:190, wall:230, detector:115 };
+const ROOM_ORBIT={ table:190, wall:230, detector:115, seated:140 };
 function setRoom(room){
   if(!ROOM_SID[room]) return;
-  if(room==='detector' && pastingActive()) return;   // pasting needs the tracking bucky (src/pasting.js)
+  if((room==='detector' || room==='seated') && pastingActive()) return;   // pasting needs the tracking bucky (src/pasting.js)
+  // The anatomy under the central ray stays under it: lying down the patient is moved to the
+  // tube; standing at the wall, the tube (and the bucky) go to the anatomy.
+  const wasStanding=standing(), under=S.tubeZ-S.objOff.z;
   S.room=room;
+  if(wasStanding && !standing()){ S.objOff.z=Math.max(-OFF_LIMIT_Z, Math.min(OFF_LIMIT_Z, -under)); S.tubeZ=0; S.bucky.z=0; }
+  else if(standing()){ standKey=''; S.objOff.z=wallStandZ(); S.tubeZ=clampWallTube(under+S.objOff.z); S.bucky.z=S.tubeZ; }
+  syncCentringUI();
   document.querySelectorAll('#roomSel button').forEach(b=>b.classList.toggle('on', b.dataset.room===room));
   // the set-up's usual distance (180 cm at the wall stand, the PA chest's), with the grid focused to it
   S.sid=clampSid(ROOM_SID[room]); S.gridFocus=gridFocusFor(S.sid); setGridFocusUI();
@@ -2220,13 +2380,19 @@ function pasteLock(on){
   if(on){
     if(S.detBaseW!==43) setDetSize(43,43);
     S.collZ=43; if(cz) cz.value=S.collZ;
-    if(S.room==='detector') setRoom('wall');
+    if(S.room==='detector' || S.room==='seated') setRoom('wall');
   }
   if(cz) cz.disabled=on;
   document.querySelectorAll('#detSizeSeg button').forEach(b=>{ b.disabled=on && +b.dataset.w!==43; });
   const db=document.querySelector('#roomSel button[data-room="detector"]');
   if(db){ db.disabled=on; db.title=on ? 'Free detector: not for a pasting study (it needs the tracking bucky)' : 'Free detector: the patient lying on the plate'; }
+  const sb=document.querySelector('#roomSel button[data-room="seated"]');
+  if(sb){ sb.disabled=on; sb.title=on ? 'Seated: not for a pasting study (it needs the tracking bucky)' : "Seated: the wall stand's bucky turned flat, the patient on a stool beside it"; }
   updateGeomReadouts(); syncScene();
+}
+function syncCentringUI(){
+  const oz=$('objOffZ'); if(oz){ oz.value=S.objOff.z; const v=$('objOffZv'); if(v) v.textContent=S.objOff.z.toFixed(1)+' cm'; }
+  const tz=$('tubeZ'); if(tz) tz.value=S.tubeZ;
 }
 /* OID is the patient's height over the receptor: the lift, plus the tabletop or cover. */
 function syncOidUI(){
@@ -2812,15 +2978,30 @@ async function computeRadiograph(opts={}){
     }
   }
   if(!dose){
+    // the rays worth casting: the collimated field, and the AEC's chambers (which read the dose
+    // wherever they lie, in the field or not)
+    const need=mask.slice();
+    for(const k of ['l','c','r']){
+      if(!S.aecCells[k]) continue; const c=AEC_CELLS[k];
+      const i0=Math.max(0,Math.round((c.x-AEC_W/2)/pxU+halfU)), i1=Math.min(nx-1,Math.round((c.x+AEC_W/2)/pxU+halfU));
+      const j0=Math.max(0,Math.round((c.z-AEC_L/2)/pxV+halfV)), j1=Math.min(ny-1,Math.round((c.z+AEC_L/2)/pxV+halfV));
+      for(let j=j0;j<=j1;j++) need.fill(1, j*nx+i0, j*nx+i1+1);
+    }
+    // and only the part of the volume those rays can reach
+    let a0=nx, a1=-1, b0=ny, b1=-1;
+    for(let j=0;j<ny;j++)for(let i=0;i<nx;i++) if(need[j*nx+i]){ if(i<a0)a0=i; if(i>a1)a1=i; if(j<b0)b0=j; if(j>b1)b1=j; }
+    const traced = phantom.voxel && a1>=0 ? phantom.cropTo(source,
+      [(a0-1-halfU)*pxU, (a1+1-halfU)*pxU, (b0-1-halfV)*pxV, (b1+1-halfV)*pxV]) : phantom;
+    tm.traced=traced.voxel ? [traced.nx, traced.ny, traced.nz, a1-a0+1, b1-b0+1] : null;
     dose=await AttenuationEngine.project({
-      phantom, source, detCenter, detU, detV, nx, ny, pxU, pxV,
+      phantom:traced, source, detCenter, detU, detV, nx, ny, pxU, pxV, need,
       spectrum, I0, refDist:100,
       onRow:(f)=>{ $('prog').style.width=(f*100).toFixed(0)+'%'; },
     });
   }
   tm.project=performance.now();
   S.lastTiming={ pose:tm.pose-tm.t0, phantom:tm.phantom-tm.pose, project:tm.project-tm.phantom,
-                 dims:phantom.voxel ? [phantom.nx, phantom.ny, phantom.nz] : null, nx, ny, t0:tm.t0 };
+                 dims:phantom.voxel ? [phantom.nx, phantom.ny, phantom.nz] : null, traced:tm.traced||null, nx, ny, t0:tm.t0 };
 
   /* THE OPEN BEAM at every pixel: what the receptor would read with nobody in the way. The EI
      has to set aside raw beam before it measures the anatomy, and it used to find the raw
@@ -3048,7 +3229,7 @@ function computeCrop(nx,ny,mask){
 }
 /* Render a radiograph to `target`. With no `entry` it draws the active image (S.last*);
    pass a history entry to render that one (used for the review-strip thumbnails). */
-function renderRadiograph(target,entry){
+function renderRadiograph(target,entry,opts){
   const sig = entry? entry.sig : S.lastSignal;
   const nx  = entry? entry.nx  : S.nx;
   const ny  = entry? entry.ny  : S.ny;
@@ -3069,8 +3250,12 @@ function renderRadiograph(target,entry){
   // skin as a bright rim and laid a sheen over the bone) shows its plain tones
   const plain = entry? entry.plain : S.imgPlain;
   const enhOn=(_t.eOn!==undefined)?_t.eOn:(S.detailEnh && !plain);
-  const lat=!entry && S.lut?.latitude;
-  const baseArr=(enhOn && !entry)? activeProcessed(sig,nx,ny,mask,mx) : lat ? activeLatitude(sig,nx,ny,mask,mx,lat) : null;
+  // (opts.processed: a passed entry processed as the active image is, made fresh rather than
+  // cached: the Protocol Trainer hangs films at full quality, not as thumbnails)
+  const full=!entry || !!opts?.processed;
+  const lat=full && S.lut?.latitude;
+  const baseArr=(enhOn && full)? (entry ? processImage(sig,nx,ny,mask,mx) : activeProcessed(sig,nx,ny,mask,mx))
+    : lat ? (entry ? latitudeImage(sig,nx,ny,mask,mx,lat) : activeLatitude(sig,nx,ny,mask,mx,lat)) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -3491,6 +3676,8 @@ function landmarkLocal(subject, name){
 const OFF_LIMIT = 55;                                              // the patient-offset sliders' range, cm (a foot at the end of a metre of leg)
 const OFF_LIMIT_Z = 75;                                            // along the table: a whole child's head lies 65 cm from its middle
 const TABLE_X_LIMIT = 21;                                          // the floating tabletop's cross travel, cm
+// dev server only: the phantom as an exposure builds it (for timing its traces)
+if (import.meta.env?.DEV) window.__buildPhantom = () => buildPhantom();
 // dev server only: try a protocol pose from the console (roll, joints, centring), as applyProtocol would
 if (import.meta.env?.DEV) window.__applyPose = (pose) => { applyPose(pose); syncScene(); };
 // (and a whole protocol by its projection's name, as the picker applies it)
@@ -3516,7 +3703,12 @@ function applyPose(pose){
   const loc = rest && poseLoc(rest);
   if (loc) {
     const w = applyMat3(objMat(), loc);                            // where the landmark sits after the roll
-    const ox = -w[0], oz = -w[2];
+    const ox = -w[0];
+    let oz = -w[2];
+    // (pose.through: an angled central ray aimed THROUGH the point, as the Coyle elbow's 45 degrees
+    // toward the shoulder is: the ray crosses the receptor's centre, so at the point's height above
+    // the receptor it is that height times the angle's tangent along the table)
+    if (pose.through && S.angCC) oz += (restHeight() + S.objOff.y + w[1]) * Math.tan(S.angCC * Math.PI / 180);
     const xlim = S.mode === 'xray' && S.room === 'table' ? TABLE_X_LIMIT : OFF_LIMIT;
     S.objOff.x = Math.max(-xlim, Math.min(xlim, ox));
     S.objOff.z = Math.max(-OFF_LIMIT_Z, Math.min(OFF_LIMIT_Z, oz));
@@ -3528,6 +3720,15 @@ function applyPose(pose){
   setSl('objOffX', S.objOff.x.toFixed(1), S.objOff.x.toFixed(1) + ' cm');
   setSl('objOffZ', S.objOff.z.toFixed(1), S.objOff.z.toFixed(1) + ' cm');
   for (const id of ['tubeX', 'tubeZ', 'angLM']) { const el = $(id); if (el) el.value = 0; }
+  // standing at the wall: the patient is on the floor, and the tube and bucky go up or down to the
+  // landmark (at once: a protocol sets the room as it says)
+  if (standing()) {
+    standKey = '';
+    S.objOff.z = wallStandZ();
+    S.tubeZ = clampWallTube(loc ? applyMat3(objMat(), loc)[2] + S.objOff.z : S.objOff.z);
+    S.bucky.z = S.tubeZ;
+    syncCentringUI();
+  }
   const cc = $('angCC'); if (cc) cc.value = S.angCC;
   updateGeomReadouts();
   if (note) {
@@ -3568,7 +3769,7 @@ function openProtocolPopup(){
       '<div class="proto-region"><div class="proto-rname">'+rg.region+'</div><div class="proto-projs">'+
       rg.projections.map(p=>{ const cur=S.protocol&&S.protocol.part===gr.part&&S.protocol.proj===p.proj;
         // a pasting study needs the tracking bucky: the wall stand or the table, not a free plate
-        const off=p.paste && S.room==='detector';
+        const off=p.paste && (S.room==='detector' || S.room==='seated');
         return '<button class="proto-proj'+(cur?' on':'')+'" data-part="'+gr.part+'" data-proj="'+p.proj+'"'
           +(off?' disabled title="Wall stand or table only: the study needs the tracking bucky"':'')+'>'
           +p.proj+'<small>'+p.kv+' kVp · '+p.mas+' mAs'+(p.grid?' · grid':' · no grid')
@@ -4593,7 +4794,7 @@ window.addEventListener('load',()=>{
   Sound.init(); initExtras(); initContrastPanel(); initGIPanel(); initPalpPanel();
   setInterval(tabActivity, 250);
   // CT mode lives in its own module; give it the handles it needs from the app glue.
-  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
+  initCT({ THREE, S, $, three, Sound, onModeChange: (m) => { trainerOnMode(m); protocolTrainerOnMode(m); if(m!=='xray') clearPathology(); if(S.realistic) setRealistic(null); three.resetOrbitTarget?.(); giStandFromRoom(m); }, setRealistic,
            setSubject: (s) => setSubject(s),
            syncScene, refreshReadouts, updateGeomReadouts,
            poseRot, buildPhantom, ctLiveView, setCameraView, setCTPov, setContent, setBay3DEnabled,
@@ -4702,7 +4903,7 @@ window.addEventListener('load',()=>{
   initTutorial({ applyMode: ctApplyMode });
   initPalpation({ THREE, three, S, voxelFlips, objMat, poseLoc,
     modelCentre: () => [S.objOff.x-BK().x, restHeight() + S.objOff.y, S.objOff.z-BK().z] });
-  initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent,
+  initTrainer({ S, applyMode: ctApplyMode, findProtocol, applyProtocol, syncScene, setContent, setRoom,
     palpation: { list: palpationList, set: setPalpated, clear: clearPalpation, active: palpatedKeys },
     tubeFrame, objMat, voxelFlips,
     landmarkLocal: (name) => landmarkLocal(S.subject, name),
@@ -4719,6 +4920,14 @@ window.addEventListener('load',()=>{
     expose: async () => { if(S.exposing) return; S.exposing=true; try { await computeRadiograph(); } finally { S.exposing=false; } },
     exposeDry: () => computeRadiograph({ dry:true }),
     renderFull: renderRadiographFull });
+  initProtocolTrainer({ S, applyMode: ctApplyMode, protocols: () => protocolData, applyProtocol, setRoom,
+    hasCentre: (subject, name) => !!(centringData[subject]?.[name] || landmarkData[subject]?.[name]),
+    setMarker: (side) => setSideMarker(side, false),
+    setResolution: (res) => { const was=S.resolution; S.resolution=res; applyDet(); return was; },
+    exposeDry: () => computeRadiograph({ dry:true }),
+    renderFilm: (target, entry) => { const r=S.imgRot, fh=S.flipH, fv=S.flipV; S.imgRot=0; S.flipH=false; S.flipV=false;
+      try { renderRadiograph(target, entry, { processed:true }); } finally { S.imgRot=r; S.flipH=fh; S.flipV=fv; } },
+    setPathology, clearPathology });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });
   ctApplyVendor();                              // apply the initial vendor workflow (show/hide chevrons + table button)

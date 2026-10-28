@@ -99,6 +99,84 @@ export class VoxelPhantom {
     this.gasLUT = gasLUT || null;
     this.ns = ns || this.ns || 256;
   }
+  /* The part of the volume a beam can reach: the rays from the focal spot src to the rectangle
+     [x0, x1] x [z0, z1] on the receptor plane (y = 0). Where the beam and the volume meet is a convex
+     solid, its corners where the beam's edge rays enter and leave the volume and the volume's own
+     corners inside the beam (and where its edges cross the beam's faces, which the edge rays, taken
+     closely, bound to within the margin). The crop is the grid box round them. Returns a phantom of
+     that box alone, placed where it was, or this one when the box saves little or a contrast field
+     is attached (its per-voxel maps are the full grid's). A tight field over a big volume was paying
+     for the cache misses of a volume it never touched: an axial shoulder's 12 cm field over an
+     abducted arm, 22 s. */
+  cropTo(src, [x0, x1, z0, z1], margin = 3) {
+    if (!this.data || this.sVol || this.giVol || !(src[1] > 0)) return this;
+    const c = [(this.min[0] + this.max[0]) / 2, (this.min[1] + this.max[1]) / 2, (this.min[2] + this.max[2]) / 2];
+    const n = [this.nx, this.ny, this.nz], lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+    const R = this.rotT, rot = this.rotated;
+    const local = (p) => { if (!rot) return p; const x = p[0] - c[0], y = p[1] - c[1], z = p[2] - c[2];
+      return [c[0] + R[0] * x + R[1] * y + R[2] * z, c[1] + R[3] * x + R[4] * y + R[5] * z, c[2] + R[6] * x + R[7] * y + R[8] * z]; };
+    const grow = (q) => { for (let k = 0; k < 3; k++) { const g = (q[k] - this.min[k]) / this.vs[k]; if (g < lo[k]) lo[k] = g; if (g > hi[k]) hi[k] = g; } };
+    const o = local(src);
+    const edge = (px, pz) => {                       // one ray, clipped to the volume's box
+      const q = local([px, 0, pz]), d = [q[0] - o[0], q[1] - o[1], q[2] - o[2]];
+      let t0 = 0, t1 = 1;
+      for (let k = 0; k < 3; k++) {
+        if (Math.abs(d[k]) < 1e-12) { if (o[k] < this.min[k] || o[k] > this.max[k]) return; continue; }
+        let ta = (this.min[k] - o[k]) / d[k], tb = (this.max[k] - o[k]) / d[k];
+        if (ta > tb) { const t = ta; ta = tb; tb = t; }
+        if (ta > t0) t0 = ta; if (tb < t1) t1 = tb;
+        if (t1 < t0) return;
+      }
+      for (const t of [t0, t1]) grow([o[0] + t * d[0], o[1] + t * d[1], o[2] + t * d[2]]);
+    };
+    const S = 64;
+    for (let s = 0; s <= S; s++) {
+      const a = x0 + (x1 - x0) * s / S, b = z0 + (z1 - z0) * s / S;
+      edge(a, z0); edge(a, z1); edge(x0, b); edge(x1, b);
+    }
+    // the volume's corners that lie inside the beam (world: the corner turned about the centre)
+    const Rw = this.rot;
+    for (const cx of [this.min[0], this.max[0]]) for (const cy of [this.min[1], this.max[1]]) for (const cz of [this.min[2], this.max[2]]) {
+      const l = [cx - c[0], cy - c[1], cz - c[2]];
+      const w = rot ? [c[0] + Rw[0] * l[0] + Rw[1] * l[1] + Rw[2] * l[2], c[1] + Rw[3] * l[0] + Rw[4] * l[1] + Rw[5] * l[2], c[2] + Rw[6] * l[0] + Rw[7] * l[1] + Rw[8] * l[2]] : [cx, cy, cz];
+      if (w[1] >= src[1]) continue;
+      const t = src[1] / (src[1] - w[1]), hx = src[0] + (w[0] - src[0]) * t, hz = src[2] + (w[2] - src[2]) * t;
+      if (hx >= x0 && hx <= x1 && hz >= z0 && hz <= z1) grow([cx, cy, cz]);
+    }
+    if (!(hi[0] >= lo[0])) return this;
+    const i0 = [0, 1, 2].map((k) => Math.max(0, Math.floor(lo[k]) - margin));
+    const i1 = [0, 1, 2].map((k) => Math.min(n[k] - 1, Math.ceil(hi[k]) + margin));
+    if (i1.some((v, k) => v < i0[k])) return this;
+    const m = [0, 1, 2].map((k) => i1[k] - i0[k] + 1);
+    if (m[0] * m[1] * m[2] > 0.6 * n[0] * n[1] * n[2]) return this;
+    // LAID OUT ALONG THE BEAM: the data runs fastest along the axis the beam mostly travels. A
+    // beam down the grid's slowest axis (a body tilted onto it: the axial shoulders) steps a slice's
+    // width at every voxel and misses the cache at each, five times the cost of the same rays along
+    // the rows. The grid's axes are permuted (perm[k]: the old axis that is new axis k) and the
+    // rotation with them, so the box is the same box in the room.
+    const lc = local([(x0 + x1) / 2, 0, (z0 + z1) / 2]), dl = [lc[0] - o[0], lc[1] - o[1], lc[2] - o[2]];
+    const ax = [0, 1, 2].reduce((a, k) => (Math.abs(dl[k]) > Math.abs(dl[a]) ? k : a), 0);
+    const perm = ax === 0 ? [0, 1, 2] : ax === 1 ? [1, 0, 2] : [2, 0, 1];
+    const M = perm.map((k) => m[k]), f = this.flip, nf = perm.map((k) => f[k]);
+    const out = new Uint8Array(M[0] * M[1] * M[2]), g = [0, 0, 0];
+    for (let k2 = 0; k2 < M[2]; k2++) for (let k1 = 0; k1 < M[1]; k1++) {
+      g[perm[2]] = k2 + i0[perm[2]]; g[perm[1]] = k1 + i0[perm[1]];
+      const row = ((nf[2] ? M[2] - 1 - k2 : k2) * M[1] + (nf[1] ? M[1] - 1 - k1 : k1)) * M[0];
+      for (let k0 = 0; k0 < M[0]; k0++) {
+        g[perm[0]] = k0 + i0[perm[0]];
+        out[row + (nf[0] ? M[0] - 1 - k0 : k0)] = this.idAt(g[0], g[1], g[2]);
+      }
+    }
+    // the box's centre, from the grid's, in the local frame; and where the rotation puts it
+    const off = [0, 1, 2].map((k) => this.min[k] + (i0[k] + i1[k] + 1) / 2 * this.vs[k] - c[k]);
+    const w = rot ? [Rw[0] * off[0] + Rw[1] * off[1] + Rw[2] * off[2], Rw[3] * off[0] + Rw[4] * off[1] + Rw[5] * off[2], Rw[6] * off[0] + Rw[7] * off[1] + Rw[8] * off[2]] : off;
+    // the rotation of the permuted grid: R' = R P^T (its column k is R's column perm[k])
+    const R0 = rot ? Rw : [1, 0, 0, 0, 1, 0, 0, 0, 1];
+    const Rp = [0, 1, 2].flatMap((i) => perm.map((k) => R0[i * 3 + k]));
+    const ph = new VoxelPhantom({ dims: M, vs: perm.map((k) => this.vs[k]), data: out }, [c[0] + w[0], c[1] + w[1], c[2] + w[2]], nf, Rp);
+    ph.concLUT = this.concLUT; ph.baLUT = this.baLUT; ph.gasLUT = this.gasLUT; ph.ns = this.ns;
+    return ph;
+  }
   // material id at a world point (or -1 outside the volume) — used for previews/debug
   idAtWorld(p) {
     const ix = Math.floor((p[0] - this.min[0]) / this.vs[0]);
