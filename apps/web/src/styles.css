@@ -1481,7 +1481,7 @@ body.mode-home .app{visibility:hidden}
   padding:8px 15px; border-radius:7px; cursor:pointer; border:1px solid var(--edge2);
   background:#1a222b; color:#dbe6f0; transition:.14s}
 .hc-acts button:hover{background:#26313d; border-color:#6b8aa4}
-.hc-acts .hc-open, .hc-acts .hc-trainer, .hc-acts .hc-anim{background:#2a3a4a; border-color:#4d6a86}
+.hc-acts .hc-open, .hc-acts .hc-trainer, .hc-acts .hc-anim, .hc-acts .hc-surg{background:#2a3a4a; border-color:#4d6a86}
 .hc-acts .hc-tut{color:var(--sub)}
 
 /* ---- tutorial ------------------------------------------------------------------------
@@ -2412,6 +2412,14 @@ body:not(.mode-dxa) .dxmodal{display:none}
 .anim-seg:hover{background:#2a3644}
 .anim-seg[data-ci="1"]{box-shadow:inset 0 -2px #26405a} .anim-seg[data-ci="3"]{box-shadow:inset 0 -2px #26405a}
 .anim-seg[data-ci="5"]{box-shadow:inset 0 -2px #26405a}
+/* the Surgical Animations chooser (anim/player.js openSurgicalMenu), under its button */
+.surg-menu{position:fixed; z-index:420; display:flex; flex-direction:column; gap:4px; min-width:220px; padding:6px;
+  background:#0f151c; border:1px solid #2b3a48; border-radius:8px; box-shadow:0 8px 26px #000a}
+.surg-menu button{font-family:var(--disp); font-weight:600; font-size:14px; letter-spacing:.6px; text-align:left;
+  padding:9px 13px; border-radius:6px; cursor:pointer; border:1px solid #2b3a48; background:#1a222b; color:#dbe6f0; transition:.14s}
+.surg-menu button:hover, .surg-menu button:focus-visible{background:#26313d; border-color:#6b8aa4; outline:none}
+.surg-menu button:disabled{opacity:.45; cursor:default}
+body.mobile .surg-menu button{min-height:44px}
 body.mobile .anim-title{font-size:16px}
 body.mobile .anim-cap{font-size:13px; left:10px; bottom:10px}
 @media (prefers-reduced-motion: reduce){ .anim-stepname.show{animation:none; opacity:1} }

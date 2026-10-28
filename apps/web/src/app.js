@@ -4806,6 +4806,11 @@ document.querySelectorAll('#homeScreen .hc-anim').forEach((b)=>b.addEventListene
   e.stopPropagation();
   import('./anim/player.js').then((m)=>m.openAnimation(b.dataset.anim));
 }));
+// the fluoroscopy card's surgical films: a chooser of them, each opened by its id
+document.querySelectorAll('#homeScreen .hc-surg').forEach((b)=>b.addEventListener('click',(e)=>{
+  e.stopPropagation();
+  import('./anim/player.js').then((m)=>m.openSurgicalMenu(b));
+}));
 const COMPUTE_LOCAL = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)
   || !!import.meta.env.VITE_COMPUTE_URL;
 // The realistic modes need the Python backend, which only a local run has: online their cards
