@@ -181,8 +181,13 @@ def measure():
                            'AP open mouth (C1-C2): CR through the centre of the open mouth, to C1-C2 (Bontrager; Radiopaedia)')
     cent['C7T1'] = rest_pt((body_('vertebrae_C7') + body_('vertebrae_T1')) / 2, 'midway between the bodies of C7 and T1 (the seam of '
                            'the graft: the head donor\'s C7 on the child\'s T1)', 'Swimmers lateral: CR to C7-T1 (Bontrager; Radiopaedia)')
-    cent['skull'] = rest_pt(land['skull'] and np.array([land['skull'][a] for a in 'xyz']), 'the centre of the cranium (as the landmark)',
-                            'AP / lateral skull: CR to the centre of the skull (the glabella / 2 cm above the EAM) (Bontrager; Radiopaedia)', 'medium')
+    # (the whole skull, mandible included: the cranium's centre left the face and the mandible off a 24 cm field)
+    lo_, hi_ = sk.min(0), sk.max(0)
+    cent['skull'] = rest_pt([land['skull']['x'], (lo_[1] + hi_[1]) / 2, (lo_[2] + hi_[2]) / 2],
+                            f'the middle of the skull label: halfway between the vertex ({hi_[2]:.1f}) and the mandible ({lo_[2]:.1f}), '
+                            'and between its front and back, on the cranium\'s midline',
+                            'AP / lateral skull: CR to the middle of the head, so the whole skull, vertex to mandible, is on the film '
+                            '(Bontrager; Radiopaedia)', 'medium')
     if 'pelvis' in land:
         cent['pelvis'] = rest_pt(np.array([land['pelvis'][a] for a in 'xyz']), land['pelvis']['how'],
                                  'AP pelvis: CR midway between the ASIS and the symphysis (Bontrager; Radiopaedia)')

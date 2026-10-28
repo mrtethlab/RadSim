@@ -224,12 +224,24 @@ test('the skull, sinus and facial views load the Skull, angled to the OML and ce
   assert.equal(pose('AP axial skull (Towne)').cc, 30);
   assert.equal(pose('Parietoacanthial sinuses (Waters)').tilt, 53);
   for (const p of head.filter((x) => /^Lateral/.test(x.proj))) assert.equal(p.pose.tilt, 7, p.proj);
-  // the points in anatomical order: the acanthion below the nasion, the ear canals behind both, the
-  // lateral skull's point 5 cm above them
+  // the points in anatomical order: the acanthion below the nasion, the ear canals behind both; the
+  // lateral skull's point the middle of the whole head, in front of the ear canals and near their level
+  // (5 cm above them, Bontrager's point for the cranium, left the frontal bone and the mandible off)
   const c = centring.skull;
   assert.ok(c.acanthion.z < c.nasion.z - 3, `acanthion ${c.acanthion.z} vs nasion ${c.nasion.z}`);
   assert.ok(c.eam.y < c.nasion.y - 7 && c.eam.y < c.zygoma.y && c.zygoma.y < c.nasion.y, 'front to back: nasion, zygoma, ear canals');
-  assert.ok(Math.abs(c.latSkull.z - c.eam.z - 5) < 0.01);
+  assert.ok(c.latSkull.y > c.eam.y + 1 && c.latSkull.y < c.zygoma.y && Math.abs(c.latSkull.z - c.eam.z) < 1.5,
+    `lateral skull point ${c.latSkull.y}, ${c.latSkull.z} vs EAM ${c.eam.y}, ${c.eam.z}`);
+  // every skull view takes the whole skull: a 24 x 30 field on the 25 x 30 receptor, its long side down
+  // the head; the angled views aimed through their point (the Caldwell exits the nasion, the Towne
+  // crosses the EAM to the foramen magnum)
+  for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'Lateral skull']) {
+    const p = all.find((x) => x.proj === proj);
+    assert.deepEqual([p.coll, p.det, p.orient], [[24, 30], [25, 30], 'portrait'], proj);
+  }
+  for (const proj of ['PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'PA axial sinuses (Caldwell)']) assert.equal(pose(proj).through, true, proj);
+  // the child's views centre the middle of its whole skull, below the cranium's centre (the landmark)
+  assert.ok(centring.pediatric.skull.z < landmarks.pediatric.skull.z - 3, `${centring.pediatric.skull.z} vs ${landmarks.pediatric.skull.z}`);
   // the cervical spine stays on the head and neck model
   for (const p of all.filter((x) => /cervical|open mouth|Swimmers/i.test(x.proj))) assert.equal(p.subject, 'headneck', p.proj);
 });

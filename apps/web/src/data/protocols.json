@@ -2775,8 +2775,8 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                20,
-                25
+                24,
+                30
               ],
               "det": [
                 25,
@@ -2801,8 +2801,8 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                20,
-                25
+                24,
+                30
               ],
               "det": [
                 25,
@@ -2827,8 +2827,8 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                20,
-                25
+                24,
+                30
               ],
               "det": [
                 25,
@@ -2839,22 +2839,23 @@
               "pose": {
                 "roll": 180,
                 "cc": 15,
-                "centre": "nasion"
+                "centre": "nasion",
+                "through": true
               }
             },
             {
               "proj": "AP axial skull (Towne)",
               "room": "wall",
               "kv": 80,
-              "mas": 25,
-              "cm": 19,
+              "mas": 16,
+              "cm": 21,
               "grid": true,
               "aec": "c",
               "lut": "skull",
               "sid": 100,
               "coll": [
-                20,
-                25
+                24,
+                30
               ],
               "det": [
                 25,
@@ -2865,7 +2866,8 @@
               "pose": {
                 "roll": 0,
                 "cc": 30,
-                "centre": "eam"
+                "centre": "eam",
+                "through": true
               }
             },
             {
@@ -2879,8 +2881,8 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                22,
-                25
+                24,
+                30
               ],
               "det": [
                 25,
@@ -2923,7 +2925,8 @@
               "pose": {
                 "roll": 180,
                 "cc": 15,
-                "centre": "nasion"
+                "centre": "nasion",
+                "through": true
               }
             },
             {
@@ -3075,14 +3078,14 @@
               "room": "wall",
               "kv": 73,
               "mas": 12.5,
-              "cm": 13,
+              "cm": 14,
               "grid": true,
               "aec": "c",
               "lut": "skull",
               "sid": 100,
               "coll": [
-                22,
-                22
+                25,
+                28
               ],
               "det": [
                 25,
