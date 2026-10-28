@@ -115,8 +115,9 @@ export const VIEWS = {
     apFlat: { orbital: 0, tilt: 10 },
     // the left Scottie dogs: oblique about 30, tilted to flatten the endplates
     scottie: { orbital: 30, tilt: 10 },
-    // the interlaminar windows opened: tilted toward the head
-    interlaminar: { orbital: 0, tilt: 20 },
+    // the interlaminar windows opened: the receptor toward the feet, the beam up the slope of the
+    // laminae (measured at L3-L4 by rays clear of bone behind the canal: +20 shuts it)
+    interlaminar: { orbital: 0, tilt: -10 },
   },
   cervical: {
     ap: { orbital: 0, tilt: 0 },
