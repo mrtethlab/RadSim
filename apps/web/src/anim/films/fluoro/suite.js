@@ -18,7 +18,8 @@ export const FLOOR_Y = -90;
 export const PAT_HALF = 16.5;                                 // the model's AP half-thickness: its centre above the tabletop
 export const ISO = [0, PAT_HALF, 0];
 
-export async function buildSuite(api) {
+/* opts.patient: false leaves the patient out (the surgical films lay their own, surg/kit.js). */
+export async function buildSuite(api, { patient: withPatient = true } = {}) {
   const g = new THREE.Group();
   api.scene.add(g);
 
@@ -65,7 +66,7 @@ export async function buildSuite(api) {
   // ---- the patient: skin (seen through), bones, the gut, on the tabletop
   const patient = new THREE.Group(); patient.position.set(0, PAT_HALF, 0); bed.add(patient);
   const gi = {};
-  const [skin, bone, gut] = await Promise.all([
+  const [skin, bone, gut] = !withPatient ? [null, null, null] : await Promise.all([
     api.loadGlb('models/chestabdopelvis/chestabdopelvis_skin.glb').catch(() => null),
     api.loadGlb('models/chestabdopelvis/chestabdopelvis_bone.glb').catch(() => null),
     api.loadGlb('models/chestabdopelvis/chestabdopelvis_gi.glb').catch(() => null),
@@ -112,22 +113,23 @@ export async function buildSuite(api) {
     if (ch.isMesh && ch.geometry?.type === 'LatheGeometry') (named.ring ??= []).push(ch);  // the C's arc and its rails
   }
   named.head = carm.column.children.find((o) => o.isMesh && Math.abs(o.position.x + 2) < 0.1 && Math.abs(o.position.y - 22) < 0.1);   // the control head
-  const pose = { orbital: 0, tilt: 0, over: 0, wig: 0, ext: 0, lift: 0 };
+  const pose = { orbital: 0, tilt: 0, over: 0, wig: 0, ext: 0, lift: 0, slide: 0 };
   /* fluoroSyncScene's chain: wig-wag yaws the cross-arm about the column; the holder turns on the
      arm's end by flip-flop (over, 0..1 of half a turn) and tilt; the C slides through the holder
-     by the orbital angle. lift raises the whole C; the isocentre moves with it. */
+     by the orbital angle. lift raises the whole C; the isocentre moves with it. slide rolls the
+     whole cart along the table (cm toward the head). */
   const X = new THREE.Vector3(1, 0, 0), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(0, 0, 1);
   function setPose(p = {}) {
     Object.assign(pose, p);
     const w = pose.wig * Math.PI / 180, r = CARM.LARM + pose.ext;
-    const iso = [ISO[0] - CARM.LARM + Math.cos(w) * r, ISO[1] + pose.lift, ISO[2] - Math.sin(w) * r];
+    const iso = [ISO[0] - CARM.LARM + Math.cos(w) * r, ISO[1] + pose.lift, ISO[2] + pose.slide - Math.sin(w) * r];
     const qw = new THREE.Quaternion().setFromAxisAngle(Y, w);
     const qh = qw.clone().multiply(new THREE.Quaternion().setFromAxisAngle(X, pose.over * Math.PI))
       .multiply(new THREE.Quaternion().setFromAxisAngle(X, pose.tilt * Math.PI / 180));
     const qc = qh.clone().multiply(new THREE.Quaternion().setFromAxisAngle(Z, -pose.orbital * Math.PI / 180));
     carm.c.position.set(...iso); carm.c.quaternion.copy(qc);
     carm.holder.position.set(...iso); carm.holder.quaternion.copy(qh);
-    const colX = ISO[0] - CARM.LARM, colZ = ISO[2];
+    const colX = ISO[0] - CARM.LARM, colZ = ISO[2] + pose.slide;
     carm.boom.position.set(colX + Math.cos(w) * pose.ext, ISO[1] + pose.lift, colZ - Math.sin(w) * pose.ext);
     carm.boom.quaternion.copy(qw);
     carm.column.position.set(colX, ISO[1] + pose.lift, colZ);
