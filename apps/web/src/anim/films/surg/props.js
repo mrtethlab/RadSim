@@ -326,10 +326,11 @@ export function makeGenerator(floorY = -90) {
   box.add(mesh(new THREE.BoxGeometry(38.4, 1.2, 30.4), std(0x2f6fd6, 0.5), 0, 1, 0));
   const cv = document.createElement('canvas'); cv.width = 320; cv.height = 160;
   const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
-  const scr = mesh(new THREE.PlaneGeometry(20, 10), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }), -6, 9.5, 15.05);
+  const scr = mesh(new THREE.PlaneGeometry(20, 10), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }), -6, 9.5, 15.15);   // in front of its bezel (14.7..15.1)
   box.add(mesh(new THREE.BoxGeometry(21.4, 11.4, 0.4), dark, -6, 9.5, 14.9));
   box.add(scr);
-  for (let i = 0; i < 4; i++) box.add(mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.6, 14), dark, 8.5 + (i % 2) * 4.5, 12 - Math.floor(i / 2) * 4.5, 15.1)).rotation.x = Math.PI / 2;
+  // (each socket turned to face out: the socket, not the box, that add() returns)
+  for (let i = 0; i < 4; i++) box.add(mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.6, 14), dark, 8.5 + (i % 2) * 4.5, 12 - Math.floor(i / 2) * 4.5, 15.1)).children.at(-1).rotation.x = Math.PI / 2;
   const knob = mesh(new THREE.CylinderGeometry(1.6, 1.6, 1.4, 20), dark, 10.75, 4.2, 15.3); knob.rotation.x = Math.PI / 2; box.add(knob);
   g.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
   function screen({ mode = '', temp = 37, ohms = 0, volts = 0, hz = 0, time = 0, on = false } = {}) {
