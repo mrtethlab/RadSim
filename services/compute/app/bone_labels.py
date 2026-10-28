@@ -22,9 +22,10 @@ from scipy import ndimage as ndi
 
 DATA = Path(__file__).resolve().parent.parent / 'data'
 # the models build_model made from a segmented CT: ct, seg, region, spacing, box, and what was done
-# to the volume after (requirements-models.txt; build_limbs.head_neck)
+# to the volume after (requirements-models.txt; build_limbs.head_neck; build_cap_thighs: the thighs
+# grafted at the foot, its last bad slices dropped)
 SOURCES = {
-    'chestabdopelvis': ('totalseg/s1379/ct.nii.gz', 'totalseg/s1379/seg_ml.nii.gz', 'chestabdopelvis', 2.0, None, None),
+    'chestabdopelvis': ('totalseg/s1379/ct.nii.gz', 'totalseg/s1379/seg_ml.nii.gz', 'chestabdopelvis', 2.0, None, 'thighs'),
     'chest': ('chest/ct.nii.gz', 'chest/seg.nii', 'chest', 1.0, None, None),
     'headneck': ('totalseg/s1082/ct.nii.gz', 'totalseg/s1082/seg_ml.nii.gz', 'wholebody', 1.5, (0.55, 1.0, 0, 1, 0, 1), 'headneck'),
 }
@@ -33,8 +34,10 @@ SOURCES = {
 RIM_MM = 2.0
 
 
-def label_grid(name, shape):
-    """The model's materials and labels (z, y, x) on its shipped grid, made again; or None."""
+def label_grid(name, shape, graft=True):
+    """The model's materials and labels (z, y, x) on its shipped grid, made again; or None. A model
+    with a graft at its foot (build_cap_thighs) gets the grid above it (graft=False: the grid as
+    build_model left it)."""
     import SimpleITK as sitk
     import app.build_model as bm
     src = SOURCES.get(name)
@@ -66,6 +69,9 @@ def label_grid(name, shape):
                 keep[z, :max(0, ys.min() - 3)] = False
         keep = pare(keep, r=0)
         mat, lab = tight(keep, np.where(keep, mat, 0), lab)
+    if post == 'thighs' and graft:
+        from app.build_cap_thighs import SEAM
+        mat, lab = mat[SEAM:], lab[SEAM:]
     if mat.shape != tuple(shape):
         return None
     return mat, lab
@@ -79,6 +85,12 @@ def tight(body, mat, lab, pad=4):
 
 def labelled_bone(name, mat):
     import app.build_model as bm
+    graft = 0
+    if SOURCES.get(name, (None,) * 6)[5] == 'thighs':
+        # the rows grafted at the foot hold the donor's femurs and no other bone: all of it is bone
+        from app.build_cap_thighs import ADD_SLICES, SEAM
+        graft = ADD_SLICES + SEAM
+    whole, mat = mat, mat[graft:]
     got = label_grid(name, mat.shape)
     if got is None:
         return None
@@ -97,4 +109,4 @@ def labelled_bone(name, mat):
     bone = np.isin(lab, [l for l, n in cmap.items() if bm.name_to_material(n) == -1])
     s = SOURCES[name][3]
     near = ndi.binary_dilation(bone, iterations=max(1, round(RIM_MM / s)))
-    return dense & near
+    return np.concatenate([np.isin(whole[:graft], [bm.TRABECULAR, bm.CORTICAL]), dense & near])

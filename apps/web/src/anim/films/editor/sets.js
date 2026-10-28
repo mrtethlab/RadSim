@@ -13,6 +13,7 @@ import { std, mesh, beamCone, rayLines, setOpacity } from '../../kit/stage.js';
 import { buildRoom, buildTubeHead } from '../../../room.js';
 import { buildCarm, CARM } from '../../../carm.js';
 import { RGB, SLICE, ZE, hex } from './data.js';
+import { capMeshFrame } from '../capFrame.js';
 
 export const BORE_R = 35;
 const GANT_IN = 38, GANT_OUT = 92, GANT_D = 56;
@@ -136,6 +137,7 @@ export function buildSets(api, S, D) {
   ]).then(([skin, bone]) => {
     const prep = (g, mat) => {
       if (!g) return null;
+      capMeshFrame(g);
       g.scale.setScalar(0.1);
       g.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); o.material = mat; o.castShadow = true; } });
       return g;

@@ -9,6 +9,7 @@
    display-side, as on the machine. Constants are the app's. */
 import { acousticTables } from '../../../core/acoustics.js';
 import { deriveMotion, motionState, warpPoint } from '../../../core/anatomyMotion.js';
+import { capVolumeFrame } from '../capFrame.js';
 
 export const C_SND = 0.154;           // cm per microsecond: 1540 m/s
 export const TGC_ASSUME = 0.5;        // dB/cm/MHz the TGC assumes
@@ -29,8 +30,9 @@ function hash3(a, b, c) {
 export async function loadVolume() {
   const base = import.meta.env.BASE_URL + 'models/chestabdopelvis/';
   const meta = await (await fetch(base + 'chestabdopelvis.model.json')).json();
-  const data = new Uint8Array(await (await fetch(base + meta.volume)).arrayBuffer());
-  const [nx, ny, nz] = meta.dims, vs = meta.spacing[0] / 10;
+  // (from where the volume began when the film was laid out: capFrame.js)
+  const { data, dims } = capVolumeFrame(new Uint8Array(await (await fetch(base + meta.volume)).arrayBuffer()), meta.dims);
+  const [nx, ny, nz] = dims, vs = meta.spacing[0] / 10;
   const colors = {};
   for (const m of meta.materials) colors[m.id] = m.color;
   const V = { data, nx, ny, nz, vs, ex: nx * vs, ey: ny * vs, ez: nz * vs, colors, wst: null, anim: null,
@@ -47,7 +49,7 @@ export async function loadVolume() {
   // the heart and the breath: the app's derived motion, set to a phase by setPhase
   V.setPhase = (card, br = 0.9) => {
     if (card == null) { V.wst = null; return; }
-    if (!V.anim) V.anim = deriveMotion(data, meta.dims, meta.spacing);
+    if (!V.anim) V.anim = deriveMotion(data, dims, meta.spacing);
     V.wst = motionState(V.anim, { br, card, peri: 0, sw: -1 }, vs, nz);
   };
   return V;

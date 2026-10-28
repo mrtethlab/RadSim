@@ -8,6 +8,7 @@
 import * as THREE from 'three';
 import { buildLunar, buildBlock, buildHolder, buildLegs, LUNAR, BLOCK } from '../../../dxaRoom.js';
 import { std, mesh, setOpacity, beamCone, canvasPlane } from '../../kit/stage.js';
+import { capMeshFrame } from '../capFrame.js';
 
 export const ZP = 14;                // the patient's centre along the table (toward the head end, as the exam lays them)
 export const FOCUS_Y = -27;          // the focal spot, under the table (local to the arm)
@@ -73,6 +74,7 @@ export async function buildSet(api, J) {
   ]);
   let skin = null, bone = null, rest = 15.8;
   const prep = (g, mat) => {
+    capMeshFrame(g);
     g.scale.setScalar(0.1);
     let m = null;
     g.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); o.material = mat; o.castShadow = mat === boneMat; m = m || o; } });
@@ -109,7 +111,7 @@ export async function buildSet(api, J) {
   const down = [0, 0, -1];
   const mid = [(stumps[0].p[0] + stumps[1].p[0]) / 2, 0, (stumps[0].p[2] + stumps[1].p[2]) / 2];
   const block = buildBlock(); block.position.set(mid[0], 0, mid[2] - (12 + BLOCK.D / 2)); block.rotation.y = Math.PI; set.add(block);
-  const HOLDER_AT = 82;
+  const HOLDER_AT = 67;                // (dxa.js: from the stumps to the heels)
   const holder = buildHolder(); holder.position.set(mid[0], 0, mid[2] - HOLDER_AT); holder.rotation.y = Math.PI; set.add(holder);
   const legs = {
     flat: buildLegs(stumps, 'holder', down, {}),

@@ -75,19 +75,22 @@ const NOISE = 7.0e-7;
 // candidate seats were scored on how much of the image the systolic warp actually moves,
 // and this one — epigastric, sagittal, angled up under the costal margin — won at 50.6
 // grey levels RMS against 0.00 for the RUQ view, which has no heart in its plane at all.
-const CARDIAC_SEAT = { px: 0.50, pz: 0.52, rot: 90, tilt: 25, depth: 22, focus: 12 };
+// (pz as a fraction of the volume's length: 0.52 of it before the thighs were grafted at its foot,
+// services/compute/app/build_cap_thighs.py, which took it from 71.2 to 86.2 cm)
+const CARDIAC_SEAT = { px: 0.50, pz: 0.604, rot: 90, tilt: 25, depth: 22, focus: 12 };
 /* A window onto the aorta, surveyed the same way (docs/ultrasound.md §4.4): 3024 sagittal seats and
-   lines (across 0.43-0.53, along 0.38-0.50, rocked -25..25 degrees, twelve lines each), the gate
+   lines (across 0.43-0.53, along 0.38-0.50 of the volume before its thighs: 0.49-0.59 now, rocked
+   -25..25 degrees, twelve lines each), the gate
    put in the middle of the lumen, scored on the two-way amplitude reaching it with the beam-flow
    angle held at 60 degrees or less. Two findings shaped the choice. The subject's aorta is
-   ANEURYSMAL below the kidneys (a ~6 cm sac, z 22-30 cm), so the seat is on the normal-calibre
+   ANEURYSMAL below the kidneys (a ~6 cm sac, z 37-45 cm), so the seat is on the normal-calibre
    segment just above it. And most epigastric lines to that segment cross costal cartilage or bowel
    gas, losing 65-100 dB or shadowed outright. A second pass then centred the plane on the
    vessel: a sagittal plane that cuts the aorta off its axis puts a "mid-lumen" gate near the
    wall in elevation, at 40 % of the centre-line speed. The seat loses 44 dB to the aorta at
    16.3 cm, its gate sits within 0.35 R of the axis, and the flow comes toward the probe at
    ~57 degrees. Slide caudally from here to find the sac, where continuity slows everything. */
-const AORTA_SEAT = { probe: 'curvi', freq: 3, px: 0.51, pz: 0.39, rot: 90, tilt: 10, depth: 20, focus: 16,
+const AORTA_SEAT = { probe: 'curvi', freq: 3, px: 0.51, pz: 0.496, rot: 90, tilt: 10, depth: 20, focus: 16,
   disp: 'pw', pwLine: 0.46, pwGate: 3, dop: true, dopW: 0.3, dopH: 0.2 };
 /* Put the gate in the middle of the lumen on the gate's line and lay the angle cursor along the
    vessel IN THE IMAGE PLANE — what a careful operator does, and all a machine can know: an

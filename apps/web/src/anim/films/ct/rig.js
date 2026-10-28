@@ -9,6 +9,7 @@ import * as THREE from 'three';
 import { buildCTRig } from '../../../ct.js';
 import { std, mesh, beamCone, glowMat, setOpacity } from '../../kit/stage.js';
 import { buildTubeInsert } from '../xray/tube.js';
+import { capMeshFrame } from '../capFrame.js';
 
 export const ZP = -10;                 // the scan plane (z), mid-gantry
 export const ZL = 32;                  // the external lasers' plane, in front of the gantry
@@ -46,6 +47,7 @@ export async function buildSets(api) {
   const giMat = std(0xc88a6a, 0.55, 0.0);
   const parts = {};
   const load = (name, mat) => api.loadGlb(`models/chestabdopelvis/chestabdopelvis_${name}.glb`).then((g) => {
+    capMeshFrame(g);
     g.scale.set(-0.1, 0.1, -0.1);
     g.traverse((o) => { if (o.isMesh) { if (!o.geometry.attributes.normal) o.geometry.computeVertexNormals(); o.material = mat; o.castShadow = true; o.receiveShadow = true; } });
     pat.add(g); parts[name] = g;
