@@ -4,7 +4,11 @@
 // grey scale.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { computeRescale } from '../src/core/displayWindow.js';
+import { latitudeImage, equalisedSignal } from '../src/core/equalise.js';
+
+const luts = JSON.parse(readFileSync(new URL('../src/data/luts.json', import.meta.url), 'utf8')).luts;
 
 const LUT = { sigmoid: true, center: 0.53, width: 0.8 };
 const a = 40, den = Math.log(1 + a);
@@ -98,4 +102,26 @@ test('a LUT with headroom sets white above the densest anatomy', () => {
   assert.ok(plain.hi < top, 'without it the densest 1 % burns white');
   assert.ok(pad.hi > top, `with it white lies past the densest: ${pad.hi.toFixed(3)} vs ${top.toFixed(3)}`);
   assert.equal(pad.lo, plain.lo);
+});
+
+test('a skull is equalised and windowed on its own pixels, not the raw beam beside it', () => {
+  const lat = luts.skull.latitude;
+  assert.equal(lat.voi, true, 'the skull LUT equalises on the patient\'s own pixels');
+  // 120 x 150: raw beam falling from 1.0 at the middle to 0.45 at the sides (an angled Towne), round a
+  // head whose vault is thick and whose face below it is thin; a fine texture on both
+  const nx = 120, ny = 150, sig = new Float32Array(nx * ny), field = new Uint8Array(nx * ny).fill(1), voi = new Uint8Array(nx * ny);
+  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+    const k = y * nx + x, r = Math.hypot((x - 60) / 45, (y - 75) / 60), fine = 1 + 0.15 * ((x + y) % 2);
+    if (r > 1) { sig[k] = 1 - 0.55 * Math.abs(x - 60) / 60; continue; }
+    voi[k] = 1;
+    sig[k] = (y > 100 ? 0.08 : r > 0.85 ? 0.004 : 0.012) * fine;          // face, vault rim, brain under the vault
+  }
+  const mx = 1, own = latitudeImage(sig, nx, ny, field, mx, lat, voi), cut = latitudeImage(sig, nx, ny, field, mx, lat);
+  const air = [...Array(nx * ny).keys()].filter((k) => !voi[k]);
+  assert.ok(air.every((k) => Math.abs(own[k] - tone(sig[k], mx)) < 1e-6), 'the raw beam keeps its plain tone');
+  assert.ok(air.some((k) => Math.abs(cut[k] - tone(sig[k], mx)) > 0.01), 'by the 0.95 cut, the falling raw beam is taken for anatomy');
+  // windowed on the equalised tones, the window closes round the anatomy the film shows
+  const raw = computeRescale(sig, voi, luts.skull, {}, nx, mx);
+  const eq = computeRescale(equalisedSignal(sig, nx, ny, field, voi, lat), voi, luts.skull, {}, nx, mx);
+  assert.ok(eq.hi - eq.lo < 0.8 * (raw.hi - raw.lo), `window ${(eq.hi - eq.lo).toFixed(3)} vs ${(raw.hi - raw.lo).toFixed(3)}`);
 });

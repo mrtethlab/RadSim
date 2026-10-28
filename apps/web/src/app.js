@@ -34,7 +34,7 @@ import centringData from './data/centring.json';
 import palpationData from './data/palpation.json';
 import cropData from './data/crops.json';
 import { applyCrops } from './core/crops.js';
-import { boxBlurMasked, latitudeImage } from './core/equalise.js';
+import { boxBlurMasked, latitudeImage, equalisedSignal } from './core/equalise.js';
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
@@ -3168,7 +3168,7 @@ async function computeRadiograph(opts={}){
   const mkStamp=stampSideMarker({ dose, direct, mask, nx, ny, pxU, pxV, flipH: objMat()[0] > -0.5, flipV: true });
   if(dry){
     const {signal,EI}=Detector.capture(dose,nx,ny,photonScale,mask,direct,voiPercentile(S.protocol?.part,S.subject));
-    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,voiMask,nx), EI, plain: S.lut?.detail===false,
+    return { sig:signal, nx, ny, mask, subject:S.subject, rescale:computeRescale(signal,voiMask,nx,mask), voi:voiMask, EI, plain: S.lut?.detail===false,
              rightAtPlusX: objMat()[0] > -0.5, detW, detH };
   }
   S.lastMarker=sideMarkerVerdict(mkStamp); S.lastMarkerStamp=mkStamp;
@@ -3254,8 +3254,9 @@ function renderRadiograph(target,entry,opts){
   // cached: the Protocol Trainer hangs films at full quality, not as thumbnails)
   const full=!entry || !!opts?.processed;
   const lat=full && S.lut?.latitude;
+  const voi=lat?.voi ? (entry? entry.voi : S.voi) : null;      // (the patient's own pixels, for a latitude that asks)
   const baseArr=(enhOn && full)? (entry ? processImage(sig,nx,ny,mask,mx) : activeProcessed(sig,nx,ny,mask,mx))
-    : lat ? (entry ? latitudeImage(sig,nx,ny,mask,mx,lat) : activeLatitude(sig,nx,ny,mask,mx,lat)) : null;
+    : lat ? (entry ? latitudeImage(sig,nx,ny,mask,mx,lat,voi) : activeLatitude(sig,nx,ny,mask,mx,lat,voi)) : null;
   // build cropped, windowed bitmap
   const crop=document.createElement('canvas'); crop.width=cw; crop.height=ch;
   const cctx=crop.getContext('2d'); const img=cctx.createImageData(cw,ch);
@@ -3363,10 +3364,15 @@ function drawFilm(){
   updateXrayHistogram();
 }
 
-/* Automatic rescaling (DR auto-ranging): core/displayWindow.js. */
-function computeRescale(sig,mask,nx){
+/* Automatic rescaling (DR auto-ranging): core/displayWindow.js. A latitude that takes the patient's
+   own pixels (the skull's) is windowed on the equalised tones it shows (core/equalise.js). */
+function computeRescale(sig,mask,nx,field){
   const _t=(typeof window!=='undefined'&&window.__tune)||{};
-  return computeRescaleCore(sig, mask, S.lut, _t, nx);
+  const lat=S.lut?.latitude;
+  if(!(lat?.voi && field && nx)) return computeRescaleCore(sig, mask, S.lut, _t, nx);
+  // (on the tone scale the film is drawn on: the field's brightest pixel, not the anatomy's)
+  let mx=0; for(let k=0;k<sig.length;k++) if(field[k]&&sig[k]>mx) mx=sig[k];
+  return computeRescaleCore(equalisedSignal(sig, nx, sig.length/nx, field, mask, lat), mask, S.lut, _t, nx, mx);
 }
 
 /* ---- DR-style detail (edge) enhancement ------------------------------------
@@ -3402,8 +3408,8 @@ function activeProcessed(sig,nx,ny,mask,mx){
   if(!S._proc || S._proc.sig!==sig) S._proc={sig, data:processImage(sig,nx,ny,mask,mx)};
   return S._proc.data;
 }
-function activeLatitude(sig,nx,ny,mask,mx,lat){
-  if(!S._lat || S._lat.sig!==sig || S._lat.lat!==lat) S._lat={sig, lat, data:latitudeImage(sig,nx,ny,mask,mx,lat)};
+function activeLatitude(sig,nx,ny,mask,mx,lat,voi){
+  if(!S._lat || S._lat.sig!==sig || S._lat.lat!==lat) S._lat={sig, lat, data:latitudeImage(sig,nx,ny,mask,mx,lat,voi)};
   return S._lat.data;
 }
 /* Apply auto-rescale (VOI stretch) to a base tone, using the given window. */
@@ -3856,10 +3862,10 @@ function buildMeta(spec){
 /* ---- image history: keep the last 10 exposures, reviewable on the Image view ---- */
 const IMG_HISTORY_MAX=10;
 function pushImage(signal,nx,ny,mask,meta,voi,extra){
-  const rescale=computeRescale(signal,voi||mask,nx);   // auto-rescale VOI window, fixed at capture
+  const rescale=computeRescale(signal,voi||mask,nx,mask);   // auto-rescale VOI window, fixed at capture
   // where the patient's RIGHT side lies after the roll, kept with the image so an older film
   // still hangs correctly when reviewed after the patient has been turned (see renderRadiograph)
-  S.imgHistory.push({sig:signal, nx, ny, mask, subject:S.subject, meta, rescale, plain: S.lut?.detail===false, rightAtPlusX: objMat()[0] > -0.5,
+  S.imgHistory.push({sig:signal, nx, ny, mask, voi:voi||mask, subject:S.subject, meta, rescale, plain: S.lut?.detail===false, rightAtPlusX: objMat()[0] > -0.5,
                      detW:S.detW, detH:S.detH, ...(extra||{})});
   while(S.imgHistory.length>IMG_HISTORY_MAX) S.imgHistory.shift();
   setActiveImage(S.imgHistory.length-1);
@@ -3930,7 +3936,7 @@ function setActiveImage(idx){
   if(!S.imgHistory.length){ S.histIdx=-1; S.hasImage=false; return; }
   idx=Math.max(0,Math.min(S.imgHistory.length-1,idx));
   const e=S.imgHistory[idx];
-  S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask;
+  S.histIdx=idx; S.lastSignal=e.sig; S.nx=e.nx; S.ny=e.ny; S.mask=e.mask; S.voi=e.voi;
   S.activeSubject=e.subject; S.imgMeta=e.meta; S.rescale=e.rescale; S.hasImage=true; S.imgPlain=!!e.plain;
   S.imgRightAtPlusX=e.rightAtPlusX!==false;
   S.imgRuler=e.ruler||null;

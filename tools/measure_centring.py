@@ -237,7 +237,10 @@ def skull():
     import skull_points as K
     p, _ = K.points()
     eam = p['earMid']
-    lat = eam + np.array([0, 0, 5.0])
+    # the lateral's point: the middle of the whole head, front to back and vertex to mandible. Bontrager's
+    # 5 cm above the EAM centres the cranium alone; on this head the EAM lies 7 cm from the occiput and
+    # 11 from the glabella, and a 24 x 30 centred there left the frontal bone and the mandible off
+    lat = np.array([eam[0], (p['glabella'][1] + p['inion'][1]) / 2, (p['vertex'][2] + p['menton'][2]) / 2])
     return {
         'nasion': pt(p['nasion'], 'the nasion: on the midline front profile 12 mm above the orbits\' openings',
             'PA skull: CR perpendicular to the IR, OML perpendicular, exiting the nasion; PA axial (Caldwell): CR 15 degrees caudad '
@@ -248,9 +251,11 @@ def skull():
         'eam': pt(eam, 'midway between the ear canals (tools/skull_points.py)',
             'AP axial (Towne): CR 30 degrees caudad to the OML, through the level of the EAMs and the foramen magnum, entering about '
             '6 cm above the glabella (Bontrager; Radiopaedia)', 'high'),
-        'latSkull': pt(lat, '5 cm superior to the midpoint of the ear canals',
-            'Lateral skull: CR perpendicular to a point 5 cm (2 in) superior to the EAM, IOML parallel to the transverse axis of the IR '
-            '(Bontrager; Radiopaedia)', 'high'),
+        'latSkull': pt(lat, 'the middle of the head: halfway between the glabella and the inion, and between the vertex and the '
+            'mandible\'s lowest bone, on the midline',
+            'Lateral skull: CR perpendicular to the middle of the head, about 2 cm in front of the EAM, so the vertex, frontal bone, '
+            'occiput and mandible are all on the film (Bontrager centres the cranium alone 5 cm (2 in) above the EAM); IOML parallel '
+            'to the transverse axis of the IR (Bontrager; Radiopaedia)', 'high'),
         'zygoma': pt(p['zygoma'], 'midway between the orbits\' openings (the outer canthi) and the ear canals',
             'Lateral facial bones and sinuses: CR perpendicular to the zygoma, midway between the outer canthus and the EAM '
             '(Bontrager; Radiopaedia)'),

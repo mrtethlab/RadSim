@@ -203,10 +203,10 @@
   },
   "latSkull": {
    "x": 0.36,
-   "y": -1.16,
-   "z": 4.0,
-   "how": "5 cm superior to the midpoint of the ear canals",
-   "guide": "Lateral skull: CR perpendicular to a point 5 cm (2 in) superior to the EAM, IOML parallel to the transverse axis of the IR (Bontrager; Radiopaedia)",
+   "y": 0.75,
+   "z": -0.36,
+   "how": "the middle of the head: halfway between the glabella and the inion, and between the vertex and the mandible's lowest bone, on the midline",
+   "guide": "Lateral skull: CR perpendicular to the middle of the head, about 2 cm in front of the EAM, so the vertex, frontal bone, occiput and mandible are all on the film (Bontrager centres the cranium alone 5 cm (2 in) above the EAM); IOML parallel to the transverse axis of the IR (Bontrager; Radiopaedia)",
    "confidence": "high"
   },
   "zygoma": {
@@ -385,10 +385,10 @@
   },
   "skull": {
    "x": 0.82,
-   "y": 0.41,
-   "z": 65.53,
-   "how": "the centre of the cranium (as the landmark)",
-   "guide": "AP / lateral skull: CR to the centre of the skull (the glabella / 2 cm above the EAM) (Bontrager; Radiopaedia)",
+   "y": 0.75,
+   "z": 60.67,
+   "how": "the middle of the skull label: halfway between the vertex (70.0) and the mandible (51.4), and between its front and back, on the cranium's midline",
+   "guide": "AP / lateral skull: CR to the middle of the head, so the whole skull, vertex to mandible, is on the film (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
   "pelvis": {
