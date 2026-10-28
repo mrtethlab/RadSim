@@ -4972,8 +4972,10 @@ window.addEventListener('load',()=>{
     setMarker: (side) => setSideMarker(side, false),
     setResolution: (res) => { const was=S.resolution; S.resolution=res; applyDet(); return was; },
     exposeDry: () => computeRadiograph({ dry:true }),
-    renderFilm: (target, entry) => { const r=S.imgRot, fh=S.flipH, fv=S.flipV; S.imgRot=0; S.flipH=false; S.flipV=false;
-      try { renderRadiograph(target, entry, { processed:true }); } finally { S.imgRot=r; S.flipH=fh; S.flipV=fv; } },
+    // (each film through the window of its own exposure: S.curve is the viewer's curve, seeded from
+    // the last image the room hung, and a film drawn through it came out white or faint)
+    renderFilm: (target, entry) => { const r=S.imgRot, fh=S.flipH, fv=S.flipV, cv=S.curve; S.imgRot=0; S.flipH=false; S.flipV=false; S.curve=null;
+      try { renderRadiograph(target, entry, { processed:true }); } finally { S.imgRot=r; S.flipH=fh; S.flipV=fv; S.curve=cv; } },
     setPathology, clearPathology });
   initEditor({ THREE, S, $, three, setCameraView, setOrbitRad: three.setOrbitRad, syncScene,
                registerCustomSubject, unregisterCustomSubject });

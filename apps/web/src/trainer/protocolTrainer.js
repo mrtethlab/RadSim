@@ -404,6 +404,7 @@ async function filmOf(name, p, line, side, meta) {
   } else await H.clearPathology?.();
   H.setMarker(null);
   const entry = await H.exposeDry();
+  P.lastEntry = entry;                      // (QC: the last film as exposed)
   const film = document.createElement('canvas');
   H.renderFilm(film, entry);
   return hang(film, marker(name, line, side, p), line?.side === 'limb' && side === 'L', HANG[name]);
