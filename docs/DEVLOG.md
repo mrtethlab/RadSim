@@ -8,7 +8,26 @@ handoff document and is not committed.)
 
 ## 2026-10-28
 
-### Order of Operations Trainer — PR pending
+### Surgical Animations — PR pending
+A new "Surgical Animations" button on the fluoroscopy card opens four procedure films: lumbar puncture, hip joint injection, epidural and radiofrequency ablation.
+- **The kit** (`anim/films/surg/`): the procedure room, the sterile opening and closing, the C-arm, the monitor, the needles and the cross-section, shared by all four films.
+  - **The opening:** tray, betadine poured, the needle dropped on the field, prep, drape, the C-arm's cover, and the grounding pad for RFA.
+  - **The closing:** sharps, the tools re-packed for sterilisation, the betadine cleaned off, gauze and tape.
+  - **The C-arm and monitor:** the C-arm, with the monitor following its pose from precomputed DRR sheets (`public/anim/surg*`). The child's lumbar, sacral and cervical spine come from `build_anim_images.py surg`, and the adult's right hip.
+  - **On screen:** the fluoro inset is drawn at screen resolution under the 8-bit layer. The 8-bit cross-section of the tissues along the needle names the tip's layer.
+- **Lumbar puncture** (child, prone): the endplates squared on the AP and the levels counted; a locator needle and spot image; lidocaine. The spinal needle goes in at L3-L4, switching between AP and lateral (layers: ligaments, flavum, epidural fat, dura, CSF). CSF drips into four tubes, then an intrathecal drug, the stylet back in before the needle comes out.
+- **Hip joint injection** (adult, supine): contrast, lidocaine and triamcinolone drawn up. The C turned to the working view, the joint found with a spare needle under spot images, the spinal needle down the beam. The femoral vessels and nerve are shown medial to the path. The arthrogram runs away from the tip into the recesses, then the lidocaine and steroid go in.
+- **Epidural** (child, prone): the C tilted until the L3-L4 interlaminar window opens. That is tilt −10, measured by rays clear of bone; the kit's +20 shut it and is corrected. The Tuohy needle goes in on the AP and the lateral. Creating the space: loss of resistance with saline, millimetre by millimetre through the ligamentum flavum. A contrast epidurogram follows (a posterior line on the lateral, patchy spread on the AP), then the steroid.
+- **Radiofrequency ablation** (child, prone, left side, grounding pad):
+  - **L-spine:** the endplates flattened, the Scottie dog (eye, neck, target at the SAP and transverse process junction), the cannula down the beam and a lateral for depth.
+  - **Testing and lesioning:** impedance, sensory 50 Hz, motor 2 Hz (multifidus only, no leg); lidocaine; continuous RF at 80 °C (a lesion) contrasted with pulsed RF at 42 °C and 2 Hz (no lesion).
+  - **S-spine:** tilted 30° until the ala clears L5 and the S1–S3 foramina open; lateral branches at their rims.
+  - **C-spine:** the American flag view and the medial branch at the waist of the C4 pillar.
+  - The generator no longer lies on its back.
+- **Approximate:** the targets were moved onto bone along the beam, and the nerves and midline ligaments are painted into the cross-sections. The arthrogram and epidurogram are placed contrast, not simulated. The leg's internal rotation is stood in for by the C's roll. The kit's syringe mounts its drawing-up needle backwards (the hip film fixes its own).
+- Checked: `test/surgkit.test.js`; `npm test`; each film played in the app at its key steps (the Scottie dog, the lateral LP with the section, the loss of resistance, the arthrogram). The film agents also ran every step's frames for errors.
+
+### Order of Operations Trainer — PR #92
 A drill for the department's Method of Operation (`trainer/moo.js`: the eleven steps and their sub-steps, each with the ideas an answer must name), on the X-ray card beside the Protocol Trainer.
 - **Questions** (`core/mooQuiz.js`): a step by its number and its number by its wording; what comes after and before; every sub-step of a step, in order; a sub-step's successor; a key term blanked; 21 situations ("the patient walks in carrying a bag..."); the steps or sub-steps to put in order; the whole routine from memory.
 - **Marking** is by idea, not wording: a step is right when every one of its ideas is named (synonyms, a keyboard slip and word endings forgiven; IR, LMP, 3 exact). "Check the order" without the history is wrong. A wrong typed step is typed again correctly before the next question.

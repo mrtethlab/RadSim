@@ -33,7 +33,51 @@ import { sfx } from './sfx.js';
 // a film is a file: ./films/<mode>.js, loaded only when it is opened
 const FILMS = Object.fromEntries(Object.entries(import.meta.glob('./films/*.js'))
   .map(([path, load]) => [path.match(/([^/]+)\.js$/)[1], load]));
-export const hasFilm = (mode) => !!FILMS[mode];
+/* The surgical films (./films/surg-*.js) are not a mode's film: they open by id from the
+   fluoroscopy card's Surgical Animations menu (openSurgicalMenu), in this order. */
+export const SURGICAL = [
+  { id: 'surg-lp', title: 'Lumbar Puncture' },
+  { id: 'surg-hip', title: 'Hip Joint Injection' },
+  { id: 'surg-epidural', title: 'Epidural' },
+  { id: 'surg-rfa', title: 'Radiofrequency Ablation' },
+];
+export const hasFilm = (mode) => !!FILMS[mode] && !mode.startsWith('surg-');
+// a film by its id (its file's name), whatever opens it
+export const openFilm = (id) => openAnimation(id);
+
+/* The chooser under the Surgical Animations button: the films by name; one click opens it.
+   Closes on a choice, a click elsewhere, Escape, or a scroll. */
+let menu = null;
+export function openSurgicalMenu(anchor) {
+  if (menu) { closeSurgicalMenu(); return; }
+  const m = el('div', 'surg-menu', document.body);
+  m.setAttribute('role', 'menu');
+  for (const f of SURGICAL) {
+    const b = el('button', '', m, f.title);
+    b.setAttribute('role', 'menuitem');
+    b.disabled = !FILMS[f.id];
+    b.addEventListener('click', (e) => { e.stopPropagation(); closeSurgicalMenu(); openFilm(f.id); });
+  }
+  const r = anchor.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(innerWidth - 248, r.left)) + 'px';
+  m.style.top = (r.bottom + 6) + 'px';
+  const off = (e) => { if (!m.contains(e.target) && e.target !== anchor) closeSurgicalMenu(); };
+  const esc = (e) => { if (e.key === 'Escape') closeSurgicalMenu(); };
+  setTimeout(() => document.addEventListener('click', off), 0);
+  document.addEventListener('keydown', esc);
+  // it is placed under its button: the page scrolling away from it closes it
+  addEventListener('scroll', closeSurgicalMenu, { capture: true, once: true });
+  menu = { m, off, esc };
+  m.querySelector('button:not(:disabled)')?.focus();
+}
+export function closeSurgicalMenu() {
+  if (!menu) return;
+  document.removeEventListener('click', menu.off);
+  document.removeEventListener('keydown', menu.esc);
+  removeEventListener('scroll', closeSurgicalMenu, { capture: true });
+  menu.m.remove();
+  menu = null;
+}
 
 export const ease = {
   linear: (x) => x,
