@@ -38,7 +38,7 @@ import { boxBlurMasked, latitudeImage, equalisedSignal } from './core/equalise.j
 import { BodyMaterials } from './core/materials.js';
 import { ComputeClient } from './compute/client.js';
 import { initTutorial } from './tutorial.js';
-import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
+import { initCT, couchSpeedMMps, sliceTime, ctSyncScene, ctApplyPov, ctRenderViewer, ctRenderRecons, ctApplyAcqMode, ctApplyVendor, ctApplyColorTheme, ctApplyMode } from './ct.js';
 import { initEditor, editorApplyMode, editorSyncScene } from './editor.js';
 import { initMobile } from './mobile.js';
 import { initFluoro, fluoroApplyMode, fluoroSyncScene, fluoroImageToBay } from './fluoro.js';
@@ -2482,6 +2482,7 @@ function setCameraView(m){
 /* CT camera perspective: 'ap' (top) | 'lat' (90° around the bore). */
 function setCTPov(p){
   S.ct.pov=p;
+  ctApplyPov();                                  // the housing in Orbit, the bare bore ring in AP / Lat
   const seg=$('camSegCt'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on',b.dataset.cam===p));
 }
 /* Show the right thing in the small DR monitor for the current mode. X-ray shows

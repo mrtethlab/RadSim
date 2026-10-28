@@ -38,6 +38,12 @@ This PR carries the elbow section below, and these:
   - The cross-table lateral hip raises the other leg (`pose.lift`).
   - The pelvis, hip, lumbar and scoliosis techniques are recalibrated to DI about 0.
 - **Exposures** recalibrated wherever a change moved them.
+- **CT scanners rebuilt** (`ctModel.js`; the old builders are kept, unwired, in `ctRigLegacy.js`):
+  - GE Optima CT660: a white face dished round the bore with a slim grey lip, a blue-grey body and a dark plinth, the blue gantry LCD in its tapering module, round keypads with the live timer, the Optima and GE badges. The table is a white cradle and pad on a dark tapered pedestal, with a handle at its foot.
+  - Canon Aquilion Precision: a round drum on two ear stands with a light blue-grey ring round its face, angled panels with the live read-out and lit blue keys, the crown LCD, red indicator lights. The table stands on a white bellows column.
+  - The tube and detector arc turn inside the housing, in a dark cavity behind a translucent window in the bore. They used to swing in the bore beside the patient.
+  - The table body now rises and falls with the couch top. The AP and Lat PoV buttons hide the housing at once.
+  - About 58,000 triangles a machine, down from about 400,000.
 - Checked in the room and the trainer, film by film.
 
 ## 2026-10-27
