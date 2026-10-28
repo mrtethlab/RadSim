@@ -53,6 +53,16 @@ abduction, in that order (the humerus turned about its axis, then raised).
 
     python tools/measure_joints.py shoulder  # the shoulder alone, put first in the arm's chain
 
+THE HIPS of the chest/abdomen/pelvis are field joints, one a side (hip_fields): the femur, its grafted
+shaft and the thigh turn whole, the pelvis, the spine and the other leg not at all, the soft tissue the
+blend of the bones nearest it (the trunk medial of the head and the midline none). The centre is the
+femoral head's, a sphere fitted to it where it faces the acetabulum; the axis the femur's mechanical
+one, to a knee this volume has not (its thighs end mid-thigh). Its motions are rotation (internal +,
+the one the leg rotation drives: `legs`), abduction and flexion, anatomical (each `rest` the femur's as
+scanned). Its labels are the CAP's segmentation's (services/compute's venv: bone_labels).
+
+    python tools/measure_joints.py hips      # the hips alone
+
 THE DIGITS of the hand curl, one slider a digit (hand_digits): each digit's three joints are field
 joints whose shares are read at the rest point, from one weight grid a digit beside the model
 (hand.digit1.bin ... hand.digit5.bin). Their bones are found as pieces of the volume (the joint
@@ -423,6 +433,174 @@ def elbow_field(fore, ant, name='upperextremity'):
             'motions': [{'key': 'elbow.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion',
                          'from': fr.round(3).tolist(), 'toward': tw.round(3).tolist(), 'range': [0, 140], 'rest': rest,
                          'glide0': g0.round(3).tolist()}]}
+
+
+# THE HIPS (chestabdopelvis), a field joint a side (see the module's notes). The CAP's thighs end
+# mid-thigh (build_cap_thighs grafts 15 cm of them): there is no knee to bend. Each grid holds its
+# own side of the volume from the foot to above the iliac crest: the joint on the model's own voxels
+# (the head and the acetabulum, the lesser trochanter and the ischium lie a voxel or two apart), the
+# rest at every other one (field.outer). The hip is a ball in a socket, turned about the head's own
+# centre: whatever share a point in the joint space gets, it stays in the joint space (the shell
+# between the head and the acetabulum turns into itself). What the shoulder and the elbow taught: every moving piece weighs
+# exactly 1 (the femur, grafted shaft and all), every bone is pinned to its piece's share (the other
+# femur and the pelvis to none), the moving part weighs 1 well away from the joint (the thigh below
+# the buttock, on its own side), and the field is rigid for the bone mesh.
+HIP_FINE = np.array([7.0, 7.0, 10.0])     # cm round the head's centre (x, y, down): the joint's grid, at the voxels
+HIP_FINE_HI = np.array([7.0, 7.0, 6.0])   # (x, y, up)
+HIP_POW = 3                  # the inverse-distance blend's power
+HIP_SIGMA = 0.6              # cm, its smoothing
+HIP_TOP = (8.0, 12.0)        # cm above the head's centre: the share falls to none (the flank, the crest)
+HIP_THIGH = (9.0, 13.0)      # cm below it: the thigh on its own side turns whole
+HIP_SIDE = (0.5, 3.0)        # cm from the midline toward its own side: where the thigh is its side's alone
+HIP_MID = 3.0                # cm: the share fades to none at the midline over this much (the grid reaches as far past it)
+HIP_TRUNK = (6.0, 2.0)       # cm below the head's centre: the trunk's none begins, and is whole
+HIP_MEDIAL = (6.0, 2.0)      # cm medial of it: the trunk's none is whole, and begins
+HIP_SHAFT = 8.0              # cm: the shaft over the volume's lowest this much leads its axis to the knee
+
+
+def hip_fields(name='chestabdopelvis'):
+    """The hips for joints.json, each side's weight grid written beside the model."""
+    sys.path.insert(0, str(ROOT / 'services' / 'compute'))
+    from app import bone_labels
+    import app.build_model as bm
+    from app.build_cap_thighs import ADD_SLICES, SEAM
+    V = Vol(name)
+    if name not in ('chestabdopelvis',):
+        raise SystemExit(f'no hips measured on {name}')
+    bone = np.isin(V.v, [17, 18] + list(range(54, 62)))
+    G = ADD_SLICES + SEAM                                   # the grafted rows: the donor's femurs, no other bone
+    got = bone_labels.label_grid(name, V.v[G:].shape)
+    if got is None:
+        raise SystemExit('the CAP\'s label grid could not be made again (services/compute/data/totalseg/s1379)')
+    lab = np.zeros(V.v.shape, np.int32)
+    lab[G:] = got[1]
+    cmap = bm.ts_class_map()
+    ids = {v: k for k, v in cmap.items()}
+    labelled = ndi.binary_dilation(np.isin(lab, [l for l, n in cmap.items() if bm.name_to_material(n) == -1]), iterations=1)
+    x = (np.arange(V.n[0]) - (V.n[0] - 1) / 2) * V.sp[0]
+    lm_ = json.loads((DATA / 'landmarks.json').read_text(encoding='utf-8'))[name]
+    mid = (lm_['femoralHeadL']['x'] + lm_['femoralHeadR']['x']) / 2
+    le = json.loads((DATA / 'landmarks.json').read_text(encoding='utf-8'))['lowerextremity']
+    fit = json.loads((ROOT / 'services' / 'compute' / 'data' / 'cap' / 'fit.json').read_text(encoding='utf-8'))
+    femur_len = (le['hip']['z'] - le['knee']['z']) * fit['scale']
+    # the femurs: the segmentation's own (bone within a voxel of the label, not of the acetabulum's),
+    # and every bone of the graft on that side
+    fem = {}
+    for side, s in (('right', 1), ('left', -1)):
+        m = lab == ids[f'femur_{side}']
+        hip = ndi.binary_dilation(lab == ids[f'hip_{side}'], iterations=1)
+        f = bone & ndi.binary_dilation(m, iterations=1) & (m | ~hip)
+        f[:G] = bone[:G] & (s * (x[None, None, :] - mid) > 0)
+        k_, n_ = ndi.label(f)                               # (one piece: the head down the shaft)
+        f = k_ == (np.argmax(ndi.sum(f, k_, range(1, n_ + 1))) + 1)
+        fem[side] = f
+    out = {}
+    for side, s, key in (('right', 1, 'R'), ('left', -1, 'L')):
+        A = fem[side]
+        other = fem['left' if side == 'right' else 'right']
+        T = (bone & labelled & ~A) | other                  # what stays: the pelvis, the spine, the other femur
+        # the head's centre: a sphere fitted to the femur's surface where it faces the acetabulum
+        H = np.stack(V.coords(A & ~ndi.binary_erosion(A)), 1)
+        P = np.stack(V.coords(bone & ndi.binary_dilation(lab == ids[f'hip_{side}'], iterations=1) & ~A), 1)
+        h0 = np.array([lm_[f'femoralHead{key}'][a] for a in 'xyz'])
+        near = (cKDTree(P).query(H, distance_upper_bound=1.2)[0] < 1.2) & (np.linalg.norm(H - h0, axis=1) < 4.0)
+        S_ = H[near]
+        sol = np.linalg.lstsq(np.c_[2 * S_, np.ones(len(S_))], (S_ ** 2).sum(1), rcond=None)[0]
+        c = sol[:3]; r = float(np.sqrt(sol[3] + c @ c))
+        # its axis, the mechanical: from the head's centre to the knee, which this volume has not; the
+        # shaft's own axis (its lowest HIP_SHAFT cm) leads to it, a femur's length from the head (the
+        # donor's, hip to knee, scaled as build_cap_thighs fitted it). (The line to the shaft at the
+        # volume's foot, core/limbPose.js's, runs out with the neck's offset: 9 degrees abducted)
+        F = np.stack(V.coords(A), 1)
+        Q = F[F[:, 2] < F[:, 2].min() + HIP_SHAFT]
+        m0 = Q.mean(0); u = np.linalg.svd(Q - m0, full_matrices=False)[2][0]
+        u = u if u[2] < 0 else -u
+        w_ = m0 - c; t = -(w_ @ u) + np.sqrt((w_ @ u) ** 2 - w_ @ w_ + femur_len ** 2)
+        d = (m0 + t * u - c) / femur_len
+        # the weights on the model's own voxels over its own side of the volume, HIP_MID past the
+        # midline, from the foot to HIP_TOP (sp: a voxel; the grid's nodes are the voxels' centres)
+        sp = float(V.sp[0])
+        lo = np.array([mid - HIP_MID if s > 0 else -(V.n[0] - 1) / 2 * sp, -(V.n[1] - 1) / 2 * sp, -(V.n[2] - 1) / 2 * sp])
+        hi = np.array([(V.n[0] - 1) / 2 * sp if s > 0 else mid + HIP_MID, (V.n[1] - 1) / 2 * sp, c[2] + HIP_TOP[1]])
+        n0 = (V.n - 1) / 2
+        i_lo = np.floor(lo / sp + n0).astype(int); i_hi = np.ceil(hi / sp + n0).astype(int)
+        i_lo = np.maximum(i_lo, 0); i_hi = np.minimum(i_hi, V.n - 1)
+        i_lo -= (i_hi - i_lo) % 2                          # (an odd count of nodes: the outer grid's every other one
+        i_lo = np.maximum(i_lo, 0)                         #  ends on the last)
+        box = tuple(slice(i_lo[a], i_hi[a] + 1) for a in (2, 1, 0))
+        o = (i_lo - n0) * sp
+        dims = i_hi - i_lo + 1
+        A_, T_ = A[box], T[box]
+        da = ndi.distance_transform_edt(~A_, sampling=sp) + 1e-3
+        dt = ndi.distance_transform_edt(~T_, sampling=sp) + 1e-3
+        W = dt ** HIP_POW / (dt ** HIP_POW + da ** HIP_POW)
+        W = ndi.gaussian_filter(W, HIP_SIGMA / sp)
+        gz, gy, gx = np.meshgrid(*(o[a] + np.arange(dims[a]) * sp for a in (2, 1, 0)), indexing='ij')
+        sm = lambda t: (lambda u: u * u * (3 - 2 * u))(np.clip(t, 0, 1))
+        xs = s * (gx - mid)                                  # toward its own side of the midline
+        # the thigh, below the buttock and on its own side, turns whole; nothing above the crest, nor
+        # past the midline by the grid's margin (the grid's edge is none: past it nothing turns)
+        thigh = sm((c[2] - HIP_THIGH[0] - gz) / (HIP_THIGH[1] - HIP_THIGH[0])) * sm((xs - HIP_SIDE[0]) / (HIP_SIDE[1] - HIP_SIDE[0]))
+        W = thigh + (1 - thigh) * W
+        W *= 1 - sm((gz - c[2] - HIP_TOP[0]) / (HIP_TOP[1] - HIP_TOP[0]))
+        # nor the trunk: medial of the head, from a little below its centre up (the bladder, the
+        # pubis's soft tissue, the lower abdominal wall: by the bones nearest them a fifth of the
+        # turn, and both legs turned in drew the wall in front of the bladder back a centimetre),
+        # nor the midline (the perineum lies between the thighs, each pulling it its own way)
+        cs = s * (c[0] - mid)
+        trunk = sm((gz - c[2] + HIP_TRUNK[0]) / (HIP_TRUNK[0] - HIP_TRUNK[1])) * (1 - sm((xs - cs + HIP_MEDIAL[0]) / (HIP_MEDIAL[0] - HIP_MEDIAL[1])))
+        W *= (1 - trunk) * sm(xs / HIP_MID)
+        W = np.where(W < 0.02, 0, np.where(W > 0.98, 1, W))
+        # and every bone takes its own piece's share exactly, a voxel round it too (a bone vertex reads
+        # it just inside; the volume's inverse between the nodes)
+        W[ndi.binary_dilation(A_)] = 1.0
+        W[T_] = 0.0
+        q = np.round(W * 255).astype(np.uint8)
+        # two grids: the joint at the voxels (the femur's head, neck and trochanters a voxel or two from
+        # the acetabulum and the ischium), the rest of its side at every other one (core/jointPose.js
+        # field.outer: read where the joint's grid does not reach; the bones are centimetres apart there)
+        j_lo = np.maximum(0, np.round((c - HIP_FINE - o) / sp).astype(int))
+        j_hi = np.minimum(dims - 1, np.round((c + HIP_FINE_HI - o) / sp).astype(int))
+        fine = q[j_lo[2]:j_hi[2] + 1, j_lo[1]:j_hi[1] + 1, j_lo[0]:j_hi[0] + 1]
+        # (a voxel between the outer grid's nodes reads the nodes a voxel either side of it: a node
+        # within a voxel of a bone, diagonals too, is pinned to that bone's share)
+        cube = np.ones((3, 3, 3), bool)
+        Wo = W.copy()
+        Wo[ndi.binary_dilation(A_, cube)] = 1.0
+        Wo[ndi.binary_dilation(T_, cube)] = 0.0
+        # (and a node past each face, as the face: a voxel on the volume's own face lies on the grid's,
+        # where a rounding put the last column of the right thigh's skin outside it, and left it behind)
+        coarse = np.pad(np.round(Wo[::2, ::2, ::2] * 255).astype(np.uint8), 1, mode='edge')
+        f, fo = f'{name}.hip{key}w.bin', f'{name}.hip{key}o.bin'
+        (ROOT / 'apps' / 'web' / 'public' / 'models' / name / f).write_bytes(np.ascontiguousarray(fine).tobytes())
+        (ROOT / 'apps' / 'web' / 'public' / 'models' / name / fo).write_bytes(np.ascontiguousarray(coarse).tobytes())
+        ant, lat = perp([0, 1, 0], d), perp([s, 0, 0], d)
+        # how the femur rests (no knee: its axis to the volume's foot), anatomically: flexed (its
+        # distal end forward of the trunk's long axis) and abducted (out from the midline)
+        flex0 = round(float(np.degrees(np.arctan2(d[1], -d[2]))), 1)
+        abd0 = round(float(np.degrees(np.arctan2(s * d[0], -d[2]))), 1)
+        print(f'hip {key}: head centre {c.round(2)} (the landmark {h0}), radius {r:.2f} cm from {len(S_)} surface voxels; '
+              f'axis {d.round(3)}: rests flexed {flex0}, abducted {abd0}; grids {list(fine.shape[::-1])} at {sp}, '
+              f'{list(coarse.shape[::-1])} at {2 * sp}')
+        lbl = 'Right hip' if s > 0 else 'Left hip'
+        out[f'hip{key}'] = {
+            'label': lbl, 'c': [round(float(v), 2) for v in c], 'distal': d.round(3).tolist(), 'blend': 0,
+            'field': {'file': f, 'dims': list(fine.shape[::-1]), 'sp': sp, 'origin': (o + j_lo * sp).round(4).tolist(), 'rigid': True,
+                      'outer': {'file': fo, 'dims': list(coarse.shape[::-1]), 'sp': 2 * sp, 'origin': (o - 2 * sp).round(4).tolist()}},
+            'how': f'the {side} hip, a field joint: about the centre of the femoral head (a {r:.1f} cm sphere fitted where it '
+                   'faces the acetabulum); the femur and the thigh turn whole, the pelvis and the other leg stay, the soft '
+                   'tissue between them blended. The thigh ends mid-thigh: no knee to bend',
+            # rotation about the femur's own axis, then abduction, then flexion (each about its axis at
+            # rest: the femur flexed, then abducted from there, then turned about itself)
+            'motions': [
+                {'key': f'hip{key}.rot', 'label': 'Rotation', 'neg': 'external', 'pos': 'internal', 'roll': True, 'legs': True,
+                 'from': ant.round(3).tolist(), 'toward': (-lat).round(3).tolist(), 'range': [-60, 40]},
+                {'key': f'hip{key}.abd', 'label': 'Abduction', 'neg': 'adduction', 'pos': 'abduction',
+                 'toward': lat.round(3).tolist(), 'range': [-20, 60], 'rest': abd0},
+                {'key': f'hip{key}.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion',
+                 'toward': ant.round(3).tolist(), 'range': [-10, 90], 'rest': flex0},
+            ]}
+    return out
 
 
 # THE JAW, a second field joint on the head: the mandible hinged at its condyles, so the open-mouth
@@ -1064,6 +1242,13 @@ def main():
         OUT.write_text(json.dumps(old, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
         print('wrote the shoulder to', OUT)
         return
+    if sys.argv[1:] == ['hips']:
+        # the chest/abdomen/pelvis's hips alone
+        old = json.loads(OUT.read_text(encoding='utf-8'))
+        old['chestabdopelvis'] = hip_fields()
+        OUT.write_text(json.dumps(old, indent=1, ensure_ascii=False) + '\n', encoding='utf-8')
+        print('wrote the hips to', OUT)
+        return
     if sys.argv[1:] == ['elbow']:
         # the arm below the shoulder alone: the elbow, the forearm's roll and the wrist
         old = json.loads(OUT.read_text(encoding='utf-8'))
@@ -1145,6 +1330,8 @@ def main():
                                     'from': up.round(3).tolist(), 'toward': latf.round(3).tolist(), 'range': [-20, 35]},
                                    **({'rest': inv} if abs(inv) > 0.5 else {}))]},
     }
+    # ---- the chest/abdomen/pelvis: a field joint at each hip
+    out['chestabdopelvis'] = hip_fields()
     # ---- the head and neck: one field joint
     field = neck_field()
     if field:

@@ -493,9 +493,9 @@ async function setSubject(sub){
      entry to a room, or from a room that picks its own patient — and a room that prepares
      per-subject state (fluoro's pulse workers) has to hear about it either way. Fired only
      once the volume is in place and the scene has been synced around it. */
-  syncLegRotUI();
   S.lastDose=null; S.doseLog=[]; updateDoseReadout();   // a new patient starts a new dose record
   S.joints={}; renderJointUI();                         // and with their joints straight
+  syncLegRotUI();
   S.lastMarker=null;
   window.dispatchEvent(new CustomEvent('radsim:subject', { detail: { subject: sub } }));
 }
@@ -635,11 +635,12 @@ function applyVoxelMeshTransform(grp){
 const chainCache={};
 /* A FIELD joint (the neck) carries its weights in a grid beside the model (fieldData, loaded with
    the subject by loadJointFields); until the grid is in, the joint is not offered. A joint's RIDER
-   (the knee's patella) has a grid too; until it is in, the joint bends without it. */
+   (the knee's patella) has a grid too; until it is in, the joint bends without it. A field's OUTER
+   grid (the hips': the leg's side of the body round the joint's own) is the field's: both or neither. */
 const fieldData={};
 async function loadJointFields(subject){
   const js=jointData[subject]; if(!js) return;
-  for(const f of Object.values(js).flatMap(j=>[j.field?.file, j.rider?.file])){
+  for(const f of Object.values(js).flatMap(j=>[j.field?.file, j.field?.outer?.file, j.rider?.file])){
     const k=subject+'/'+f;
     if(!f || fieldData[k]) continue;
     try {
@@ -653,8 +654,10 @@ function jointChain(subject){
   const js=jointData[subject];
   if(!js){ chainCache[subject]=null; return null; }
   // proximal first, as joints.json lists them
-  const ch=Object.values(js).filter(j=>!j.field || fieldData[subject+'/'+j.field.file]).map(j=>({ ...j,
-    ...(j.field ? { field: { ...j.field, data: fieldData[subject+'/'+j.field.file] } } : {}),
+  const got=(F)=>!F || fieldData[subject+'/'+F.file];
+  const ch=Object.values(js).filter(j=>got(j.field) && got(j.field?.outer)).map(j=>({ ...j,
+    ...(j.field ? { field: { ...j.field, data: fieldData[subject+'/'+j.field.file],
+      ...(j.field.outer ? { outer: { ...j.field.outer, data: fieldData[subject+'/'+j.field.outer.file] } } : {}) } } : {}),
     ...(j.rider ? { rider: { ...j.rider, data: fieldData[subject+'/'+j.rider.file] || null } } : {}),
     motions: j.motions.map(m=>({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
   return chainCache[subject]=ch.length ? ch : null;
@@ -1055,6 +1058,7 @@ function renderJointUI(){
   host.querySelectorAll('.jointSl').forEach(el=>el.addEventListener('input',()=>{
     S.joints[el.dataset.key]=+el.value;
     const t=$('jv_'+el.dataset.key.replace('.','_')); if(t) t.textContent=el.value+el.dataset.unit;
+    if(legMotions().some(m=>m.key===el.dataset.key)) syncLegRotUI();   // (the Legs slider shows the hips' turn)
     jointMoved();
   }));
 }
@@ -1520,10 +1524,41 @@ function posedVolume(vm, deg, lift=null){
   }
   return vm._posed.data;
 }
+/* HIP JOINTS. A subject whose hips are joints (joints.json: the chest/abdomen/pelvis's, field joints
+   about each femoral head) turns its legs with them: the rotations the leg rotation drives (m.legs)
+   are set from it, a protocol's pose.legs and the Legs slider alike, and S.legRot stays 0 there, so
+   the femurs are never turned twice (here by core/limbPose.js, and again by the joints). The DXA's
+   foot brace still turns the femur alone (dxa.js). */
+function legMotions(sub=S.subject){
+  const ch=jointChain(sub);
+  return ch ? ch.flatMap(j=>j.motions.filter(m=>m.legs)) : [];
+}
+function setLegs(deg){
+  const ms=legMotions();
+  if(!ms.length){ S.legRot=deg; return; }
+  S.legRot=0;
+  for(const m of ms) S.joints[m.key]=deg;
+}
+function legsNow(){
+  const ms=legMotions();
+  return ms.length ? Math.round(S.joints[ms[0].key] ?? 0) : S.legRot;
+}
+// the other leg raised out of a cross-table beam, on the joints' posed volume (it keeps the volume's
+// centre: core/jointPose.js pads it evenly), once per pose
+function liftPosed(vm, posed, lift){
+  const heads=femoralHeads(S.subject);
+  if(!heads || !posed?.data) return posed;
+  if(posed._lift?.side!==lift){
+    const data=raiseLeg({ dims:posed.dims, vs:vm.vs }, new Uint8Array(posed.data), heads, lift);
+    posed._lift={ side:lift, vol:{ data, dims:posed.dims, pad:posed.pad, box:posed.box } };
+  }
+  return posed._lift.vol;
+}
 function syncLegRotUI(){
   const row=$('legRotRow'); if(row) row.hidden=!femoralHeads(S.subject);
-  const el=$('legRot'); if(el) el.value=S.legRot;
-  const v=$('legRotV'); if(v) v.textContent=legRotLabel(S.legRot);
+  const d=legsNow();
+  const el=$('legRot'); if(el) el.value=d;
+  const v=$('legRotV'); if(v) v.textContent=legRotLabel(d);
 }
 const legRotLabel=(d)=> d===0 ? '0°' : d>0 ? `${d}° in` : `${-d}° out`;
 /* The occupied part of a posed volume ({ data, dims } in the model's data order), once per pose:
@@ -1567,7 +1602,8 @@ function buildPhantom(){
   // real geometric unsharpness, because the divergent rays do the rest.
   const cy = S.mode==='ct' ? S.ct.patientY : restHeight() + S.objOff.y;
   const cz = S.mode==='ct' ? S.ct.patient.z : S.objOff.z-BK().z;
-  let posed = jointPosedVolume(vm) || posedVolume(vm, legRotNow(), legLiftNow()), centre=[cx,cy,cz];
+  let posed = jointPosedVolume(vm), centre=[cx,cy,cz];
+  posed = posed ? (legLiftNow() ? liftPosed(vm, posed, legLiftNow()) : posed) : posedVolume(vm, legRotNow(), legLiftNow());
   // a posed volume is padded evenly round its centre, as far as the bent part reaches either way
   // (an arm abducted 90 degrees: 1228 x 430 x 755 voxels, 26 s of ray casting at a film's matrix);
   // the ray caster is given only the voxels that hold anything, and the centre moved to match
@@ -2582,8 +2618,9 @@ function bind(){
       if(ax==='y') syncOidUI();
     });
   }
-  $('legRot')?.addEventListener('input',e=>{ S.legRot=parseInt(e.target.value);
-    syncLegRotUI(); resetPrep(); syncScene(); });
+  $('legRot')?.addEventListener('input',e=>{ setLegs(parseInt(e.target.value));
+    syncLegRotUI();
+    if(legMotions().length){ renderJointUI(); jointMoved(); } else { resetPrep(); syncScene(); } });
   $('objRotReset')?.addEventListener('click',()=>{ S.objRot={x:0,y:0,z:0}; S.objOff={x:0,z:0,y:0};
     S.legRot=0; S.legLift=null; syncLegRotUI(); S.joints={}; renderJointUI();
     for(const [id,ax] of rotAxes){ $(id).value=0; $(id+'v').textContent='0°'; }
@@ -3706,9 +3743,13 @@ function applyPose(pose){
   // (tilt: the limb raised off the table about the cross axis, + knee down; a foot taken sole-flat
   // raises the leg as a flexed knee does: -59 with the ankle plantarflexed 30 lays this one flat)
   S.objRot = { x: pose.tilt || 0, y: 0, z: pose.roll || 0 };
-  S.legRot = pose.legs || 0; syncLegRotUI();
   S.legLift = pose.lift || null;                            // the other leg out of a cross-table beam
-  S.joints = { ...(pose.joints || {}) }; renderJointUI();   // e.g. a lateral elbow flexed 90 deg
+  S.joints = { ...(pose.joints || {}) };                    // e.g. a lateral elbow flexed 90 deg
+  // the legs turned at the hips: the hip joints' rotations where the subject has them (unless the
+  // pose sets them itself), the femurs alone where it has only its femoral heads
+  setLegs(pose.legs || 0);
+  for(const [k, v] of Object.entries(pose.joints || {})) S.joints[k]=v;
+  syncLegRotUI(); renderJointUI();
   prepareJointVolume();                                     // its pose, made while the room is set
   S.angCC = pose.cc || 0; S.angLM = 0; S.tubeX = 0; S.tubeZ = 0;
   S.objOff.x = 0; S.objOff.z = 0;

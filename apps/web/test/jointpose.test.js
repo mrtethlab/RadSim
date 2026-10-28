@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { blendWeight, rotate, axisToward, forwardChain, preimagesChain, poseVolume, posePlan, poseChunk, compileChain, forwardCompiled, forwardSkin, forwardBone, fieldWeight, planSample, mergeSample, planOcc, growOcc, foldSpan, foldRange, motionAngle } from '../src/core/jointPose.js';
+import { segmentFemur } from '../src/core/limbPose.js';
 
 const near = (a, b, t = 1e-9) => Math.abs(a - b) <= t;
 // a wrist at the origin, the hand along +z; ulnar deviation turns the hand toward -x
@@ -680,5 +681,135 @@ test("the joint space stays open as the elbow bends: the forearm's joint surface
     const close = surf.filter((p) => within(forwardCompiled(p, cc), 0.15)).length;
     // (deep in flexion the coronoid's tip comes into its fossa: a few points of it)
     assert.ok(close / surf.length < (deg > 90 ? 0.03 : 0.01), `${deg} deg: ${close} of ${surf.length} within 1.5 mm of the humerus`);
+  }
+});
+
+/* ---- the chest/abdomen/pelvis's hips (data/joints.json, tools/measure_joints.py hip_fields) ----
+   a field joint a side about the femoral head's centre: the femur (its grafted shaft too) and the
+   thigh turn whole, the pelvis and the other leg not at all */
+const CAP = (() => {
+  const dir = new URL('../public/models/chestabdopelvis/', import.meta.url);
+  const js = JSON.parse(readFileSync(new URL('../src/data/joints.json', import.meta.url), 'utf8')).chestabdopelvis;
+  const chain = Object.values(js).map((j) => ({ ...j,
+    field: { ...j.field, data: new Uint8Array(readFileSync(new URL(j.field.file, dir))),
+      outer: { ...j.field.outer, data: new Uint8Array(readFileSync(new URL(j.field.outer.file, dir))) } },
+    motions: j.motions.map((m) => ({ ...m, axis: axisToward(m.from || j.distal, m.toward) })) }));
+  const hdr = JSON.parse(readFileSync(new URL('chestabdopelvis.model.json', dir), 'utf8'));
+  const data = new Uint8Array(readFileSync(new URL('chestabdopelvis.mat.bin', dir)));
+  const lm = JSON.parse(readFileSync(new URL('../src/data/landmarks.json', import.meta.url), 'utf8')).chestabdopelvis;
+  const [nx, ny, nz] = hdr.dims, vs = hdr.spacing.map((s) => s / 10);
+  // the rest frame is the volume's own (the model lies rolled 180 degrees: its flips cancel)
+  const at = (i, j, k) => [(i - (nx - 1) / 2) * vs[0], (j - (ny - 1) / 2) * vs[1], (k - (nz - 1) / 2) * vs[2]];
+  const femur = (h) => {
+    const f = segmentFemur({ dims: [nx, ny, nz], vs, data }, h), pts = [];
+    for (let k = 0; k < f.box.bz; k++) for (let j = 0; j < f.box.by; j++) for (let i = 0; i < f.box.bx; i++)
+      if (f.mask[(k * f.box.by + j) * f.box.bx + i]) pts.push(at(f.box.i0 + i, j, k));
+    return pts;
+  };
+  const R = chain.find((j) => j.motions.some((m) => m.key === 'hipR.abd')), L = chain.find((j) => j.motions.some((m) => m.key === 'hipL.abd'));
+  // (core/limbPose.js gives the shell between the head and the acetabulum, 2.25 to 3 cm from its centre,
+  // to whichever side reaches it first: the segmentation's labels part them there; the shell turns
+  // into itself about the centre whatever its share, and is asked only that)
+  const off = (J) => (p) => { const d = Math.hypot(p[0] - J.c[0], p[1] - J.c[1], p[2] - J.c[2]); return d < 2 || d > 3; };
+  const femAll = [femur(lm.femoralHeadR), femur(lm.femoralHeadL)];
+  const femR = femAll[0].filter(off(R)), femL = femAll[1].filter(off(L)), shell = [...femAll[0].filter((p) => !off(R)(p)), ...femAll[1].filter((p) => !off(L)(p))];
+  // the rest of the skeleton within 8 cm of either head: the pelvis, its pieces of bone of a few cm3
+  // or more (not the specks of an enhanced vessel or a phlebolith, bone-dense but no bone, which the
+  // soft tissue carries)
+  const inF = new Set(femAll.flat().map((p) => p.join()));
+  const idx = (i, j, k) => (k * ny + j) * nx + i, seen = new Uint8Array(nx * ny * nz), pelvis = [];
+  const k0 = Math.round((Math.min(R.c[2], L.c[2]) - 9) / vs[2] + (nz - 1) / 2), k1 = Math.round((Math.max(R.c[2], L.c[2]) + 9) / vs[2] + (nz - 1) / 2);
+  const isPelvis = (i, j, k) => { const v = data[idx(i, j, k)]; return (v === 17 || v === 18) && !inF.has(at(i, j, k).join()); };
+  for (let k = k0; k <= k1; k++) for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    if (seen[idx(i, j, k)] || !isPelvis(i, j, k)) continue;
+    const piece = [[i, j, k]], q = [[i, j, k]];
+    seen[idx(i, j, k)] = 1;
+    while (q.length) {
+      const [a, b, d] = q.pop();
+      for (const [u, v, w] of [[a - 1, b, d], [a + 1, b, d], [a, b - 1, d], [a, b + 1, d], [a, b, d - 1], [a, b, d + 1]]) {
+        if (u < 0 || v < 0 || w < k0 || u >= nx || v >= ny || w > k1 || seen[idx(u, v, w)] || !isPelvis(u, v, w)) continue;
+        seen[idx(u, v, w)] = 1; piece.push([u, v, w]); q.push([u, v, w]);
+      }
+    }
+    if (piece.length < 500) continue;
+    for (const [a, b, d] of piece) {
+      // (its cortex: the femoral vein and the iliac arteries, enhanced, lie along the pelvis as dense
+      // as its marrow, and no label pins them: the soft tissue carries them)
+      if (data[idx(a, b, d)] !== 18) continue;
+      const p = at(a, b, d), r = [R.c, L.c].map((c) => Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]));
+      if (Math.min(...r) < 8 && Math.min(...r) > 3) pelvis.push(p);
+    }
+  }
+  return { chain, R, L, femR, femL, shell, pelvis, data, dims: [nx, ny, nz], at };
+})();
+const near0 = (a, b, t = 1e-9) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < t;
+
+test("each hip's grid gives its femur the whole turn and the pelvis and the other femur none, bone by bone", () => {
+  const { R, L, femR, femL, pelvis } = CAP;
+  for (const [J, own, other] of [[R, femR, femL], [L, femL, femR]]) {
+    // the proximal femur to the volume's foot, the grafted shaft with it: one piece, weighing 1
+    assert.ok(own.length > 30000, `${J.label}: ${own.length} femur voxels`);
+    const part = own.filter((p) => fieldWeight(J.field, p) !== 1);
+    assert.equal(part.length, 0, `${J.label}: femur bone with a part of the turn: ${JSON.stringify(part.slice(0, 3))}`);
+    assert.ok(other.every((p) => fieldWeight(J.field, p) === 0), `${J.label}: the other femur moves`);
+    // the pelvis (and what else is bone-dense round the joint: an enhanced vessel, a phlebolith,
+    // which no label pins) stays
+    const moved = pelvis.filter((p) => fieldWeight(J.field, p) > 0.01);
+    // (measured: 1 and 74 of 24 000, by more than a percent of the turn: a calcified iliac artery, the
+    // rim of the acetabulum where the labels stop short of it)
+    assert.ok(moved.length < 0.005 * pelvis.length, `${J.label}: ${moved.length} of ${pelvis.length} pelvic bone voxels move`);
+  }
+});
+
+test('the frog-leg turns the femur whole about its head: the head stays in its socket, the pelvis and the other leg stay', () => {
+  const { chain, R, femR, femL, shell, pelvis } = CAP;
+  const angles = { 'hipR.abd': 45, 'hipR.flex': 30, 'hipR.rot': -30 };
+  const cc = compileChain(chain, angles), J = compileChain([R], angles)[0], c = R.c;
+  assert.ok(J.T > 0.6, `the turn ${(J.T * 180 / Math.PI).toFixed(0)} degrees`);
+  for (const p of femR.filter((_, i) => i % 7 === 0)) {
+    const q = forwardCompiled(p, cc), b = forwardBone(p, cc), want = turnAbout(p, c, J.n, J.T);
+    assert.ok(near0(q, want), `${p} turned by the whole turn`);
+    assert.ok(near0(b, want), `the bone mesh's ${p} too`);
+  }
+  for (const p of femL.filter((_, i) => i % 11 === 0)) assert.deepEqual(forwardCompiled(p, cc), p, 'the other leg stays');
+  const shifted = pelvis.filter((p) => !near0(forwardCompiled(p, cc), p, 0.02));
+  assert.ok(shifted.length < 0.005 * pelvis.length, `${shifted.length} of ${pelvis.length} pelvic bone voxels move`);
+  // the joint space turns into itself: every point round the head keeps its distance from the centre
+  for (const p of [...shell, ...pelvis].filter((q) => Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) < 3.5)) {
+    const q = forwardCompiled(p, cc);
+    assert.ok(Math.abs(Math.hypot(q[0] - c[0], q[1] - c[1], q[2] - c[2]) - Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2])) < 1e-9, `${p} kept its distance`);
+  }
+  // abducted 45 degrees from the trunk's long axis (the motions are anatomical: the femur's mechanical
+  // axis, as it rests, abducted and flexed by `rest`)
+  const d = R.distal, t = rotate(d, J.n, J.T), s = Math.sign(c[0]);
+  assert.ok(Math.abs(Math.asin(s * t[0]) * 180 / Math.PI - 45) < 1, `abducted ${(Math.asin(s * t[0]) * 180 / Math.PI).toFixed(1)} degrees`);
+  assert.ok(t[1] > 0.3, 'and flexed: the knee up off the table');
+});
+
+test('the thigh well away from the joint turns whole; the far side of the body, nothing', () => {
+  const { R, L, data, dims, at } = CAP;
+  for (const J of [R, L]) {
+    const s = Math.sign(J.c[0]), mid = (R.c[0] + L.c[0]) / 2;
+    let thigh = 0, part = 0, far = 0;
+    for (let k = 0; k < dims[2]; k += 2) for (let j = 0; j < dims[1]; j += 2) for (let i = 0; i < dims[0]; i += 2) {
+      if (!data[(k * dims[1] + j) * dims[0] + i]) continue;
+      const p = at(i, j, k), w = fieldWeight(J.field, p);
+      if (p[2] < J.c[2] - 14 && s * (p[0] - mid) > 3) { thigh++; if (w !== 1) part++; }
+      if (s * (p[0] - mid) < -3 || p[2] > J.c[2] + 12) far += w > 0;
+    }
+    assert.ok(thigh > 10000 && part === 0, `${J.label}: ${part} of ${thigh} thigh points below the buttock with a part of the turn`);
+    assert.equal(far, 0, `${J.label}: points past the midline or above the crest turn`);
+  }
+});
+
+test('the leg rotation is the hips\': internal rotation brings each greater trochanter forward', () => {
+  const { chain, R, L, femR, femL } = CAP;
+  for (const [J, fem] of [[R, femR], [L, femL]]) {
+    const rot = J.motions.find((m) => m.legs);
+    assert.ok(rot && rot.roll && rot.pos === 'internal', `${J.label}: a rotation the leg rotation drives`);
+    const s = Math.sign(J.c[0]);
+    const gt = fem.filter((p) => s * (p[0] - J.c[0]) > 3.5 && p[2] > J.c[2] - 2 && p[2] < J.c[2] + 0.5);
+    const y = (deg) => { const cc = compileChain(chain, { [rot.key]: deg }); return gt.reduce((a, p) => a + forwardCompiled(p, cc)[1], 0) / gt.length; };
+    assert.ok(gt.length > 100 && y(20) > y(0) + 0.5 && y(-20) < y(0) - 0.5, `${J.label}: out ${y(-20).toFixed(2)} / neutral ${y(0).toFixed(2)} / in ${y(20).toFixed(2)}`);
   }
 });

@@ -89,6 +89,10 @@ function mul3(a, b) {
    alone, at the model's own voxels, fine enough to part the humerus from the radius and ulna across
    a joint space of a few millimetres, and the forearm and hand past it, wherever the forearm's roll
    and the wrist have carried them, turn whole (the grid's own faces agree with the plane).
+   A field may carry an OUTER grid (field.outer: a coarser grid round its own, read where its own does
+   not reach, and nothing turning past it). The hips do: the femoral head lies a voxel or two from
+   the acetabulum and the lesser trochanter from the ischium, so the joint's grid is the model's own
+   voxels, and the rest of the leg's side of the body, the thigh to the flank, every other voxel.
    A plain joint may carry a RIDER (j.rider: a weight grid as a field's, a centre c and a share):
    a piece of the patient that turns with the joint, about its own centre. The patella is one:
    drawn down the femur's groove by the patellar tendon, it turns about the centre of the femoral
@@ -243,7 +247,7 @@ function pastPlane(B, p) {
 function fieldValue(F, p) {
   const gx = (p[0] - F.origin[0]) / F.sp, gy = (p[1] - F.origin[1]) / F.sp, gz = (p[2] - F.origin[2]) / F.sp;
   const [nx, ny, nz] = F.dims;
-  if (!(gx >= 0 && gy >= 0 && gz >= 0 && gx <= nx - 1 && gy <= ny - 1 && gz <= nz - 1)) return F.beyond ? pastPlane(F.beyond, p) : 0;
+  if (!(gx >= 0 && gy >= 0 && gz >= 0 && gx <= nx - 1 && gy <= ny - 1 && gz <= nz - 1)) return F.outer ? fieldValue(F.outer, p) : F.beyond ? pastPlane(F.beyond, p) : 0;
   const i = Math.min(nx - 2, Math.floor(gx)), j = Math.min(ny - 2, Math.floor(gy)), k = Math.min(nz - 2, Math.floor(gz));
   const fx = gx - i, fy = gy - j, fz = gz - k, D = F.data, row = nx, sl = nx * ny;
   const o = (k * ny + j) * nx + i;
@@ -969,7 +973,7 @@ export function posePlan(vm, flips, chain, angles, pre = null) {
      voxel by voxel through all fifteen of them, and the plan's rows took seconds). (Before, every
      voxel of a 100 M voxel leg paid the joint tests: most of a pose's time.) */
   const rowWise = cc.every((J) => J.R2 === Infinity);
-  const fbox = cc.map((J) => J.wf && { lo: J.wf.origin, hi: J.wf.origin.map((o, a) => o + (J.wf.dims[a] - 1) * J.wf.sp) });
+  const fbox = cc.map((J) => { const F = J.wf && (J.wf.outer || J.wf); return F && { lo: F.origin, hi: F.origin.map((o, a) => o + (F.dims[a] - 1) * F.sp) }; });
   const ax = sg[0] * sp[0], bx = -sg[0] * Cx * sp[0];            // x = bx + ax i
   const N0 = N[0];
   // the i in [0, N0) where A + B i > 0, as [lo, hi)
