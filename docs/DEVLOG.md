@@ -8,7 +8,14 @@ handoff document and is not committed.)
 
 ## 2026-10-28
 
-### Protocol polish — PR pending
+### Order of Operations Trainer — PR pending
+A drill for the department's Method of Operation (`trainer/moo.js`: the eleven steps and their sub-steps, each with the ideas an answer must name), on the X-ray card beside the Protocol Trainer.
+- **Questions** (`core/mooQuiz.js`): a step by its number and its number by its wording; what comes after and before; every sub-step of a step, in order; a sub-step's successor; a key term blanked; 21 situations ("the patient walks in carrying a bag..."); the steps or sub-steps to put in order; the whole routine from memory.
+- **Marking** is by idea, not wording: a step is right when every one of its ideas is named (synonyms, a keyboard slip and word endings forgiven; IR, LMP, 3 exact). "Check the order" without the history is wrong. A wrong typed step is typed again correctly before the next question.
+- **Spacing:** Leitner boxes counted in questions. A miss returns two questions later; a right answer goes 2, 4, 8... questions away. Four choices are offered only the first time a card is seen; from the third box answers are timed (20 s, 45 s for lists, 150 s for the whole routine). The whole routine waits for 15 answers. Progress is kept in the browser.
+- Checked: `test/mooQuiz.test.js` (every step marks its own wording, paraphrases and missing ideas, list order, the deck, the spacing); in the app the choices, typed and retyped answers, ordering, the countdown, and progress kept across closing.
+
+### Protocol polish — PR #91
 This PR carries the elbow section below, and these:
 - **Rooms:** each protocol names its room (`room` in protocols.json, the same as the Protocol Trainer's view rooms), and selecting it sets that room first. The AP clavicle stands at the wall, the hand sits at the flat bucky, the Rosenberg stands at the wall. The two trainers keep their own rooms.
 - **The orange note under Select protocol is gone:** the approximate-view note, the centring limit and the caliper line.
