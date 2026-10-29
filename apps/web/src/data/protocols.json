@@ -17,8 +17,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                9,
-                12
+                4.5,
+                13
               ],
               "det": [
                 25,
@@ -29,7 +29,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "fingers"
+                "centre": "pip2Joint"
               }
             },
             {
@@ -41,8 +41,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                7,
-                12
+                4.5,
+                14
               ],
               "det": [
                 25,
@@ -53,7 +53,12 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "fingers"
+                "centre": "pip2Joint",
+                "joints": {
+                  "digit.3": 100,
+                  "digit.4": 100,
+                  "digit.5": 100
+                }
               }
             }
           ]
@@ -70,8 +75,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                14,
-                18
+                20.5,
+                26.5
               ],
               "det": [
                 25,
@@ -94,8 +99,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                15,
-                18
+                18.5,
+                27.5
               ],
               "det": [
                 25,
@@ -118,8 +123,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                13,
-                18
+                8.5,
+                27
               ],
               "det": [
                 25,
@@ -142,8 +147,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                13,
-                18
+                8.5,
+                27.5
               ],
               "det": [
                 25,
@@ -156,10 +161,10 @@
                 "cc": 0,
                 "centre": "mcp2Joint",
                 "joints": {
-                  "digit.2": 10,
-                  "digit.3": 25,
-                  "digit.4": 40,
-                  "digit.5": 55
+                  "digit.2": 0,
+                  "digit.3": -7,
+                  "digit.4": -14,
+                  "digit.5": -20
                 }
               }
             },
@@ -172,8 +177,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                15,
-                18
+                20,
+                21
               ],
               "det": [
                 25,
@@ -208,8 +213,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                10,
-                13
+                12.5,
+                12
               ],
               "det": [
                 25,
@@ -220,7 +225,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "midcarpal"
+                "centre": "radiocarpal"
               }
             },
             {
@@ -232,8 +237,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                10,
-                13
+                12.5,
+                12
               ],
               "det": [
                 25,
@@ -244,7 +249,7 @@
               "pose": {
                 "roll": 45,
                 "cc": 0,
-                "centre": "midcarpal"
+                "centre": "radiocarpal"
               }
             },
             {
@@ -256,8 +261,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                9,
-                13
+                8.5,
+                12
               ],
               "det": [
                 25,
@@ -268,7 +273,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "midcarpal"
+                "centre": "radiocarpal"
               }
             },
             {
@@ -280,8 +285,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                10,
-                13
+                12.5,
+                12
               ],
               "det": [
                 25,
@@ -292,7 +297,7 @@
               "pose": {
                 "roll": 150,
                 "cc": 0,
-                "centre": "midcarpal"
+                "centre": "radiocarpal"
               }
             },
             {
@@ -304,8 +309,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                4.5,
-                6.5
+                9.5,
+                8
               ],
               "det": [
                 25,
@@ -337,8 +342,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                13,
-                40
+                17,
+                35
               ],
               "det": [
                 43,
@@ -365,8 +370,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                43,
-                16
+                40,
+                17
               ],
               "det": [
                 43,
@@ -378,11 +383,12 @@
                 "roll": 86,
                 "cc": 0,
                 "centre": "forearm",
-                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json).",
+                "note": "This arm rests at the side nearly in the anatomical position (its epicondyles 4 degrees off the coronal plane); the roll that puts them parallel to the receptor was measured on the bone (data/palpation.json). Bent 90 degrees at the elbow, the forearm lay 13 degrees across the receptor; tilted 13 degrees, it runs along it.",
                 "joints": {
                   "elbow.flex": 90,
                   "elbow.roll": -90
-                }
+                },
+                "tilt": 13
               }
             }
           ]
@@ -399,8 +405,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
-                18
+                16,
+                18.5
               ],
               "det": [
                 25,
@@ -427,8 +433,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
-                18
+                18,
+                18.5
               ],
               "det": [
                 25,
@@ -456,8 +462,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
-                18
+                17.5,
+                18.5
               ],
               "det": [
                 25,
@@ -484,8 +490,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
-                18
+                19,
+                16
               ],
               "det": [
                 25,
@@ -548,8 +554,8 @@
               "lut": "bone",
               "sid": 100,
               "coll": [
-                15,
-                40
+                16.5,
+                39
               ],
               "det": [
                 43,
@@ -576,7 +582,7 @@
               "lut": "bone",
               "sid": 100,
               "coll": [
-                15,
+                19.5,
                 40
               ],
               "det": [
@@ -610,20 +616,22 @@
               "lut": "bone",
               "sid": 100,
               "coll": [
-                20,
-                25
+                25.5,
+                19
               ],
               "det": [
                 25,
                 30
               ],
-              "orient": "portrait",
+              "orient": "landscape",
               "subject": "upperextremity",
               "pose": {
                 "roll": 0,
                 "cc": 0,
                 "centre": "shoulder",
-                "joints": { "shoulder.rot": 90 },
+                "joints": {
+                  "shoulder.rot": 90
+                },
                 "note": "The humerus turned 90 degrees in from the anatomical position at the shoulder (the shoulder field joint, data/joints.json): the epicondyles perpendicular to the receptor, the lesser tubercle in profile medially."
               }
             },
@@ -637,14 +645,14 @@
               "lut": "bone",
               "sid": 100,
               "coll": [
-                20,
-                25
+                25.5,
+                19
               ],
               "det": [
                 25,
                 30
               ],
-              "orient": "portrait",
+              "orient": "landscape",
               "subject": "upperextremity",
               "pose": {
                 "roll": 0,
@@ -663,20 +671,22 @@
               "lut": "bone",
               "sid": 100,
               "coll": [
-                20,
-                25
+                25.5,
+                19
               ],
               "det": [
                 25,
                 30
               ],
-              "orient": "portrait",
+              "orient": "landscape",
               "subject": "upperextremity",
               "pose": {
                 "roll": 0,
                 "cc": 0,
                 "centre": "shoulder",
-                "joints": { "shoulder.rot": 45 },
+                "joints": {
+                  "shoulder.rot": 45
+                },
                 "note": "The humerus turned 45 degrees in from the anatomical position (the shoulder field joint, data/joints.json): the epicondyles about 45 degrees to the receptor, as with the palm against the thigh."
               }
             },
@@ -690,8 +700,8 @@
               "lut": "bone",
               "sid": 100,
               "coll": [
-                20,
-                25
+                22,
+                19
               ],
               "det": [
                 25,
@@ -867,8 +877,8 @@
               "lut": "extremity",
               "sid": 100,
               "coll": [
-                10,
-                11
+                12,
+                14
               ],
               "det": [
                 25,
@@ -895,8 +905,8 @@
               "lut": "extremity",
               "sid": 100,
               "coll": [
-                10,
-                11
+                12,
+                13
               ],
               "det": [
                 25,
@@ -923,8 +933,8 @@
               "lut": "footEq",
               "sid": 100,
               "coll": [
-                17,
-                34
+                13.5,
+                27
               ],
               "det": [
                 35,
@@ -936,10 +946,11 @@
                 "roll": 0,
                 "tilt": -59,
                 "cc": -15,
-                "centre": "medialCuneiform",
+                "centre": "mt3Base",
                 "joints": {
                   "ankle.flex": -30
-                }
+                },
+                "through": true
               }
             },
             {
@@ -951,8 +962,8 @@
               "lut": "footEq",
               "sid": 100,
               "coll": [
-                19,
-                34
+                15,
+                29
               ],
               "det": [
                 35,
@@ -964,7 +975,7 @@
                 "roll": 30,
                 "tilt": -59,
                 "cc": 0,
-                "centre": "medialCuneiform",
+                "centre": "mt3Base",
                 "joints": {
                   "ankle.flex": -30
                 }
@@ -979,8 +990,8 @@
               "lut": "footEq",
               "sid": 100,
               "coll": [
-                30,
-                17
+                28,
+                17.5
               ],
               "det": [
                 35,
@@ -1026,7 +1037,8 @@
                 "centre": "calcaneus",
                 "joints": {
                   "ankle.flex": 0
-                }
+                },
+                "through": true
               }
             },
             {
@@ -1038,8 +1050,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                11,
-                11
+                12,
+                12
               ],
               "det": [
                 25,
@@ -1070,8 +1082,8 @@
               "lut": "ankle",
               "sid": 100,
               "coll": [
-                13,
-                16
+                15,
+                20
               ],
               "det": [
                 25,
@@ -1097,8 +1109,8 @@
               "lut": "ankle",
               "sid": 100,
               "coll": [
-                13,
-                16
+                15,
+                20
               ],
               "det": [
                 25,
@@ -1124,8 +1136,8 @@
               "lut": "ankle",
               "sid": 100,
               "coll": [
-                13,
-                16
+                15,
+                20
               ],
               "det": [
                 25,
@@ -1151,8 +1163,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                14,
-                16
+                22.5,
+                19.5
               ],
               "det": [
                 25,
@@ -1183,7 +1195,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
+                16.5,
                 43
               ],
               "det": [
@@ -1208,7 +1220,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
+                19,
                 43
               ],
               "det": [
@@ -1233,7 +1245,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
+                18,
                 43
               ],
               "det": [
@@ -1258,7 +1270,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
+                17.5,
                 43
               ],
               "det": [
@@ -1289,8 +1301,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                18,
-                22
+                18.5,
+                18.5
               ],
               "det": [
                 25,
@@ -1315,8 +1327,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                18,
-                22
+                19,
+                18.5
               ],
               "det": [
                 25,
@@ -1341,8 +1353,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                18,
-                22
+                19,
+                18.5
               ],
               "det": [
                 25,
@@ -1367,7 +1379,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                18,
+                23,
                 22
               ],
               "det": [
@@ -1395,7 +1407,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                18,
+                23,
                 22
               ],
               "det": [
@@ -1421,8 +1433,8 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                18,
-                22
+                18.5,
+                18.5
               ],
               "det": [
                 25,
@@ -1448,7 +1460,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                18,
+                23,
                 22
               ],
               "det": [
@@ -1489,7 +1501,7 @@
               "pose": {
                 "roll": 157,
                 "cc": -25,
-                "centre": "knee",
+                "centre": "patellofemoral",
                 "through": true,
                 "joints": {
                   "knee.flex": 110
@@ -1545,7 +1557,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
+                25,
                 43
               ],
               "det": [
@@ -1571,7 +1583,7 @@
               "lut": "limb",
               "sid": 100,
               "coll": [
-                15,
+                22,
                 43
               ],
               "det": [
@@ -1662,8 +1674,8 @@
               "lut": "chest",
               "sid": 180,
               "coll": [
-                35,
-                42
+                34.5,
+                41.5
               ],
               "det": [
                 43,
@@ -1775,7 +1787,7 @@
               "lut": "chest",
               "sid": 150,
               "coll": [
-                25,
+                26.5,
                 22
               ],
               "det": [
@@ -1839,7 +1851,7 @@
               "lut": "abdomen",
               "sid": 100,
               "coll": [
-                35,
+                41,
                 42
               ],
               "det": [
@@ -1865,7 +1877,7 @@
               "lut": "abdomen",
               "sid": 100,
               "coll": [
-                35,
+                41,
                 42
               ],
               "det": [
@@ -1896,8 +1908,8 @@
               "lut": "bone",
               "sid": 100,
               "coll": [
-                43,
-                35
+                40,
+                34
               ],
               "det": [
                 43,
@@ -1923,8 +1935,8 @@
               "lut": "bone",
               "sid": 100,
               "coll": [
-                43,
-                35
+                40,
+                34
               ],
               "det": [
                 43,
@@ -2076,7 +2088,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "femoralHeadR",
+                "centre": "femoralNeckR",
                 "legs": 15
               }
             },
@@ -2103,7 +2115,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "femoralHeadR",
+                "centre": "femoralNeckR",
                 "legs": 0,
                 "note": "Trauma: the leg is not turned in, a possible fracture is left as it lies."
               }
@@ -2131,7 +2143,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "femoralHeadR",
+                "centre": "femoralNeckR",
                 "joints": {
                   "hipR.abd": 45,
                   "hipR.flex": 30,
@@ -2163,7 +2175,7 @@
               "pose": {
                 "roll": -45,
                 "cc": 0,
-                "centre": "femoralHeadR",
+                "centre": "femoralNeckR",
                 "joints": {
                   "hipR.abd": 45,
                   "hipR.flex": 45,
@@ -2195,7 +2207,7 @@
               "pose": {
                 "roll": -90,
                 "cc": -45,
-                "centre": "femoralHeadR",
+                "centre": "femoralNeckR",
                 "through": true,
                 "lift": "L",
                 "fidelity": "approx",
@@ -2365,7 +2377,7 @@
               "lut": "spine",
               "sid": 100,
               "coll": [
-                12,
+                12.5,
                 25
               ],
               "det": [
@@ -2377,7 +2389,8 @@
               "pose": {
                 "roll": 0,
                 "cc": -15,
-                "centre": "C4"
+                "centre": "C4",
+                "through": true
               }
             },
             {
@@ -2390,8 +2403,8 @@
               "lut": "spine",
               "sid": 180,
               "coll": [
-                18,
-                25
+                20,
+                22.5
               ],
               "det": [
                 25,
@@ -2415,8 +2428,8 @@
               "lut": "spine",
               "sid": 180,
               "coll": [
-                18,
-                25
+                20,
+                22.5
               ],
               "det": [
                 25,
@@ -2443,8 +2456,8 @@
               "lut": "spine",
               "sid": 180,
               "coll": [
-                18,
-                25
+                20,
+                22.5
               ],
               "det": [
                 25,
@@ -2472,8 +2485,8 @@
               "lut": "spine",
               "sid": 100,
               "coll": [
-                12,
-                12
+                13,
+                9
               ],
               "det": [
                 25,
@@ -2501,8 +2514,8 @@
               "lut": "spine",
               "sid": 180,
               "coll": [
-                15,
-                25
+                18,
+                23
               ],
               "det": [
                 25,
@@ -2513,7 +2526,8 @@
               "pose": {
                 "roll": 45,
                 "cc": -15,
-                "centre": "C4"
+                "centre": "C4",
+                "through": true
               }
             },
             {
@@ -2526,8 +2540,8 @@
               "lut": "spine",
               "sid": 180,
               "coll": [
-                15,
-                25
+                18,
+                23
               ],
               "det": [
                 25,
@@ -2555,8 +2569,8 @@
               "lut": "spine",
               "sid": 180,
               "coll": [
-                15,
-                25
+                18,
+                23
               ],
               "det": [
                 25,
@@ -2584,8 +2598,8 @@
               "lut": "spine",
               "sid": 180,
               "coll": [
-                20,
-                25
+                18,
+                18
               ],
               "det": [
                 25,
@@ -2676,8 +2690,8 @@
               "lut": "spine",
               "sid": 100,
               "coll": [
-                15,
-                42
+                13,
+                40
               ],
               "det": [
                 43,
@@ -2702,8 +2716,8 @@
               "lut": "spineLat",
               "sid": 100,
               "coll": [
-                15,
-                42
+                16,
+                39
               ],
               "det": [
                 43,
@@ -2733,8 +2747,8 @@
               "lut": "spine",
               "sid": 100,
               "coll": [
-                20,
-                42
+                20.5,
+                33.5
               ],
               "det": [
                 43,
@@ -2759,8 +2773,8 @@
               "lut": "spineLat",
               "sid": 100,
               "coll": [
-                20,
-                38
+                16.5,
+                38.5
               ],
               "det": [
                 43,
@@ -2795,7 +2809,7 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                24,
+                22,
                 30
               ],
               "det": [
@@ -2821,7 +2835,7 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                24,
+                22,
                 30
               ],
               "det": [
@@ -2847,7 +2861,7 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                24,
+                22,
                 30
               ],
               "det": [
@@ -2874,7 +2888,7 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                24,
+                22,
                 30
               ],
               "det": [
@@ -2901,8 +2915,8 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                24,
-                30
+                24.5,
+                26.5
               ],
               "det": [
                 25,
@@ -3078,7 +3092,7 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                20,
+                21,
                 24
               ],
               "det": [
@@ -3104,12 +3118,12 @@
               "lut": "skull",
               "sid": 100,
               "coll": [
-                25,
+                27.5,
                 28
               ],
               "det": [
-                25,
-                30
+                35,
+                43
               ],
               "orient": "portrait",
               "subject": "pediatric",

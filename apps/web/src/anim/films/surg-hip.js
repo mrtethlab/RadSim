@@ -26,8 +26,12 @@ const VIEW = { orbital: 20, tilt: 5 };
 const CHECK = { orbital: -15, tilt: 5 };
 const H = LANDMARKS.adult.femoralHeadR;                     // the femoral head's centre (r about 2.2)
 const TRO = [13.8, -3.6, -31.5];                            // down the neck toward the trochanter
-// aimed at: the anterior cortex at the lateral head-neck junction (refined on the crop below)
-const AIM = [11.2, -1.3, -28.6];
+// aimed at: the head-neck junction, where the neck's axis leaves the head (2.4 cm out from its
+// centre, just past its radius), a little toward the neck's superior border: its superolateral
+// junction. The needle stops on the anterior cortex there (found on the crop below).
+const NECK = v3.norm(v3.sub(TRO, H));
+const SUP = v3.norm([-NECK[2], 0, NECK[0]]);                 // across the neck, toward the head (+z)
+const AIM = v3.add(H, v3.add(v3.mul(NECK, 2.4), v3.mul(SUP, 0.3)));
 // the femoral nerve (the crop holds the vessels, not the nerve): lateral to the artery
 const NERVE = [];
 for (let z = -24; z >= -30.5; z -= 0.5) NERVE.push({ at: [9.95, 1.7, z], r: 0.32, tissue: 'nerve' });
@@ -46,7 +50,7 @@ export async function build(api) {
     const from = v3.sub(AIM, v3.mul(dir, 8));
     const segs = K.tissuesAlong(from, v3.add(AIM, v3.mul(dir, 3)));
     const bone = segs.find((s) => s.tissue === 'cortex' || s.tissue === 'marrow');
-    return bone ? v3.add(from, v3.mul(dir, bone.from - 0.05)) : [11.17, -1.39, -28.61];
+    return bone ? v3.add(from, v3.mul(dir, bone.from - 0.05)) : AIM;
   })();
   const entry = K.entry(target, dir);
   K.setSite(entry);
@@ -54,11 +58,9 @@ export async function build(api) {
   // ---- what the film uses: the spinal needle, the locator, three syringes, the vials
   const N = K.needle('spinal');
   const loc = K.needle('locator');
-  // the drawing-up needle: its hub on the luer, its tip 5 cm out front (along the syringe's -z)
-  const drawNeedle = (s) => { if (s.needle) { s.needle.g.rotation.set(0, 0, 0); s.needle.g.position.set(0, 0, -(s.needle.len + s.needle.hubLen)); } return s; };
-  const sCon = drawNeedle(K.syringe({ ml: 5, color: 0xf6efc8, needle: true }));                    // contrast
-  const sLid = drawNeedle(K.syringe({ ml: 3, color: 0xeaf4ff, needle: true }));                    // lidocaine, the skin's
-  const sMix = drawNeedle(K.syringe({ ml: 5, color: 0xffffff, needle: true }));                    // lidocaine + triamcinolone
+  const sCon = K.syringe({ ml: 5, color: 0xf6efc8, needle: true });                    // contrast
+  const sLid = K.syringe({ ml: 3, color: 0xeaf4ff, needle: true });                    // lidocaine, the skin's
+  const sMix = K.syringe({ ml: 5, color: 0xffffff, needle: true });                    // lidocaine + triamcinolone
   const vials = { contrast: K.vial('contrast'), lidocaine: K.vial('lidocaine'), steroid: K.vial('steroid') };
   vials.contrast.level(0.85); vials.lidocaine.level(0.85); vials.steroid.level(0.6);
 
