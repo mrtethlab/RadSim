@@ -110,9 +110,16 @@ def hand():
             out[key] = pt([(c[1] - (V.n[0] - 1) / 2) * V.sp[0], (c[0] - (V.n[1] - 1) / 2) * V.sp[1], jr + dz],
                 f'the centroid of the radius (the larger forearm bone) {-dz:.0f} cm proximal of the radiocarpal joint',
                 'distal radius axis, for the hand/wrist alignment criterion')
-    # the scaphoid: the radial-most bone of the proximal carpal row, about 1 cm distal to the
-    # radiocarpal joint (2.2 cm proximal of the midcarpal landmark on this hand)
+    # the radiocarpal joint (2.2 cm proximal of the midcarpal landmark on this hand), midway
+    # between the styloids: the department's wrist centring point
     joint = wrist[2] - 2.2
+    rs, us = P('hand', 'radialStyloid'), P('hand', 'ulnarStyloid')
+    xr = float((rs[0] + us[0]) / 2)
+    out['radiocarpal'] = pt([xr, bone_centre_y(V, xr, joint), joint],
+        'the radiocarpal joint (2.2 cm proximal of the midcarpal landmark), midway between the radial and ulnar styloids',
+        'PA, PA oblique and lateral wrist: CR perpendicular to the radiocarpal joint, midway between the styloids')
+    # the scaphoid: the radial-most bone of the proximal carpal row, about 1 cm distal to the
+    # radiocarpal joint
     zs = joint + 1.0
     rs = P('hand', 'radialStyloid')
     radial = 1 if rs[0] > m3[0] else -1

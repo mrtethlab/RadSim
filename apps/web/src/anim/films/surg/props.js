@@ -272,7 +272,8 @@ export function makeSyringe({ ml = 10, color = 0xf4f8fb, needle = false } = {}) 
   plunger.add(mesh(new THREE.BoxGeometry(0.12, R * 1.2, L + 1), MAT.clear(0xffffff, 0.75), 0, 0, 0.35 + (L + 1) / 2));
   plunger.add(rod(R * 1.1, R * 1.1, L + 1.35, L + 1.5, MAT.clear(0xffffff, 0.8), 20));
   let ndl = null;
-  if (needle) { ndl = makeNeedle({ kind: 'locator' }); ndl.g.rotation.y = Math.PI; g.add(ndl.g); }
+  // the drawing-up needle: its hub on the luer, its tip out front (the syringe's -z)
+  if (needle) { ndl = makeNeedle({ kind: 'locator' }); ndl.g.position.z = -(ndl.len + ndl.hubLen); g.add(ndl.g); }
   function set({ fill = 0, plunger: p = null } = {}) {
     const f = clamp01(fill), q = p == null ? f : clamp01(p);
     liquid.visible = f > 0.01;

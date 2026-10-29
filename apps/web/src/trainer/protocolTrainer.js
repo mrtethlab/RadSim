@@ -7,11 +7,13 @@
    the question), the student picks the anatomy and the views from the room's own protocol
    chart, and puts them in the order they would take them.
 
-   CHECKING marks two things:
-     the protocol — the department's routine for this reason for exam
-                    (trainer/hospitalProtocols.js): views missing, views not needed;
-     the order    — how much the room, the patient and the tube move between views
-                    (core/viewOrder.js), against the best order for the same views.
+   CHECKING marks the protocol: the department's routine for this reason for exam
+   (trainer/hospitalProtocols.js): views missing, views not needed.
+
+   DISABLED (Oct 2026): the ORDER-OF-PROJECTION judging (how much the room, the patient and the
+   tube move between views, core/viewOrder.js, against the best order for the same views) and
+   the SCORE tally in the bar were not up to the standard wanted, and are switched off by
+   ORDER_SCORING below. The code is kept; set it true to bring both back.
    THE FILMS are then made of the views chosen, in the order chosen, by the x-ray room itself:
    each protocol applied as the sandbox applies it, the patient's pathology stamped into the
    volume (core/pathology.js, through the app's setPathology), and exposed dry. What a view
@@ -21,6 +23,9 @@ import { HOSPITAL, VIEW_META, lineById } from './hospitalProtocols.js';
 import { makeRequisition, seedRng, HOSPITAL_INFO } from './requisition.js';
 import { PATHOLOGY } from '../core/pathology.js';
 import { judgeOrder, orderCost, stepChanges, TIERS } from '../core/viewOrder.js';
+
+// the order-of-projection judging and the score tally: disabled (see the header)
+const ORDER_SCORING = false;
 
 let H = null;                 // app hooks
 let P = null;                 // the session: { req, seed, region, list, checked, films, ticket, tally }
@@ -126,7 +131,7 @@ function render() {
   el.innerHTML = `
     <div class="ptr-bar">
       <div class="ptr-title">Protocol Trainer</div>
-      <div class="ptr-tally">${t.reqs ? `Protocols ${t.protocol}/${t.reqs} &middot; Orders ${t.order}/${t.reqs}` : ''}</div>
+      <div class="ptr-tally">${ORDER_SCORING && t.reqs ? `Protocols ${t.protocol}/${t.reqs} &middot; Orders ${t.order}/${t.reqs}` : ''}</div>
       <button class="ptr-btn" id="ptrNew">New requisition</button>
       <button class="tr-x" id="ptrHome" title="Back to the home screen">&times;</button>
     </div>
@@ -206,7 +211,7 @@ function workHTML() {
   }
   const ov = P.list.map(orderView);
   const items = P.list.map((v, i) => {
-    const chg = P.checked && i ? stepChanges(ov[i - 1], ov[i]) : [];
+    const chg = ORDER_SCORING && P.checked && i ? stepChanges(ov[i - 1], ov[i]) : [];
     const mark = P.checked ? (P.checked.proto.extra.includes(v) ? '<i class="bad" title="Not in the routine">&#10007;</i>' : '<i class="ok">&#10003;</i>') : '';
     return `${chg.length ? `<li class="ptr-step">${chg.map((c) => `<span class="t${c.tier}">${esc(c.text)}</span>`).join('')}</li>` : ''}
       <li class="ptr-item" draggable="true" data-i="${i}"><span class="ptr-grip">&#8942;&#8942;</span><span class="ptr-n">${i + 1}</span>
@@ -294,7 +299,7 @@ function move(i, j) {
 }
 /* A reorder keeps the protocol's marking and re-judges the order (and re-hangs the films). */
 function reorderOnly() {
-  if (P.checked) P.checked.order = P.list.length > 1 ? judgeOrder(P.list.map(orderView)) : null;
+  if (P.checked) P.checked.order = ORDER_SCORING && P.list.length > 1 ? judgeOrder(P.list.map(orderView)) : null;
   render();
 }
 // a change to which views are chosen undoes the check (the tally counts the first check only)
@@ -302,7 +307,7 @@ function edited() { if (P.checked) P.checked = null; }
 
 function check() {
   const proto = checkProtocol(P.req, P.list);
-  const order = P.list.length > 1 ? judgeOrder(P.list.map(orderView)) : null;
+  const order = ORDER_SCORING && P.list.length > 1 ? judgeOrder(P.list.map(orderView)) : null;
   if (!P.counted) {
     P.counted = true; P.tally.reqs++;
     if (proto.ok) P.tally.protocol++;

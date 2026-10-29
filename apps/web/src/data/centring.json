@@ -17,6 +17,14 @@
    "guide": "Lateral hand: CR perpendicular to the 2nd MCP joint (Bontrager; Radiopaedia)",
    "confidence": "medium"
   },
+  "pip2Joint": {
+   "x": 1.59,
+   "y": -1.12,
+   "z": 7.64,
+   "how": "the index finger's PIP joint space: the phalangeal head's centre (data/joints.json pip2) carried 0.95 cm, half its depth, along the finger",
+   "guide": "PA and lateral finger: CR perpendicular to the PIP joint of the affected digit (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
   "midcarpal": {
    "x": -0.55,
    "y": 0.73,
@@ -47,6 +55,14 @@
    "z": -10.28,
    "how": "the centroid of the radius (the larger forearm bone) 5 cm proximal of the radiocarpal joint",
    "guide": "distal radius axis, for the hand/wrist alignment criterion",
+   "confidence": "medium"
+  },
+  "radiocarpal": {
+   "x": -1.38,
+   "y": 0.65,
+   "z": -5.28,
+   "how": "the radiocarpal joint (2.2 cm proximal of the midcarpal landmark), midway between the radial and ulnar styloids",
+   "guide": "PA, PA oblique and lateral wrist: CR perpendicular to the radiocarpal joint, midway between the styloids (the department's routine; Bontrager gives the midcarpal area)",
    "confidence": "medium"
   },
   "scaphoid": {
@@ -113,6 +129,14 @@
    "z": -22.22,
    "how": "midway between the knee joint and the tibiotalar joint (-5.3 / -39.1), the centre of the tibia and fibula's section there",
    "guide": "AP, AP obliques and lateral tibia/fibula: CR perpendicular to the mid-point of the leg, both joints on the receptor (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "patellofemoral": {
+   "x": -2.85,
+   "y": -0.9,
+   "z": -1.95,
+   "how": "the patellofemoral joint: 1.45 cm behind the most anterior bone of the patella (data/palpation.json patella), its articular surface; set on the Settegast film, where 2.5 cm put the ray 2 cm into the trochlea",
+   "guide": "Tangential (skyline, Settegast) patella: CR to the patellofemoral joint space (Bontrager; Radiopaedia)",
    "confidence": "medium"
   }
  },
@@ -315,6 +339,22 @@
    "z": -19.4,
    "how": "midway between the two femoral heads (data/landmarks.json femoralHeadL/R, z -19.1 and -19.7), on the midsagittal plane",
    "guide": "Judet obliques: CR to the acetabula, about 5 cm distal to the ASIS, both hips and the proximal femurs on the film (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "femoralNeckR": {
+   "x": 12.1,
+   "y": -3.6,
+   "z": -21.2,
+   "how": "the right femoral neck: 45 % of the way from the femoral head's centre (data/landmarks.json femoralHeadR) to the greater trochanter (data/palpation.json trochanterR)",
+   "guide": "AP hip: CR perpendicular to the femoral neck, 2.5-5 cm distal to the midpoint of the ASIS-symphysis line (Bontrager; Radiopaedia)",
+   "confidence": "medium"
+  },
+  "femoralNeckL": {
+   "x": -12.04,
+   "y": -2.38,
+   "z": -20.5,
+   "how": "the left femoral neck: 45 % of the way from the femoral head's centre (data/landmarks.json femoralHeadL) to the greater trochanter (data/palpation.json trochanterL)",
+   "guide": "AP hip: CR perpendicular to the femoral neck, 2.5-5 cm distal to the midpoint of the ASIS-symphysis line (Bontrager; Radiopaedia)",
    "confidence": "medium"
   }
  },

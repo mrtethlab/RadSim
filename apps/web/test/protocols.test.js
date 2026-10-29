@@ -171,11 +171,13 @@ test('the cervical spine is centred on C4, measured from the vertebra labels of 
 
 test('the routine views centre where the textbooks say', () => {
   // Bontrager/Lampignano, McQuillen Martensen, Radiopaedia: the 3rd MCP joint for a PA hand, the
-  // 2nd for the lateral, the midcarpal area for the wrist, midway between the malleoli for the AP
+  // 2nd for the lateral, the radiocarpal joint for the wrist (the department's routine; the
+  // textbooks give the midcarpal area, 2.2 cm distal), midway between the malleoli for the AP
   // ankle and the medial malleolus for the lateral, T7 for chest and thoracic spine, the iliac
   // crest (L4-L5) for the lumbar spine on a 35 x 43 receptor; the spine laterals on the column
   const want = { 'PA hand': 'mcp3Joint', 'Oblique hand': 'mcp3Joint', 'Lateral hand': 'mcp2Joint',
-    'PA wrist': 'midcarpal', 'Oblique wrist': 'midcarpal', 'Lateral wrist': 'midcarpal',
+    'PA wrist': 'radiocarpal', 'Oblique wrist': 'radiocarpal', 'Lateral wrist': 'radiocarpal',
+    'PA fingers': 'pip2Joint', 'AP foot': 'mt3Base', 'Oblique foot': 'mt3Base', 'AP hip': 'femoralNeckR',
     'AP ankle': 'intermalleolar', 'Mortise ankle': 'intermalleolar', 'Lateral ankle': 'medialMalleolus',
     'PA chest': 'T7', 'Lateral chest': 'T7mc', 'AP thoracic': 'T7', 'Lateral thoracic': 'T7col',
     'AP lumbar': 'crest', 'Lateral lumbar': 'crestCol' };
@@ -183,7 +185,7 @@ test('the routine views centre where the textbooks say', () => {
     const p = all.find((x) => x.proj === proj);
     assert.equal(p.pose.centre, c, proj);
     const pt = centring[p.subject][c];
-    assert.ok(pt && /Bontrager|Radiopaedia/.test(pt.guide), `${proj}: a sourced guideline`);
+    assert.ok(pt && /Bontrager|Radiopaedia|department/.test(pt.guide), `${proj}: a sourced guideline`);
   }
   // the 3rd MCP joint lies distal of the midcarpal point by about the metacarpal length (6-7 cm)
   const h = centring.hand;
@@ -234,13 +236,14 @@ test('the skull, sinus and facial views load the Skull, angled to the OML and ce
   assert.ok(c.eam.y < c.nasion.y - 7 && c.eam.y < c.zygoma.y && c.zygoma.y < c.nasion.y, 'front to back: nasion, zygoma, ear canals');
   assert.ok(c.latSkull.y > c.eam.y + 1 && c.latSkull.y < c.zygoma.y && Math.abs(c.latSkull.z - c.eam.z) < 1.5,
     `lateral skull point ${c.latSkull.y}, ${c.latSkull.z} vs EAM ${c.eam.y}, ${c.eam.z}`);
-  // every skull view takes the whole skull: a 24 x 30 field on the 25 x 30 receptor, its long side down
-  // the head; the angled views aimed through their point (the Caldwell exits the nasion, the Towne
-  // crosses the EAM to the foramen magnum)
-  for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'Lateral skull']) {
-    const p = all.find((x) => x.proj === proj);
-    assert.deepEqual([p.coll, p.det, p.orient], [[24, 30], [25, 30], 'portrait'], proj);
-  }
+  // every skull view takes the whole skull and half an inch round it: the frontal views 22 x 30 down
+  // the head, the lateral 24.5 x 26.5, on the 25 x 30 receptor; the angled views aimed through their
+  // point (the Caldwell exits the nasion, the Towne crosses the EAM to the foramen magnum)
+  for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)'])
+    assert.deepEqual([all.find((x) => x.proj === proj).coll, all.find((x) => x.proj === proj).det], [[22, 30], [25, 30]], proj);
+  assert.deepEqual(all.find((x) => x.proj === 'Lateral skull').coll, [24.5, 26.5]);
+  for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'Lateral skull'])
+    assert.equal(all.find((x) => x.proj === proj).orient, 'portrait', proj);
   for (const proj of ['PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'PA axial sinuses (Caldwell)']) assert.equal(pose(proj).through, true, proj);
   // the child's views centre the middle of its whole skull, below the cranium's centre (the landmark)
   assert.ok(centring.pediatric.skull.z < landmarks.pediatric.skull.z - 3, `${centring.pediatric.skull.z} vs ${landmarks.pediatric.skull.z}`);
@@ -300,7 +303,10 @@ test('the hospital views turn the way their names say', () => {
   assert.equal(pose('AP hip').legs, 15);
   assert.equal(pose('AP hip (no leg rotation)').legs || 0, 0);
   assert.equal(pose('AP pelvis (no leg rotation)').legs || 0, 0);
-  assert.equal(pose('AP hip').centre, 'femoralHeadR');
+  // every hip view centres on the femoral neck (Bontrager), the left hip's own neck when it is ordered
+  for (const proj of ['AP hip', 'AP hip (no leg rotation)', 'Frog-leg lateral hip', 'Roll-up lateral hip (Lauenstein)', 'Cross-table lateral hip'])
+    assert.equal(pose(proj).centre, 'femoralNeckR', proj);
+  assert.ok(centring.chestabdopelvis.femoralNeckL, 'a left femoral neck for a left hip');
 });
 
 test('the frog-leg and the roll-up lateral bend the hip (the chest/abdomen/pelvis\'s hip joints), and say the knee is not there', () => {

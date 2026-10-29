@@ -18,28 +18,38 @@
    Rolls follow protocols.json, so the Trainer and the sandbox agree on what a view is.
    ============================================================================ */
 
-const HAND_REQ = { parts: [{ mat: 'tissue', connect: 'hand', z: [{ lm: 'wrist', add: -3.5 }, null] }],
+// (the radiocarpal joint lies 2.2 cm proximal of the wrist landmark: 1" of radius and ulna beyond it)
+const HAND_REQ = { parts: [{ mat: 'tissue', connect: 'hand', z: [{ lm: 'wrist', add: -4.75 }, null] }],
   text: 'all phalanges, metacarpals and carpals, with about 1" of distal radius and ulna' };
 // the soft tissue of the wrist, then the bases of the metacarpals as bone (Bontrager: the proximal
 // metacarpals): further out, the hand's soft tissue and the abducted thumb's shaft take the
 // symmetric field to 17-21 cm, where a wrist film is about 12
-const WRIST_REQ = { parts: [{ mat: 'tissue', connect: 'wrist', z: [{ lm: 'wrist', add: -4.0 }, { lm: 'wrist', add: 1.0 }] },
-  { mat: 'bone', z: [{ lm: 'wrist', add: 0 }, { lm: 'wrist', add: 3.5 }] }],
+// (the bones stop at the bases of the metacarpals, the first carpometacarpal joint on the radial
+// side: the MCP joints stay off a wrist film; the soft tissue to the proximal carpal row, before
+// the thenar eminence widens the hand)
+const WRIST_REQ = { parts: [{ mat: 'tissue', connect: 'wrist', z: [{ lm: 'wrist', add: -4.0 }, { lm: 'wrist', add: -1.0 }] },
+  { mat: 'bone', x: [{ lm: 'radiocarpal', axis: 'x', add: -3.8 }, { lm: 'radiocarpal', axis: 'x', add: 3.9 }],
+    z: [{ lm: 'wrist', add: 0 }, { lm: 'wrist', add: 2.0 }] }],
   text: 'distal radius and ulna and the soft tissue of the wrist, the carpals, and the bases of the metacarpals' };
 // measured from the malleoli (the centring point), not the ankle landmark 2.4 cm above them: an
 // AP ankle is about 22 cm long, the distal third of the leg to just below the talus
-const ANKLE_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [{ lm: 'intermalleolar', add: -4 }, { lm: 'intermalleolar', add: 8 }] }],
+// (forward to the talar neck, 5 cm in front of the malleoli: not the dorsum of the foot)
+const ANKLE_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [{ lm: 'intermalleolar', add: -4 }, { lm: 'intermalleolar', add: 8 }],
+  y: [null, { lm: 'intermalleolar', axis: 'y', add: 5 }] }],
   text: 'the distal tibia and fibula (about 8 cm of leg), the mortise and the talus' };
-const ANKLE_LAT_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [{ lm: 'intermalleolar', add: -7 }, { lm: 'intermalleolar', add: 8 }] }],
+// (forward only as far as the base of the fifth metatarsal, 9.5 cm in front of the malleoli: the
+// rest of the foot is not an ankle film's)
+const ANKLE_LAT_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [{ lm: 'intermalleolar', add: -7 }, { lm: 'intermalleolar', add: 8 }],
+  y: [null, { lm: 'intermalleolar', axis: 'y', add: 9.5 }] }],
   text: 'the distal tibia and fibula, talus, calcaneus and the base of the fifth metatarsal' };
 const CHEST_REQ = { parts: [{ mat: 'lung', largest: 2 }], text: 'both lungs, apices to costophrenic angles' };
-/* The spines are bone only: the film is of the column, and the field is the column plus the inch.
+/* The spines are bone only: the film is of the column, and the field is the column plus the half inch.
    An AP takes the bodies, pedicles and transverse processes (a long narrow field, 12-15 cm on
    the thoracic spine, about 20 on the lumbar with its sacroiliac joints). A lateral takes the
    column from the front of the bodies to the tips of the spinous processes and no more: none
    of the abdomen or chest in front of it, which only adds scatter. Depths hang off the column
    points tools/measure_centring.py measures (crestCol, T7col: the middle of the column's depth). */
-const TSPINE_REQ = { parts: [{ mat: 'bone', x: [-3.5, 3.5],
+const TSPINE_REQ = { parts: [{ mat: 'bone', x: [-4.75, 4.75],
   y: [{ lm: 'thoracic', axis: 'y', add: -7 }, { lm: 'thoracic', axis: 'y', add: 3 }],
   z: [{ lm: 'thoracic', add: -14.5 }, { lm: 'thoracic', add: 16.5 }] }],
   text: 'T1 to T12 (C7 and L1 at the ends): bodies, pedicles and the transverse processes' };
@@ -67,8 +77,8 @@ const FOOT_LAT_REQ = { parts: [{ mat: 'tissue', connect: 'ankle', z: [null, { lm
 // the knee: the distal femur and the proximal tibia and fibula, 7 cm either side of the joint
 const KNEE_REQ = { parts: [{ mat: 'tissue', connect: 'knee', z: [{ lm: 'knee', add: -7 }, { lm: 'knee', add: 7 }] }],
   text: 'the distal femur, the patella, the knee joint and the proximal tibia and fibula, with their soft tissue' };
-// the elbow: the distal humerus and the proximal forearm, 7 cm either side of the joint
-const ELBOW_REQ = { parts: [{ mat: 'tissue', connect: 'elbow', z: [{ lm: 'elbowJoint', add: -7 }, { lm: 'elbowJoint', add: 7 }] }],
+// the elbow: the distal humerus and the proximal forearm, 5 cm either side of the joint
+const ELBOW_REQ = { parts: [{ mat: 'tissue', connect: 'elbow', z: [{ lm: 'elbowJoint', add: -5 }, { lm: 'elbowJoint', add: 5 }] }],
   text: 'the distal humerus, the elbow joint and the proximal radius and ulna, with their soft tissue' };
 /* The cervical spine is bone only, hung off the vertebral bodies the CT's own labels place (C4,
    C1-C2, C7-T1). Every window is wide enough for the transverse processes on the AP and the
@@ -109,16 +119,16 @@ export const SERIES = [
   { id: 'wrist4', name: 'Wrist · 4 views', views: [
     { label: 'PA', proto: ['Upper extremity', 'PA wrist'], pose: { roll: 0, tol: 2 },
       align: { tol: 6 },
-      centre: { lm: 'midcarpal', name: 'midcarpal area', tol: 1.0 }, require: WRIST_REQ,
-      how: 'Hand pronated, fingers flexed slightly so the wrist lies flat. Central ray perpendicular to the midcarpal area. Forearm along the long axis of the receptor.' },
+      centre: { lm: 'radiocarpal', name: 'radiocarpal joint', tol: 1.0 }, require: WRIST_REQ,
+      how: 'Hand pronated, fingers flexed slightly so the wrist lies flat. Central ray perpendicular to the radiocarpal joint. Forearm along the long axis of the receptor.' },
     { label: 'PA oblique', proto: ['Upper extremity', 'Oblique wrist'], pose: { roll: 45, tol: 2 },
       align: { tol: 6 },
-      centre: { lm: 'midcarpal', name: 'midcarpal area', tol: 1.0 }, require: WRIST_REQ,
-      how: 'From PA, rotate the wrist 45° laterally. Central ray to the midcarpal area. Forearm along the long axis of the receptor.' },
+      centre: { lm: 'radiocarpal', name: 'radiocarpal joint', tol: 1.0 }, require: WRIST_REQ,
+      how: 'From PA, rotate the wrist 45° laterally. Central ray to the radiocarpal joint. Forearm along the long axis of the receptor.' },
     { label: 'Lateral', proto: ['Upper extremity', 'Lateral wrist'], pose: { roll: 90, tol: 2 },
       align: { tol: 6 },
-      centre: { lm: 'midcarpal', name: 'midcarpal area', tol: 1.0 }, require: WRIST_REQ,
-      how: 'True lateral, ulnar side down: the radius and ulna superimpose. Central ray to the midcarpal area. Forearm along the long axis of the receptor.' },
+      centre: { lm: 'radiocarpal', name: 'radiocarpal joint', tol: 1.0 }, require: WRIST_REQ,
+      how: 'True lateral, ulnar side down: the radius and ulna superimpose. Central ray to the radiocarpal joint. Forearm along the long axis of the receptor.' },
     { label: 'PA axial (scaphoid)', proto: ['Upper extremity', 'PA wrist'], pose: { roll: 0, tol: 2 },
       align: { range: [15, 35] },
       cr: { cc: 15, tol: 3, words: ['toward the fingers', 'toward the elbow'] },

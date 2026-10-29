@@ -30,7 +30,7 @@ test('geometry: field coordinates and the receptor round trip', () => {
   assert.deepEqual(locToWorld([1, 0, 0], R, [10, 0, 0]), [10, 1, 0]);
 });
 
-test('a field an inch beyond the anatomy passes; wider fails; narrower cuts', () => {
+test('a field half an inch beyond the anatomy passes; wider fails; narrower cuts', () => {
   // anatomy 15 x 25 cm: the ideal field is 15+5.08 by 25+5.08
   const pts = slab(7.5, 12.5);
   const ok = judge(view, base(frame(15 + 2 * BORDER_CM, 25 + 2 * BORDER_CM), pts));
@@ -50,21 +50,22 @@ test('a field an inch beyond the anatomy passes; wider fails; narrower cuts', ()
   assert.match(tight.find((c) => c.id === 'collimation').detail, /Under ¼"/);
 });
 
-test('collimation grades: within the inch passes, open by under half the ideal is marked, beyond is a repeat', () => {
-  // anatomy 14.92 cm long: the ideal field is 20 cm. 22 passes, 30 is marked, 31 is a repeat
+test('collimation grades: within the half inch passes, open by under half the ideal is marked, beyond is a repeat', () => {
+  // anatomy 17.46 cm long: the ideal field is 20 cm. 22 passes, 29.9 is marked, 31 is a repeat
+  // (30 itself sits on the line, and the anatomy's float32 points put it a hair over)
   const pts = slab(5, (20 - 2 * BORDER_CM) / 2);
   const ideal = 10 + 2 * BORDER_CM;
   const at = (len) => level(judge(view, base(frame(ideal, len), pts)), 'collimation');
   assert.equal(at(20), 'pass');
   assert.equal(at(22), 'pass');
   assert.equal(at(23), 'warn');
-  assert.equal(at(30), 'warn');
+  assert.equal(at(29.9), 'warn');
   assert.equal(at(31), 'fail');
   // a repeat on either axis is a repeat
   assert.equal(level(judge(view, base(frame(ideal * 1.6, 22), pts)), 'collimation'), 'fail');
 });
 
-test('the inch border is asked for only as far as the receptor allows', () => {
+test('the half-inch border is asked for only as far as the receptor allows', () => {
   // a broad chest: 34 cm of lung needs 39 cm with its border, the receptor is 35 cm wide
   const pts = slab(17, 12);
   const F = frame(35, 24 + 2 * BORDER_CM);
@@ -76,20 +77,20 @@ test('the inch border is asked for only as far as the receptor allows', () => {
 });
 
 test('a textbook field size is the least the ideal asks for: collimating to it is never open', () => {
-  // a slender column: 10 cm of anatomy wants 15.08 cm; the lateral lumbar's textbook field is 20 wide
+  // a slender column: 10 cm of anatomy wants 12.54 cm; the lateral lumbar's textbook field is 20 wide
   const pts = slab(5, 12);
   const v = { ...view, field: { w: 20 } };
   const F = frame(20, 24 + 2 * BORDER_CM);
   assert.ok(Math.abs(2 * idealHalf(v, analyseCoverage(pts, F)).w - 20) < 1e-9);
   assert.equal(level(judge(v, base(F, pts)), 'collimation'), 'pass', 'the textbook 20 cm');
-  assert.equal(level(judge(view, base(F, pts)), 'collimation'), 'warn', 'without it, 20 is 5 cm open');
-  assert.equal(level(judge(v, base(frame(10 + 2 * BORDER_CM, 24 + 2 * BORDER_CM), pts)), 'collimation'), 'pass', 'the inch alone');
+  assert.equal(level(judge(view, base(F, pts)), 'collimation'), 'fail', 'without it, 20 is 7.5 cm open: a repeat');
+  assert.equal(level(judge(v, base(frame(10 + 2 * BORDER_CM, 24 + 2 * BORDER_CM), pts)), 'collimation'), 'pass', 'the half inch alone');
   // and the receptor still caps it
   assert.equal(idealHalf({ field: { w: 50 } }, analyseCoverage(pts, F), { w: 17.5, l: 21.5 }).w, 17.5);
 });
 
 test('the symmetric collimator: the further side decides the field', () => {
-  // anatomy from z = -5 to +15 about the central ray: needs 15 + 2.54 each way along l
+  // anatomy from z = -5 to +15 about the central ray: needs 15 + 1.27 each way along l
   const pts = slab(5, 10, 5);
   const need = neededHalf(analyseCoverage(pts, frame()));
   assert.ok(Math.abs(need.l - (15 + BORDER_CM)) < 1e-6);

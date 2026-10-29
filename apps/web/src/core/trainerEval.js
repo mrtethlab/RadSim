@@ -9,7 +9,7 @@
    - ANATOMY: the required anatomy is a cloud of points taken from the model's own tissue, bone
      or lung (trainer/regions.js), carried through the patient's pose and projected through the
      real beam: what fraction lies inside the collimated field, and how far any of it is cut.
-   - COLLIMATION: a 1-inch (2.54 cm) border beyond the required anatomy, measured at the image
+   - COLLIMATION: a half-inch (1.27 cm) border beyond the required anatomy, measured at the image
      receptor. The collimator is symmetric about the central ray, so the field each way must
      reach the furthest anatomy that way plus the border. Graded per axis: within half an inch
      of that each side passes; open by less than half the ideal field again is acceptable but
@@ -18,7 +18,7 @@
    wAxis / lAxis (collimator width and length axes), field half-angles as tangents.
    ============================================================================ */
 
-export const BORDER_CM = 2.54;              // the one-inch border
+export const BORDER_CM = 1.27;              // the half-inch border
 export const BORDER_TOL_CM = 1.27;          // half an inch of slack beyond it before it is "open"
 export const ANATOMY_FRAC = 0.995;          // allows the odd stray voxel at a cut edge
 export const OPEN_FRAC = 0.5;               // open by up to half the ideal field: marked, not repeated
@@ -100,7 +100,7 @@ export function neededHalf(cov) {
   };
 }
 
-/* The ideal field's half-sizes: the inch beyond the anatomy, never smaller than a textbook field
+/* The ideal field's half-sizes: the half inch beyond the anatomy, never smaller than a textbook field
    the view names (view.field: { w, l } cm at the receptor — the lateral lumbar's 20 cm width fits
    any adult, where this model's slender column alone would make 17), and never larger than the
    receptor (recHalf): a broad chest can need more than a 35 cm receptor; then its full width is right. */
@@ -204,11 +204,11 @@ export function judge(view, m) {
   }
   add('anatomy', 'Required anatomy', anatOk ? 'pass' : 'fail',
     anatOk ? 'All of it is on the image.' : `${(100 * (1 - cov.inFrac)).toFixed(0)} % of it is outside the field: ${cuts.join(', ') || 'clipped at the edges'}.`);
-  // collimation: the inch border, as far as the receptor allows (m.recHalf: its half-size along
+  // collimation: the half-inch border, as far as the receptor allows (m.recHalf: its half-size along
   // each field axis), or the textbook field where the view names one
   const need0 = neededHalf(cov);
   const need = idealHalf(view, cov, m.recHalf);
-  // each axis on its own: the ideal field is the anatomy and its inch; half an inch of slack each
+  // each axis on its own: the ideal field is the anatomy and its half inch; half an inch of slack each
   // side passes, open by less than half the ideal again is marked, beyond that is a repeat
   const open = [], levels = [];
   for (const [ax, word] of [['w', 'wide'], ['l', 'long']]) {
@@ -227,7 +227,7 @@ export function judge(view, m) {
     if (margin >= 0 && margin < 0.6) tight.push(filmSide(axis, sign, m.rightAtPlusX));
   }
   const collLevel = !anatOk || levels.includes('fail') ? 'fail' : levels.includes('warn') ? 'warn' : 'pass';
-  add('collimation', 'Collimation (1" border)', collLevel,
+  add('collimation', 'Collimation (½" border)', collLevel,
     `Field ${(2 * cov.half.w).toFixed(1)} × ${(2 * cov.half.l).toFixed(1)} cm; ideal about ${(2 * need.w).toFixed(1)} × ${(2 * need.l).toFixed(1)} cm.`
     + (open.length ? ' Open: ' + open.join(', ') + '.' : '')
     + (collLevel === 'warn' ? ' Acceptable, but collimate closer: the open field is dose and scatter for nothing.' : '')

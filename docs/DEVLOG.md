@@ -8,7 +8,32 @@ handoff document and is not committed.)
 
 ## 2026-10-28
 
-### Surgical Animations — PR pending
+### Positioning audit — PR pending
+Every default projection was exposed in the app with the field opened to the receptor. Each one was read against a 1 cm grid about the central ray, with its field and a line 1.3 cm inside it drawn on. Where the Positioning Trainer marks a view, the required anatomy was also measured through its own coverage check.
+- **The border is half an inch.** Each default field now takes the required anatomy plus about 1.3 cm. The Positioning Trainer asks for the same (`BORDER_CM` 1.27; the criterion reads "½" border").
+- **Hand:** all the soft tissue of the fingers and 1" of distal radius and ulna.
+  - PA hand 20.5 × 26.5 cm (was 14 × 18, which cut the fingertips and the thumb).
+  - Oblique hand 18.5 × 27.5, lateral hand 8 × 27.
+  - The Trainer's hand requirement now reaches 1" past the radiocarpal joint.
+- **Fan lateral hand:** digits 3-5 are fanned posteriorly, opening progressively from the index; they had been curled forward.
+- **Fingers:** centred on the index finger's PIP joint, a new measured point (`pip2Joint`).
+  - The lateral finger curls digits 3-5 out of the way.
+- **Wrist:**
+  - Centred on the radiocarpal joint, midway between the styloids (a new measured point, `radiocarpal`), in the protocols and the Trainer.
+  - Collimated 12.5 × 12 cm (lateral 8.5 × 12): the MCP joints off the film, the thumb's CMC joint on it.
+  - The Trainer's wrist requirement stops at the metacarpal bases.
+- **Hip:** every hip view centres on the femoral neck (`femoralNeckR`, with a `femoralNeckL` for a left hip), not the femoral head.
+- **Foot:** the AP and oblique foot centre on the base of the 3rd metatarsal, and the AP is aimed through it at its 15 degrees.
+- **Angled rays:** the AP and posterior oblique cervical, the axial calcaneus and the AP foot now aim their angled ray through the centring point. These rays had crossed the point's level 2-6 cm off.
+- **Skyline knee:** centred on the patellofemoral joint (a new point), not the knee joint 3 cm below it.
+- **Lateral forearm:** tilted 13 degrees so the forearm, bent at the elbow, runs along the receptor; collimated 40 × 17 cm (it was a 43 × 16 field across a diagonal forearm).
+- **AP shoulders:** landscape, 25.5 × 19 cm, so the lateral soft tissue of the arm is on the film.
+- **Field sizes** re-measured and set view by view across the hand, wrist, elbow, shoulder, foot, ankle, knee, leg, femur, chest, abdomen, pelvis, spine and skull.
+- **Protocol Trainer:** order-of-projection judging and the score tally are switched off (`ORDER_SCORING` in `trainer/protocolTrainer.js`); the code is kept.
+- **Surgical kit:** the syringe's drawing-up needle is mounted the right way round (its hub on the luer), so the hip film's local correction is gone. The hip injection's target is the superolateral head-neck junction: the neck's axis 2.4 cm out from the head's centre.
+- Checked: `npm test`; every default projection exposed and read on the grid after the changes; the Trainer's coverage measured for its series.
+
+### Surgical Animations — PR #93
 A new "Surgical Animations" button on the fluoroscopy card opens four procedure films: lumbar puncture, hip joint injection, epidural and radiofrequency ablation.
 - **The kit** (`anim/films/surg/`): the procedure room, the sterile opening and closing, the C-arm, the monitor, the needles and the cross-section, shared by all four films.
   - **The opening:** tray, betadine poured, the needle dropped on the field, prep, drape, the C-arm's cover, and the grounding pad for RFA.

@@ -2,7 +2,7 @@
    TRAINER — routine series, marked like a practical exam.
 
    A different interface from the sandbox: one view at a time, in the order a radiographer
-   works — POSITION the patient, CENTRE to the landmark, COLLIMATE to an inch beyond the
+   works — POSITION the patient, CENTRE to the landmark, COLLIMATE to half an inch beyond the
    required anatomy (and mark the side), EXPOSE. The film is then marked against measured
    criteria (core/trainerEval.js), the faults are drawn on it, and it hangs beside a
    reference film of the same patient made with the ideal setup.
@@ -407,7 +407,7 @@ async function expose(view) {
 }
 
 /* THE REFERENCE FILM: this patient with the view set up as it should be — the rotation, the
-   central ray on the centring point, the field an inch beyond the required anatomy, the right
+   central ray on the centring point, the field half an inch beyond the required anatomy, the right
    marker — exposed with the same physics and not recorded anywhere. The room is put back. */
 async function referenceImage(view) {
   const S = H.S;
@@ -479,6 +479,15 @@ if (typeof window !== 'undefined') window.radsimTrainer = {
   state: () => T,
   applyIdeal: () => { if (T && T.series) { applyIdeal(T.series.views[T.vi]); H.syncSandbox(); H.syncScene(); H.prepareJointVolume(); } },
   measure: () => (T && T.series ? measure(T.series.views[T.vi]) : null),
+  // a series' view by its index, the required anatomy sampled as a student would start it
+  start: (id, vi = 0) => new Promise((done) => {
+    if (!T) openTrainer();
+    T.series = SERIES.find((s) => s.id === id); if (!T.series) return done(false);
+    T.results = T.series.views.map(() => null);
+    startView(vi);
+    const wait = () => (T && T.req ? done(true) : setTimeout(wait, 50)); wait();
+  }),
+  series: () => SERIES.map((s) => ({ id: s.id, views: s.views.map((v) => ({ label: v.label, proto: v.proto, centre: v.centre?.lm })) })),
 };
 // the marker a perfect film carries: on a limb, its side (every limb model is a right one); on the
 // trunk or head, the side down on a lateral or posterior oblique (+ roll lifts the right), the
@@ -576,7 +585,7 @@ function paintFilm(cv, entry, meas, view, faults) {
   rect(0, 0, F.tw, F.tl, 'rgba(255,255,255,0.55)');
   if (faults) {
     const lc = fieldCoord(meas.lmW, F) || [0, 0];
-    // the ideal field: centred on the centring point, an inch beyond the anatomy each way
+    // the ideal field: centred on the centring point, half an inch beyond the anatomy each way
     const e = meas.m.cov.ext, s = F.sid;
     const hw = (Math.max(Math.abs(e.wMin / s - lc[0]), Math.abs(e.wMax / s - lc[0])) * s + BORDER_CM) / s;
     const hl = (Math.max(Math.abs(e.lMin / s - lc[1]), Math.abs(e.lMax / s - lc[1])) * s + BORDER_CM) / s;
