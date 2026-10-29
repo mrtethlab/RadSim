@@ -162,9 +162,10 @@ function buildWall(M, aecCells) {
 
 /* ---------------------------------------------------------------- the seated set-up
    The wall stand with its bucky tilted flat on the carriage, the cover at a seated patient's
-   elbow height, and a stool beside it. The column stands beyond the far edge (+x); the patient
-   sits at the near long edge, the limb laid along the cover (physics z). The bucky does not ride
-   here: the receptor stays under the central ray's home, as a free plate does. */
+   elbow height, and a stool beside it. The column stands beyond the far edge (+x); seen from
+   above with the column at 12 o'clock the stool is at half past 4 (off the near corner, toward
+   +z), the limb laid along the cover (physics z). The bucky does not ride here: the receptor
+   stays under the central ray's home, as a free plate does. */
 function buildSeated(M, aecCells) {
   const g = new THREE.Group();
   const top = ROOM_GAP.seated;
@@ -182,8 +183,8 @@ function buildSeated(M, aecCells) {
     new THREE.MeshStandardMaterial({ color: 0x0d3940, emissive: 0x35d6e8, emissiveIntensity: 1.4 }), 56, colTop - 4, 0));
   g.add(mesh(rbox(17.2, 3.4, 13.2, 1.2), M.white, 56, colTop - 1.3, 0));
   g.add(mesh(rbox(34, 2.4, 40, 1), M.grey, 56, SEATED_FLOOR + 1.2, 0));
-  // the stool: a round padded seat on a gas column and a five-star base, beside the near edge
-  const stool = new THREE.Group(); stool.position.set(-52, SEATED_FLOOR, -18); g.add(stool);
+  // the stool: a round padded seat on a gas column and a five-star base, off the near corner
+  const stool = new THREE.Group(); stool.position.set(-48, SEATED_FLOOR, 48); g.add(stool);
   stool.add(mesh(new THREE.CylinderGeometry(19, 19, 7, 40), M.dark, 0, 50, 0));
   stool.add(mesh(new THREE.CylinderGeometry(2.6, 2.6, 40, 20), M.silver, 0, 27, 0));
   for (let i = 0; i < 5; i++) {
@@ -204,8 +205,9 @@ function buildColumn(M) {
   });
   const carriage = mesh(rbox(42, 10, 30, 2), M.grey); g.add(carriage);
   const rails = [-1, 1].map((sx) => { const r = mesh(new THREE.BoxGeometry(4, 3, 420), M.dark); r.userData.sx = sx; g.add(r); return r; });
-  // the column from the ceiling down to the tube's mount (world point), telescoped
-  const place = (mount, floorY) => {
+  // the column from the ceiling down to the tube's mount (world point), telescoped. The rails run
+  // along the table (z), or, with alongX, across to the wall stand's column (the seated set-up)
+  const place = (mount, floorY, alongX = false) => {
     const ceil = Math.max(floorY + CEILING_ABOVE_FLOOR, mount.y + 24);
     const L = ceil - mount.y;
     const spans = [[0, 0.42], [0.36, 0.74], [0.68, 1]];
@@ -214,7 +216,12 @@ function buildColumn(M) {
       s.scale.set(w, h, w); s.position.set(mount.x, ceil - L * a - h / 2, mount.z);
     });
     carriage.position.set(mount.x, ceil + 5, mount.z);
-    for (const r of rails) r.position.set(mount.x + r.userData.sx * 17, ceil + 11.5, 0);
+    carriage.rotation.y = alongX ? Math.PI / 2 : 0;
+    for (const r of rails) {
+      r.rotation.y = alongX ? Math.PI / 2 : 0;
+      if (alongX) r.position.set(0, ceil + 11.5, mount.z + r.userData.sx * 17);
+      else r.position.set(mount.x + r.userData.sx * 17, ceil + 11.5, 0);
+    }
   };
   return { g, place };
 }
