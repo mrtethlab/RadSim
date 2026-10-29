@@ -171,11 +171,12 @@ test('the cervical spine is centred on C4, measured from the vertebra labels of 
 
 test('the routine views centre where the textbooks say', () => {
   // Bontrager/Lampignano, McQuillen Martensen, Radiopaedia: the 3rd MCP joint for a PA hand, the
-  // 2nd for the lateral, the radiocarpal joint for the wrist (the department's routine; the
+  // 2nd for the lateral (here their metacarpal necks, 1.6 and 1.3 cm up, the department's: the
+  // symmetric field then takes the fingertips and 1" of forearm evenly), the radiocarpal joint for the wrist (the department's routine; the
   // textbooks give the midcarpal area, 2.2 cm distal), midway between the malleoli for the AP
   // ankle and the medial malleolus for the lateral, T7 for chest and thoracic spine, the iliac
   // crest (L4-L5) for the lumbar spine on a 35 x 43 receptor; the spine laterals on the column
-  const want = { 'PA hand': 'mcp3Joint', 'Oblique hand': 'mcp3Joint', 'Lateral hand': 'mcp2Joint',
+  const want = { 'PA hand': 'mc3Neck', 'Oblique hand': 'mc3Neck', 'Lateral hand': 'mc2Neck',
     'PA wrist': 'radiocarpal', 'Oblique wrist': 'radiocarpal', 'Lateral wrist': 'radiocarpal',
     'PA fingers': 'pip2Joint', 'AP foot': 'mt3Base', 'Oblique foot': 'mt3Base', 'AP hip': 'femoralNeckR',
     'AP ankle': 'intermalleolar', 'Mortise ankle': 'intermalleolar', 'Lateral ankle': 'medialMalleolus',
@@ -190,6 +191,11 @@ test('the routine views centre where the textbooks say', () => {
   // the 3rd MCP joint lies distal of the midcarpal point by about the metacarpal length (6-7 cm)
   const h = centring.hand;
   assert.ok(h.mcp3Joint.z - h.midcarpal.z > 5 && h.mcp3Joint.z - h.midcarpal.z < 8);
+  // the necks a little up the metacarpals from the joints, not past their bases
+  for (const [n, j] of [['mc3Neck', 'mcp3Joint'], ['mc2Neck', 'mcp2Joint']]) {
+    const d = h[j].z - h[n].z;
+    assert.ok(d > 1 && d < 2, `${n} ${d.toFixed(2)} cm up from the joint`);
+  }
   // T7 lies 8-10 cm below the jugular notch, and the crest below it
   const c = centring.chestabdopelvis;
   assert.ok(c.T7.z > c.crest.z + 20);

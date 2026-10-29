@@ -76,7 +76,7 @@
               "sid": 100,
               "coll": [
                 20.5,
-                30
+                24
               ],
               "det": [
                 43,
@@ -87,7 +87,7 @@
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "mcp3Joint"
+                "centre": "mc3Neck"
               }
             },
             {
@@ -99,8 +99,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                18.5,
-                30.5
+                19,
+                25
               ],
               "det": [
                 43,
@@ -111,7 +111,7 @@
               "pose": {
                 "roll": 45,
                 "cc": 0,
-                "centre": "mcp3Joint"
+                "centre": "mc3Neck"
               }
             },
             {
@@ -124,7 +124,7 @@
               "sid": 100,
               "coll": [
                 8.5,
-                30
+                25
               ],
               "det": [
                 43,
@@ -135,7 +135,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "mcp2Joint"
+                "centre": "mc2Neck"
               }
             },
             {
@@ -147,8 +147,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                8.5,
-                30
+                9,
+                25.5
               ],
               "det": [
                 43,
@@ -159,7 +159,7 @@
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "mcp2Joint",
+                "centre": "mc2Neck",
                 "joints": {
                   "digit.2": 0,
                   "digit.3": -7,
@@ -177,8 +177,8 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                19.5,
-                29.5
+                19,
+                24
               ],
               "det": [
                 43,
@@ -189,7 +189,7 @@
               "pose": {
                 "roll": 155,
                 "cc": 0,
-                "centre": "mcp3Joint",
+                "centre": "mc3Neck",
                 "joints": {
                   "digit.2": 20,
                   "digit.3": 20,
@@ -213,7 +213,7 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                11.5,
+                10.5,
                 12
               ],
               "det": [
@@ -237,7 +237,7 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                12,
+                10,
                 12
               ],
               "det": [

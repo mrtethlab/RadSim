@@ -230,8 +230,11 @@ function initScene(){
       // the orbit turns about the patient (the physics point above the receptor's centre),
       // shifted by the two-finger pan
       // (about a point of the ROOM, not of the rig: the rig rides with the bucky, and orbiting it
-      // slid the room past the camera, the patient seeming to move instead of the tube)
+      // slid the room past the camera, the patient seeming to move instead of the tube. At the wall
+      // stand the pivot rides up and down the column with the bucky, so a bucky lowered to a knee
+      // or a foot is looked at, not over)
       const c=toRoom(0,6,0).sub(rig.position).add(new THREE.Vector3(tx,ty-6,tz));
+      if(S.mode==='xray' && S.room==='wall') c.y+=rig.position.y;
       const cx=Math.cos(el)*Math.cos(az), cy=Math.sin(el), cz=Math.cos(el)*Math.sin(az);
       cam.position.set(c.x+cx*rad, c.y+cy*rad, c.z+cz*rad);
       cam.lookAt(c);
@@ -2182,10 +2185,11 @@ function syncScene(){
   three.tube.lookAt(three.rig.localToWorld(new THREE.Vector3(...aim))); three.tube.rotateX(Math.PI/2);
   three.tube.rotateY(-Math.PI/2);  // square the housing with the light field it projects (field W along x, L along z)
   // seated, the ceiling rails run across to the wall stand's column (room.js), and the housing turns
-  // with them; the collimator box stays square with its field
-  const yaw=S.mode==='xray' && S.room==='seated' ? Math.PI/2 : 0;
-  three.tube.rotateY(yaw);
-  three.collLCD.coll.rotation.y=COLL_BOX_SIGN*(S.collRot||0)*Math.PI/180 + yaw;   // the box turns with its field
+  // with them; the collimator box's 0 there has its screen and handle at 9 o'clock (the column at
+  // 12), still square with its field
+  const seated=S.mode==='xray' && S.room==='seated';
+  three.tube.rotateY(seated ? Math.PI/2 : 0);
+  three.collLCD.coll.rotation.y=COLL_BOX_SIGN*(S.collRot||0)*Math.PI/180 + (seated ? SEATED_BOX_YAW : 0);   // the box turns with its field
   updateCollimatorLCD();           // live LCD strip: filter / field size / status / SID
   three.cr.geometry.setFromPoints([new THREE.Vector3(...src), new THREE.Vector3(...aim)]);
   three.cr.geometry.attributes.position.needsUpdate=true;
@@ -2334,6 +2338,7 @@ function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S
 const BUCKY_SPEED=30;                       // cm/s, the motor's
 const COLL_ROT_DETENT=5;                    // deg: the collimator clicks into square within this of 0
 const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider
+const SEATED_BOX_YAW=Math.PI;               // seated: the box's 0, in the turned tube head (syncScene)
 let buckyRaf=0, buckyLast=0;
 function buckyTarget(){ return { x:0, z:S.tubeZ }; }  // the rails run one way: along z (up the column at the wall)
 function buckyFollow(){

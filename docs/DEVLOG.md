@@ -22,14 +22,18 @@ handoff document and is not committed.)
   - The vertical rotate's 0 is the scan turned -26 (`REST_YAW` in `app.js`). At that zero the distal radius and 3rd metacarpal run down the receptor: the Trainer reads the forearm 0.4 degrees off and the hand 0.0 degrees from the radius.
   - -18 was asked for. It left the radius 7.6 degrees across, which the Trainer's 2 degree check would fail, and -26 was chosen.
   - Centring points are rest-frame points carried through the pose, so they follow.
-- **Hand fields re-measured** for the straight hand, against the Trainer's requirement plus ½":
-  - PA 20.5 × 30, oblique 18.5 × 30.5, lateral and fan lateral 8.5 × 30, ballcatcher 19.5 × 29.5.
-  - PA wrist 11.5 × 12, oblique 12 × 12, external oblique 10 × 11.5 (the MCP joints stay off).
+- **Hand centring and fields:**
+  - The "1 inch of forearm" in the Trainer's hand and wrist requirements was cut on the scan's z. The hand lies in 26 degrees of ulnar deviation, so once posed straight the cut crossed the forearm aslant and reached 1.5 cm further up one side. It is now measured up the forearm's own axis (`along` in `trainer/regions.js`, from the distal radius).
+  - Centred on the 3rd MCP, a symmetric field must reach 12.2 cm up to the forearm but only 9.0 cm down to the fingertips (at the receptor), leaving 4.5 cm open past the fingertips. The whole-hand views now centre up the metacarpal to its neck: `mc3Neck` (1.6 cm) for the PA, oblique and ballcatcher, `mc2Neck` (1.3 cm) for the lateral and fan lateral. Chosen with the user; the textbooks give the MCP joint.
+  - PA 20.5 × 24, oblique 19 × 25, lateral 8.5 × 25, fan lateral 9 × 25.5, ballcatcher 19 × 24: about ½" past the fingertips and past 1" of forearm.
+  - Wrist: PA 10.5 × 12, oblique 10 × 12, external oblique 10 × 11.5 (the MCP joints stay off).
+- **Wall stand camera:** the orbit's pivot rides up and down the column with the bucky, so a bucky lowered to a knee is looked at, not over.
+- **Seated collimator box:** its 0 has the screen and handle at 9 o'clock (the column at 12).
 - **The step at the base of the thumb** is gone. Straightened 26 degrees on a crease 1 cm either side of the capitate, soft tissue more than about 3 cm off the 3rd ray (the thenar eminence) folded onto the bend's bisector as a flat shelf.
   - The crease is now 2 cm either side: nothing folds short of 6 cm out at this angle.
   - Bone stays rigid either side of the joint as before.
   - Checked in the room and on the film at 0, 20 radial and 35 ulnar.
-- Checked: `npm test` (376 pass); the seated room photographed from above and the side; the detector buttons through every room change; the Trainer's coverage, alignment and forearm turn measured for the hand and wrist series.
+- Checked: `npm test` (376 pass); the seated room and the collimator box photographed; the wall stand's camera with the bucky lowered to an AP standing knee; the detector buttons through every room change; the Trainer's coverage, margins, alignment and forearm turn measured for every hand and wrist view; the PA, oblique and lateral hand exposed.
 
 ## 2026-10-28
 
