@@ -237,10 +237,10 @@ test('the skull, sinus and facial views load the Skull, angled to the OML and ce
   assert.ok(c.latSkull.y > c.eam.y + 1 && c.latSkull.y < c.zygoma.y && Math.abs(c.latSkull.z - c.eam.z) < 1.5,
     `lateral skull point ${c.latSkull.y}, ${c.latSkull.z} vs EAM ${c.eam.y}, ${c.eam.z}`);
   // every skull view takes the whole skull and half an inch round it: the frontal views 22 x 30 down
-  // the head, the lateral 24.5 x 26.5, on the 25 x 30 receptor; the angled views aimed through their
+  // the head, the lateral 24.5 x 26.5, at the wall stand's 43 x 43; the angled views aimed through their
   // point (the Caldwell exits the nasion, the Towne crosses the EAM to the foramen magnum)
   for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)'])
-    assert.deepEqual([all.find((x) => x.proj === proj).coll, all.find((x) => x.proj === proj).det], [[22, 30], [25, 30]], proj);
+    assert.deepEqual([all.find((x) => x.proj === proj).coll, all.find((x) => x.proj === proj).det], [[22, 30], [43, 43]], proj);
   assert.deepEqual(all.find((x) => x.proj === 'Lateral skull').coll, [24.5, 26.5]);
   for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'Lateral skull'])
     assert.equal(all.find((x) => x.proj === proj).orient, 'portrait', proj);
@@ -374,4 +374,10 @@ test('the hospital views centre on measured, sourced points', () => {
   for (const p of st) { assert.equal(p.lut, 'softtissue'); assert.equal(p.grid, false); assert.ok(p.kv <= 75, p.proj); }
   assert.equal(st.find((p) => /adenoids/.test(p.proj)).sid, 100);
   assert.equal(st.find((p) => /epiglottis/.test(p.proj)).sid, 180);
+});
+
+test('the 25 x 30 is a free plate: every projection in a bucky set-up (table, wall stand, seated) takes the 43 x 43', () => {
+  for (const g of protocols.groups) for (const r of g.regions) for (const p of r.projections) {
+    if ((p.room || 'detector') !== 'detector' && p.det) assert.deepEqual(p.det, [43, 43], p.proj);
+  }
 });

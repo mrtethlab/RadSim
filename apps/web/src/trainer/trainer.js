@@ -182,7 +182,7 @@ function stepHTML(view, S) {
       ${slider('trOffZ', 'Patient <small>along the table</small>', -55, 55, 0.1, S.objOff.z, ' cm')}
       ${slider('trOffX', 'Patient <small>across the table</small>', -55, 55, 0.1, S.objOff.x, ' cm')}
       ${motionsOf().map((m) => slider('trJ_' + m.key.replace('.', '_'), `${esc(m.joint)} <small>${esc(m.label.toLowerCase())}: ${esc(m.neg)} &minus; / ${esc(m.pos)} +</small>`,
-        m.range[0], m.range[1], m.curl ? 10 : 5, (m.curl ? 10 : 5) * Math.round((S.joints[m.key] ?? m.rest ?? 0) / (m.curl ? 10 : 5)), m.curl ? '%' : '°')).join('')}
+        m.range[0], m.range[1], m.curl ? 10 : 5, (m.curl ? 10 : 5) * Math.round((S.joints[m.key] ?? m.default ?? m.rest ?? 0) / (m.curl ? 10 : 5)), m.curl ? '%' : '°')).join('')}
       <div class="tr-tip">Watch the patient in the room: the rotation is judged against the view's,
         within ${view.pose.tol}°. The film is the only feedback after the exposure &mdash; as on the job.</div>
       ${next('centre', 'Centre')}</div>`;

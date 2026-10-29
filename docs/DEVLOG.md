@@ -6,9 +6,34 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-10-29
+
+### X-ray room and hand defaults — PR pending
+- **Seated room:**
+  - The ceiling rails, carriage and tube housing run toward the wall stand's column; the collimator box stays square with its field.
+  - The stool sits at half past 4, taking the column as 12 o'clock.
+- **Detector size** (renamed from "Receptor size"): the 25 × 30 is the free detector's only.
+  - The table, wall stand and seated set-ups hold the 43 × 43. The 25 × 30 button is off there, and a protocol asking for it gets the 43 × 43.
+  - Every bucky-room protocol in the chart now says 43 × 43; a test holds it.
+  - The tutorial's detector step moves to the free detector first.
+- **Opening x-ray from the home screen** loads the PA hand if no protocol has been chosen this session.
+- **Hand posed straight:**
+  - Wrist deviation defaults to 0 (the scan lies in 26 degrees of ulnar deviation; `default` in `joints.json`, `motionDefault` in `core/jointPose.js`).
+  - The vertical rotate's 0 is the scan turned -26 (`REST_YAW` in `app.js`). At that zero the distal radius and 3rd metacarpal run down the receptor: the Trainer reads the forearm 0.4 degrees off and the hand 0.0 degrees from the radius.
+  - -18 was asked for. It left the radius 7.6 degrees across, which the Trainer's 2 degree check would fail, and -26 was chosen.
+  - Centring points are rest-frame points carried through the pose, so they follow.
+- **Hand fields re-measured** for the straight hand, against the Trainer's requirement plus ½":
+  - PA 20.5 × 30, oblique 18.5 × 30.5, lateral and fan lateral 8.5 × 30, ballcatcher 19.5 × 29.5.
+  - PA wrist 11.5 × 12, oblique 12 × 12, external oblique 10 × 11.5 (the MCP joints stay off).
+- **The step at the base of the thumb** is gone. Straightened 26 degrees on a crease 1 cm either side of the capitate, soft tissue more than about 3 cm off the 3rd ray (the thenar eminence) folded onto the bend's bisector as a flat shelf.
+  - The crease is now 2 cm either side: nothing folds short of 6 cm out at this angle.
+  - Bone stays rigid either side of the joint as before.
+  - Checked in the room and on the film at 0, 20 radial and 35 ulnar.
+- Checked: `npm test` (376 pass); the seated room photographed from above and the side; the detector buttons through every room change; the Trainer's coverage, alignment and forearm turn measured for the hand and wrist series.
+
 ## 2026-10-28
 
-### Positioning audit — PR pending
+### Positioning audit — PR #94
 Every default projection was exposed in the app with the field opened to the receptor. Each one was read against a 1 cm grid about the central ray, with its field and a line 1.3 cm inside it drawn on. Where the Positioning Trainer marks a view, the required anatomy was also measured through its own coverage check.
 - **The border is half an inch.** Each default field now takes the required anatomy plus about 1.3 cm. The Positioning Trainer asks for the same (`BORDER_CM` 1.27; the criterion reads "½" border").
 - **Hand:** all the soft tissue of the fingers and 1" of distal radius and ulna.

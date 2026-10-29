@@ -245,13 +245,17 @@ export const XRAY_STEPS = [
   },
   {
     sel: '.grp:has(#detSizeSeg)',
-    title: 'Receptor and matrix',
-    text: 'Receptor size and orientation decide how much anatomy fits: 25×30 for an extremity, '
-      + 'and 43×43 for the trunk and the broad ones (a chest, an abdomen, a pelvis across both '
-      + 'hips): collimate to the part, not to the plate. The 25×30 turns portrait or landscape '
-      + 'to lie along the part; the square 43×43 has no orientation. The matrix the image is '
-      + 'ray-cast at is a simulation control, not a clinical one, so it sits under Simulation '
-      + 'with the compute engine.',
+    title: 'Detector and matrix',
+    text: 'Detector size and orientation decide how much anatomy fits: 25×30 for an extremity on '
+      + 'the free detector, and 43×43 for the trunk and the broad ones (a chest, an abdomen, a pelvis '
+      + 'across both hips): collimate to the part, not to the plate. The bucky set-ups (the table, '
+      + 'the wall stand, seated) hold the 43×43 alone, so the 25×30 is offered on the free detector. '
+      + 'The 25×30 turns portrait or landscape to lie along the part; the square 43×43 has no '
+      + 'orientation. The matrix the image is ray-cast at is a simulation control, not a clinical '
+      + 'one, so it sits under Simulation with the compute engine.',
+    before: async () => {
+      if (S().mode === 'xray' && S().room !== 'detector') $('roomSel')?.querySelector('button[data-room="detector"]')?.click();
+    },
     goal: {
       label: 'Take the 25×30 and turn it landscape',
       done: () => S().detBaseW === 25 && S().detOrient === 'landscape',

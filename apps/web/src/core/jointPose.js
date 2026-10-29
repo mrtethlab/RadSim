@@ -19,7 +19,8 @@
              positive direction (ulnar deviation, flexion, ...). Angles are ANATOMICAL: `rest` is
              the angle the model already has (the hand CT lies in 26 degrees of ulnar deviation
              against its forearm), the model is turned by (angle - rest), and an angle left unset
-             means the model as scanned.
+             means the model as scanned, or, with `default`, that angle (the hand is posed
+             straight on its forearm, 0 degrees of deviation, unless a pose says otherwise).
    A joint's motions compose (in the order listed) into ONE rotation, axis n and angle T; a
    point at share w turns by w*T about n. One axis per joint is what makes the inverse cheap:
    a rest point's distance past the joint, as a function of the turn, is
@@ -593,8 +594,10 @@ export function motionAngle(angles, m) {
     const v = angles[m.key] ?? 0;
     return v >= 0 ? m.curl[0] * Math.pow(Math.min(1, v / 100), m.curl[1]) : -(m.curl[2] || 0) * Math.min(1, v / (m.range?.[0] || -20));
   }
-  return angles[m.key] ?? m.rest ?? 0;
+  return angles[m.key] ?? motionDefault(m);
 }
+// a motion's angle when nothing sets it: its default, else the model as scanned
+export const motionDefault = (m) => m.default ?? m.rest ?? 0;
 export function anyBent(chain, angles) {
   return chain.some((j) => j.motions.some((m) => Math.abs(motionAngle(angles, m) - (m.rest || 0)) > 0.01));
 }
