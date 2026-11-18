@@ -153,34 +153,43 @@ function ordersHTML(r) {
   return `<div class="ptr-orders"><span>${r.exams.length} orders</span>${r.exams.map((x, i) =>
     `<button class="ptr-ord${i === P.order ? ' on' : ''}" data-ord="${i}">${esc(x.name)}</button>`).join('')}</div>`;
 }
-/* THE REQUISITION, as it comes off the printer: one order of the patient's. */
+/* THE REQUISITION, as it comes off the printer: one order of the patient's. It is a training
+   form and says so on its face: FAKE REQUISITION across the whole sheet, a notice at its head that
+   everything on it is generated, every person's name tagged (GENERATED NAME), and no signature. */
+const GEN = '<i class="rq-gen">(GENERATED NAME)</i>';
+const FAKE = `<div class="rq-fake" aria-hidden="true">${'<span>FAKE REQUISITION</span>'.repeat(4)}</div>`;
 function reqHTML(r, ex) {
   const p = r.patient || {}, e = r.encounter || {}, d = r.referrer || {};
   const row = (k, v) => v || v === 0 ? `<div class="rq-f"><span>${esc(k)}</span><b>${esc(v)}</b></div>` : '';
+  // a person's name, tagged as generated
+  const nameRow = (k, v, rest) => v ? `<div class="rq-f"><span>${esc(k)}</span><b>${esc(v)} ${GEN}${rest ? `, ${esc(rest)}` : ''}</b></div>` : '';
   const name = p.name || [p.surname?.toUpperCase(), p.given].filter(Boolean).join(', ');
   const loc = e.location || [e.unit, e.room && `Rm ${e.room}`, e.bed && `Bed ${e.bed}`].filter(Boolean).join(' · ');
   const preg = p.pregnancy ? (typeof p.pregnancy === 'string' ? p.pregnancy : [p.pregnancy.status, p.pregnancy.lmp && `LMP ${p.pregnancy.lmp}`].filter(Boolean).join(' · ')) : null;
   const list = (v) => Array.isArray(v) ? v.join(', ') : v;
-  return `
+  return `${FAKE}
+    <div class="rq-disc">Training simulation, not a medical document. Every person, institution, number and
+      clinical detail on this form is computer-generated and fictional; any resemblance to a real person
+      is coincidental. Not for clinical use.</div>
     <div class="rq-head">
-      <div><div class="rq-fac">${esc(HOSPITAL_INFO.name)}</div>
-        <div class="rq-doc">Diagnostic Imaging Requisition</div></div>
+      <div><div class="rq-fac">${esc(HOSPITAL_INFO.name)} <i class="rq-gen">(FICTIONAL)</i></div>
+        <div class="rq-doc">Diagnostic Imaging Requisition &middot; simulated</div></div>
       <div class="rq-acc">${row('Accession', ex?.accession || e.accession)}${row('Ordered', e.ordered)}
         <div class="rq-pri pri-${esc(String(e.priority || 'Routine').toLowerCase())}">${esc(e.priority || 'Routine')}</div></div>
     </div>
     <div class="rq-grid">
       <div class="rq-box"><div class="rq-bt">Patient</div>
-        <div class="rq-name">${esc(name)}</div>
+        <div class="rq-name">${esc(name)} ${GEN}</div>
         ${row('Sex', p.sex)}${row('DOB', p.dob && `${p.dob} (${p.ageText || p.age + ' y'})`)}${row('MRN', p.mrn)}${row('Health card', p.healthCard || p.hcn)}
         ${row('Address', p.address)}${row('Phone', p.phone)}${row('Language', p.language)}${row('Interpreter', p.interpreter === true ? 'Required' : p.interpreter || null)}</div>
       <div class="rq-box"><div class="rq-bt">Encounter</div>
         ${row('Class', e.patientClass || e.class)}${row('Location', loc)}${row('Mobility', p.mobility || e.mobility)}${row('Isolation', p.isolation || e.isolation)}
         ${row('Weight', p.weightKg ? p.weightKg + ' kg' : p.weight)}${row('Height', p.heightCm ? p.heightCm + ' cm' : p.height)}
-        ${p.familyPhysician ? row('Family MD', p.familyPhysician.name) : row('Family MD', 'None (unattached)')}</div>
+        ${p.familyPhysician ? nameRow('Family MD', p.familyPhysician.name) : row('Family MD', 'None (unattached)')}</div>
       <div class="rq-box rq-wide"><div class="rq-bt">Referring physician</div>
-        <div class="rq-name">${esc(d.name)}${d.credentials ? `, ${esc(d.credentials)}` : ''}</div>
+        <div class="rq-name">${esc(d.name)}${d.credentials ? `, ${esc(d.credentials)}` : ''} ${GEN}</div>
         ${row('Specialty', d.specialty)}${row('Office / department', d.office || d.department)}${row('Address', d.address)}
-        ${row('Phone', d.phone)}${row('Fax', d.fax)}${row('Billing #', d.billing)}${row('cc', d.cc && typeof d.cc === 'object' ? [d.cc.name, d.cc.clinic].filter(Boolean).join(', ') : d.cc)}</div>
+        ${row('Phone', d.phone)}${row('Fax', d.fax)}${row('Billing #', d.billing)}${d.cc && typeof d.cc === 'object' ? nameRow('cc', d.cc.name, d.cc.clinic) : row('cc', d.cc)}</div>
     </div>
     <div class="rq-box rq-exam"><div class="rq-bt">Examination requested</div>
       <div class="rq-ex">${esc(ex?.name)}</div>
@@ -191,7 +200,7 @@ function reqHTML(r, ex) {
       <div class="rq-box"><div class="rq-bt">Safety</div>${row('Allergies', list(p.allergies) || 'NKDA')}${row('Pregnancy', preg)}</div>
       <div class="rq-box"><div class="rq-bt">Medications</div><div class="rq-hx">${esc(list(p.meds) || 'None listed')}</div></div>
     </div>
-    <div class="rq-sig">Electronically signed &middot; ${esc(d.name)}</div>`;
+    <div class="rq-sig">Simulated order, not signed &middot; ${esc(d.name)} ${GEN}</div>`;
 }
 
 /* THE WORKLIST: the chart's anatomy, the region's views, and the series in order. */

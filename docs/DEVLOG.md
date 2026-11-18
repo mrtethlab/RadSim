@@ -6,9 +6,21 @@ handoff document and is not committed.)
 
 ---
 
+## 2026-11-18
+
+### GitHub Pages taken down, the requisition marked fake, the Order of Operations Trainer removed — PR #96
+- **GitHub Pages is taken down.** The site was unpublished (the Pages API's DELETE), the "Deploy to GitHub Pages" workflow disabled and its file (`.github/workflows/deploy.yml`) removed. The README no longer links to a live site. The repository stays; the tests still run on every pull request and push to `main`.
+- **The Protocol Trainer's requisition says it is fake:**
+  - FAKE REQUISITION in big, semi-transparent red across the whole sheet, over the boxes.
+  - A notice at its head: a training simulation, not a medical document, everything on it generated and fictional, not for clinical use.
+  - Every person's name tagged (GENERATED NAME): the patient, the family physician, the referring physician, the cc and the signature line. The hospital is tagged (FICTIONAL).
+  - "Electronically signed" now reads "Simulated order, not signed".
+- **The Order of Operations Trainer is removed:** its home-screen button, `trainer/mooTrainer.js`, `trainer/moo.js`, `core/mooQuiz.js`, their test and their styles.
+- Checked: `npm test`; the requisition in the app at desktop and phone widths; the site's address after the takedown.
+
 ## 2026-10-29
 
-### X-ray room and hand defaults — PR pending
+### X-ray room and hand defaults — PR #95
 - **Seated room:**
   - The ceiling rails, carriage and tube housing run toward the wall stand's column; the collimator box stays square with its field.
   - The stool sits at half past 4, taking the column as 12 o'clock.
