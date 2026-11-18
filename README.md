@@ -5,7 +5,7 @@ not looked up: rays are traced from the focal spot through voxel patients built 
 scans, attenuated with polyenergetic Beer–Lambert physics, and recorded by a modelled detector
 with its own noise, scatter and exposure index.
 
-**Live:** <https://mrtethlab.github.io/RadSim/> — runs entirely in the browser.
+Runs entirely in the browser. There is no public deployment: run it locally (below).
 
 ## Modes
 
@@ -30,8 +30,8 @@ npm test           # unit tests (node --test, no dependencies)
 npm run build      # production build -> apps/web/dist (checks the material legends first)
 ```
 
-Pushes to `main` run the tests and deploy to GitHub Pages
-(`.github/workflows/deploy.yml`); every pull request runs the tests.
+Every pull request runs the tests (`.github/workflows/test.yml`). Nothing is deployed: the
+GitHub Pages site was taken down in November 2026.
 
 The optional **Python compute backend** (`services/compute`, FastAPI) adds a GPU projection
 engine and the tools that build the voxel models from CT. The web app does not need it. See
