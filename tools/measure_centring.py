@@ -100,6 +100,21 @@ def hand():
             out['mc3Base'] = pt([float(x[sel].mean()), float(y[sel].mean()), zb],
                 'the 3rd metacarpal at the carpometacarpal level: bone within 0.7 cm of the 3rd ray',
                 '3rd metacarpal axis (base to MCP joint), for the hand/wrist alignment criterion')
+    # THE WHOLE-HAND CENTRING. The collimator opens symmetrically about the central ray, and from
+    # the MCP joint a hand film (the fingertips to 1" of forearm, the Trainer's HAND_REQ) runs 9.0 cm
+    # one way and 12.2 the other at the receptor: centred on the joint, 4.5 cm of field lay open past
+    # the fingertips. Up the metacarpal to its neck (1.6 cm on the 3rd; the lateral's 2nd, 1.3) the
+    # field is even, half an inch past the anatomy at each end (measured on the posed, straight hand)
+    if 'mc3Base' in out:
+        h3, b3 = (np.array([out[k][a] for a in 'xyz']) for k in ('mcp3Joint', 'mc3Base'))
+        u = (b3 - h3) / np.linalg.norm(b3 - h3)
+        for key, joint, back, ray, views in (('mc3Neck', 'mcp3Joint', 1.6, '3rd', 'PA and PA oblique hand'),
+                                             ('mc2Neck', 'mcp2Joint', 1.3, '2nd', 'Lateral hand')):
+            j = np.array([out[joint][a] for a in 'xyz'])
+            out[key] = pt(j + back * u,
+                f'the {ray} metacarpal neck: {back} cm up the metacarpal (the 3rd's axis) from its MCP joint',
+                f'{views}: CR perpendicular to the {ray} metacarpal neck, so the field takes the fingertips and 1" of forearm '
+                f'with half an inch to spare at each end (the department's; Bontrager gives the {ray} MCP joint)')
     jr = wrist[2] - 2.2
     for key, dz in (('radiusDistal', -2.0), ('radiusProx', -5.0)):
         k = V.idx(2, jr + dz)

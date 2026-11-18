@@ -171,11 +171,12 @@ test('the cervical spine is centred on C4, measured from the vertebra labels of 
 
 test('the routine views centre where the textbooks say', () => {
   // Bontrager/Lampignano, McQuillen Martensen, Radiopaedia: the 3rd MCP joint for a PA hand, the
-  // 2nd for the lateral, the radiocarpal joint for the wrist (the department's routine; the
+  // 2nd for the lateral (here their metacarpal necks, 1.6 and 1.3 cm up, the department's: the
+  // symmetric field then takes the fingertips and 1" of forearm evenly), the radiocarpal joint for the wrist (the department's routine; the
   // textbooks give the midcarpal area, 2.2 cm distal), midway between the malleoli for the AP
   // ankle and the medial malleolus for the lateral, T7 for chest and thoracic spine, the iliac
   // crest (L4-L5) for the lumbar spine on a 35 x 43 receptor; the spine laterals on the column
-  const want = { 'PA hand': 'mcp3Joint', 'Oblique hand': 'mcp3Joint', 'Lateral hand': 'mcp2Joint',
+  const want = { 'PA hand': 'mc3Neck', 'Oblique hand': 'mc3Neck', 'Lateral hand': 'mc2Neck',
     'PA wrist': 'radiocarpal', 'Oblique wrist': 'radiocarpal', 'Lateral wrist': 'radiocarpal',
     'PA fingers': 'pip2Joint', 'AP foot': 'mt3Base', 'Oblique foot': 'mt3Base', 'AP hip': 'femoralNeckR',
     'AP ankle': 'intermalleolar', 'Mortise ankle': 'intermalleolar', 'Lateral ankle': 'medialMalleolus',
@@ -190,6 +191,11 @@ test('the routine views centre where the textbooks say', () => {
   // the 3rd MCP joint lies distal of the midcarpal point by about the metacarpal length (6-7 cm)
   const h = centring.hand;
   assert.ok(h.mcp3Joint.z - h.midcarpal.z > 5 && h.mcp3Joint.z - h.midcarpal.z < 8);
+  // the necks a little up the metacarpals from the joints, not past their bases
+  for (const [n, j] of [['mc3Neck', 'mcp3Joint'], ['mc2Neck', 'mcp2Joint']]) {
+    const d = h[j].z - h[n].z;
+    assert.ok(d > 1 && d < 2, `${n} ${d.toFixed(2)} cm up from the joint`);
+  }
   // T7 lies 8-10 cm below the jugular notch, and the crest below it
   const c = centring.chestabdopelvis;
   assert.ok(c.T7.z > c.crest.z + 20);
@@ -237,10 +243,10 @@ test('the skull, sinus and facial views load the Skull, angled to the OML and ce
   assert.ok(c.latSkull.y > c.eam.y + 1 && c.latSkull.y < c.zygoma.y && Math.abs(c.latSkull.z - c.eam.z) < 1.5,
     `lateral skull point ${c.latSkull.y}, ${c.latSkull.z} vs EAM ${c.eam.y}, ${c.eam.z}`);
   // every skull view takes the whole skull and half an inch round it: the frontal views 22 x 30 down
-  // the head, the lateral 24.5 x 26.5, on the 25 x 30 receptor; the angled views aimed through their
+  // the head, the lateral 24.5 x 26.5, at the wall stand's 43 x 43; the angled views aimed through their
   // point (the Caldwell exits the nasion, the Towne crosses the EAM to the foramen magnum)
   for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)'])
-    assert.deepEqual([all.find((x) => x.proj === proj).coll, all.find((x) => x.proj === proj).det], [[22, 30], [25, 30]], proj);
+    assert.deepEqual([all.find((x) => x.proj === proj).coll, all.find((x) => x.proj === proj).det], [[22, 30], [43, 43]], proj);
   assert.deepEqual(all.find((x) => x.proj === 'Lateral skull').coll, [24.5, 26.5]);
   for (const proj of ['AP skull', 'PA skull', 'PA axial skull (Caldwell)', 'AP axial skull (Towne)', 'Lateral skull'])
     assert.equal(all.find((x) => x.proj === proj).orient, 'portrait', proj);
@@ -374,4 +380,10 @@ test('the hospital views centre on measured, sourced points', () => {
   for (const p of st) { assert.equal(p.lut, 'softtissue'); assert.equal(p.grid, false); assert.ok(p.kv <= 75, p.proj); }
   assert.equal(st.find((p) => /adenoids/.test(p.proj)).sid, 100);
   assert.equal(st.find((p) => /epiglottis/.test(p.proj)).sid, 180);
+});
+
+test('the 25 x 30 is a free plate: every projection in a bucky set-up (table, wall stand, seated) takes the 43 x 43', () => {
+  for (const g of protocols.groups) for (const r of g.regions) for (const p of r.projections) {
+    if ((p.room || 'detector') !== 'detector' && p.det) assert.deepEqual(p.det, [43, 43], p.proj);
+  }
 });

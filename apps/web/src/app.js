@@ -13,7 +13,7 @@ import { loadVoxelModel } from './model/voxelLoader.js';
 import { muOverBins, eulerMatrix } from './core/voxelPhantom.js';
 import { segmentFemur, poseFemurs, raiseLeg } from './core/limbPose.js';
 import { PATHOLOGY, makeCtx, stampPathology, undoPathology } from './core/pathology.js';
-import { axisToward, forwardChain, forwardCompiled, forwardSkin, forwardBone, boneSide, compileChain, poseVolume, anyBent, motionAngle, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
+import { axisToward, forwardChain, forwardCompiled, forwardSkin, forwardBone, boneSide, compileChain, poseVolume, anyBent, motionAngle, motionDefault, mergeSample, foldSpan, foldRange } from './core/jointPose.js';
 import jointData from './data/joints.json';
 import { sizeCorrection, voiPercentile, nearestStation, caliperOf } from './core/technique.js';
 import { radiographDose, entryDistance } from './core/patientDose.js';
@@ -230,8 +230,11 @@ function initScene(){
       // the orbit turns about the patient (the physics point above the receptor's centre),
       // shifted by the two-finger pan
       // (about a point of the ROOM, not of the rig: the rig rides with the bucky, and orbiting it
-      // slid the room past the camera, the patient seeming to move instead of the tube)
+      // slid the room past the camera, the patient seeming to move instead of the tube. At the wall
+      // stand the pivot rides up and down the column with the bucky, so a bucky lowered to a knee
+      // or a foot is looked at, not over)
       const c=toRoom(0,6,0).sub(rig.position).add(new THREE.Vector3(tx,ty-6,tz));
+      if(S.mode==='xray' && S.room==='wall') c.y+=rig.position.y;
       const cx=Math.cos(el)*Math.cos(az), cy=Math.sin(el), cz=Math.cos(el)*Math.sin(az);
       cam.position.set(c.x+cx*rad, c.y+cy*rad, c.z+cz*rad);
       cam.lookAt(c);
@@ -948,7 +951,7 @@ function restHeightOnReceptor(){
   if(!vm.data) return (vm.extentMM[1]/2)/10;             // backend-only: no volume in the browser
   if(restFor!==vm){ restPts=skinSample(vm); restFor=vm; restKey=''; }
   const ch=jointsActive();
-  const key=JSON.stringify(S.objRot)+(ch?JSON.stringify(S.joints):'');
+  const key=JSON.stringify(S.objRot)+restYaw()+(ch?JSON.stringify(S.joints):'');
   if(key===restKey) return restY;
   const R=objMat(); let lo=Infinity;
   const cc=ch ? compileChain(ch, S.joints) : null;      // once, not once per point
@@ -1042,7 +1045,7 @@ function renderJointUI(){
   if(!ch){ host.innerHTML=''; return; }
   const curls=[...new Map(ch.flatMap(j=>j.motions.filter(m=>m.curl).map(m=>[m.key, m]))).values()];
   host.innerHTML=ch.map(j=>j.motions.filter(m=>!m.curl).map(m=>{
-    const v=Math.round(S.joints[m.key] ?? m.rest ?? 0);   // anatomical: the model as scanned when unset
+    const v=Math.round(S.joints[m.key] ?? motionDefault(m));   // anatomical: the joint's default (else the model as scanned) when unset
     return `<div class="row" style="margin-top:8px"><div class="rl">${j.label} <small>${m.label.toLowerCase()} (${m.neg} &minus; / ${m.pos} +)</small></div>`
       +`<div class="valchip" id="jv_${m.key.replace('.','_')}">${v}°</div></div>`
       +`<input type="range" class="jointSl" data-key="${m.key}" data-unit="°" min="${m.range[0]}" max="${m.range[1]}" step="${JOINT_STEP}" value="${v}">`;
@@ -1107,13 +1110,24 @@ function updateDetector(){
   if(three.detArrow) three.detArrow.position.set(-9*sx, 0, 12.6*sz);
 }
 function setDetSize(w,h){
-  // two receptors: 25x30 and 43x43 (a chart's 35x43 takes the large one)
-  if(Math.max(w,h)>30){ w=43; h=43; }
+  // two receptors: 25x30 and 43x43 (a chart's 35x43 takes the large one). The 25x30 is a free
+  // plate: the bucky set-ups (table, wall stand, seated) hold the 43x43
+  if(Math.max(w,h)>30 || !freeDetector()){ w=43; h=43; }
   S.detBaseW=Math.min(w,h); S.detBaseH=Math.max(w,h);
   const seg=$('detSizeSeg'); if(seg)[...seg.children].forEach(b=>b.classList.toggle('on', +b.dataset.w===w));
   applyDet();
 }
 function setDetOrient(o){ S.detOrient=o; applyDet(); }
+let pasteLocked=false;                // a pasting study holds the 43x43 (pasteLock)
+const freeDetector=()=>S.room==='detector' && !pasteLocked;
+// the 25x30 is offered only where it can go: on the free detector, with no pasting study in
+function syncDetSizeUI(){
+  if(!freeDetector() && S.detBaseW!==43) setDetSize(43,43);
+  document.querySelectorAll('#detSizeSeg button').forEach(b=>{
+    const off=!freeDetector() && +b.dataset.w!==43;
+    b.disabled=off; b.title=off ? '25×30: the free detector only (the bucky holds the 43×43)' : '';
+  });
+}
 
 /* ============================================================================
    STATE + WIRING
@@ -1145,7 +1159,7 @@ const S = {
   bucky:{x:0,z:0},             // where the bucky (the receptor) is, in the table / wall set-ups: it follows the tube
   scatter:1,                   // scatter dial, 1 = the calibrated physical model
 
-  detBaseW:43, detBaseH:43,    // receptor size (cm, short × long): 25x30 small / 43x43 large
+  detBaseW:43, detBaseH:43,    // detector size (cm, short × long): 25x30 small (free detector only) / 43x43 large
   detOrient:'portrait',        // portrait (long axis vertical) / landscape
   detW:43, detH:43,            // effective receptor W×H (derived from size + orientation)
   detNx:320, detNy:400,        // detector native pixel matrix (true ray-cast resolution; quick default)
@@ -1440,8 +1454,17 @@ const $=id=>document.getElementById(id);
 function poseRot(){ return 0; }   // retained for compatibility; object rotation now lives in S.objRot
 
 /* Object rotate/tilt: world rotation matrix (row-major 3x3) from the S.objRot euler
-   angles (degrees). Applied to BOTH the traced phantom + the 3D display so the two agree. */
-function objMat(){ const r=S.objRot, d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); }
+   angles (degrees). Applied to BOTH the traced phantom + the 3D display so the two agree.
+   THE REST YAW. A subject whose scan lies turned in the plane of the receptor has its own zero of
+   the vertical rotation: the hand, posed straight on its forearm (wrist.dev's default, 0 degrees),
+   lies across the receptor as scanned, its distal radius and 3rd metacarpal 25.6 degrees off the
+   scan's long axis (data/centring.json radiusProx to radiusDistal), so its 0 is the scan turned -26:
+   the radius and the 3rd ray down the receptor's length, as the Trainer's forearm check
+   (trainer.js limbTurn) has them. In the rooms that pose the patient (JOINT_MODES). */
+const REST_YAW={ hand:-26 };
+function restYaw(){ return JOINT_MODES.has(S.mode) ? (REST_YAW[S.subject]||0) : 0; }
+function matFor(r){ const d=Math.PI/180; return eulerMatrix(r.x*d, (r.y+restYaw())*d, r.z*d); }
+function objMat(){ return matFor(S.objRot); }
 function isObjRotated(){ const r=S.objRot; return r.x||r.y||r.z; }
 /* Projection designation, from the roll about the long axis rather than hard-coded.
    After voxelFlips() every body subject lies supine with the anterior surface up toward
@@ -2161,7 +2184,12 @@ function syncScene(){
   three.tube.position.set(src[0],src[1],src[2]);
   three.tube.lookAt(three.rig.localToWorld(new THREE.Vector3(...aim))); three.tube.rotateX(Math.PI/2);
   three.tube.rotateY(-Math.PI/2);  // square the housing with the light field it projects (field W along x, L along z)
-  three.collLCD.coll.rotation.y=COLL_BOX_SIGN*(S.collRot||0)*Math.PI/180;   // the box turns with its field
+  // seated, the ceiling rails run across to the wall stand's column (room.js), and the housing turns
+  // with them; the collimator box's 0 there has its screen and handle at 9 o'clock (the column at
+  // 12), still square with its field
+  const seated=S.mode==='xray' && S.room==='seated';
+  three.tube.rotateY(seated ? Math.PI/2 : 0);
+  three.collLCD.coll.rotation.y=COLL_BOX_SIGN*(S.collRot||0)*Math.PI/180 + (seated ? SEATED_BOX_YAW : 0);   // the box turns with its field
   updateCollimatorLCD();           // live LCD strip: filter / field size / status / SID
   three.cr.geometry.setFromPoints([new THREE.Vector3(...src), new THREE.Vector3(...aim)]);
   three.cr.geometry.attributes.position.needsUpdate=true;
@@ -2310,6 +2338,7 @@ function BK(){ return S.mode==='xray' && (S.room==='table'||S.room==='wall') ? S
 const BUCKY_SPEED=30;                       // cm/s, the motor's
 const COLL_ROT_DETENT=5;                    // deg: the collimator clicks into square within this of 0
 const COLL_BOX_SIGN=-1;                     // the box's yaw in the tube head turns opposite to the slider
+const SEATED_BOX_YAW=Math.PI;               // seated: the box's 0, in the turned tube head (syncScene)
 let buckyRaf=0, buckyLast=0;
 function buckyTarget(){ return { x:0, z:S.tubeZ }; }  // the rails run one way: along z (up the column at the wall)
 function buckyFollow(){
@@ -2384,7 +2413,7 @@ function roomSync(){
   r.column.visible=S.mode==='xray' && three.tube.visible;
   if(r.column.visible){
     three.tube.updateMatrixWorld(true);
-    r.placeColumn(three.collLCD.mount.getWorldPosition(new THREE.Vector3()), roomFloor(room));
+    r.placeColumn(three.collLCD.mount.getWorldPosition(new THREE.Vector3()), roomFloor(room), room==='seated');
   }
 }
 const roomFloor=(room)=>room==='wall' ? WALL_FLOOR : room==='seated' ? SEATED_FLOOR : TABLE_FLOOR;
@@ -2403,6 +2432,7 @@ function setRoom(room){
   // tube; standing at the wall, the tube (and the bucky) go to the anatomy.
   const wasStanding=standing(), under=S.tubeZ-S.objOff.z;
   S.room=room;
+  syncDetSizeUI();
   if(wasStanding && !standing()){ S.objOff.z=Math.max(-OFF_LIMIT_Z, Math.min(OFF_LIMIT_Z, -under)); S.tubeZ=0; S.bucky.z=0; }
   else if(standing()){ standKey=''; S.objOff.z=wallStandZ(); S.tubeZ=clampWallTube(under+S.objOff.z); S.bucky.z=S.tubeZ; }
   syncCentringUI();
@@ -2422,13 +2452,14 @@ function setRoom(room){
    wall stand or the table, so the free detector is off while the protocol is in. */
 function pasteLock(on){
   const cz=$('collZ');
+  pasteLocked=on;
   if(on){
     if(S.detBaseW!==43) setDetSize(43,43);
     S.collZ=43; if(cz) cz.value=S.collZ;
     if(S.room==='detector' || S.room==='seated') setRoom('wall');
   }
   if(cz) cz.disabled=on;
-  document.querySelectorAll('#detSizeSeg button').forEach(b=>{ b.disabled=on && +b.dataset.w!==43; });
+  syncDetSizeUI();
   const db=document.querySelector('#roomSel button[data-room="detector"]');
   if(db){ db.disabled=on; db.title=on ? 'Free detector: not for a pasting study (it needs the tracking bucky)' : 'Free detector: the patient lying on the plate'; }
   const sb=document.querySelector('#roomSel button[data-room="seated"]');
@@ -4862,6 +4893,9 @@ window.addEventListener('load',()=>{
            contrastAt: (t)=>ctrstSetAcq(t),
            resetStudy: ()=>resetStudyState(),
            ensureSubject: ()=>ensureSubject(),
+           // opened from the home screen with nothing chosen yet: the PA hand (the seated bucky),
+           // as the room is first walked into; a protocol already chosen this session is kept
+           onXrayOpen: ()=>{ if(!S.protocol) applyProtocol(findProtocol('Upper extremity','PA hand'), 'Upper extremity'); },
            contrastRunning: ()=>ctrstClock()!=null,
            contrastReady: ()=>!!(S.contrast.on && S.contrast.timeline),
            editorMode: (on) => editorApplyMode(on),
@@ -4964,7 +4998,7 @@ window.addEventListener('load',()=>{
     centring: (name) => centringData[S.subject]?.[name] || null,
     poseLoc, jointChain: () => jointChain(S.subject), renderJointUI, prepareJointVolume,
     preposeJoints: (angles) => { if(S.voxelModel) ensureJointVolume(S.voxelModel, angles); },
-    matFor: (r) => { const d=Math.PI/180; return eulerMatrix(r.x*d, r.y*d, r.z*d); },
+    matFor: (r) => matFor(r),
     modelCentreY: () => restHeight() + S.objOff.y,
     modelCentre: () => [S.objOff.x-BK().x, restHeight() + S.objOff.y, S.objOff.z-BK().z],
     setMarker: (side, place=true, pronated) => setSideMarker(side, place, pronated),

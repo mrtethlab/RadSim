@@ -514,6 +514,7 @@ function wireModeToggle() {
         && document.body.classList.contains('mobile')) return;
       applyMode(card.dataset.mode);
       if (card.dataset.real) ctx.setRealistic?.(card.dataset.real);
+      else if (card.dataset.mode === 'xray') ctx.onXrayOpen?.();        // the x-ray room opens on a PA hand
     });
   });
 }

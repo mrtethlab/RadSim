@@ -13,7 +13,7 @@
     0,
     1
    ],
-   "blend": 1.0,
+   "blend": 2.0,
    "how": "the head of the capitate: 1.2 cm distal of the radiocarpal joint, on the line of the 3rd metacarpal",
    "motions": [
     {
@@ -30,7 +30,8 @@
       -20,
       35
      ],
-     "rest": 25.8
+     "rest": 25.8,
+     "default": 0
     },
     {
      "key": "wrist.flex",

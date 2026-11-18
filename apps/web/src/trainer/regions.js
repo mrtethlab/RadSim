@@ -8,7 +8,13 @@
 
    part: { mat: 'tissue' | 'bone' | 'lung',
            x|y|z: [lo, hi] where each bound is a number (cm), null (open), or
-                  { lm: 'wrist', axis: 'z', add: -3.5 } (a landmark's coordinate plus cm) }
+                  { lm: 'wrist', axis: 'z', add: -3.5 } (a landmark's coordinate plus cm),
+           along: { lm, from, to, lo, hi } (optional): a slab across a limb's own axis, the
+                  direction from landmark `from` to `to`: lo to hi cm past `lm` along it (either
+                  null, open). The scan's own axes need not be the limb's: the hand lies in 26
+                  degrees of ulnar deviation, so "1 inch of forearm" cut on the scan's z crossed
+                  the forearm aslant, and once the hand is posed straight one corner of it reached
+                  1.5 cm further up the film than the other }
    Sampling is on a grid of about 3-4 mm, which is the precision the border criterion needs. */
 
 const BONE = new Set([17, 18, 19, 21, 54, 55, 56, 57, 58, 59, 60, 61]);
@@ -48,6 +54,15 @@ export function sampleRegion(vm, flips, lmLoc, parts, gridCm = 0.35) {
       return w ? [bound(w[0], lmLoc), bound(w[1], lmLoc)] : [null, null];
     });
     const inWin = (v, w) => (w[0] == null || v >= w[0]) && (w[1] == null || v <= w[1]);
+    let slab = null;
+    if (part.along) {
+      const A = part.along, o = lmLoc(A.lm), f = lmLoc(A.from), t = lmLoc(A.to);
+      if (o && f && t) {
+        const d = [t[0] - f[0], t[1] - f[1], t[2] - f[2]], l = Math.hypot(...d) || 1;
+        slab = { o, u: d.map((v) => v / l), w: [A.lo ?? null, A.hi ?? null] };
+      }
+    }
+    const inSlab = (x, y, z) => !slab || inWin((x - slab.o[0]) * slab.u[0] + (y - slab.o[1]) * slab.u[1] + (z - slab.o[2]) * slab.u[2], slab.w);
     // the matching cells of the sampling grid
     const occ = new Uint8Array(gx * gy * gz);
     for (let c = 0; c < gz; c++) {
@@ -59,7 +74,8 @@ export function sampleRegion(vm, flips, lmLoc, parts, gridCm = 0.35) {
         const row = (c * step[2] * ny + b * step[1]) * nx;
         for (let a = 0; a < gx; a++) {
           if (!matches(part.mat, data[row + a * step[0]])) continue;
-          if (!inWin(sx * (a * step[0] - cx) * sp[0], win[0])) continue;
+          const x = sx * (a * step[0] - cx) * sp[0];
+          if (!inWin(x, win[0]) || !inSlab(x, y, z)) continue;
           occ[(c * gy + b) * gx + a] = 1;
         }
       }

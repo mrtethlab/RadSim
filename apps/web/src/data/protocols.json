@@ -21,8 +21,8 @@
                 13
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
@@ -45,8 +45,8 @@
                 14
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
@@ -76,18 +76,18 @@
               "sid": 100,
               "coll": [
                 20.5,
-                26.5
+                24
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
               "pose": {
                 "roll": 0,
                 "cc": 0,
-                "centre": "mcp3Joint"
+                "centre": "mc3Neck"
               }
             },
             {
@@ -99,19 +99,19 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                18.5,
-                27.5
+                19,
+                25
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
               "pose": {
                 "roll": 45,
                 "cc": 0,
-                "centre": "mcp3Joint"
+                "centre": "mc3Neck"
               }
             },
             {
@@ -124,18 +124,18 @@
               "sid": 100,
               "coll": [
                 8.5,
-                27
+                25
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "mcp2Joint"
+                "centre": "mc2Neck"
               }
             },
             {
@@ -147,19 +147,19 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                8.5,
-                27.5
+                9,
+                25.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
               "pose": {
                 "roll": 90,
                 "cc": 0,
-                "centre": "mcp2Joint",
+                "centre": "mc2Neck",
                 "joints": {
                   "digit.2": 0,
                   "digit.3": -7,
@@ -177,19 +177,19 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                20,
-                21
+                19,
+                24
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
               "pose": {
                 "roll": 155,
                 "cc": 0,
-                "centre": "mcp3Joint",
+                "centre": "mc3Neck",
                 "joints": {
                   "digit.2": 20,
                   "digit.3": 20,
@@ -213,12 +213,12 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                12.5,
+                10.5,
                 12
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
@@ -237,12 +237,12 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                12.5,
+                10,
                 12
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
@@ -265,8 +265,8 @@
                 12
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
@@ -285,12 +285,12 @@
               "lut": "hand",
               "sid": 100,
               "coll": [
-                12.5,
-                12
+                10,
+                11.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
@@ -313,8 +313,8 @@
                 8
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "hand",
@@ -409,8 +409,8 @@
                 18.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "upperextremity",
@@ -437,8 +437,8 @@
                 18.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "upperextremity",
@@ -466,8 +466,8 @@
                 18.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "upperextremity",
@@ -494,8 +494,8 @@
                 16
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "upperextremity",
@@ -523,8 +523,8 @@
                 18
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "upperextremity",
@@ -620,8 +620,8 @@
                 19
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "landscape",
               "subject": "upperextremity",
@@ -649,8 +649,8 @@
                 19
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "landscape",
               "subject": "upperextremity",
@@ -675,8 +675,8 @@
                 19
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "landscape",
               "subject": "upperextremity",
@@ -704,8 +704,8 @@
                 19
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "upperextremity",
@@ -729,8 +729,8 @@
                 27
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "upperextremity",
@@ -786,8 +786,8 @@
                 10
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "upperextremity",
@@ -821,8 +821,8 @@
                 14
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "landscape",
               "subject": "headneck",
@@ -846,8 +846,8 @@
                 14
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "landscape",
               "subject": "headneck",
@@ -1383,8 +1383,8 @@
                 22
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "lowerextremity",
@@ -1437,8 +1437,8 @@
                 18.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "lowerextremity",
@@ -1464,8 +1464,8 @@
                 22
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "lowerextremity",
@@ -1493,8 +1493,8 @@
                 13
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "landscape",
               "subject": "lowerextremity",
@@ -1524,8 +1524,8 @@
                 22
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "lowerextremity",
@@ -1624,7 +1624,7 @@
                 35
               ],
               "det": [
-                35,
+                43,
                 43
               ],
               "orient": "landscape",
@@ -1650,7 +1650,7 @@
                 35
               ],
               "det": [
-                35,
+                43,
                 43
               ],
               "orient": "landscape",
@@ -1733,7 +1733,7 @@
                 40
               ],
               "det": [
-                35,
+                43,
                 43
               ],
               "orient": "portrait",
@@ -1759,7 +1759,7 @@
                 40
               ],
               "det": [
-                35,
+                43,
                 43
               ],
               "orient": "portrait",
@@ -1791,7 +1791,7 @@
                 22
               ],
               "det": [
-                35,
+                43,
                 43
               ],
               "orient": "portrait",
@@ -1817,7 +1817,7 @@
                 24
               ],
               "det": [
-                35,
+                43,
                 43
               ],
               "orient": "portrait",
@@ -2080,8 +2080,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "chestabdopelvis",
@@ -2107,8 +2107,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "chestabdopelvis",
@@ -2135,8 +2135,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "chestabdopelvis",
@@ -2167,8 +2167,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "chestabdopelvis",
@@ -2234,8 +2234,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "chestabdopelvis",
@@ -2261,8 +2261,8 @@
                 20
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "chestabdopelvis",
@@ -2288,8 +2288,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "chestabdopelvis",
@@ -2319,7 +2319,7 @@
                 35
               ],
               "det": [
-                35,
+                43,
                 43
               ],
               "orient": "portrait",
@@ -2346,7 +2346,7 @@
               ],
               "det": [
                 43,
-                35
+                43
               ],
               "orient": "landscape",
               "subject": "pediatric",
@@ -2381,8 +2381,8 @@
                 25
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2407,8 +2407,8 @@
                 22.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2432,8 +2432,8 @@
                 22.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2460,8 +2460,8 @@
                 22.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2489,8 +2489,8 @@
                 9
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2518,8 +2518,8 @@
                 23
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2544,8 +2544,8 @@
                 23
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2573,8 +2573,8 @@
                 23
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2602,8 +2602,8 @@
                 18
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2633,8 +2633,8 @@
                 20
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2660,8 +2660,8 @@
                 24
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "headneck",
@@ -2813,8 +2813,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -2839,8 +2839,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -2865,8 +2865,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -2892,8 +2892,8 @@
                 30
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -2919,8 +2919,8 @@
                 26.5
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -2951,8 +2951,8 @@
                 18
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -2978,8 +2978,8 @@
                 18
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -3005,8 +3005,8 @@
                 18
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -3037,8 +3037,8 @@
                 24
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -3064,8 +3064,8 @@
                 24
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "skull",
@@ -3096,8 +3096,8 @@
                 24
               ],
               "det": [
-                25,
-                30
+                43,
+                43
               ],
               "orient": "portrait",
               "subject": "pediatric",
@@ -3122,7 +3122,7 @@
                 28
               ],
               "det": [
-                35,
+                43,
                 43
               ],
               "orient": "portrait",

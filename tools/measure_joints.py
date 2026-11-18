@@ -1267,12 +1267,17 @@ def main():
     a_mc = np.degrees(np.arctan2(radial * (h['mcp3Joint']['x'] - h['mc3Base']['x']), h['mcp3Joint']['z'] - h['mc3Base']['z']))
     a_ra = np.degrees(np.arctan2(radial * (h['radiusDistal']['x'] - h['radiusProx']['x']), h['radiusDistal']['z'] - h['radiusProx']['z']))
     rest_dev = round(float(a_ra - a_mc), 1)
+    # the crease 2 cm either side of the capitate: the thenar eminence stands 4-5 cm off the 3rd ray,
+    # and straightened 26 degrees on a crease 1 cm either side, tissue past 3 cm out folded onto the
+    # bisector and left a step at the base of the thumb; at 2 cm nothing folds short of 6 cm (the
+    # bones are rigid either side of the joint whatever the crease: core/jointPose.js)
     out['hand'] = {'wrist': {
-        'label': 'Wrist', 'c': c, 'distal': [0, 0, 1], 'blend': 1.0,
+        'label': 'Wrist', 'c': c, 'distal': [0, 0, 1], 'blend': 2.0,
         'how': 'the head of the capitate: 1.2 cm distal of the radiocarpal joint, on the line of the 3rd metacarpal',
         'motions': [
+            # (the room poses it straight, the radius in line with the 3rd metacarpal: `default`)
             {'key': 'wrist.dev', 'label': 'Deviation', 'neg': 'radial', 'pos': 'ulnar', 'toward': [-radial, 0, 0], 'range': [-20, 35],
-             'rest': rest_dev},
+             'rest': rest_dev, 'default': 0},
             {'key': 'wrist.flex', 'label': 'Flexion', 'neg': 'extension', 'pos': 'flexion', 'toward': [0, -1, 0], 'range': [-70, 75]},
         ]}}
     # ---- and its digits, distal of the wrist (a chain lists its joints proximal first)

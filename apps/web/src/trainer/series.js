@@ -18,8 +18,10 @@
    Rolls follow protocols.json, so the Trainer and the sandbox agree on what a view is.
    ============================================================================ */
 
-// (the radiocarpal joint lies 2.2 cm proximal of the wrist landmark: 1" of radius and ulna beyond it)
-const HAND_REQ = { parts: [{ mat: 'tissue', connect: 'hand', z: [{ lm: 'wrist', add: -4.75 }, null] }],
+// (1" of radius and ulna beyond the radiocarpal joint, measured up the forearm's own axis, the
+// distal radius's: regions.js `along`)
+const FOREARM = { lm: 'radiocarpal', from: 'radiusProx', to: 'radiusDistal' };
+const HAND_REQ = { parts: [{ mat: 'tissue', connect: 'hand', along: { ...FOREARM, lo: -2.54 } }],
   text: 'all phalanges, metacarpals and carpals, with about 1" of distal radius and ulna' };
 // the soft tissue of the wrist, then the bases of the metacarpals as bone (Bontrager: the proximal
 // metacarpals): further out, the hand's soft tissue and the abducted thumb's shaft take the
@@ -27,7 +29,7 @@ const HAND_REQ = { parts: [{ mat: 'tissue', connect: 'hand', z: [{ lm: 'wrist', 
 // (the bones stop at the bases of the metacarpals, the first carpometacarpal joint on the radial
 // side: the MCP joints stay off a wrist film; the soft tissue to the proximal carpal row, before
 // the thenar eminence widens the hand)
-const WRIST_REQ = { parts: [{ mat: 'tissue', connect: 'wrist', z: [{ lm: 'wrist', add: -4.0 }, { lm: 'wrist', add: -1.0 }] },
+const WRIST_REQ = { parts: [{ mat: 'tissue', connect: 'wrist', along: { ...FOREARM, lo: -2.0, hi: 1.2 } },
   { mat: 'bone', x: [{ lm: 'radiocarpal', axis: 'x', add: -3.8 }, { lm: 'radiocarpal', axis: 'x', add: 3.9 }],
     z: [{ lm: 'wrist', add: 0 }, { lm: 'wrist', add: 2.0 }] }],
   text: 'distal radius and ulna and the soft tissue of the wrist, the carpals, and the bases of the metacarpals' };
@@ -105,16 +107,16 @@ export const SERIES = [
   { id: 'hand3', name: 'Hand · 3 views', views: [
     { label: 'PA', proto: ['Upper extremity', 'PA hand'], pose: { roll: 0, tol: 2 },
       align: { tol: 6 },
-      centre: { lm: 'mcp3Joint', name: '3rd MCP joint', tol: 1.0 }, require: HAND_REQ,
-      how: 'Hand pronated flat on the receptor, fingers extended and slightly spread. Central ray perpendicular to the 3rd MCP joint. Forearm along the long axis of the receptor.' },
+      centre: { lm: 'mc3Neck', name: '3rd metacarpal neck', tol: 1.0 }, require: HAND_REQ,
+      how: 'Hand pronated flat on the receptor, fingers extended and slightly spread. Central ray perpendicular to the 3rd metacarpal neck, just proximal of the MCP joint (the textbooks give the joint), so the field takes the fingertips and 1" of forearm evenly. Forearm along the long axis of the receptor.' },
     { label: 'PA oblique', proto: ['Upper extremity', 'Oblique hand'], pose: { roll: 45, tol: 2 },
       align: { tol: 6 },
-      centre: { lm: 'mcp3Joint', name: '3rd MCP joint', tol: 1.0 }, require: HAND_REQ,
-      how: 'From PA, rotate the hand 45° laterally (thumb side up), fingertips on the receptor. Central ray to the 3rd MCP joint. Forearm along the long axis of the receptor.' },
+      centre: { lm: 'mc3Neck', name: '3rd metacarpal neck', tol: 1.0 }, require: HAND_REQ,
+      how: 'From PA, rotate the hand 45° laterally (thumb side up), fingertips on the receptor. Central ray to the 3rd metacarpal neck, just proximal of the MCP joint. Forearm along the long axis of the receptor.' },
     { label: 'Lateral', proto: ['Upper extremity', 'Lateral hand'], pose: { roll: 90, tol: 2 },
       align: { tol: 6 },
-      centre: { lm: 'mcp2Joint', name: '2nd MCP joint', tol: 1.0 }, require: HAND_REQ,
-      how: 'Rotate to a true lateral (ulnar side down), fingers superimposed and extended. Central ray to the 2nd MCP joint. Forearm along the long axis of the receptor.' },
+      centre: { lm: 'mc2Neck', name: '2nd metacarpal neck', tol: 1.0 }, require: HAND_REQ,
+      how: 'Rotate to a true lateral (ulnar side down), fingers superimposed and extended. Central ray to the 2nd metacarpal neck, just proximal of the MCP joint. Forearm along the long axis of the receptor.' },
   ] },
   { id: 'wrist4', name: 'Wrist · 4 views', views: [
     { label: 'PA', proto: ['Upper extremity', 'PA wrist'], pose: { roll: 0, tol: 2 },

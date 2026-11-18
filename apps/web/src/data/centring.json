@@ -72,6 +72,22 @@
    "how": "the radial-most 1.5 cm of carpal bone 1 cm distal to the radiocarpal joint: the scaphoid",
    "guide": "PA axial scaphoid: CR 10-15 degrees proximally, toward the elbow, to the scaphoid, hand in ulnar deviation (Bontrager; Radiopaedia)",
    "confidence": "medium"
+  },
+  "mc3Neck": {
+   "x": -0.55,
+   "y": -0.08,
+   "z": 1.77,
+   "how": "the 3rd metacarpal neck: 1.6 cm up the metacarpal (the 3rd's axis) from its MCP joint",
+   "guide": "PA and PA oblique hand: CR perpendicular to the 3rd metacarpal neck, so the field takes the fingertips and 1\" of forearm with half an inch to spare at each end (the department's; Bontrager gives the 3rd MCP joint)",
+   "confidence": "medium"
+  },
+  "mc2Neck": {
+   "x": 1.62,
+   "y": 0.29,
+   "z": 1.75,
+   "how": "the 2nd metacarpal neck: 1.3 cm up the metacarpal (the 3rd's axis) from its MCP joint",
+   "guide": "Lateral hand: CR perpendicular to the 2nd metacarpal neck, so the field takes the fingertips and 1\" of forearm with half an inch to spare at each end (the department's; Bontrager gives the 2nd MCP joint)",
+   "confidence": "medium"
   }
  },
  "lowerextremity": {

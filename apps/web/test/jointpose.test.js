@@ -813,3 +813,16 @@ test('the leg rotation is the hips\': internal rotation brings each greater troc
     assert.ok(gt.length > 100 && y(20) > y(0) + 0.5 && y(-20) < y(0) - 0.5, `${J.label}: out ${y(-20).toFixed(2)} / neutral ${y(0).toFixed(2)} / in ${y(20).toFixed(2)}`);
   }
 });
+
+test('the hand rests straight on its forearm: wrist deviation unset is its default (0), not the scan ulnar 26', () => {
+  const joints = JSON.parse(readFileSync(new URL('../src/data/joints.json', import.meta.url), 'utf8'));
+  const dev = joints.hand.wrist.motions.find((m) => m.key === 'wrist.dev');
+  assert.ok(dev.rest > 20, 'the scan lies in ulnar deviation');
+  assert.equal(dev.default, 0);
+  assert.equal(motionAngle({}, dev), 0);
+  assert.equal(motionAngle({ 'wrist.dev': 25 }, dev), 25, 'a pose that sets it (the scaphoid view) has it');
+  // a crease wide enough that straightening by the scan's deviation folds nothing short of the
+  // thenar eminence, 4-5 cm off the 3rd ray (smoothstep's steepest slope, 1.5 / (2 blend))
+  const fold = 1 / ((dev.rest * Math.PI / 180) * 1.5 / (2 * joints.hand.wrist.blend));
+  assert.ok(fold > 5, `folds from ${fold.toFixed(1)} cm out`);
+});
